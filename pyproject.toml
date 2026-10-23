@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools==82.0.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "research-y"
+version = "0.1.0.dev0"
+description = "Reproducible biomedical literature discovery (under development)"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = {text = "Proprietary; no redistribution licence granted"}
+authors = [{name = "RESEARCH-Y project"}]
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-config --strict-markers"
+
+[tool.coverage.run]
+source = ["research_y"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true

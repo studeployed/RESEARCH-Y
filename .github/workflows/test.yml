@@ -1,0 +1,41 @@
+name: Python tests
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**", "chore/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Test ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install test dependencies and package
+        run: python -m pip install -r requirements-dev.txt -e .
+      - name: Validate requirement traceability
+        run: python scripts/check_traceability.py
+      - name: Compile Python source
+        run: python -m compileall -q src tests scripts
+      - name: Test
+        run: python -m pytest --cov=research_y --cov-report=term-missing
+      - name: Verify installed dependencies
+        run: python -m pip check

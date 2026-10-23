@@ -1,0 +1,23 @@
+name: Implementation increment
+description: Track a specification-driven, testable development increment
+labels: []
+body:
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements and acceptance tests
+      description: List exact requirement and AT identifiers from RESEARCH-Y_SPEC.md
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Testable acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Test evidence, failure/recovery cases, and limitations
+    validations:
+      required: true
