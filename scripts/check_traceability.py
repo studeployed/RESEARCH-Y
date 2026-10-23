@@ -21,6 +21,7 @@ VALID_STATUSES = {"planned", "partial", "verified"}
 def inspect() -> list[str]:
     spec_text = SPEC.read_text(encoding="utf-8")
     required = REQUIREMENTS.findall(spec_text) + ACCEPTANCE.findall(spec_text)
+    defined_acceptance = set(ACCEPTANCE.findall(spec_text))
     duplicate_spec = sorted(key for key, n in Counter(required).items() if n != 1)
     with MAP.open(newline="", encoding="utf-8") as stream:
         rows = list(csv.DictReader(stream))
@@ -41,8 +42,13 @@ def inspect() -> list[str]:
             problems.append(f"{ident}: invalid phase")
         if row.get("status") not in VALID_STATUSES:
             problems.append(f"{ident}: invalid status")
-        if not row.get("acceptance_tests"):
+        references = row.get("acceptance_tests", "")
+        if not references:
             problems.append(f"{ident}: absent acceptance or evaluation reference")
+        else:
+            unknown_refs = set(references.split(",")) - defined_acceptance
+            if unknown_refs:
+                problems.append(f"{ident}: nonexistent acceptance reference {sorted(unknown_refs)}")
         if not row.get("test_reference"):
             problems.append(f"{ident}: absent test reference")
     return problems

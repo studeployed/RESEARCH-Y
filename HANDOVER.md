@@ -1,26 +1,35 @@
 # RESEARCH-Y handover — 23 October 2026
 
 ## Authoritative state
-- Specification: `RESEARCH-Y_SPEC.md`, `1.0.0-draft.1`, approved on 23 October 2026 without substantive requirement changes.
-- Repository: private https://github.com/studeployed/RESEARCH-Y; specification and Phase 0 foundation on `main`.
-- Phase 0 foundation: code and local tests prepared. Phase 1 P1-01 implementation is separately maintained on `feat/project-storage-increment-1`; do not merge without owner approval.
 
-## Verified locally before publication
-- Foundation checks: specification approval and unique requirement/acceptance-test traceability.
-- Initial Phase 1 P1-01: create/open/relocate project, SQLite transactional settings and audit; 40 tests passed on Linux Python 3.13.5, 96% branch-aware coverage.
-- GitHub Actions Windows/Linux matrix: configuration committed; remote results must be inspected before claiming remote pass.
+- Specification: `RESEARCH-Y_SPEC.md` v`1.0.0-draft.1`, approved on 23 October 2026. Approval recorded without substantive requirement changes.
+- GitHub private repository: https://github.com/studeployed/RESEARCH-Y, owner `studeployed`.
+- `main` includes Phase 0 foundation (commit `965ecafe27d85d4bcf77a93f08b9dab8ff3d3788`).
+- Phase 1 P1-01 storage implementation is on `feat/project-storage-increment-1`, **unmerged**.
+- GitHub Actions matrix and issue links should be checked live; never infer a CI pass from local tests.
 
-## Pull requests/issues
-- Milestone issue plan: `docs/ROADMAP.md` (create and link GitHub issues).
-- Phase 1 P1-01 must be reviewed as a pull request; it is not part of `main`.
+## Last implemented and locally verified
 
-## Outstanding work and blockers
-- No PubMed/Web of Science connectors, graphical interface, retrieval processing, exports or installer.
-- Windows CI and Python 3.12 verification pending first GitHub Actions execution.
-- GitHub milestone creation and branch protection must be configured via an authorised operation or GitHub UI.
-- Real-source smoke tests require permitted source access and credentials; no credentials in source.
+- Portable versioned `project.ryproj` project manifest and SQLite store with matching unique identifiers and initial audit schema.
+- Create, reopen, relocate, persist theme/objectives, safely handle partial creation, corrupt/missing data, and roll back failed transactions.
+- Offline test suite: 40 passed on Python 3.13.5/Linux; 96% branch-aware coverage. See `docs/REVIEWS.md`.
+- Acceptance tests AT-01/02 remain **partial**, because the finished application has further persistence/interface behaviours to implement.
 
-## Decisions and next action
-- Python-only, project independent of previous literature search systems, broad OR-only search, auditable record provenance and no silent incomplete retrieval.
-- Confirm Actions matrix and source review; then start P1-02 durable schema design after P1-01 review.
-- **Owner approval is required before merging any pull request.**
+## Issues and reviews
+
+- Project roadmap and acceptance gates: `docs/ROADMAP.md`; authoritative requirements: `RESEARCH-Y_SPEC.md`.
+- Feature branch requires a pull request and owner approval before merging.
+- No implementation of search connectors, GUI, AI, full export, archive or packaging.
+
+## Outstanding blockers and next recommended work
+
+1. Inspect remote Python 3.12/3.13 Windows/Linux workflow results, fix any failing jobs and record evidence.
+2. Review first storage pull request for correctness and security; **do not merge without approval**.
+3. Start next incremental issue P1-02: versioned data schema and recoverable migrations, with failure/recovery tests.
+4. Live PubMed and WoS smoke tests require appropriate credentials/entitlement and are not yet performed.
+
+## Important decisions
+
+- Python only; development wholly independent of RESEARCH-X.
+- Preserve broad OR-only searches, no automatic narrowing, auditable provenance, immutable search history and truthful incomplete status.
+- Keep credentials in machine-level secure storage when implemented; never in projects, logs or repository.

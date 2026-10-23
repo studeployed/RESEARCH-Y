@@ -22,6 +22,21 @@ python -m pytest -q
 
 Application runtime currently uses the Python standard library only. Development-test packages and the build backend are pinned. Database connectors, GUI, installation packaging and the complete project data model will be added only as their increments are developed and verified.
 
+## Currently implemented developer API (P1-01 only)
+
+```python
+from pathlib import Path
+from research_y.projects import create_project, open_project, update_research_setup, read_research_setup
+
+parent = Path("some-existing-parent-directory")
+project = create_project(parent, "Right heart failure")
+update_research_setup(project, theme="Right ventricular failure")
+reopened = open_project(project.manifest_path)
+assert read_research_setup(reopened).theme == "Right ventricular failure"
+```
+
+The parent directory must already exist. This is an internal tested API, **not** an end-user command-line interface or the completed application.
+
 ## Source control
 
 Private GitHub repository, `main` as the protected integration branch once configured. All substantive changes use feature branches and reviewed pull requests; **the project owner must explicitly approve every merge**. No existing application or project code is imported.
