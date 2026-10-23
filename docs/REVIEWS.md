@@ -25,6 +25,6 @@
 
 - Python 3.13.5 / Linux: **40 offline tests passed**, branch-inclusive coverage of `research_y` **96%**, warning-as-error ResourceWarnings: none.
 - Source compile and requirements traceability checks pass.
-- Python 3.12 and Windows: **not executed locally**. GitHub Actions jobs are configured; review workflow results before marking them verified.
+- GitHub Actions remote run [40004516700](https://github.com/studeployed/RESEARCH-Y/actions/runs/40004516700): **all four matrix jobs passed**, verified from job logs (Linux/Windows, Python 3.12/3.13; **40 passed and 96% coverage in each**). Pull-request run [40004743754](https://github.com/studeployed/RESEARCH-Y/actions/runs/40004743754) also completed successfully. These are automated checks, not human peer review.
 - PubMed / Web of Science: **not tested**; connectors do not exist yet.
-- Global environment `pip check` reports an unrelated pre-existing `moviepy`/`pillow` incompatibility. This is not a RESEARCH-Y runtime dependency. Fresh GitHub Actions environment provides separate verification.
+- The shared local Python runner had an unrelated moviepy/pillow dependency conflict; clean GitHub Actions dependency consistency checks succeeded across the matrix.

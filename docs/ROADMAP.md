@@ -10,7 +10,7 @@ The scope and gates are fixed in section 20 of the approved specification. These
 
 ## Milestone M1 — Durable end-to-end core (Phase 1)
 
-- **P1-01:** Create/open/relocate project with safe versioned index and SQLite transactional metadata. Pass: tests for manifest, persistence, move, corruption, creation collisions, rollback; partial AT-01/02. **Locally implemented; 40 tests passed; pending remote PR/Windows verification.**
+- **P1-01:** Create/open/relocate project with safe versioned index and SQLite transactional metadata. Pass: tests for manifest, persistence, move, corruption, creation collisions, rollback; partial AT-01/02. **Implemented on PR #10 (unmerged); 40 tests passed on Windows/Linux with Python 3.12/3.13; 96% coverage. AT-01/AT-02 remain partial.**
 - **P1-02:** Versioned schema for strategy versions, runs, source retrieval, publications, memberships and audit. Pass: migration/durability/recovery fixtures.
 - **P1-03:** Approved OR-only strategy representation, source-specific query compiler and review. Pass: AT-04/05 fixture checks, planned live PubMed translation smoke test AT-06.
 - **P1-04:** PubMed discovery/metadata, complete partitioning and recovery. Pass: AT-06/07/09, successful authenticated live-source smoke test.
