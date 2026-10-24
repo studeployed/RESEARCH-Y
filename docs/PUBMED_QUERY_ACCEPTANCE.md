@@ -1,8 +1,6 @@
 # P1-03b — PubMed ESearch count/translation acceptance probe
 
-**Status:** Proposed for merge in a feature branch. Offline fixture tests are
-implemented. **No live PubMed verification has been performed yet**, and AT-06
-is not complete.
+**Status:** Merged in [PR #17](https://github.com/studeployed/RESEARCH-Y/pull/17) on 24 October 2026. Its post-merge GitHub Actions matrix passed Windows/Linux Python 3.12/3.13. **Live PubMed acceptance verification remains outstanding**, and AT-06 is not complete.
 
 ## Purpose
 
@@ -94,4 +92,4 @@ approved Phase 1 scope. A count-only probe does not fulfil these tasks.
 These links document provider behaviour; the scientific and product
 requirements remain in `RESEARCH-Y_SPEC.md`.
 
-The initial pull-request test matrix passed before the redirect change. A final current-head Windows/Linux matrix and source/security re-review must still succeed before recommending a merge.
+The HTTPS redirect issue was corrected and covered by a regression test before PR #17 merged. The full GitHub Actions matrix passed. Live query translation still requires a permitted provider request.

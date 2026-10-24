@@ -122,3 +122,28 @@ ESearch URL and no-credential-in-URL policy remain unchanged. Additional
 integrated strategy-compiler-to-ESearch tests were added, independent of live
 source verification. This is in-scope security remediation, not new
 architecture or a change to the scientific specification.
+
+## P1-04a — Bounded PubMed identifier pagination review (24 October 2026)
+
+- **Scope:** Extend the previously reviewed count-only ESearch transport with bounded `retstart`/`retmax` identifier pagination, without altering the fixed official HTTPS endpoint or allowing redirects.
+- **Data integrity:** provider ID lists are validated as canonical decimal PubMed identifiers; duplicate IDs within/across pages, short pages, count drift and unexpected translation cause explicit incomplete or review-required status. Previously accepted pages remain accessible for audit; unverified pages are not committed to the optional callback.
+- **Completeness:** PubMed's documented 10,000-ID ESearch window is enforced at the transport boundary. The bounded collector defaults to 9,000 records; an oversized query returns `partition_required` with no partial misleading first batch. A reconciled ID-only result never claims complete metadata retrieval or a completed search run.
+- **Recovery:** callback injection supports atomic per-page storage by future callers, but does not yet implement durable checkpoint indexing or resume. Do not mark RUN-04, AT-07 or AT-09 complete.
+- **Security:** no new packages, no new credentials or network endpoint; the existing rejecting redirect handler and sanitised error reporting remain intact.
+- **Local test evidence:** Python 3.13.5/Linux, **93 PubMed probe + identifier pagination tests passed**; 96% branch-aware coverage of the new identifier module (overall 94% across locally loaded modules). Source compilation passed. Full GitHub Windows/Linux testing and Codex review are required before a merge recommendation.
+
+## P1-04a scoped code-review corrections — 24 October 2026
+
+Codex's initial review of PR #18 (`d6c94933d116`) found two valid P2 defects:
+1. A persistence callback throwing `PubMedProbeError` could bypass generic checkpoint error sanitisation and expose local storage path/message details.
+2. A source page with an unusually long decimal PMID or numeric count could overflow Python's integer-to-string conversion guard and escape a structured incomplete status.
+
+Both are corrected in the next feature-branch commit: callbacks are caught independently of provider parsing, and all callback exceptions are mapped to a fixed redacted checkpoint-failure message. Decimal counts and PMIDs have explicit length limits before integer conversion, rejecting unrealistic provider identifiers as source errors.
+
+Three new regression tests prove private-message redaction and proper `incomplete` outcomes after a previously checked page. Local Python 3.13.5/Linux now reports **96 tests passed** in the PubMed probe and identifier-page suites, and **97% branch coverage** for `pubmed_ids.py`.
+
+The changed Git blobs match the locally tested source. Re-run the full Windows/Linux GitHub Actions matrix and request code/security rereview before recommending merge. No change to scientific query semantics, 9,000-ID safety ceiling, project schema or provider credentials.
+
+### Additional count-only ESearch input regression
+
+The shared existing count-only `parse_esearch_count` parser also accepted unbounded decimal count **strings**. A very long malformed count could raise Python's integer conversion `ValueError` before the bounded collector's `incomplete` handling. This is corrected in the same scoped P1-04a branch by bounding provider-reported count digits before conversion. New `test_initial_oversized_decimal_count_is_incomplete_not_uncaught_value_error` confirms the first probe reports `incomplete`, with no claimed count. Local PubMed suite: **97 tests passed**, new pagination module **97% branch-aware coverage**. Recheck the current full CI matrix and reviewer feedback before merge.
