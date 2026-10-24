@@ -101,6 +101,7 @@ def _translate_warning_map(value: Any, *, field: str) -> tuple[str, ...]:
 
 def _review_translation(
     exact_query: str, accepted: str, warnings: tuple[str, ...],
+    *, allow_crdt_partition: bool = False,
 ) -> tuple[str, ...]:
     """Flag unexpected translation and provider warnings, never certify semantics."""
     reasons: list[str] = []
@@ -115,7 +116,7 @@ def _review_translation(
     # an OR-only concept query with ONE date interval. This is not a new user
     # concept operator. Exempt only the exact accepted and correctly shaped
     # internal suffix; unexpected extra AND/NOT still triggers review.
-    if accepted.strip() == exact_query.strip() and re.fullmatch(
+    if allow_crdt_partition and accepted.strip() == exact_query.strip() and re.fullmatch(
         r"\(.+\) AND \(\d{4}/\d{2}/\d{2}:\d{4}/\d{2}/\d{2}\[crdt\]\)",
         exact_query.strip(), flags=re.DOTALL,
     ):
@@ -128,7 +129,10 @@ def _review_translation(
     return tuple(reasons)
 
 
-def parse_esearch_count(payload: bytes, exact_query: str, *, checked_at_utc: str) -> PubMedCountProbe:
+def parse_esearch_count(
+    payload: bytes, exact_query: str, *, checked_at_utc: str,
+    allow_crdt_partition: bool = False,
+) -> PubMedCountProbe:
     """Parse ESearch JSON strictly, surfacing embedded HTTP-200 provider errors."""
     if not isinstance(payload, bytes) or len(payload) > MAX_RESPONSE_BYTES:
         raise PubMedProbeError("PubMed ESearch returned an oversized or invalid response")
@@ -160,7 +164,9 @@ def parse_esearch_count(payload: bytes, exact_query: str, *, checked_at_utc: str
         _translate_warning_map(data.get("warninglist"), field="warninglist")
         + _translate_warning_map(data.get("errorlist"), field="errorlist")
     )
-    reasons = _review_translation(exact_query, translation, warnings)
+    reasons = _review_translation(
+        exact_query, translation, warnings, allow_crdt_partition=allow_crdt_partition,
+    )
     identical = translation.strip() == exact_query.strip()
     return PubMedCountProbe(
         exact_query=exact_query,
@@ -262,12 +268,15 @@ class PubMedESearchProbeClient:
                 retryable=True,
             ) from None
 
-    def probe(self, exact_query: str) -> PubMedCountProbe:
-        """Count-only query with accepted translation and warning inspection."""
+    def probe(
+        self, exact_query: str, *, allow_crdt_partition: bool = False,
+    ) -> PubMedCountProbe:
+        """Count-only query with translation; partition context is explicit."""
         result = self.fetch_esearch_page(exact_query, retmax=0)
         return parse_esearch_count(
             result, exact_query,
             checked_at_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            allow_crdt_partition=allow_crdt_partition,
         )
 
 

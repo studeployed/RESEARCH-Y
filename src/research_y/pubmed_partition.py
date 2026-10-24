@@ -27,7 +27,9 @@ DEFAULT_COUNT_PROBE_BUDGET = 255
 
 
 class _CountClient(Protocol):
-    def probe(self, exact_query: str) -> PubMedCountProbe: ...
+    def probe(
+        self, exact_query: str, *, allow_crdt_partition: bool = False,
+    ) -> PubMedCountProbe: ...
 
     def fetch_esearch_page(self, exact_query: str, *, retstart: int, retmax: int) -> bytes: ...
 
@@ -140,7 +142,10 @@ def retrieve_date_partitioned_identifiers(
         )
 
     try:
-        baseline = client.probe(approved_query)
+        try:
+            baseline = client.probe(approved_query)
+        except Exception:
+            return report("incomplete", "PubMed baseline count request failed")
         root_count = baseline.reported_matches
         if baseline.review_required:
             return report("query_review_required", "Base query translation requires review")
@@ -167,7 +172,7 @@ def retrieve_date_partitioned_identifiers(
             # Do not propagate provider exceptions that may include local or
             # credential details from an injected client implementation.
             try:
-                probe = client.probe(query)
+                probe = client.probe(query, allow_crdt_partition=True)
             except Exception as exc:
                 raise _PartitionStopped("incomplete", "Date-partition count request failed") from None
             if probe.review_required:
@@ -208,7 +213,8 @@ def retrieve_date_partitioned_identifiers(
         count_window(date_window, None, 0)
         for leaf in leaves:
             result = retrieve_bounded_identifiers(
-                client, leaf.exact_subquery, page_size=page_size, max_records=max_records,
+                client, leaf.exact_subquery, page_size=page_size,
+                max_records=max_records, allow_crdt_partition=True,
             )
             collected.append(result)
             if not result.identifiers_reconciled or result.reported_matches != leaf.reported_matches:
@@ -224,7 +230,10 @@ def retrieve_date_partitioned_identifiers(
             return report("incomplete", "Unique PubMed ID union does not reconcile with the baseline count")
         # A changing PubMed collection can invalidate an otherwise consistent
         # partition run. Recheck the unfiltered count after the last page.
-        final_probe = client.probe(approved_query)
+        try:
+            final_probe = client.probe(approved_query)
+        except Exception:
+            return report("incomplete", "Final PubMed baseline recount failed")
         if final_probe.review_required:
             return report("query_review_required", "Final source query translation requires review")
         if final_probe.reported_matches != root_count:

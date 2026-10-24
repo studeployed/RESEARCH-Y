@@ -80,6 +80,7 @@ def parse_identifier_page(
     retstart: int,
     retmax: int,
     retrieved_at_utc: str,
+    allow_crdt_partition: bool = False,
 ) -> PubMedIdentifierPage:
     """Parse and validate one ESearch result without pretending it is complete."""
     if type(retstart) is not int or type(retmax) is not int or retstart < 0 or retmax <= 0:
@@ -134,7 +135,10 @@ def parse_identifier_page(
         pmids=tuple(pmids),
         accepted_translation=translation,
         warnings=warnings,
-        review_reasons=_review_translation(exact_query, translation, warnings),
+        review_reasons=_review_translation(
+            exact_query, translation, warnings,
+            allow_crdt_partition=allow_crdt_partition,
+        ),
         response_sha256=hashlib.sha256(payload).hexdigest(),
         retrieved_at_utc=retrieved_at_utc,
     )
@@ -147,6 +151,7 @@ def retrieve_bounded_identifiers(
     page_size: int = DEFAULT_PAGE_SIZE,
     max_records: int = DEFAULT_SINGLE_QUERY_CEILING,
     on_verified_page: Callable[[PubMedIdentifierPage], None] | None = None,
+    allow_crdt_partition: bool = False,
 ) -> PubMedIdentifierResult:
     """Fetch a small stable set of PubMed IDs, retaining incomplete evidence.
 
@@ -165,7 +170,8 @@ def retrieve_bounded_identifiers(
         raise ValueError("An exact approved PubMed query is required")
 
     try:
-        preview = client.probe(exact_query)
+        preview = (client.probe(exact_query, allow_crdt_partition=True)
+                   if allow_crdt_partition else client.probe(exact_query))
     except PubMedProbeError as exc:
         return PubMedIdentifierResult(exact_query, "incomplete", None, (), (),
                                        (str(exc),))
@@ -193,6 +199,7 @@ def retrieve_bounded_identifiers(
             page = parse_identifier_page(
                 payload, exact_query=exact_query, retstart=offset, retmax=requested,
                 retrieved_at_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                allow_crdt_partition=allow_crdt_partition,
             )
             if page.review_required:
                 return PubMedIdentifierResult(

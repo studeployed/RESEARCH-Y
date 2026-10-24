@@ -49,7 +49,9 @@ class FakeClient:
             return raw + self.count_delta_after_first
         return raw
 
-    def probe(self, query: str) -> PubMedCountProbe:
+    def probe(
+        self, query: str, *, allow_crdt_partition: bool = False,
+    ) -> PubMedCountProbe:
         self.probes.append(query)
         self.probe_calls[query] += 1
         if self.bad_translation_for and self.bad_translation_for in query:
@@ -57,8 +59,12 @@ class FakeClient:
                 query, '("unexpected"[All Fields])', self.count(query),
                 '2026-10-24T00:00:00+00:00', (), ('Translation changed',), False,
             )
+        from research_y.pubmed_probe import _review_translation
+        reasons = _review_translation(
+            query, query, (), allow_crdt_partition=allow_crdt_partition,
+        )
         return PubMedCountProbe(query, query, self.count(query),
-                                '2026-10-24T00:00:00+00:00', (), (), True)
+                                '2026-10-24T00:00:00+00:00', (), reasons, True)
 
     def fetch_esearch_page(self, query: str, *, retstart: int, retmax: int) -> bytes:
         self.pages.append((query, retstart, retmax))
@@ -183,8 +189,8 @@ def test_reject_date_partition_translation_which_is_not_accepted():
 def test_child_count_mismatch_never_fetches_records():
     fake = FakeClient(corpus())
     original_probe = fake.probe
-    def probe(query):
-        report = original_probe(query)
+    def probe(query, *, allow_crdt_partition=False):
+        report = original_probe(query, allow_crdt_partition=allow_crdt_partition)
         if '2025/01/02:2025/01/02' in query:
             return PubMedCountProbe(
                 query, query, report.reported_matches + 1,
@@ -285,10 +291,10 @@ def test_invalid_query_without_contact_not_submitted():
 def test_exception_message_from_external_count_client_is_not_returned():
     fake = FakeClient(corpus())
     original = fake.probe
-    def bad(query):
+    def bad(query, *, allow_crdt_partition=False):
         if '[crdt]' in query:
             raise RuntimeError('PRIVATE-API-KEY-AND-LOCAL-FILE')
-        return original(query)
+        return original(query, allow_crdt_partition=allow_crdt_partition)
     fake.probe = bad
     out = run(fake)
     assert out.status == 'incomplete'
@@ -326,3 +332,32 @@ def test_unapproved_control_character_query_rejected_before_source_calls():
     with pytest.raises(ValueError, match='control characters'):
         retrieve_date_partitioned_identifiers(fake, Q + "\n", date_window=WINDOW)
     assert not fake.probes
+
+
+def test_caller_supplied_date_filter_is_not_treated_as_internal_partition():
+    from research_y.pubmed_probe import _review_translation
+    root_query = WINDOW.query_for(Q)
+    assert any('AND/NOT' in r for r in _review_translation(root_query, root_query, ()))
+    assert not _review_translation(root_query, root_query, (), allow_crdt_partition=True)
+    fake = FakeClient(corpus(3, 4))
+    out = retrieve_date_partitioned_identifiers(fake, root_query, date_window=WINDOW)
+    assert out.status == 'query_review_required'
+    assert not fake.pages
+
+
+@pytest.mark.parametrize('at_final', [False, True])
+def test_private_error_in_external_baseline_count_requests_is_sanitised(at_final):
+    fake = FakeClient(corpus())
+    original = fake.probe
+    def fails(query, *, allow_crdt_partition=False):
+        if query == Q and (not at_final or fake.probe_calls[Q] >= 1):
+            raise RuntimeError('PRIVATE-TOKEN-IN-ERROR-MESSAGE')
+        return original(query, allow_crdt_partition=allow_crdt_partition)
+    fake.probe = fails
+    out = run(fake)
+    assert out.status == 'incomplete'
+    assert 'PRIVATE-TOKEN' not in repr(out)
+    if at_final:
+        assert len(out.pmids) == 10003
+    else:
+        assert not out.pmids
