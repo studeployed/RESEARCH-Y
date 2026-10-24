@@ -28,3 +28,17 @@
 - GitHub Actions remote run [40004516700](https://github.com/studeployed/RESEARCH-Y/actions/runs/40004516700): **all four matrix jobs passed**, verified from job logs (Linux/Windows, Python 3.12/3.13; **40 passed and 96% coverage in each**). Pull-request run [40004743754](https://github.com/studeployed/RESEARCH-Y/actions/runs/40004743754) also completed successfully. These are automated checks, not human peer review.
 - PubMed / Web of Science: **not tested**; connectors do not exist yet.
 - The shared local Python runner had an unrelated moviepy/pillow dependency conflict; clean GitHub Actions dependency consistency checks succeeded across the matrix.
+
+## Review remediation — 24 October 2026
+
+The requested Codex code review and separate security review on original head `437d6fce600f` identified three valid issues. These were not previously covered by the 40-test suite. All three findings have been corrected on the feature branch in `1777ba7163ba`:
+
+1. **P1 — SQLite hot rollback-journal recovery:** project validation no longer opens a read-only database that cannot recover after a terminated write. A non-creating `mode=rw` connection permits SQLite rollback recovery before validating identity. New child-process crash fixture creates a real hot journal and verifies preservation of previously committed data and subsequent updates.
+2. **P2 — directory named `project.ryproj`:** open distinguishes supplied file from directory before stripping the manifest filename. New regression test covers new/open/by-manifest and data update for the ambiguous name.
+3. **P3 — security, validation/write handle swap:** validation and subsequent read/write now use a single bound SQLite connection, eliminating the second-open race. Two deterministic regression tests simulate replaced connections and verify that a different project's values are not modified.
+
+Original inline threads were replied to with evidence and marked resolved after successful cross-platform checks. A fresh code and security review on the corrected implementation was requested; **pending at the time of this documentation entry**. The closed discussions are not a claim of zero remaining vulnerabilities.
+
+**Verified tests on corrected code:** local Python 3.13.5/Linux, 44 passed with ResourceWarnings treated as errors, 95% branch-aware coverage. GitHub Actions [pull-request run 40081458246](https://github.com/studeployed/RESEARCH-Y/actions/runs/40081458246) reports success for Windows and Linux with Python 3.12 and 3.13; logs in each environment show **44 passed and 95% coverage**. No live-source or full Windows installer tests have yet been performed.
+
+**Merge policy:** maintain the unmerged PR until renewed reviews are checked and the project owner explicitly authorises merge.
