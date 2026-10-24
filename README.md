@@ -39,13 +39,13 @@ The parent directory must already exist. Opening a valid version-1 project now m
 
 ## Source control
 
-Private GitHub repository, `main` as the integration branch (branch-protection configuration pending). All substantive changes use feature branches and reviewed pull requests; **the project owner must explicitly approve every merge**. No existing application or project code is imported.
+**Public** GitHub repository (visible source and development history), with an active ruleset protecting `main` from deletion, force-pushes and direct changes outside pull requests. The ruleset requires resolution of review conversations; required automated status checks are **not yet configured**. All substantive changes use feature branches and reviewed pull requests; **the project owner must explicitly approve every merge**. No existing application or project code is imported.
 
 No authentication credentials, research datasets or live project folders may be committed. Source credentials will eventually be stored in the operating-system credential store, not in `.ryproj` manifests. See [`SECURITY.md`](SECURITY.md).
 
-## Strategy/run persistence (P1-02b proposal, unmerged)
+## Strategy/run persistence (P1-02b merged in PR #13)
 
-The feature branch also introduces a **storage-only** internal workflow:
+The merged storage layer also supports this **storage-only** internal workflow:
 
 ```python
 from research_y.storage import (
