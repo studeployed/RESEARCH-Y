@@ -52,3 +52,18 @@ Original inline threads were replied to with evidence and marked resolved after 
 - **Security:** no credentials or licensed data added. SQL is static or parameterised. This change does not alter previously documented Windows-junction trust boundaries; tracked issue #11 remains separate.
 - **Evidence:** local Python 3.13.5 / Linux: 53 tests passed, 93% branch-aware coverage; Python compile and mapping verification passed. Cross-platform GitHub Actions runs must be checked after branch publication. Shared local runner has an unrelated installed moviepy/pillow conflict; a clean CI runner provides package-integrity evidence.
 - **Limits:** schema creation alone does not implement deduplication, source count reconciliation, immutable run write APIs, archive import, or final AT-01…AT-22. This PR is only the first increment of issue #5.
+
+## P1-02b initial self-review — 24 October 2026
+
+- **Scope:** Version-2 storage methods for researcher-approved OR-only atomic terms, immutable strategy versions, pending runs and planned (not executed) source queries. No SQL schema changes or new dependencies.
+- **Scientific correctness:** unapproved atomic terms and missing approval confirmation are rejected; accepted term origin, rationale, enabled state and group order persist. The application itself does not yet verify that a UI really obtained approval. Pending queries never create provider counts or imply execution.
+- **Integrity:** one transaction contains each write and its append-only audit event; version numbering is allocated under `BEGIN IMMEDIATE`; source queries can only refer to a group in their run's frozen strategy; failed audit inserts roll back.
+- **Security:** all database writes use static parameterised SQL. Untrusted query strings are stored as data only; no executing SQL, source network calls or credentials. Previously tracked Windows junction issue #11 remains deferred to project import work.
+- **Test plan:** persistent reopen/relocation, immutable versions, cross-version group rejection, unapproved proposals, invalid JSON values, unknown source counts, audit failure/rollback, Windows/Linux compatibility. CI evidence must be recorded after the branch is published. This is assistant self-review, not an external sign-off.
+
+## P1-02b GitHub Actions evidence — 24 October 2026
+
+- Code-bearing PR #13 head `1aed8dee684d`, [push workflow 40096279206](https://github.com/studeployed/RESEARCH-Y/actions/runs/40096279206): successful in all four jobs (Windows/Linux, Python 3.12 and Python 3.13).
+- Actual job logs each report **74 tests passed, 93% branch-inclusive code coverage**, successful requirement-to-test mapping, source compilation, dependency installation and dependency consistency.
+- This evidence validates tested persistence behaviour but does **not** demonstrate completed source retrieval, full study-count reconciliation, provider syntax validation, end-user GUI or all mandatory acceptance tests.
+- Codex code/security reviews and any final documentation-only commit CI must be inspected independently before a merge recommendation.

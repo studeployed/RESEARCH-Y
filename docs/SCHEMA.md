@@ -26,3 +26,11 @@ See `tests/test_schema_migrations.py` for legacy-file, rollback, migration-idemp
 ## Deliberate limits
 
 Multi-writer coordination, untrusted project-folder import, archive validation, source-specific retrieval logic, metadata reconciliation and complete provenance APIs remain scheduled for later work. [Issue #11](https://github.com/studeployed/RESEARCH-Y/issues/11) separately tracks Windows junction containment before untrusted project import or release.
+
+## P1-02b operational storage (proposed, not merged)
+
+The `research_y.storage` API uses the existing v2 tables without another schema migration. It serialises approved atomic terms (origin, rationale, enabled state and approval flag) into an immutable **OR-only** strategy snapshot, persists its named/ordered groups and an auditable researcher approval confirmation, and creates run records with initial `pending` status.
+
+The `plan_source_query` helper stores exact **unexecuted** PubMed or Web of Science Starter query text and caller-supplied parameters in association with a group belonging to the run's frozen strategy. Source-reported counts remain `NULL` and execution timestamps remain unset. The helper **does not validate provider syntax, translate terms, send requests or infer hit counts**; those functions belong to later source-specific compiler and connector increments.
+
+Transactions include their audit events. A failed audit write rolls back the associated approved strategy, run or planned query. These limited APIs do not implement public screening, deduplication, metadata processing, automatic model output acceptance or source-wide reconciliation.

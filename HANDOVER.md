@@ -1,37 +1,30 @@
 # RESEARCH-Y handover — 24 October 2026
 
-## Current state
+## Authoritative state
 
-- **Authoritative specification:** `RESEARCH-Y_SPEC.md` v`1.0.0-draft.1`, approved 23 October 2026; requirements unchanged.
-- **Private repository:** https://github.com/studeployed/RESEARCH-Y.
-- **Phase:** Phase 1 — durable data foundation.
-- **Merged:** [PR #10](https://github.com/studeployed/RESEARCH-Y/pull/10) on 24 October 2026, merge commit `e2a645dc0da5dc7fb1536c4ce634e1ae754a7750`; issue #4 closed.
-- **In progress:** issue [#5](https://github.com/studeployed/RESEARCH-Y/issues/5), P1-02a on `feat/p1-02a-schema-migration`. **Unmerged; owner approval required.**
-- **Known deferred risk:** [#11](https://github.com/studeployed/RESEARCH-Y/issues/11), Windows directory-junction containment, to be handled before untrusted imports/release rather than expanding P1-02a scope.
+- Private repository: https://github.com/studeployed/RESEARCH-Y.
+- Approved specification: `RESEARCH-Y_SPEC.md` version `1.0.0-draft.1`; no substantive requirement changes.
+- Current milestone: **Phase 1 — Durable foundation**. Issue [#5](https://github.com/studeployed/RESEARCH-Y/issues/5) remains open.
+- **Merged:** [PR #10](https://github.com/studeployed/RESEARCH-Y/pull/10), merge `e2a645dc0da5`; [PR #12](https://github.com/studeployed/RESEARCH-Y/pull/12), merge `c3355ac735c6` (24 October 2026). Both merged branches passed GitHub Actions.
+- **Open [PR #13](https://github.com/studeployed/RESEARCH-Y/pull/13), unmerged:** P1-02b, branch `feat/p1-02b-strategy-run-persistence`. Owner approval is mandatory before merge.
+- Known deferred security finding: [#11](https://github.com/studeployed/RESEARCH-Y/issues/11) Windows directory-junction containment, due before untrusted project imports/release, not a blocker to this scoped increment.
 
-## Verified functionality and evidence
+## Last verified work
 
-- Previously merged P1-01: self-contained project create/open/move, versioned manifest and initial SQLite storage, transactional research setup/audit; GitHub Actions Windows/Linux Python 3.12/3.13 passed.
-- P1-02a **locally implemented and tested**: schema version 2, approved strategy snapshots, runs, source queries/records/memberships, separate unique publications and supporting entities; one-time version-1 migration with consistent SQLite backup and rollback.
-- Local Linux Python 3.13.5: **53 tests passed**, 93% branch-aware coverage; source compilation and requirement traceability checks passed.
-- GitHub Actions for P1-02a: **pending publication / review of results**, do not claim a pass until verified on the current head.
-- These are storage contract tests, not actual source searches or end-to-end acceptance of AT-01…AT-22.
+- P1-01 project creation/open/relocation, SQLite identity, transactions, basic audit history; automated tests Windows/Linux Python 3.12/3.13 passed.
+- P1-02a schema v2, distinct publication/retrieval entities, strategy/run relationships and recoverable v1→v2 migrations; 53 tests passed with 93% coverage on the four GitHub matrix combinations. The merged `main` run also passed.
+- P1-02b adds researcher-confirmed OR-only term snapshots, pending runs, planned unexecuted source queries and atomic audit events. **Code-bearing commit `1aed8dee684d` passed all four Windows/Linux GitHub Actions jobs on Python 3.12/3.13**, 74 tests each, 93% branch-aware coverage ([run 40096279206](https://github.com/studeployed/RESEARCH-Y/actions/runs/40096279206)). A handover-only follow-up commit triggers another run.
 
-## Open work and limitations
+## Open limitations
 
-- Full query processing and approved-term persistence APIs, search execution, PubMed/Web of Science connectivity, recovery jobs, deduplication decisions, classification services, Excel export, GUI and installer are not implemented.
-- Multi-writer management and complete project archive/restore remain separate increments. Windows junction hardening remains #11.
-- Branch protection and native GitHub milestones are not asserted to be configured (see `docs/REPOSITORY_CONTROLS.md`).
+- No query compiler, live PubMed/Web of Science retrieval, quota/pagination, deduplication services, result reconciliation, Excel export, GUI or installer.
+- Source planned queries store exact text but **do not execute or validate provider syntax**. Missing hit counts are stored as `NULL`, not zero.
+- User-interface approval workflow, AI term-generation review, full project archive and multi-writer protections are later increments.
+- All mandatory final product acceptance tests remain pending or partial, never falsely marked complete.
 
-## Important decisions
+## Decisions and next recommended action
 
-- Python-only, independent codebase, local-first, no paid or new runtime dependencies introduced in P1-02a.
-- Group union is OR-only; search execution must never silently narrow, invent source counts or declare incomplete retrieval verified.
-- Project-relative files, non-creating SQLite opens and identifiable/consistent backups before schema migration.
-- No merges, releases, destructive operations or substantive specification changes without explicit owner approval.
-
-## Next recommended action
-
-1. Check the P1-02a pull request and GitHub Actions Windows/Linux test evidence; review code-quality and security findings within the increment's scope.
-2. Present the PR for explicit owner merge approval; do not merge automatically.
-3. After merge, continue issue #5 with small operational persistence APIs that exercise the versioned research entities, then build the query compiler and connectors according to the approved phase order.
+- Build strictly against the version-controlled specification, Python only; no RESEARCH-X reuse.
+- Maintain immutable executed strategy/run history, complete source provenance, explicit incomplete states and broad OR-only methodology.
+- Review [PR #13](https://github.com/studeployed/RESEARCH-Y/pull/13): check latest CI and the new code/security reviews; correct genuine scoped defects, then obtain explicit owner approval **before merging**.
+- After that increment, develop source query compilation (issue #6) and retrieval/connectors (#7–#8), rather than endless storage hardening. Update this handover on completed checkpoints.
