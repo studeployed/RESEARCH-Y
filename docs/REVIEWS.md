@@ -42,3 +42,13 @@ Original inline threads were replied to with evidence and marked resolved after 
 **Verified tests on corrected code:** local Python 3.13.5/Linux, 44 passed with ResourceWarnings treated as errors, 95% branch-aware coverage. GitHub Actions [pull-request run 40081458246](https://github.com/studeployed/RESEARCH-Y/actions/runs/40081458246) reports success for Windows and Linux with Python 3.12 and 3.13; logs in each environment show **44 passed and 95% coverage**. No live-source or full Windows installer tests have yet been performed.
 
 **Merge policy:** maintain the unmerged PR until renewed reviews are checked and the project owner explicitly authorises merge.
+
+## P1-02a — Schema migration review (24 October 2026)
+
+**Scope:** Schema-v2 table definitions and transactional version-1 upgrade. No API integrations, imports, external dependencies, GUI or release.
+
+- **Correctness:** separate publications from source retrievals and preserve multiple group/source memberships; foreign keys prevent cross-run and cross-provider membership errors. Exact source queries and reported counts have nullable, unexecuted initial states. Approved strategy versions/groups and audit history reject update/delete.
+- **Recovery:** existing version-1 identity is validated first; a SQLite backup is completed and checked before DDL. Migration uses individual SQL executions within `BEGIN IMMEDIATE` and atomically commits schema number and audit event. Failure rolls back all new tables and leaves a valid pre-upgrade snapshot.
+- **Security:** no credentials or licensed data added. SQL is static or parameterised. This change does not alter previously documented Windows-junction trust boundaries; tracked issue #11 remains separate.
+- **Evidence:** local Python 3.13.5 / Linux: 53 tests passed, 93% branch-aware coverage; Python compile and mapping verification passed. Cross-platform GitHub Actions runs must be checked after branch publication. Shared local runner has an unrelated installed moviepy/pillow conflict; a clean CI runner provides package-integrity evidence.
+- **Limits:** schema creation alone does not implement deduplication, source count reconciliation, immutable run write APIs, archive import, or final AT-01…AT-22. This PR is only the first increment of issue #5.
