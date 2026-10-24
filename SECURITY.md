@@ -7,7 +7,7 @@
 - Future archives and downloaded files must be validated for unsafe paths/filenames; migrations require backups and reliable rollback (**SEC-04**).
 - All incoming changes require code-quality and security review, with a threat-oriented assessment for parsers, archives, input handling, storage and network clients.
 
-**Current status:** No network connectors, credential handling or archive import are implemented. `.gitignore` provides a guardrail, **not** a complete secret-scanning or data-loss-prevention control. Do not place secrets in source files.
+**Current status:** The proposed P1-03b count-only PubMed ESearch diagnostic can perform one researcher-initiated HTTPS POST when a private NCBI contact email is supplied. It has no automatic full retrieval, credential persistence, archive import or background job service. Ordinary tests remain entirely offline. `.gitignore` provides a guardrail, **not** a complete secret-scanning or data-loss-prevention control. Do not place secrets in source files.
 
 Report security concerns privately to the repository owner; do not include secrets in issues or pull requests.
 

@@ -1,32 +1,65 @@
 # RESEARCH-Y handover — 24 October 2026
 
-## Authoritative repository and scope
+## Repository and authoritative requirements
 
-- Repository: **public** https://github.com/studeployed/RESEARCH-Y; visible source, development history, issues and pull requests. The owner has authorised this visibility; outside users were not given push or merge rights.
-- Specification: `RESEARCH-Y_SPEC.md` v`1.0.0-draft.1`, approved 23 October 2026; requirements unchanged and authoritative.
-- Current phase: Phase 1 — durable search foundation and source-specific query processing.
-- Merged: PR #10 (`e2a645dc0da5`), #12 (`c3355ac735c6`), #13 (`deb2b735f12f`) and [#15](https://github.com/studeployed/RESEARCH-Y/pull/15) on 24 October 2026 (merge `19b6c7d1d44d5e4e14686de139509de33d976e44`).
-- Open **[PR #16](https://github.com/studeployed/RESEARCH-Y/pull/16)**, branch `docs/public-repository-governance`, updated against merged `main`. It corrects public-repository governance documentation and removes duplicate feature-branch push workflows. **It is unmerged; owner authorisation is required before merging.**
-- Active branch ruleset `RESEARCH-Y - Protect main`, ID `25788555`, targets `main` only with no bypass. Requires pull requests, resolved review conversations, all four Windows/Linux × Python 3.12/3.13 GitHub Actions checks, and up-to-date branches; blocks deletion and force-push. Zero mandatory human approvals avoid blocking the sole maintainer, but owner approval remains required.
-- Known deferred Windows directory-junction security finding: [issue #11](https://github.com/studeployed/RESEARCH-Y/issues/11), before untrusted imports/release.
+- Repository: **public** https://github.com/studeployed/RESEARCH-Y.
+- Approved specification: `RESEARCH-Y_SPEC.md` v`1.0.0-draft.1`,
+  approved 23 October 2026; no substantive requirements changed.
+- Current phase: **Phase 1 — core biomedical search**.
+- **Merged PRs:** [#10](https://github.com/studeployed/RESEARCH-Y/pull/10)
+  (projects), [#12](https://github.com/studeployed/RESEARCH-Y/pull/12)
+  (schema/migration), [#13](https://github.com/studeployed/RESEARCH-Y/pull/13)
+  (approved strategy/run persistence), [#15](https://github.com/studeployed/RESEARCH-Y/pull/15)
+  (offline OR query compiler), and [#16](https://github.com/studeployed/RESEARCH-Y/pull/16)
+  (public governance and CI triggers). Latest verified merged `main`:
+  `d30a02158eee303c8a045f66a86915304248ad48`.
+- Active ruleset `RESEARCH-Y - Protect main` (ID `25788555`):
+  pull requests and resolved conversations mandatory; all four current-branch
+  Windows/Linux × Python 3.12/3.13 checks mandatory; force-pushes/deletion
+  restricted. **Never merge without the owner's explicit approval.**
+- **Open development branch:** `feat/p1-03b-pubmed-translation-probe`
+  for [issue #6](https://github.com/studeployed/RESEARCH-Y/issues/6).
+  Its code/tests are in [PR #17](https://github.com/studeployed/RESEARCH-Y/pull/17), **unmerged**.
+- Security issue [#11](https://github.com/studeployed/RESEARCH-Y/issues/11)
+  (Windows junctions) remains separately deferred until untrusted import or
+  release. Hosted Actions quota issue #14 was resolved by public visibility.
 
-## Verified completed functionality and evidence
+## Last implemented and verified functionality
 
-- Self-contained portable projects, versioned SQLite schema/migrations and backups, atomic audit records, immutable researcher-approved broad-OR strategy snapshots, pending runs and source-query plans.
-- Offline query compiler generating transparent PubMed All Fields and Web of Science Starter Topic queries; optional OR-boundary chunking, no hidden narrowing or fabricated result counts.
-- [PR #15 checks](https://github.com/studeployed/RESEARCH-Y/actions/runs/40100711005): all four Windows/Linux × Python 3.12/3.13 jobs passed, **113 tests per job, 92% branch-aware overall coverage**; Codex code and security reviews found no issues.
-- [Post-merge `main` checks](https://github.com/studeployed/RESEARCH-Y/actions/runs/40116828421): all four jobs succeeded on merge `19b6c7d1d44d`.
-- GitHub Actions minutes issue [#14](https://github.com/studeployed/RESEARCH-Y/issues/14) resolved by moving to public; previously failed runs were rerun successfully. No underlying Python code fault was identified.
-- PR #16: new workflow trigger config and two regression assertions prepared on this feature branch. **Do not represent its tests or code/security review as passed until this PR's current head has been checked.**
+- Merged: self-contained portable projects; versioned SQLite schema and
+  recoverable migration; frozen approved OR-only strategies; pending runs and
+  query plans; deterministic PubMed All Fields/WoS Starter Topic query previews.
+- [PR #16 post-merge workflow 40120157266](https://github.com/studeployed/RESEARCH-Y/actions/runs/40120157266)
+  passed all four Windows/Linux Python 3.12/3.13 jobs.
+- P1-03b: count-only PubMed ESearch client with source-reported counts,
+  accepted translation/warnings, conservative semantic review flags,
+  NCBI-compatible pacing and secret-safe error handling. Also an opt-in live
+  smoke diagnostic requiring private contact settings.
+- **P1-03b offline local evidence:** 39 unit/fixture tests passed Python
+  3.13.5/Linux; 90% branch-aware coverage of the new module; two further compiler integration fixtures were added to GitHub, pending latest CI. Windows CI
+  and GitHub security/code review **not yet verified at this checkpoint**.
+- **Live provider evidence:** no public NCBI ESearch call completed in this
+  execution environment due to disabled DNS; PubMed AT-06 remains **partial/
+  unverified**, rather than marking this source fully validated.
 
-## Remaining work and limitations
+## Outstanding and next action
 
-- No actual PubMed or Web of Science retrieval yet, no verified provider-side accepted query translation/quotas, no deduplication service, final-count reconciliation, Excel export, graphical interface or Windows installer.
-- AT-05 remains partial and AT-06 unverified; a successfully compiled query is not evidence of source acceptance or completed retrieval. See issues #6–#8.
-- Keep credential handling and nonpublic research content out of public Git history and automated test fixtures.
+1. Check P1-03b PR current-head CI on Windows/Linux and code/security review.
+   Address only substantive scoped defects. Present the PR for owner approval;
+   do not merge automatically.
+2. Complete a permitted real PubMed ESearch smoke check using the runtime
+   contact setting and compare submitted versus accepted translation. Keep
+   warnings and unresolved phrase issues visible; **AT-06 not complete yet**.
+3. Continue PubMed full ID retrieval/partitioning and recovery (#7), Web of
+   Science Starter entitlement/pagination (#8), source reconciliation,
+   deduplication and initial Excel export, rather than more disconnected
+   infrastructure work. Update this handover after each verified milestone.
 
-## Next action
+## P1-03b scoped review update
 
-1. Inspect PR #16's current head for all four successful status checks, scope-limited code-quality and security review, and preserved compiler documentation. Present to project owner **without merging**.
-2. After owner's explicit merge approval, develop the smallest provider acceptance and translation verification increment under issue #6, followed by PubMed and Web of Science connectors (#7–#8). Prefer working end-to-end functionality over further disconnected infrastructure changes.
-3. Maintain this handover and requirements-to-tests mapping at each substantive checkpoint. Do not expand scope or alter the approved specification without project-owner approval.
+Codex identified a P2 redirect-following risk in the original count-probe
+transport. It was corrected by rejecting HTTP redirects and covered by a
+regression test. Original code-bearing PR checks passed; **the final updated
+head must still pass Windows/Linux tests and code/security review**. Real
+NCBI ESearch contact/translation verification remains pending. No retrieval
+completeness is claimed.
