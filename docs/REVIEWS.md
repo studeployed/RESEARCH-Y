@@ -109,3 +109,16 @@ The workflow's permissions, job identifiers, Windows/Linux matrix, Python versio
   code/security review must be checked against this exact feature head before
   a merge recommendation. Previously deferred Windows junction issue #11
   remains unrelated to this source-probe increment.
+
+### Network redirect review remediation — 24 October 2026
+
+Codex identified a genuine P2 issue in the first P1-03b commit: Python's
+default urllib opener could follow redirects to external/HTTP locations.
+The transport now installs an explicit redirect-rejecting handler. HTTP 3xx
+raises a sanitised `PubMedProbeError`; a 302 is not automatically retried.
+A deterministic regression fixture asserts no cross-origin, downgrade or
+alternate-path redirect can be followed. The transport's fixed official
+ESearch URL and no-credential-in-URL policy remain unchanged. Additional
+integrated strategy-compiler-to-ESearch tests were added, independent of live
+source verification. This is in-scope security remediation, not new
+architecture or a change to the scientific specification.

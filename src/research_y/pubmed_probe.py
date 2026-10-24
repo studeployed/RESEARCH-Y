@@ -15,7 +15,7 @@ import time
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from research_y.query_compiler import CompiledSource
 
@@ -62,8 +62,15 @@ class PubMedGroupProbe:
     retrieval_verified: bool = False
 
 
+class _RejectRedirects(HTTPRedirectHandler):
+    """Do not follow cross-origin redirects or HTTPS downgrade from ESearch."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _read_http(request: Request, timeout: float) -> bytes:
-    with urlopen(request, timeout=timeout) as response:
+    with build_opener(_RejectRedirects()).open(request, timeout=timeout) as response:
         body = response.read(MAX_RESPONSE_BYTES + 1)
     return body
 

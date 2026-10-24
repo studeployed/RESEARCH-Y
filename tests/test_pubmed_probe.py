@@ -339,3 +339,37 @@ def test_actual_compiled_group_flags_provider_phrase_fallback_for_review():
     assert result.status == "translation_review_required"
     assert result.chunk_results[0].review_required
     assert result.retrieval_verified is False
+
+
+def test_http_redirects_are_not_followed_or_downgraded():
+    """Redirecting an approved HTTPS source request must fail closed."""
+    from research_y import pubmed_probe
+
+    handler = pubmed_probe._RejectRedirects()
+    for target in (
+        "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+        "https://attacker.example/siphon",
+        "https://eutils.ncbi.nlm.nih.gov/other-resource",
+    ):
+        assert handler.redirect_request(None, None, 302, "Found", {}, target) is None
+
+    observed = []
+    class FakeOpener:
+        def open(self, request, timeout):
+            raise HTTPError(request.full_url, 302, "Redirect refused", {"Location": "http://elsewhere.example"}, None)
+    def opener(*args):
+        observed.extend(args)
+        return FakeOpener()
+
+    original = pubmed_probe.build_opener
+    pubmed_probe.build_opener = opener
+    try:
+        client = PubMedESearchProbeClient(email="tester@example.org")
+        with pytest.raises(PubMedProbeError) as exc:
+            client.probe(Q)
+    finally:
+        pubmed_probe.build_opener = original
+    assert any(isinstance(x, pubmed_probe._RejectRedirects) for x in observed)
+    assert exc.value.http_status == 302
+    assert not exc.value.retryable
+    assert "elsewhere.example" not in str(exc.value)

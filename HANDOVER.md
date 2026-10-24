@@ -19,7 +19,7 @@
   restricted. **Never merge without the owner's explicit approval.**
 - **Open development branch:** `feat/p1-03b-pubmed-translation-probe`
   for [issue #6](https://github.com/studeployed/RESEARCH-Y/issues/6).
-  Its initial code and tests are local and under GitHub review, **unmerged**.
+  Its code/tests are in [PR #17](https://github.com/studeployed/RESEARCH-Y/pull/17), **unmerged**.
 - Security issue [#11](https://github.com/studeployed/RESEARCH-Y/issues/11)
   (Windows junctions) remains separately deferred until untrusted import or
   release. Hosted Actions quota issue #14 was resolved by public visibility.
@@ -35,8 +35,8 @@
   accepted translation/warnings, conservative semantic review flags,
   NCBI-compatible pacing and secret-safe error handling. Also an opt-in live
   smoke diagnostic requiring private contact settings.
-- **P1-03b offline local evidence:** 38 unit/fixture tests passed Python
-  3.13.5/Linux; 90% branch-aware coverage of the new module. Windows CI
+- **P1-03b offline local evidence:** 39 unit/fixture tests passed Python
+  3.13.5/Linux; 90% branch-aware coverage of the new module; two further compiler integration fixtures were added to GitHub, pending latest CI. Windows CI
   and GitHub security/code review **not yet verified at this checkpoint**.
 - **Live provider evidence:** no public NCBI ESearch call completed in this
   execution environment due to disabled DNS; PubMed AT-06 remains **partial/
@@ -54,3 +54,12 @@
    Science Starter entitlement/pagination (#8), source reconciliation,
    deduplication and initial Excel export, rather than more disconnected
    infrastructure work. Update this handover after each verified milestone.
+
+## P1-03b scoped review update
+
+Codex identified a P2 redirect-following risk in the original count-probe
+transport. It was corrected by rejecting HTTP redirects and covered by a
+regression test. Original code-bearing PR checks passed; **the final updated
+head must still pass Windows/Linux tests and code/security review**. Real
+NCBI ESearch contact/translation verification remains pending. No retrieval
+completeness is claimed.

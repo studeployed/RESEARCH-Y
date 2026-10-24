@@ -29,7 +29,7 @@ status cannot become `completed_verified` based on this count probe.
 
 ## Reliability and scientific interpretation
 
-- Only the fixed NCBI HTTPS ESearch endpoint is used, via Python's standard
+- Only the fixed NCBI HTTPS ESearch endpoint is used, with **all redirects refused** (including cross-host and HTTPS-to-HTTP downgrade), via Python's standard
   library. Requests are POSTed with `db=pubmed`, `term=<exact query>`,
   `retmode=json` and `retmax=0`, with no language/species/date exclusions.
 - The caller supplies an E-utilities contact email at runtime; `tool=RESEARCHY`
@@ -53,7 +53,7 @@ status cannot become `completed_verified` based on this count probe.
 
 ## Offline tests and real-source gate
 
-`tests/test_pubmed_probe.py` runs without network or secret access. It
+`tests/test_pubmed_probe.py` runs without network or secret access, including an integration fixture from the **actual approved query compiler** into the ESearch probe. It
 covers: count 0 versus unavailable count; embedded errors; translated AND/MeSH;
 phrase warnings; malformed payload; source error; bounded response size;
 POST form/credential separation; 429/transport errors; rate pacing; group
@@ -93,3 +93,5 @@ approved Phase 1 scope. A count-only probe does not fulfil these tasks.
 
 These links document provider behaviour; the scientific and product
 requirements remain in `RESEARCH-Y_SPEC.md`.
+
+The initial pull-request test matrix passed before the redirect change. A final current-head Windows/Linux matrix and source/security re-review must still succeed before recommending a merge.
