@@ -1,6 +1,6 @@
 # RESEARCH-Y
 
-Python-based, locally operated biomedical literature discovery application for Windows. **Development stage: Phase 1 durable storage; not yet an installable or usable search application.**
+Python-based, locally operated biomedical literature discovery application for Windows. **Development stage: Phase 1 durable storage and query compilation; not yet an installable or usable search application.**
 
 ## Scientific and technical baseline
 
@@ -69,3 +69,19 @@ assert list_run_queries(project, run.run_id)[0].reported_matches is None
 ```
 
 This example does not actually retrieve records. Term approval must be a genuine researcher decision made before calling the API; the API records the confirmation, not a peer-review substitute. Provider query compilation, validation, execution and count reconciliation are separate increments.
+
+## Offline source-specific strategy preview (P1-03a, proposed)
+
+On the P1-03a feature branch, the `research_y.query_compiler` module compiles a **frozen, researcher-approved strategy snapshot** into transparent PubMed `[All Fields]` and Web of Science Starter `TS` OR queries, without executing them:
+
+```python
+from research_y.storage import get_strategy_snapshot
+from research_y.query_compiler import compile_both
+
+approved = get_strategy_snapshot(project, strategy.strategy_version_id)
+pubmed_preview, wos_preview = compile_both(approved)
+print(pubmed_preview.logical_union_query)
+print(wos_preview.logical_union_query)
+```
+
+The returned source/group chunks retain atomic-term provenance and provider field limitations. Provider length limits are not guessed: a connector must provide an evidence-based `max_query_bytes` when known. No hit counts, source translation, source API acceptance, or completeness is asserted. See [query compilation documentation](docs/QUERY_COMPILER.md) and pending source checks.

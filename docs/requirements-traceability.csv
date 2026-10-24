@@ -1,8 +1,8 @@
 requirement_id,phase,acceptance_tests,test_reference,status
 METH-01,0,"AT-17,AT-18",planned,planned
 METH-02,0,"AT-04,AT-05",planned,planned
-METH-03,0,"AT-05,AT-14",planned,planned
-METH-04,0,"AT-06,AT-08",planned,planned
+METH-03,0,"AT-05,AT-14",tests/test_query_compiler.py (no implicit exclusions; compiler only),partial
+METH-04,0,"AT-06,AT-08",tests/test_query_compiler.py (source-field disclosure only),partial
 METH-05,0,"AT-16,AT-19",planned,planned
 ARCH-01,0,"AT-20,AT-22",planned,planned
 ARCH-02,0,"AT-09,AT-22",planned,planned
@@ -20,12 +20,12 @@ SEARCH-02,1,"AT-04,AT-05",planned,planned
 SEARCH-03,1,AT-04,planned,planned
 SEARCH-04,1,AT-04,tests/test_strategy_storage.py (explicit approval gate only),partial
 SEARCH-05,1,"AT-04,AT-18",tests/test_strategy_storage.py (term provenance snapshot only),partial
-SEARCH-06,1,AT-05,planned,planned
-SEARCH-07,1,AT-06,planned,planned
-SEARCH-08,1,AT-08,planned,planned
-SEARCH-09,1,"AT-05,AT-06",planned,planned
-SEARCH-10,1,AT-05,planned,planned
-SEARCH-11,1,"AT-04,AT-05",planned,planned
+SEARCH-06,1,AT-05,tests/test_query_compiler.py (offline union only),partial
+SEARCH-07,1,AT-06,tests/test_query_compiler.py (tagging preview; translation unverified),partial
+SEARCH-08,1,AT-08,tests/test_query_compiler.py (TS preview only),partial
+SEARCH-09,1,"AT-05,AT-06",tests/test_query_compiler.py (literal validation and chunking; limits unverified),partial
+SEARCH-10,1,AT-05,tests/test_query_compiler.py (no default exclusions),partial
+SEARCH-11,1,"AT-04,AT-05",tests/test_query_compiler.py (preview metadata only; no UI),partial
 SEARCH-12,1,AT-17,tests/test_strategy_storage.py (frozen approved snapshot only),partial
 SEARCH-13,1,"AT-17,AT-19",planned,planned
 SEARCH-14,1,AT-17,planned,planned
@@ -120,7 +120,7 @@ AT-01,1,AT-01,tests/test_projects.py (partial: project metadata only),partial
 AT-02,1,AT-02,tests/test_projects.py (partial: metadata path relocation only),partial
 AT-03,3,AT-03,planned,planned
 AT-04,2,AT-04,tests/test_strategy_storage.py (approval gate only),partial
-AT-05,1,AT-05,planned,planned
+AT-05,1,AT-05,tests/test_query_compiler.py (offline OR union fixture only),partial
 AT-06,1,AT-06,planned,planned
 AT-07,1,AT-07,planned,planned
 AT-08,1,AT-08,planned,planned
