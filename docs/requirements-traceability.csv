@@ -30,8 +30,8 @@ SEARCH-12,1,AT-17,tests/test_strategy_storage.py (frozen approved snapshot only)
 SEARCH-13,1,"AT-17,AT-19",tests/test_pubmed_probe.py (count-only time and query translation; no run persistence),partial
 SEARCH-14,1,AT-17,planned,planned
 SRC-01,1,AT-06,tests/test_pubmed_probe.py (ESearch count-only contact and rate pacing; no live smoke),partial
-SRC-02,1,AT-07,tests/test_pubmed_ids.py (bounded ID window only),partial
-SRC-03,1,"AT-07,AT-19",tests/test_pubmed_ids.py (incomplete/partition-required statuses only),partial
+SRC-02,1,AT-07,tests/test_pubmed_partition.py (recursive Create Date ID split; offline only),partial
+SRC-03,1,"AT-07,AT-19",tests/test_pubmed_partition.py (counted split provenance and incomplete cases),partial
 SRC-04,1,AT-07,planned,planned
 SRC-05,1,AT-08,planned,planned
 SRC-06,1,"AT-08,AT-09",planned,planned
@@ -45,7 +45,7 @@ SRC-13,2,AT-16,planned,planned
 SRC-14,2,AT-16,planned,planned
 RUN-01,1,AT-09,planned,planned
 RUN-02,1,AT-09,tests/test_strategy_storage.py (pending state only),partial
-RUN-03,1,"AT-08,AT-09",tests/test_pubmed_ids.py (page/ID progress only),partial
+RUN-03,1,"AT-08,AT-09",tests/test_pubmed_partition.py (split count/ID progress; no UI),partial
 RUN-04,1,AT-09,planned,planned
 RUN-05,1,AT-19,tests/test_pubmed_ids.py (ID-count reconciliation only),partial
 RUN-06,1,AT-09,planned,planned
@@ -98,7 +98,7 @@ UI-09,3,"AT-10,AT-15",planned,planned
 UI-10,3,"AT-03,AT-18",planned,planned
 COUNT-01,1,"AT-10,AT-19",planned,planned
 COUNT-02,1,AT-10,planned,planned
-COUNT-03,1,"AT-07,AT-08,AT-19",tests/test_pubmed_ids.py (bounded source-ID count checks only),partial
+COUNT-03,1,"AT-07,AT-08,AT-19",tests/test_pubmed_partition.py (parent/child and root unique-ID union; no live source),partial
 COUNT-04,1,"AT-10,AT-18",planned,planned
 COUNT-05,1,AT-19,planned,planned
 AUDIT-01,1,AT-17,tests/test_schema_migrations.py (immutable strategy/audit storage only),partial
@@ -122,7 +122,7 @@ AT-03,3,AT-03,planned,planned
 AT-04,2,AT-04,tests/test_strategy_storage.py (approval gate only),partial
 AT-05,1,AT-05,tests/test_query_compiler.py (offline OR union fixture only),partial
 AT-06,1,AT-06,tests/test_pubmed_probe.py (simulated response; accepted real translation pending),partial
-AT-07,1,AT-07,planned,planned
+AT-07,1,AT-07,tests/test_pubmed_partition.py (>10000 controlled fixture; live verification pending),partial
 AT-08,1,AT-08,planned,planned
 AT-09,1,AT-09,planned,planned
 AT-10,1,AT-10,planned,planned

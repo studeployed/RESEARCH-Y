@@ -122,3 +122,19 @@ retains prior validated pages on error.
 - Even `identifiers_reconciled_metadata_pending` **does not mean `completed_verified`**: PubMed metadata/abstract acquisition and search-run reconciliation remain outstanding. No source record is fabricated.
 
 See [bounded identifier retrieval](docs/PUBMED_IDENTIFIER_RETRIEVAL.md).
+
+## PubMed large-result identifier partitioning (P1-04b proposal)
+
+The feature branch `feat/p1-04b-crdt-date-partitioning` adds an internal
+`retrieve_date_partitioned_identifiers` API for approved PubMed query text and
+an **explicit caller-supplied** Create Date coverage window. A dated query
+greater than the bounded 9,000-record ESearch window is recursively split at
+whole calendar-day boundaries. Root and child counts, per-partition query text,
+boundaries and unique PMID results remain inspectable.
+
+The software does **not** silently choose a historical coverage window.
+If the requested window does not account for all of PubMed's unfiltered hits,
+or any single day remains oversized, the result is **incomplete**, not a
+truncated success. Even a reconciled PMID set remains
+`identifiers_reconciled_metadata_pending`, never a verified full-text/metadata
+search. See [the partitioning protocol](docs/PUBMED_DATE_PARTITIONING.md).
