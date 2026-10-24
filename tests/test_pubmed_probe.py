@@ -262,3 +262,80 @@ def test_unknown_group_refused_before_provider_requests():
     client = PubMedESearchProbeClient(email="tester@example.org", transport=lambda req, timeout: response())
     with pytest.raises(KeyError):
         probe_compiled_group(make_group(), "missing", client)
+
+
+def test_real_approved_snapshot_compiles_and_probes_without_record_retrieval():
+    """Exercise the actual approved-strategy compiler and ESearch fixture together."""
+    from research_y.query_compiler import compile_source
+
+    frozen = {
+        "format_version": 1,
+        "theme": "Right ventricular failure",
+        "logic": "OR",
+        "approved_by": "Researcher",
+        "groups": [
+            {
+                "group_id": "rv",
+                "label": "Right ventricular failure",
+                "group_order": 0,
+                "terms": [
+                    {"text": "right ventricle", "origin": "researcher",
+                     "approved": True, "rationale": "", "enabled": True},
+                    {"text": "ECMO", "origin": "researcher",
+                     "approved": True, "rationale": "", "enabled": True},
+                ],
+            },
+        ],
+    }
+    compiled = compile_source(frozen, "pubmed")
+    sent_queries = []
+    def fake_esearch(request, timeout):
+        query = parse_qs(request.data.decode())["term"][0]
+        sent_queries.append(query)
+        return response(query=query, count="218")
+    client = PubMedESearchProbeClient(
+        email="tester@example.org", transport=fake_esearch
+    )
+    result = probe_compiled_group(compiled, "rv", client)
+    assert sent_queries == [
+        '("right ventricle"[All Fields] OR "ECMO"[All Fields])'
+    ]
+    assert result.reported_group_matches == 218
+    assert result.status == "count_reported_not_retrieved"
+    assert result.retrieval_verified is False
+    assert result.chunk_results[0].translation_matches_submitted
+
+
+def test_actual_compiled_group_flags_provider_phrase_fallback_for_review():
+    from research_y.query_compiler import compile_source
+
+    frozen = {
+        "format_version": 1,
+        "theme": "Phrase safety",
+        "logic": "OR",
+        "approved_by": "Researcher",
+        "groups": [
+            {
+                "group_id": "phrase",
+                "label": "Example",
+                "group_order": 0,
+                "terms": [
+                    {"text": "right ventricle", "origin": "researcher",
+                     "approved": True, "rationale": "", "enabled": True}
+                ],
+            }
+        ],
+    }
+    compiled = compile_source(frozen, "pubmed")
+    def fake_esearch(request, timeout):
+        return response(
+            query='("right"[All Fields] AND "ventricle"[All Fields])',
+            warninglist={"quotedphrasesnotfound": ["right ventricle"]},
+        )
+    client = PubMedESearchProbeClient(
+        email="tester@example.org", transport=fake_esearch
+    )
+    result = probe_compiled_group(compiled, "phrase", client)
+    assert result.status == "translation_review_required"
+    assert result.chunk_results[0].review_required
+    assert result.retrieval_verified is False
