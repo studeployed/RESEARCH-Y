@@ -361,3 +361,20 @@ def test_private_error_in_external_baseline_count_requests_is_sanitised(at_final
         assert len(out.pmids) == 10003
     else:
         assert not out.pmids
+
+
+@pytest.mark.parametrize('large', [False, True])
+def test_unexpected_count_failure_inside_delegated_retrieval_is_sanitised(large):
+    fake = FakeClient(corpus() if large else corpus(3, 4))
+    original = fake.probe
+    query_to_fail = WINDOW.split()[1].query_for(Q) if large else Q
+    def crashes(query, *, allow_crdt_partition=False):
+        if query == query_to_fail and fake.probe_calls[query] >= 1:
+            raise RuntimeError('PRIVATE-CREDENTIAL-IN-EXCEPTION')
+        return original(query, allow_crdt_partition=allow_crdt_partition)
+    fake.probe = crashes
+    out = run(fake)
+    assert out.status == 'incomplete'
+    assert not out.source_retrieval_verified
+    assert 'PRIVATE-CREDENTIAL' not in repr(out)
+    assert len(out.pmids) == (5001 if large else 0)

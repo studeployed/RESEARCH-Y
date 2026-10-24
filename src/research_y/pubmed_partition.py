@@ -154,9 +154,12 @@ def retrieve_date_partitioned_identifiers(
         if root_count <= max_records:
             # For bounded queries the original exact search can be collected
             # without introducing any administrative date constraint.
-            small = retrieve_bounded_identifiers(
-                client, approved_query, page_size=page_size, max_records=max_records,
-            )
+            try:
+                small = retrieve_bounded_identifiers(
+                    client, approved_query, page_size=page_size, max_records=max_records,
+                )
+            except Exception:
+                return report("incomplete", "Bounded identifier request failed; no completion is claimed")
             if small.identifiers_reconciled and small.reported_matches == root_count:
                 identifiers.extend(small.pmids)
                 collected.append(small)
@@ -212,10 +215,13 @@ def retrieve_date_partitioned_identifiers(
 
         count_window(date_window, None, 0)
         for leaf in leaves:
-            result = retrieve_bounded_identifiers(
-                client, leaf.exact_subquery, page_size=page_size,
-                max_records=max_records, allow_crdt_partition=True,
-            )
+            try:
+                result = retrieve_bounded_identifiers(
+                    client, leaf.exact_subquery, page_size=page_size,
+                    max_records=max_records, allow_crdt_partition=True,
+                )
+            except Exception:
+                return report("incomplete", "Date partition identifier retrieval failed; prior leaves retained")
             collected.append(result)
             if not result.identifiers_reconciled or result.reported_matches != leaf.reported_matches:
                 return report(
