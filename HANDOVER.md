@@ -1,40 +1,37 @@
 # RESEARCH-Y handover — 24 October 2026
 
-## Current development phase and authoritative baseline
+## Current state
 
-- Current phase: Phase 0 foundation published; Phase 1 increment P1-01 complete at implementation/test level, **not merged**.
-- Authoritative specification: `RESEARCH-Y_SPEC.md` version `1.0.0-draft.1`, approved 23 October 2026; no substantive requirement changes.
-- Private repository: https://github.com/studeployed/RESEARCH-Y; `main` foundation commit `965ecafe27d85d4bcf77a93f08b9dab8ff3d3788`.
-- Open PR: **[#10 — P1-01 project storage](https://github.com/studeployed/RESEARCH-Y/pull/10)**, branch `feat/project-storage-increment-1`; code review remediation commit `1777ba7163ba`. **Unmerged: owner approval mandatory.**
-- Tracking issues: [#1–#9](https://github.com/studeployed/RESEARCH-Y/issues); #4 tracks PR #10; #5 is next increment.
-- Phase plan: `docs/ROADMAP.md`. No native GitHub milestones or branch protection configured by this connector; steps recorded in `docs/REPOSITORY_CONTROLS.md`.
+- **Authoritative specification:** `RESEARCH-Y_SPEC.md` v`1.0.0-draft.1`, approved 23 October 2026; requirements unchanged.
+- **Private repository:** https://github.com/studeployed/RESEARCH-Y.
+- **Phase:** Phase 1 — durable data foundation.
+- **Merged:** [PR #10](https://github.com/studeployed/RESEARCH-Y/pull/10) on 24 October 2026, merge commit `e2a645dc0da5dc7fb1536c4ce634e1ae754a7750`; issue #4 closed.
+- **In progress:** issue [#5](https://github.com/studeployed/RESEARCH-Y/issues/5), P1-02a on `feat/p1-02a-schema-migration`. **Unmerged; owner approval required.**
+- **Known deferred risk:** [#11](https://github.com/studeployed/RESEARCH-Y/issues/11), Windows directory-junction containment, to be handled before untrusted imports/release rather than expanding P1-02a scope.
 
-## Completed and verified functionality
+## Verified functionality and evidence
 
-- Portable project creation, reopen and relocation; immutable UUID and versioned JSON manifest.
-- SQLite identity/schema version, research theme/objectives persistence and audit events committed transactionally.
-- Missing/corrupt data and unsafe names fail clearly; simulated audit write failure rolls back the metadata change. No project is silently recreated.
-- Local Linux Python 3.13.5: **44 automated tests passed**, 95% branch-inclusive coverage; ResourceWarnings treated as errors.
-- GitHub Actions corrected-code **[PR run 40081458246](https://github.com/studeployed/RESEARCH-Y/actions/runs/40081458246)** and **[push run 40081454489](https://github.com/studeployed/RESEARCH-Y/actions/runs/40081454489)**: all four Windows/Linux × Python 3.12/3.13 jobs passed. Job logs confirm **44 tests and 95% coverage in each environment**.
-- Corrected `projects.py` / `test_projects.py` Git blob SHA values `caf443fc47af` / `0ee1599ca7ff` match the locally executed files; requirements traceability still passes. Reviews: `docs/REVIEWS.md`.
-- The delivered portion of PROJ-02/PROJ-03/PROJ-04 is tested, while AT-01 and AT-02 **remain partial**.
+- Previously merged P1-01: self-contained project create/open/move, versioned manifest and initial SQLite storage, transactional research setup/audit; GitHub Actions Windows/Linux Python 3.12/3.13 passed.
+- P1-02a **locally implemented and tested**: schema version 2, approved strategy snapshots, runs, source queries/records/memberships, separate unique publications and supporting entities; one-time version-1 migration with consistent SQLite backup and rollback.
+- Local Linux Python 3.13.5: **53 tests passed**, 93% branch-aware coverage; source compilation and requirement traceability checks passed.
+- GitHub Actions for P1-02a: **pending publication / review of results**, do not claim a pass until verified on the current head.
+- These are storage contract tests, not actual source searches or end-to-end acceptance of AT-01…AT-22.
 
-## Unfinished, failed or blocked
+## Open work and limitations
 
-- Previous Codex code review flagged SQLite hot-journal recovery (P1) and `project.ryproj` directory handling (P2); security review flagged a validation/write file-handle race (P3). **All three corrected in `1777ba7163ba`, with four new regression tests.** Prior review threads answered and resolved. Fresh Codex code/security re-reviews requested **24 October 2026**, not yet confirmed complete at this checkpoint; inspect their current findings before merge recommendation. Latest documentation-only change requires fresh CI check.
-- No PubMed or Web of Science connectors, search/recovery jobs, master records, AI, GUI, full export, archive or installer. No real-source smoke test or source-entitlement verification.
-- Migration and recoverable backup design (P1-02) and multi-writer prevention not yet implemented.
-- Native GitHub milestone creation, branch protection and required reviews are not available as write actions in the connected GitHub tool. See `docs/REPOSITORY_CONTROLS.md`; do not claim they are configured.
+- Full query processing and approved-term persistence APIs, search execution, PubMed/Web of Science connectivity, recovery jobs, deduplication decisions, classification services, Excel export, GUI and installer are not implemented.
+- Multi-writer management and complete project archive/restore remain separate increments. Windows junction hardening remains #11.
+- Branch protection and native GitHub milestones are not asserted to be configured (see `docs/REPOSITORY_CONTROLS.md`).
 
 ## Important decisions
 
-- Independent Python architecture only; no RESEARCH-X source, assumptions or dependencies.
-- Respect specification's broad OR-only search method, metadata provenance, immutable strategy/run history and truthful incomplete retrieval status.
-- No credentials or research data committed. Secure machine credentials remain a later feature.
-- No paid services, publishing, scope changes or PR merges without explicit owner approval.
+- Python-only, independent codebase, local-first, no paid or new runtime dependencies introduced in P1-02a.
+- Group union is OR-only; search execution must never silently narrow, invent source counts or declare incomplete retrieval verified.
+- Project-relative files, non-creating SQLite opens and identifiable/consistent backups before schema migration.
+- No merges, releases, destructive operations or substantive specification changes without explicit owner approval.
 
-## Next recommended step
+## Next recommended action
 
-1. Verify CI for latest PR head and **both** requested updated Codex reviews; address any new findings before final merge recommendation.
-2. Review PR #10 against its three resolved original findings; ask owner to approve merge only if satisfied. **Do not merge without explicit authorisation.**
-3. After approval and merge, continue with issue #5 (P1-02) on a new feature branch: versioned data model, backups and recoverable schema migrations, including failure/recovery tests.
+1. Check the P1-02a pull request and GitHub Actions Windows/Linux test evidence; review code-quality and security findings within the increment's scope.
+2. Present the PR for explicit owner merge approval; do not merge automatically.
+3. After merge, continue issue #5 with small operational persistence APIs that exercise the versioned research entities, then build the query compiler and connectors according to the approved phase order.

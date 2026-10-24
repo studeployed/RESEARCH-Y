@@ -13,7 +13,7 @@ PROJ-02,1,"AT-01,AT-02",tests/test_projects.py,partial
 PROJ-03,1,AT-02,tests/test_projects.py,partial
 PROJ-04,1,"AT-01,AT-09",tests/test_projects.py,partial
 PROJ-05,1,"AT-03,AT-21",planned,planned
-PROJ-06,1,"AT-03,AT-21",planned,planned
+PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py (pre-migration snapshots only),partial
 PROJ-07,1,"AT-01,AT-09",planned,planned
 SEARCH-01,1,AT-04,planned,planned
 SEARCH-02,1,"AT-04,AT-05",planned,planned
@@ -50,8 +50,8 @@ RUN-04,1,AT-09,planned,planned
 RUN-05,1,AT-19,planned,planned
 RUN-06,1,AT-09,planned,planned
 RUN-07,1,"AT-09,AT-21",planned,planned
-DATA-01,1,"AT-10,AT-11,AT-13",planned,planned
-DATA-02,1,"AT-10,AT-11",planned,planned
+DATA-01,1,"AT-10,AT-11,AT-13",tests/test_schema_migrations.py (schema entities only),partial
+DATA-02,1,"AT-10,AT-11",tests/test_schema_migrations.py (publication identity schema only),partial
 DATA-03,1,"AT-10,AT-12,AT-13",planned,planned
 DATA-04,1,"AT-10,AT-16",planned,planned
 DATA-05,1,AT-16,planned,planned
@@ -101,9 +101,9 @@ COUNT-02,1,AT-10,planned,planned
 COUNT-03,1,"AT-07,AT-08,AT-19",planned,planned
 COUNT-04,1,"AT-10,AT-18",planned,planned
 COUNT-05,1,AT-19,planned,planned
-AUDIT-01,1,AT-17,planned,planned
+AUDIT-01,1,AT-17,tests/test_schema_migrations.py (immutable strategy/audit storage only),partial
 AUDIT-02,1,AT-17,planned,planned
-AUDIT-03,1,"AT-10,AT-17",planned,planned
+AUDIT-03,1,"AT-10,AT-17",tests/test_schema_migrations.py (audit append-only),partial
 AUDIT-04,1,"AT-17,AT-18",planned,planned
 EXPORT-01,3,AT-18,planned,planned
 EXPORT-02,3,AT-18,planned,planned
@@ -136,5 +136,5 @@ AT-17,1,AT-17,planned,planned
 AT-18,1,AT-18,planned,planned
 AT-19,1,AT-19,planned,planned
 AT-20,2,AT-20,planned,planned
-AT-21,3,AT-21,planned,planned
+AT-21,3,AT-21,tests/test_schema_migrations.py (migration recovery only),partial
 AT-22,3,AT-22,planned,planned
