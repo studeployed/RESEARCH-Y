@@ -130,9 +130,10 @@ def parse_esearch_count(payload: bytes, exact_query: str, *, checked_at_utc: str
     if not isinstance(data, dict) or "error" in data or "ERROR" in data:
         raise PubMedProbeError("PubMed ESearch did not return a valid search result")
     count_value = data.get("count")
-    if isinstance(count_value, str) and count_value.isascii() and count_value.isdecimal():
+    if (isinstance(count_value, str) and 1 <= len(count_value) <= 20
+            and count_value.isascii() and count_value.isdecimal()):
         count = int(count_value)
-    elif type(count_value) is int and count_value >= 0:
+    elif type(count_value) is int and 0 <= count_value < 10**20:
         count = count_value
     else:
         raise PubMedProbeError("PubMed ESearch returned no valid count")

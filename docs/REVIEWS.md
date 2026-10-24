@@ -143,3 +143,7 @@ Both are corrected in the next feature-branch commit: callbacks are caught indep
 Three new regression tests prove private-message redaction and proper `incomplete` outcomes after a previously checked page. Local Python 3.13.5/Linux now reports **96 tests passed** in the PubMed probe and identifier-page suites, and **97% branch coverage** for `pubmed_ids.py`.
 
 The changed Git blobs match the locally tested source. Re-run the full Windows/Linux GitHub Actions matrix and request code/security rereview before recommending merge. No change to scientific query semantics, 9,000-ID safety ceiling, project schema or provider credentials.
+
+### Additional count-only ESearch input regression
+
+The shared existing count-only `parse_esearch_count` parser also accepted unbounded decimal count **strings**. A very long malformed count could raise Python's integer conversion `ValueError` before the bounded collector's `incomplete` handling. This is corrected in the same scoped P1-04a branch by bounding provider-reported count digits before conversion. New `test_initial_oversized_decimal_count_is_incomplete_not_uncaught_value_error` confirms the first probe reports `incomplete`, with no claimed count. Local PubMed suite: **97 tests passed**, new pagination module **97% branch-aware coverage**. Recheck the current full CI matrix and reviewer feedback before merge.

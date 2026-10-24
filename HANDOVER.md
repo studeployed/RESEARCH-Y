@@ -16,7 +16,7 @@
 - Offline PubMed All Fields / Web of Science Starter Topic query compiler.
 - Count-only PubMed ESearch client: accepted translation, actual source-reported count, warnings/review flags, credential-safe fixed-endpoint HTTPS POST.
 - **PR #17 post-merge GitHub Actions run [40123717086](https://github.com/studeployed/RESEARCH-Y/actions/runs/40123717086): all four Windows/Linux Python 3.12/3.13 jobs passed.** Pre-merge suite had 156 tests per environment.
-- **P1-04a locally tested, not merged:** paginated bounded PubMed ESearch identifiers, page/count/translation integrity, explicit partition-required and incomplete outcomes. Local Python 3.13.5/Linux: 96 PubMed probe/ID tests passed; updated new module 97% branch coverage. Two code-review P2 failure cases corrected: checkpoint exception redaction and unusually long decimal PMIDs.
+- **P1-04a locally tested, not merged:** paginated bounded PubMed ESearch identifiers, page/count/translation integrity, explicit partition-required and incomplete outcomes. Local Python 3.13.5/Linux: 97 PubMed probe/ID tests passed; new module 97% branch coverage. Initial ESearch count parsing was also bounded against unrealistic decimal numeric fields. Two code-review P2 failure cases corrected: checkpoint exception redaction and unusually long decimal PMIDs.
 - GitHub Actions for the P1-04a head must be inspected before claiming cross-platform verification.
 
 ## Unfinished / verification gates

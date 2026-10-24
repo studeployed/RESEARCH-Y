@@ -359,3 +359,14 @@ def test_oversized_source_count_field_fails_as_provider_error():
     with pytest.raises(PubMedProbeError,match="reported count"):
         parse_identifier_page(payload,exact_query=QUERY,retstart=0,
                               retmax=1,retrieved_at_utc=UTC)
+
+
+
+def test_initial_oversized_decimal_count_is_incomplete_not_uncaught_value_error():
+    client, _, _ = _provider(2)
+    client._transport = lambda req, timeout: _result(count="9"*5000)
+    report = retrieve_bounded_identifiers(client, QUERY)
+    assert report.status == "incomplete"
+    assert report.reported_matches is None
+    assert report.pmids == ()
+    assert "no valid count" in report.errors[0]
