@@ -327,3 +327,35 @@ def test_network_count_error_is_incomplete_not_fabricated_zero():
     assert report.reported_matches is None
     assert report.pmids==()
     assert "429" in report.errors[0]
+
+
+def test_checkpoint_raising_provider_exception_cannot_leak_private_path():
+    client,ids,_ = _provider(4)
+    def persist(page):
+        if page.retstart == 2:
+            raise PubMedProbeError("SECRET private-storage /users/home/db.sqlite3")
+    result=retrieve_bounded_identifiers(client,QUERY,page_size=2,
+                                        on_verified_page=persist)
+    assert result.status=="incomplete"
+    assert result.pmids==ids[:2]
+    assert len(result.pages)==1
+    assert "SECRET" not in repr(result)
+    assert "checkpoint failed" in result.errors[0]
+
+
+def test_oversized_decimal_pmid_after_valid_page_is_incomplete_not_exception():
+    bad_id="1"*5000
+    client,ids,_ = _provider(4,overrides={2:_result(count=4,offset=2,
+                        ids=[bad_id,"100003"])})
+    result=retrieve_bounded_identifiers(client,QUERY,page_size=2)
+    assert result.status=="incomplete"
+    assert result.pmids==ids[:2]
+    assert len(result.pages)==1
+    assert "invalid PMID" in result.errors[0]
+
+
+def test_oversized_source_count_field_fails_as_provider_error():
+    payload=_result(count="1"*5000,offset=0,ids=["123"])
+    with pytest.raises(PubMedProbeError,match="reported count"):
+        parse_identifier_page(payload,exact_query=QUERY,retstart=0,
+                              retmax=1,retrieved_at_utc=UTC)

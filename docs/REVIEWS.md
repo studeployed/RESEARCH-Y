@@ -131,3 +131,15 @@ architecture or a change to the scientific specification.
 - **Recovery:** callback injection supports atomic per-page storage by future callers, but does not yet implement durable checkpoint indexing or resume. Do not mark RUN-04, AT-07 or AT-09 complete.
 - **Security:** no new packages, no new credentials or network endpoint; the existing rejecting redirect handler and sanitised error reporting remain intact.
 - **Local test evidence:** Python 3.13.5/Linux, **93 PubMed probe + identifier pagination tests passed**; 96% branch-aware coverage of the new identifier module (overall 94% across locally loaded modules). Source compilation passed. Full GitHub Windows/Linux testing and Codex review are required before a merge recommendation.
+
+## P1-04a scoped code-review corrections — 24 October 2026
+
+Codex's initial review of PR #18 (`d6c94933d116`) found two valid P2 defects:
+1. A persistence callback throwing `PubMedProbeError` could bypass generic checkpoint error sanitisation and expose local storage path/message details.
+2. A source page with an unusually long decimal PMID or numeric count could overflow Python's integer-to-string conversion guard and escape a structured incomplete status.
+
+Both are corrected in the next feature-branch commit: callbacks are caught independently of provider parsing, and all callback exceptions are mapped to a fixed redacted checkpoint-failure message. Decimal counts and PMIDs have explicit length limits before integer conversion, rejecting unrealistic provider identifiers as source errors.
+
+Three new regression tests prove private-message redaction and proper `incomplete` outcomes after a previously checked page. Local Python 3.13.5/Linux now reports **96 tests passed** in the PubMed probe and identifier-page suites, and **97% branch coverage** for `pubmed_ids.py`.
+
+The changed Git blobs match the locally tested source. Re-run the full Windows/Linux GitHub Actions matrix and request code/security rereview before recommending merge. No change to scientific query semantics, 9,000-ID safety ceiling, project schema or provider credentials.

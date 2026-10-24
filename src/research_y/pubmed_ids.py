@@ -26,6 +26,8 @@ from research_y.pubmed_probe import (
 # below it until the partitioning algorithm has been verified separately.
 DEFAULT_SINGLE_QUERY_CEILING = 9000
 DEFAULT_PAGE_SIZE = 200
+MAX_COUNT_DIGITS = 20
+MAX_PMID_DIGITS = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +67,8 @@ class PubMedIdentifierResult:
 def _nonnegative_integer(value: Any, *, field: str) -> int:
     if type(value) is int and value >= 0:
         return value
-    if isinstance(value, str) and value.isascii() and value.isdecimal():
+    if (isinstance(value, str) and 1 <= len(value) <= MAX_COUNT_DIGITS
+            and value.isascii() and value.isdecimal()):
         return int(value)
     raise PubMedProbeError(f"PubMed identifier page has an invalid {field}")
 
@@ -113,7 +116,8 @@ def parse_identifier_page(
     for ident in listed:
         # Canonical PubMed identifiers are decimal positive integers, not
         # automatically reparsed DOI/PMCID fields or arbitrary string labels.
-        if not isinstance(ident, str) or not ident.isascii() or not ident.isdecimal() or int(ident) <= 0:
+        if (not isinstance(ident, str) or not 1 <= len(ident) <= MAX_PMID_DIGITS
+                or not ident.isascii() or not ident.isdecimal() or int(ident) <= 0):
             raise PubMedProbeError("PubMed identifier page contained an invalid PMID")
         if str(int(ident)) != ident:
             raise PubMedProbeError("PubMed identifier page contained a noncanonical PMID")
@@ -202,19 +206,18 @@ def retrieve_bounded_identifiers(
             if seen.intersection(page.pmids):
                 raise PubMedProbeError("PubMed returned overlapping identifiers across pages")
             if on_verified_page is not None:
-                on_verified_page(page)
+                try:
+                    on_verified_page(page)
+                except Exception:
+                    # A callback may raise PubMedProbeError itself, possibly
+                    # containing sensitive local paths. Never echo its message.
+                    return PubMedIdentifierResult(
+                        exact_query, "incomplete", count, tuple(ids), tuple(pages),
+                        ("Identifier page checkpoint failed; no completion is claimed",),
+                    )
         except PubMedProbeError as exc:
             return PubMedIdentifierResult(
                 exact_query, "incomplete", count, tuple(ids), tuple(pages), (str(exc),),
-            )
-        except Exception:
-            # A failed persistence checkpoint cannot be counted as a committed
-            # page. Hide exception details to avoid leaking external storage data.
-            if on_verified_page is None:
-                raise
-            return PubMedIdentifierResult(
-                exact_query, "incomplete", count, tuple(ids), tuple(pages),
-                ("Identifier page checkpoint failed; no completion is claimed",),
             )
         pages.append(page)
         ids.extend(page.pmids)

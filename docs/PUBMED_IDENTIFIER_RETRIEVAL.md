@@ -28,7 +28,7 @@ Even after counts and identifiers reconcile, the outcome is explicitly `identifi
 
 Offline deterministic fixtures cover a three-page query, true zero matches, >9,000 result deferral, unexpected query translation, count drift, duplicate PMIDs, incomplete/invalid pages, 429/503 network failures, partial-result retention, checkpoint callback failure, UTF-8/error bounds, canonical identifier validation and request-window enforcement.
 
-- Locally: **93 tests passed** with the original PubMed acceptance suite; **96% branch-aware coverage** of the new pagination module.
+- Locally: **96 tests passed** with the original PubMed acceptance suite; **97% branch-aware coverage** of the new pagination module. Includes corrected callback exception sanitisation and oversized numeric PMID/count rejection.
 - GitHub Actions Windows/Linux Python 3.12/3.13: **pending** on this PR until actual successful jobs are inspected.
 - Live NCBI accepted query/ID verification: **not performed** here. An authorised runtime contact is required; no credentials are stored in public source.
 
