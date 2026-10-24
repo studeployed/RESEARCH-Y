@@ -9,21 +9,20 @@ Verified 24 October 2026 via GitHub repository and ruleset metadata. This page r
 - Bypass list: empty.
 - Rules enabled: restrict deletions, prevent non-fast-forward/force pushes, require pull requests before merging, require review-thread resolution.
 - Human approving-review requirement: zero, enabling the sole project owner to authorise merges without a second human reviewer.
-- **Not enabled yet:** required automated status checks. This is the remaining protection setting to configure.
+- **Required checks enabled:** strict (up-to-date) status checks from GitHub Actions, all four Windows/Linux × Python 3.12/3.13 jobs.
 - GitHub Actions external-contributor approval setting: reported configured by the repository owner; the connector cannot inspect this account setting.
 
-## Complete the required checks
+## Required checks and continuous integration
 
-In [repository ruleset settings](https://github.com/studeployed/RESEARCH-Y/settings/rules), edit ruleset `RESEARCH-Y - Protect main` and tick **Require status checks to pass**. Choose **GitHub Actions** when specifying the expected source, and require the following four checks:
-
+The active ruleset requires four checks from GitHub Actions:
 - `Test ubuntu-latest / Python 3.12`
 - `Test ubuntu-latest / Python 3.13`
 - `Test windows-latest / Python 3.12`
 - `Test windows-latest / Python 3.13`
 
-Enable checking that the pull-request branch is up-to-date before merging when appropriate. Save the ruleset and verify that all four checks appear in its `required_status_checks` rule. Do not enable **Restrict updates** on `main`: without a bypass, it can interfere with legitimate pull-request merges.
+Strict mode requires the pull-request branch to be current with `main` before merging. The workflow optimisation proposed in PR #16 retains this exact matrix and expected check names; it changes only the event triggers to run on pull requests targeting `main`, pushes to `main`, and manual dispatch, **not** extra feature-branch pushes.
 
-**Approval policy:** GitHub's green checks are a necessary verification signal, not the project owner's permission to merge. ChatGPT must never merge a pull request without the owner's explicit authorisation.
+**Approval policy:** GitHub's green checks do not replace the project owner's explicit merge approval. Neither ChatGPT nor automated apps may merge without the owner's authorisation.
 
 ## Native milestones
 

@@ -1,32 +1,32 @@
 # RESEARCH-Y handover — 24 October 2026
 
-## Authoritative state
+## Authoritative repository and scope
 
-- Repository: **public** https://github.com/studeployed/RESEARCH-Y (visibility changed by owner on 24 October 2026). Source/history/issues visible; no new write access granted to outside users.
-- Specification: `RESEARCH-Y_SPEC.md` v`1.0.0-draft.1`, approved 23 October 2026, unchanged and authoritative.
-- Phase: Phase 1 — core literature search foundation.
-- Merged PRs: [#10](https://github.com/studeployed/RESEARCH-Y/pull/10), [#12](https://github.com/studeployed/RESEARCH-Y/pull/12), [#13](https://github.com/studeployed/RESEARCH-Y/pull/13) (merge `deb2b735f12f06fc2ecb8fcc6b40640f746265d2`).
-- Open [PR #15](https://github.com/studeployed/RESEARCH-Y/pull/15), branch `feat/p1-03a-broad-or-query-compiler`, unmerged. Owner approval required.
-- Active branch ruleset **RESEARCH-Y - Protect main** (`25788555`): default branch only; requires pull requests and resolved review threads, blocks force-pushes and deletion, zero mandatory approvals, empty bypass. **Required status checks remain absent; owner must add four Windows/Linux checks.**
-- Known deferred issue [#11](https://github.com/studeployed/RESEARCH-Y/issues/11): Windows directory-junction containment, required before untrusted project import/release.
+- Repository: **public** https://github.com/studeployed/RESEARCH-Y; visible source, development history, issues and pull requests. The owner has authorised this visibility; outside users were not given push or merge rights.
+- Specification: `RESEARCH-Y_SPEC.md` v`1.0.0-draft.1`, approved 23 October 2026; requirements unchanged and authoritative.
+- Current phase: Phase 1 — durable search foundation and source-specific query processing.
+- Merged: PR #10 (`e2a645dc0da5`), #12 (`c3355ac735c6`), #13 (`deb2b735f12f`) and [#15](https://github.com/studeployed/RESEARCH-Y/pull/15) on 24 October 2026 (merge `19b6c7d1d44d5e4e14686de139509de33d976e44`).
+- Open **[PR #16](https://github.com/studeployed/RESEARCH-Y/pull/16)**, branch `docs/public-repository-governance`, updated against merged `main`. It corrects public-repository governance documentation and removes duplicate feature-branch push workflows. **It is unmerged; owner authorisation is required before merging.**
+- Active branch ruleset `RESEARCH-Y - Protect main`, ID `25788555`, targets `main` only with no bypass. Requires pull requests, resolved review conversations, all four Windows/Linux × Python 3.12/3.13 GitHub Actions checks, and up-to-date branches; blocks deletion and force-push. Zero mandatory human approvals avoid blocking the sole maintainer, but owner approval remains required.
+- Known deferred Windows directory-junction security finding: [issue #11](https://github.com/studeployed/RESEARCH-Y/issues/11), before untrusted imports/release.
 
-## Functionality and test evidence
+## Verified completed functionality and evidence
 
-- P1-01: project create/open/relocate, transactional storage and audit.
-- P1-02a: SQLite version 2, distinct publication/retrieval identities and recoverable version-1 migration.
-- P1-02b: immutable approved strategy snapshots, pending runs, unexecuted source queries and audit rollback.
-- P1-03a (unmerged PR #15): deterministic offline broad-OR PubMed All Fields/Web of Science Starter Topic compiler, tested with controlled fixtures; **no live source verification or search execution yet**.
-- GitHub Actions on the private repository exhausted its minute allocation; source code had no demonstrated Python regression. After becoming public, [PR #15 run 40100711005](https://github.com/studeployed/RESEARCH-Y/actions/runs/40100711005), attempt 2, passed on all four Windows/Linux Python 3.12/3.13 jobs. A rerun of the former `main` run [40097664003](https://github.com/studeployed/RESEARCH-Y/actions/runs/40097664003), attempt 3, passed all four jobs. Logs show 74 tests passed and 93% coverage in every matrix job.
+- Self-contained portable projects, versioned SQLite schema/migrations and backups, atomic audit records, immutable researcher-approved broad-OR strategy snapshots, pending runs and source-query plans.
+- Offline query compiler generating transparent PubMed All Fields and Web of Science Starter Topic queries; optional OR-boundary chunking, no hidden narrowing or fabricated result counts.
+- [PR #15 checks](https://github.com/studeployed/RESEARCH-Y/actions/runs/40100711005): all four Windows/Linux × Python 3.12/3.13 jobs passed, **113 tests per job, 92% branch-aware overall coverage**; Codex code and security reviews found no issues.
+- [Post-merge `main` checks](https://github.com/studeployed/RESEARCH-Y/actions/runs/40116828421): all four jobs succeeded on merge `19b6c7d1d44d`.
+- GitHub Actions minutes issue [#14](https://github.com/studeployed/RESEARCH-Y/issues/14) resolved by moving to public; previously failed runs were rerun successfully. No underlying Python code fault was identified.
+- PR #16: new workflow trigger config and two regression assertions prepared on this feature branch. **Do not represent its tests or code/security review as passed until this PR's current head has been checked.**
 
-## Open blockers and further work
+## Remaining work and limitations
 
-- Configure mandatory GitHub Actions status checks in the active ruleset; instructions in `docs/REPOSITORY_CONTROLS.md`.
-- Issue [#14](https://github.com/studeployed/RESEARCH-Y/issues/14) documents original no-runner failures from exhausted private Actions minutes. The `main` rerun now passed; issue can be closed with evidence.
-- Codex code and security reviews at PR #15's last checked head found no findings. Confirm PR head/checks before merge recommendation.
-- Source connectors, PubMed accepted translation, Web of Science entitlement, large-retrieval completeness, master results, GUI, packaging and export are unimplemented.
+- No actual PubMed or Web of Science retrieval yet, no verified provider-side accepted query translation/quotas, no deduplication service, final-count reconciliation, Excel export, graphical interface or Windows installer.
+- AT-05 remains partial and AT-06 unverified; a successfully compiled query is not evidence of source acceptance or completed retrieval. See issues #6–#8.
+- Keep credential handling and nonpublic research content out of public Git history and automated test fixtures.
 
-## Next recommended development action
+## Next action
 
-1. Required status checks are not yet configured. The owner should require all four matrix checks under the active ruleset.
-2. Present PR #15 for owner review, leaving it unmerged until explicit authorisation.
-3. Then implement real source-query acceptance/translation checks and the PubMed/Web of Science connectors per issues #6–#8; preserve broad OR-only semantics and honest incomplete status.
+1. Inspect PR #16's current head for all four successful status checks, scope-limited code-quality and security review, and preserved compiler documentation. Present to project owner **without merging**.
+2. After owner's explicit merge approval, develop the smallest provider acceptance and translation verification increment under issue #6, followed by PubMed and Web of Science connectors (#7–#8). Prefer working end-to-end functionality over further disconnected infrastructure changes.
+3. Maintain this handover and requirements-to-tests mapping at each substantive checkpoint. Do not expand scope or alter the approved specification without project-owner approval.

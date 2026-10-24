@@ -1,6 +1,6 @@
 # RESEARCH-Y
 
-Python-based, locally operated biomedical literature discovery application for Windows. **Development stage: Phase 1 durable storage; not yet an installable or usable search application.**
+Python-based, locally operated biomedical literature discovery application for Windows. **Development stage: Phase 1 durable storage and query compilation; not yet an installable or usable search application.**
 
 ## Scientific and technical baseline
 
@@ -39,13 +39,13 @@ The parent directory must already exist. Opening a valid version-1 project now m
 
 ## Source control
 
-**Public** GitHub repository (visible source and development history), with an active ruleset protecting `main` from deletion, force-pushes and direct changes outside pull requests. The ruleset requires resolution of review conversations; required automated status checks are **not yet configured**. All substantive changes use feature branches and reviewed pull requests; **the project owner must explicitly approve every merge**. No existing application or project code is imported.
+**Public** GitHub repository with an active ruleset protecting `main`. The ruleset requires pull requests, resolution of review conversations, and successful Windows/Linux checks on Python 3.12 and 3.13. Feature branches remain unrestricted. **The project owner must explicitly approve every merge.** No existing application or project code is imported.
 
 No authentication credentials, research datasets or live project folders may be committed. Source credentials will eventually be stored in the operating-system credential store, not in `.ryproj` manifests. See [`SECURITY.md`](SECURITY.md).
 
 ## Strategy/run persistence (P1-02b merged in PR #13)
 
-The merged storage layer also supports this **storage-only** internal workflow:
+The merged storage layer provides this **storage-only** internal workflow:
 
 ```python
 from research_y.storage import (
@@ -69,3 +69,19 @@ assert list_run_queries(project, run.run_id)[0].reported_matches is None
 ```
 
 This example does not actually retrieve records. Term approval must be a genuine researcher decision made before calling the API; the API records the confirmation, not a peer-review substitute. Provider query compilation, validation, execution and count reconciliation are separate increments.
+
+## Offline source-specific strategy preview (P1-03a merged in PR #15)
+
+The merged `research_y.query_compiler` module compiles a **frozen, researcher-approved strategy snapshot** into transparent PubMed `[All Fields]` and Web of Science Starter `TS` OR queries, without executing them:
+
+```python
+from research_y.storage import get_strategy_snapshot
+from research_y.query_compiler import compile_both
+
+approved = get_strategy_snapshot(project, strategy.strategy_version_id)
+pubmed_preview, wos_preview = compile_both(approved)
+print(pubmed_preview.logical_union_query)
+print(wos_preview.logical_union_query)
+```
+
+The returned source/group chunks retain atomic-term provenance and provider field limitations. Provider length limits are not guessed: a connector must provide an evidence-based `max_query_bytes` when known. No hit counts, source translation, source API acceptance, or completeness is asserted. See [query compilation documentation](docs/QUERY_COMPILER.md) and pending source checks.

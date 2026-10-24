@@ -67,3 +67,23 @@ Original inline threads were replied to with evidence and marked resolved after 
 - Actual job logs each report **74 tests passed, 93% branch-inclusive code coverage**, successful requirement-to-test mapping, source compilation, dependency installation and dependency consistency.
 - This evidence validates tested persistence behaviour but does **not** demonstrate completed source retrieval, full study-count reconciliation, provider syntax validation, end-user GUI or all mandatory acceptance tests.
 - Codex code/security reviews and any final documentation-only commit CI must be inspected independently before a merge recommendation.
+
+## P1-03a offline compiler initial review — 24 October 2026
+
+- **Scope:** Python-only, deterministic broad-OR compiler; no network, credentials, source API calls, backend mutation or new dependency.
+- **Method:** atomic approved literals are quoted and joined by OR at both group and global levels; PubMed uses `[All Fields]`, WoS Starter uses `TS`. Field coverage limitations and non-full-text status are disclosed. Excluded/draft terms never silently enter a query.
+- **Accuracy limitations:** PubMed phrase-index fallback and exact accepted translation, and authorised WoS Starter API parsing, require separate real-source verification. These are explicitly documented unresolved acceptance gates, not claimed successes.
+- **Robustness:** explicit invalid-syntax rejection, optional provider-verified UTF-8 query-size bounds, never-truncated partition chunks, correct group provenance and no fabricated hit counts. Chunk counts must be reconciled via provider identifiers, not summed.
+- **Tests:** 39 pure offline tests passed Python 3.13.5/Linux; source compilation successful. Full Windows/Linux GitHub Actions is currently blocked by existing pre-runner setup failures on `main` (issue #14); do not claim cross-platform verification before actual jobs run.
+- **Further scope:** request code/security review on new PR, resolve material compiler defects within this increment, then return to provider connectors rather than unrelated hardening loops.
+
+## Public-repository governance and CI event optimisation — 24 October 2026
+
+The repository is now public, with a verified ruleset protecting `main`. Four required GitHub Actions jobs must pass, and review threads must be resolved. After PR #15 merged, PR #16 was brought up to date with the current `main` branch without dropping compiler code or documentation.
+
+This increment changes only GitHub Actions triggers from redundant feature-branch push plus pull-request runs to:
+- `push` on `main` after merge;
+- `pull_request` targeting `main` before merge;
+- explicit `workflow_dispatch` for manual runs.
+
+The workflow's permissions, job identifiers, Windows/Linux matrix, Python versions and test commands remain the same. `tests/test_ci_workflow.py` guards the intended triggers and check identifiers. The PR must pass the actual four required checks and receive code/security review before owner merge approval.
