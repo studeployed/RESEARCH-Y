@@ -147,3 +147,30 @@ The changed Git blobs match the locally tested source. Re-run the full Windows/L
 ### Additional count-only ESearch input regression
 
 The shared existing count-only `parse_esearch_count` parser also accepted unbounded decimal count **strings**. A very long malformed count could raise Python's integer conversion `ValueError` before the bounded collector's `incomplete` handling. This is corrected in the same scoped P1-04a branch by bounding provider-reported count digits before conversion. New `test_initial_oversized_decimal_count_is_incomplete_not_uncaught_value_error` confirms the first probe reports `incomplete`, with no claimed count. Local PubMed suite: **97 tests passed**, new pagination module **97% branch-aware coverage**. Recheck the current full CI matrix and reviewer feedback before merge.
+
+## P1-04b — Create Date partitioning initial review (24 October 2026)
+
+- **Scientific correctness:** The original OR-only concept query is retained;
+  each `crdt` date range is an explicit, logged provider-side partition only.
+  The unfiltered root count must equal the partition-date coverage count,
+  each disjoint sibling pair must sum to its parent, and the final unique
+  identifier union must reconcile with the original count. Counts are
+  independently checked at the end.
+- **Failure safety:** Missing Create Dates, one-day intervals still above the
+  9,000-ID safe window, translation warnings, provider errors, duplicate IDs,
+  run-budget exhaustion and source-side count changes never generate a
+  verified-complete status. Completed leaves are returned as partial
+  evidence on later failure.
+- **Security:** No new dependencies or secrets; existing HTTPS-only POST and
+  redirect restrictions remain. Date bounds are typed and validated;
+  source errors from injected count clients are sanitised. Credential storage
+  and untrusted project import are not introduced here.
+- **Locally verified:** 127 PubMed probe/ID/partition tests passed on
+  Python 3.13.5/Linux, 93% statement coverage of the new partition module.
+  Cross-platform GitHub Actions and independent code/security review must
+  be inspected on the current PR head; no live provider acceptance asserted.
+- **Outside this increment:** durable state checkpoint/resumption,
+  alternative splitting for a single-day overflow, original metadata EFetch,
+  actual count/date coverage acceptance on live PubMed and final
+  publication/master result reconciliation. No claim that full AT-07/AT-09
+  acceptance is complete.

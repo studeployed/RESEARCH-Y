@@ -111,6 +111,18 @@ def _review_translation(
     if re.search(r"\[(?:MeSH\s+(?:Terms|Major Topic|Subheading)|MeSH)\]", accepted, re.I):
         reasons.append("PubMed may have introduced unwanted Medical Subject Headings mapping")
     outside_quotes = re.sub(r'"[^"\n]*"', '""', accepted)
+    # Internal, explicit disjoint Create-Date partitions necessarily intersect
+    # an OR-only concept query with ONE date interval. This is not a new user
+    # concept operator. Exempt only the exact accepted and correctly shaped
+    # internal suffix; unexpected extra AND/NOT still triggers review.
+    if accepted.strip() == exact_query.strip() and re.fullmatch(
+        r"\(.+\) AND \(\d{4}/\d{2}/\d{2}:\d{4}/\d{2}/\d{2}\[crdt\]\)",
+        exact_query.strip(), flags=re.DOTALL,
+    ):
+        outside_quotes = re.sub(
+            r" AND \(\d{4}/\d{2}/\d{2}:\d{4}/\d{2}/\d{2}\[crdt\]\)$",
+            "", outside_quotes,
+        )
     if re.search(r"\b(?:AND|NOT)\b", outside_quotes, flags=re.I):
         reasons.append("PubMed translation includes AND/NOT outside quoted literals")
     return tuple(reasons)
