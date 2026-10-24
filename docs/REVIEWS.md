@@ -87,3 +87,25 @@ This increment changes only GitHub Actions triggers from redundant feature-branc
 - explicit `workflow_dispatch` for manual runs.
 
 The workflow's permissions, job identifiers, Windows/Linux matrix, Python versions and test commands remain the same. `tests/test_ci_workflow.py` guards the intended triggers and check identifiers. The PR must pass the actual four required checks and receive code/security review before owner merge approval.
+
+## P1-03b — PubMed count/translation source-probe review (24 October 2026)
+
+- **Scope:** A single-source PubMed ESearch count-only client, strict parser,
+  conservative translation review flags and an optional manually invoked smoke
+  command. No network requests run in normal CI, no ID retrieval, no source-run
+  status transition, no database-schema changes or new runtime dependencies.
+- **Scientific integrity:** provider-reported `count=0` is distinguishable
+  from an absent/error count; warnings, changed translations, MeSH and
+  unintended AND/NOT semantics are surfaced. Split-group provider counts
+  cannot be summed as a deduplicated union.
+- **Security:** fixed HTTPS provider endpoint, POST request body (rather than
+  URL query secrets), private runtime contact settings, sanitised provider
+  failures and no API key in results or logs. Pacing defaults below 3/s.
+- **Local evidence:** 38 synthetic fixture tests passed on Python 3.13.5/Linux,
+  90% branch-aware coverage of the new probe module. Smoke CLI refuses to make
+  any network request without an explicitly configured contact email.
+- **Outstanding:** real PubMed API acceptance/translated query validation and
+  fully integrated source job state are unverified. Windows/Linux CI and
+  code/security review must be checked against this exact feature head before
+  a merge recommendation. Previously deferred Windows junction issue #11
+  remains unrelated to this source-probe increment.

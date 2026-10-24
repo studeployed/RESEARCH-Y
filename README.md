@@ -85,3 +85,25 @@ print(wos_preview.logical_union_query)
 ```
 
 The returned source/group chunks retain atomic-term provenance and provider field limitations. Provider length limits are not guessed: a connector must provide an evidence-based `max_query_bytes` when known. No hit counts, source translation, source API acceptance, or completeness is asserted. See [query compilation documentation](docs/QUERY_COMPILER.md) and pending source checks.
+
+## PubMed count-only query acceptance (P1-03b proposal)
+
+The P1-03b feature branch introduces a narrowly scoped ESearch count/translation
+probe. It reports PubMed's actual `querytranslation`, any phrase/index warnings
+and source-reported count, **without retrieving IDs or declaring a complete
+search**. All checks in ordinary continuous integration use synthetic fixtures
+and never call external source APIs.
+
+Live verification is **opt-in**, requires your own contact details at runtime,
+and has not been performed in this development environment:
+
+```powershell
+$env:RESEARCHY_NCBI_CONTACT_EMAIL = "your-contact@example.org"
+python scripts/pubmed_smoke.py --query '("right ventricle"[All Fields])'
+Remove-Item Env:RESEARCHY_NCBI_CONTACT_EMAIL
+```
+
+An optional `RESEARCHY_NCBI_API_KEY` environment variable can be supplied for
+personal, permitted use. Neither variable belongs in the repository or logs.
+Even a valid count/translation is **not** a completed PubMed retrieval.
+See [source acceptance limits](docs/PUBMED_QUERY_ACCEPTANCE.md).
