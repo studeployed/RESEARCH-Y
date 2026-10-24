@@ -101,22 +101,12 @@ def _validate_folder_component(directory_name: str) -> str:
     return directory_name
 
 
-def _sqlite_connection(path: Path, *, read_only: bool = False) -> sqlite3.Connection:
-    # URI mode=rw/ro prevents SQLite creating a missing database on reopen.
-    mode = "ro" if read_only else "rw"
-    connection = sqlite3.connect(f"{path.as_uri()}?mode={mode}", uri=True, timeout=5)
+def _sqlite_connection(path: Path) -> sqlite3.Connection:
+    # mode=rw never creates missing databases. A writable connection is also
+    # necessary to recover a hot SQLite rollback journal after a crashed writer.
+    connection = sqlite3.connect(f"{path.as_uri()}?mode=rw", uri=True, timeout=5)
     connection.execute("PRAGMA foreign_keys=ON")
     return connection
-
-
-@contextmanager
-def _managed_connection(
-    path: Path, *, read_only: bool = False
-) -> Iterator[sqlite3.Connection]:
-    """Commit/rollback and close explicitly, including on Windows."""
-    with closing(_sqlite_connection(path, read_only=read_only)) as connection:
-        with connection:
-            yield connection
 
 
 def _create_database(database_path: Path, project: Project) -> None:
@@ -231,15 +221,25 @@ def _parse_manifest(path: Path) -> tuple[UUID, str, str]:
     return identifier, name, created_at_utc
 
 
-def _validate_database(project: Project) -> None:
+@contextmanager
+def _validated_project_connection(project: Project) -> Iterator[sqlite3.Connection]:
+    """Validate and operate on one open SQLite handle, with crash recovery.
+
+    The non-creating writable connection can roll back a hot journal before
+    validation. All subsequent reads/writes use the *same* verified handle:
+    a directory replacement after validation cannot redirect a later open.
+    """
     db_path = project.database_path
-    # Reject symlink escapes to keep storage within the project folder.
     if (project.root / "data").is_symlink() or db_path.is_symlink():
         raise ProjectFormatError("Project database may not be a symbolic link")
     if not db_path.is_file():
         raise ProjectFormatError("Project SQLite database is missing")
     try:
-        with _managed_connection(db_path, read_only=True) as connection:
+        connection = _sqlite_connection(db_path)
+    except sqlite3.DatabaseError as exc:
+        raise ProjectFormatError("Project database cannot be opened") from exc
+    with closing(connection):
+        try:
             schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
             if schema_version != SCHEMA_VERSION:
                 raise ProjectVersionError(f"Unsupported database schema: {schema_version}")
@@ -252,14 +252,20 @@ def _validate_database(project: Project) -> None:
             ).fetchone()
             if row != (str(project.identifier), project.name, project.created_at_utc):
                 raise ProjectFormatError("Manifest and SQLite identity do not agree")
-    except sqlite3.DatabaseError as exc:
-        raise ProjectFormatError("Project database cannot be read") from exc
+        except sqlite3.DatabaseError as exc:
+            raise ProjectFormatError("Project database cannot be read") from exc
+        # Do not convert operational exceptions inside yield into format errors.
+        # In particular, an audit-insert failure must rollback *and* remain
+        # identifiable as a failed write, not a malformed project.
+        with connection:
+            yield connection
 
 
 def open_project(folder_or_manifest: Path | str) -> Project:
     """Read and validate an existing project without creating missing data."""
     provided = Path(folder_or_manifest).expanduser()
-    if provided.name == MANIFEST_FILENAME:
+    # A directory itself may legitimately be named "project.ryproj".
+    if provided.name == MANIFEST_FILENAME and provided.is_file():
         provided = provided.parent
     root = provided.resolve(strict=True)
     if not root.is_dir():
@@ -269,14 +275,14 @@ def open_project(folder_or_manifest: Path | str) -> Project:
         raise ProjectFormatError("Project manifest may not be a symbolic link")
     identifier, name, created_at_utc = _parse_manifest(manifest_path)
     project = Project(root, identifier, name, created_at_utc)
-    _validate_database(project)
+    with _validated_project_connection(project):
+        pass
     return project
 
 
 def read_research_setup(project: Project) -> ResearchSetup:
     """Retrieve saved theme/objectives, never silently creating a database."""
-    _validate_database(project)
-    with _managed_connection(project.database_path, read_only=True) as connection:
+    with _validated_project_connection(project) as connection:
         theme, objectives = connection.execute(
             "SELECT theme, objectives FROM project_metadata WHERE singleton_id=1"
         ).fetchone()
@@ -287,8 +293,7 @@ def update_research_setup(project: Project, *, theme: str, objectives: str = "")
     """Transactionally save theme/objectives and one corresponding audit event."""
     if not isinstance(theme, str) or not isinstance(objectives, str):
         raise TypeError("Theme and objectives must be text")
-    _validate_database(project)
-    with _managed_connection(project.database_path) as connection:
+    with _validated_project_connection(project) as connection:
         connection.execute("BEGIN IMMEDIATE")
         old_theme, old_objectives = connection.execute(
             "SELECT theme, objectives FROM project_metadata WHERE singleton_id=1"

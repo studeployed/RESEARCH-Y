@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import shutil
 import sqlite3
+import subprocess
+import sys
 from uuid import UUID
 
 import pytest
@@ -295,3 +297,93 @@ def test_audit_contains_previous_and_current_values(tmp_path: Path) -> None:
         "previous": {"theme": "First", "objectives": "Original"},
         "current": {"theme": "Second", "objectives": "Updated"},
     }
+
+
+def test_hot_rollback_journal_recovers_without_losing_last_commit(tmp_path: Path) -> None:
+    """Simulate a terminated writer after dirty pages have spilled to SQLite."""
+    project = create_project(tmp_path, "Recoverable")
+    update_research_setup(project, theme="Last committed value")
+    # Running the crash in a child avoids terminating the test runner. With a
+    # deliberately small page cache the interrupted, large UPDATE spills pages
+    # and requires SQLite to roll back a hot journal on the next connection.
+    child = """import os, sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute('PRAGMA journal_mode=DELETE')
+conn.execute('PRAGMA cache_size=10')
+conn.execute('BEGIN IMMEDIATE')
+conn.execute('UPDATE project_metadata SET theme=? WHERE singleton_id=1', ('X' * 10000000,))
+os._exit(33)
+"""
+    process = subprocess.run(
+        [sys.executable, "-c", child, str(project.database_path)],
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert process.returncode == 33, process.stderr
+    journal = Path(str(project.database_path) + "-journal")
+    assert journal.is_file(), "Crash fixture did not create the required hot journal"
+
+    restored = open_project(project.root)
+    assert read_research_setup(restored).theme == "Last committed value"
+    assert not journal.exists(), "Crash recovery should consume the hot journal"
+    update_research_setup(restored, theme="Subsequent successful update")
+    assert read_research_setup(restored).theme == "Subsequent successful update"
+
+
+def test_project_directory_named_like_manifest_is_supported(tmp_path: Path) -> None:
+    project = create_project(tmp_path, "project.ryproj")
+    assert project.root.name == MANIFEST_FILENAME
+    assert open_project(project.root).identifier == project.identifier
+    assert open_project(project.manifest_path).identifier == project.identifier
+    update_research_setup(project, theme="Unambiguous directory vs file")
+    assert read_research_setup(open_project(project.root)).theme == (
+        "Unambiguous directory vs file"
+    )
+
+
+def test_project_reads_and_writes_use_one_identity_checked_handle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A replacement *between* connections must not redirect an update."""
+    import research_y.projects as module
+
+    actual = create_project(tmp_path, "Actual")
+    unrelated = create_project(tmp_path, "Unrelated")
+    update_research_setup(unrelated, theme="Must remain unchanged")
+    original_connection = module._sqlite_connection
+    opened = []
+
+    def simulated_swap(path: Path) -> sqlite3.Connection:
+        opened.append(path)
+        # A legacy validator opened the real project on call 1, then another
+        # database could be substituted before the write connection on call 2.
+        return original_connection(
+            unrelated.database_path if len(opened) > 1 else path
+        )
+
+    with monkeypatch.context() as m:
+        m.setattr(module, "_sqlite_connection", simulated_swap)
+        update_research_setup(actual, theme="Only actual project")
+        assert len(opened) == 1, "Identity validation and mutation used two connections"
+    assert read_research_setup(actual).theme == "Only actual project"
+    assert read_research_setup(unrelated).theme == "Must remain unchanged"
+
+
+def test_replaced_database_handle_fails_identity_check_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A replacement even before connection is rejected by verified identity."""
+    import research_y.projects as module
+
+    actual = create_project(tmp_path, "Expected")
+    unrelated = create_project(tmp_path, "Different")
+    original_connection = module._sqlite_connection
+
+    def substituted_handle(_path: Path) -> sqlite3.Connection:
+        return original_connection(unrelated.database_path)
+
+    with monkeypatch.context() as m:
+        m.setattr(module, "_sqlite_connection", substituted_handle)
+        with pytest.raises(ProjectFormatError, match="identity"):
+            update_research_setup(actual, theme="Should never write other project")
+    assert read_research_setup(unrelated).theme == ""
+    assert read_research_setup(actual).theme == ""
