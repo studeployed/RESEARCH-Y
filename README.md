@@ -39,13 +39,13 @@ The parent directory must already exist. Opening a valid version-1 project now m
 
 ## Source control
 
-Private GitHub repository, `main` as the integration branch (branch-protection configuration pending). All substantive changes use feature branches and reviewed pull requests; **the project owner must explicitly approve every merge**. No existing application or project code is imported.
+**Public** GitHub repository with an active ruleset protecting `main`. The ruleset requires pull requests, resolution of review conversations, and successful Windows/Linux checks on Python 3.12 and 3.13. Feature branches remain unrestricted. **The project owner must explicitly approve every merge.** No existing application or project code is imported.
 
 No authentication credentials, research datasets or live project folders may be committed. Source credentials will eventually be stored in the operating-system credential store, not in `.ryproj` manifests. See [`SECURITY.md`](SECURITY.md).
 
-## Strategy/run persistence (P1-02b proposal, unmerged)
+## Strategy/run persistence (P1-02b merged in PR #13)
 
-The feature branch also introduces a **storage-only** internal workflow:
+The merged storage layer provides this **storage-only** internal workflow:
 
 ```python
 from research_y.storage import (
@@ -70,9 +70,9 @@ assert list_run_queries(project, run.run_id)[0].reported_matches is None
 
 This example does not actually retrieve records. Term approval must be a genuine researcher decision made before calling the API; the API records the confirmation, not a peer-review substitute. Provider query compilation, validation, execution and count reconciliation are separate increments.
 
-## Offline source-specific strategy preview (P1-03a, proposed)
+## Offline source-specific strategy preview (P1-03a merged in PR #15)
 
-On the P1-03a feature branch, the `research_y.query_compiler` module compiles a **frozen, researcher-approved strategy snapshot** into transparent PubMed `[All Fields]` and Web of Science Starter `TS` OR queries, without executing them:
+The merged `research_y.query_compiler` module compiles a **frozen, researcher-approved strategy snapshot** into transparent PubMed `[All Fields]` and Web of Science Starter `TS` OR queries, without executing them:
 
 ```python
 from research_y.storage import get_strategy_snapshot

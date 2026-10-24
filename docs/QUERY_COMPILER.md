@@ -1,6 +1,6 @@
 # P1-03a — Offline source-query compilation
 
-**Status:** implemented and locally tested on `feat/p1-03a-broad-or-query-compiler`, not merged. This is a scientific-method compilation layer, **not** source acceptance, actual retrieval, counting or search verification.
+**Status:** merged in [PR #15](https://github.com/studeployed/RESEARCH-Y/pull/15) on 24 October 2026. The GitHub Actions matrix passed on Windows/Linux and Python 3.12/3.13 with 113 tests and 92% overall branch-aware coverage. This is a scientific-method compilation layer, **not** source acceptance, actual retrieval, counting or search verification.
 
 ## Approved input and safety boundaries
 
@@ -35,4 +35,4 @@ The full-union query remains available for transparent human review, but is mark
 
 Still outstanding: real PubMed accepted-query translation (AT-06); authenticated WoS Starter syntax/length verification; integration of compiler results with persisted source-query plans and pending run review; actual source execution and source/group count reconciliation (AT-05 remains partial). No dependency or version change to the approved specification is proposed.
 
-**CI limitation:** main-branch run `40097664003` following PR #13 failed before runner setup and failed identically when rerun, with no job logs. Issue #14 tracks this independent infrastructure blocker. Do not mislabel that as a passing or failing compiler test.
+**CI recovery:** after repository visibility changed to public, the formerly blocked [main run 40097664003](https://github.com/studeployed/RESEARCH-Y/actions/runs/40097664003) passed on attempt 3 and [PR #15 run 40100711005](https://github.com/studeployed/RESEARCH-Y/actions/runs/40100711005) passed on attempt 2. Issue #14 is resolved.

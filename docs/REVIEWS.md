@@ -76,3 +76,14 @@ Original inline threads were replied to with evidence and marked resolved after 
 - **Robustness:** explicit invalid-syntax rejection, optional provider-verified UTF-8 query-size bounds, never-truncated partition chunks, correct group provenance and no fabricated hit counts. Chunk counts must be reconciled via provider identifiers, not summed.
 - **Tests:** 39 pure offline tests passed Python 3.13.5/Linux; source compilation successful. Full Windows/Linux GitHub Actions is currently blocked by existing pre-runner setup failures on `main` (issue #14); do not claim cross-platform verification before actual jobs run.
 - **Further scope:** request code/security review on new PR, resolve material compiler defects within this increment, then return to provider connectors rather than unrelated hardening loops.
+
+## Public-repository governance and CI event optimisation — 24 October 2026
+
+The repository is now public, with a verified ruleset protecting `main`. Four required GitHub Actions jobs must pass, and review threads must be resolved. After PR #15 merged, PR #16 was brought up to date with the current `main` branch without dropping compiler code or documentation.
+
+This increment changes only GitHub Actions triggers from redundant feature-branch push plus pull-request runs to:
+- `push` on `main` after merge;
+- `pull_request` targeting `main` before merge;
+- explicit `workflow_dispatch` for manual runs.
+
+The workflow's permissions, job identifiers, Windows/Linux matrix, Python versions and test commands remain the same. `tests/test_ci_workflow.py` guards the intended triggers and check identifiers. The PR must pass the actual four required checks and receive code/security review before owner merge approval.
