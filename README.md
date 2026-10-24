@@ -107,3 +107,18 @@ An optional `RESEARCHY_NCBI_API_KEY` environment variable can be supplied for
 personal, permitted use. Neither variable belongs in the repository or logs.
 Even a valid count/translation is **not** a completed PubMed retrieval.
 See [source acceptance limits](docs/PUBMED_QUERY_ACCEPTANCE.md).
+
+## PubMed identifier retrieval (P1-04a, proposed)
+
+The new `research_y.pubmed_ids.retrieve_bounded_identifiers` helper uses the existing
+count-only ESearch client to request real PubMed identifier pages, never inventing
+identifiers, hit counts, source completion or missing metadata. It reconciles
+source-reported counts with unique page identifiers for a bounded query and
+retains prior validated pages on error.
+
+- The default safe query limit is **9,000 records** (below NCBI's documented 10,000-identifier PubMed ESearch window). Larger queries return `partition_required` without fetching a misleading partial first window.
+- Pages use `retstart` and `retmax` over the fixed HTTPS ESearch endpoint. Count drift, overlapping PMIDs, missing pages or changed query translation are surfaced as incomplete/review required.
+- An optional `on_verified_page` callback can transactionally persist each checked page. The pagination helper itself **does not provide durable resumption**; that and non-overlapping >10,000-hit partitioning are subsequent Phase 1 increments.
+- Even `identifiers_reconciled_metadata_pending` **does not mean `completed_verified`**: PubMed metadata/abstract acquisition and search-run reconciliation remain outstanding. No source record is fabricated.
+
+See [bounded identifier retrieval](docs/PUBMED_IDENTIFIER_RETRIEVAL.md).

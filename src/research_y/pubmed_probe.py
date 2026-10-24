@@ -99,6 +99,23 @@ def _translate_warning_map(value: Any, *, field: str) -> tuple[str, ...]:
     return tuple(messages)
 
 
+def _review_translation(
+    exact_query: str, accepted: str, warnings: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Flag unexpected translation and provider warnings, never certify semantics."""
+    reasons: list[str] = []
+    if warnings:
+        reasons.append("PubMed reported warnings/errors requiring query review")
+    if accepted.strip() != exact_query.strip():
+        reasons.append("PubMed query translation differs from the submitted query")
+    if re.search(r"\[(?:MeSH\s+(?:Terms|Major Topic|Subheading)|MeSH)\]", accepted, re.I):
+        reasons.append("PubMed may have introduced unwanted Medical Subject Headings mapping")
+    outside_quotes = re.sub(r'"[^"\n]*"', '""', accepted)
+    if re.search(r"\b(?:AND|NOT)\b", outside_quotes, flags=re.I):
+        reasons.append("PubMed translation includes AND/NOT outside quoted literals")
+    return tuple(reasons)
+
+
 def parse_esearch_count(payload: bytes, exact_query: str, *, checked_at_utc: str) -> PubMedCountProbe:
     """Parse ESearch JSON strictly, surfacing embedded HTTP-200 provider errors."""
     if not isinstance(payload, bytes) or len(payload) > MAX_RESPONSE_BYTES:
@@ -130,25 +147,15 @@ def parse_esearch_count(payload: bytes, exact_query: str, *, checked_at_utc: str
         _translate_warning_map(data.get("warninglist"), field="warninglist")
         + _translate_warning_map(data.get("errorlist"), field="errorlist")
     )
-    reasons: list[str] = []
-    if warnings:
-        reasons.append("PubMed reported warnings/errors requiring query review")
+    reasons = _review_translation(exact_query, translation, warnings)
     identical = translation.strip() == exact_query.strip()
-    if not identical:
-        reasons.append("PubMed query translation differs from the submitted query")
-    if re.search(r"\[(?:MeSH\s+(?:Terms|Major Topic|Subheading)|MeSH)\]", translation, re.I):
-        reasons.append("PubMed may have introduced unwanted Medical Subject Headings mapping")
-    # Boolean operators inside quoted literal text are not separate operators.
-    outside_quotes = re.sub(r'"[^"\n]*"', '""', translation)
-    if re.search(r"\b(?:AND|NOT)\b", outside_quotes, flags=re.I):
-        reasons.append("PubMed translation includes AND/NOT outside quoted literals")
     return PubMedCountProbe(
         exact_query=exact_query,
         accepted_translation=translation,
         reported_matches=count,
         checked_at_utc=checked_at_utc,
         warnings=warnings,
-        review_reasons=tuple(reasons),
+        review_reasons=reasons,
         translation_matches_submitted=identical,
     )
 
@@ -193,19 +200,32 @@ class PubMedESearchProbeClient:
             now = self._clock()
         self._next_allowed = now + MIN_SECONDS_BETWEEN_REQUESTS
 
-    def probe(self, exact_query: str) -> PubMedCountProbe:
+    def fetch_esearch_page(
+        self, exact_query: str, *, retstart: int = 0, retmax: int = 0,
+    ) -> bytes:
+        """Submit a fixed-endpoint ESearch POST for counts or a bounded ID page.
+
+        Request validation enforces PubMed's 10,000-identifier ESearch window.
+        It is not a whole-search completeness check and never follows redirects.
+        """
         if not isinstance(exact_query, str) or not exact_query.strip():
             raise ValueError("A compiled exact PubMed query is required")
         if any(ord(c) < 32 for c in exact_query):
             raise ValueError("Compiled PubMed query cannot contain control characters")
+        if type(retstart) is not int or retstart < 0:
+            raise ValueError("retstart must be a nonnegative integer")
+        if type(retmax) is not int or not 0 <= retmax <= 1000:
+            raise ValueError("retmax must be an integer from 0 to 1000")
+        if retstart + retmax > 10000:
+            raise ValueError("PubMed ESearch cannot page beyond its 10000-ID window")
+        if retmax == 0 and retstart != 0:
+            raise ValueError("Count-only requests require retstart zero")
         fields = {
-            "db": "pubmed",
-            "term": exact_query,
-            "retmode": "json",
-            "retmax": "0",
-            "tool": self._tool,
-            "email": self._email,
+            "db": "pubmed", "term": exact_query, "retmode": "json",
+            "retmax": str(retmax), "tool": self._tool, "email": self._email,
         }
+        if retstart:
+            fields["retstart"] = str(retstart)
         if self._api_key:
             fields["api_key"] = self._api_key
         request = Request(
@@ -216,15 +236,22 @@ class PubMedESearchProbeClient:
         )
         self._pace()
         try:
-            result = self._transport(request, self._timeout)
+            return self._transport(request, self._timeout)
         except HTTPError as exc:
             raise PubMedProbeError(
-                f"PubMed ESearch HTTP {exc.code}; count and translation not verified",
+                f"PubMed ESearch HTTP {exc.code}; count or identifiers not verified",
                 retryable=exc.code in (429, 500, 502, 503, 504),
                 http_status=exc.code,
             ) from None
         except (URLError, TimeoutError, OSError):
-            raise PubMedProbeError("PubMed ESearch network error; count and translation not verified", retryable=True) from None
+            raise PubMedProbeError(
+                "PubMed ESearch network error; count or identifiers not verified",
+                retryable=True,
+            ) from None
+
+    def probe(self, exact_query: str) -> PubMedCountProbe:
+        """Count-only query with accepted translation and warning inspection."""
+        result = self.fetch_esearch_page(exact_query, retmax=0)
         return parse_esearch_count(
             result, exact_query,
             checked_at_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),

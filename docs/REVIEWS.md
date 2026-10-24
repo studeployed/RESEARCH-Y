@@ -122,3 +122,12 @@ ESearch URL and no-credential-in-URL policy remain unchanged. Additional
 integrated strategy-compiler-to-ESearch tests were added, independent of live
 source verification. This is in-scope security remediation, not new
 architecture or a change to the scientific specification.
+
+## P1-04a — Bounded PubMed identifier pagination review (24 October 2026)
+
+- **Scope:** Extend the previously reviewed count-only ESearch transport with bounded `retstart`/`retmax` identifier pagination, without altering the fixed official HTTPS endpoint or allowing redirects.
+- **Data integrity:** provider ID lists are validated as canonical decimal PubMed identifiers; duplicate IDs within/across pages, short pages, count drift and unexpected translation cause explicit incomplete or review-required status. Previously accepted pages remain accessible for audit; unverified pages are not committed to the optional callback.
+- **Completeness:** PubMed's documented 10,000-ID ESearch window is enforced at the transport boundary. The bounded collector defaults to 9,000 records; an oversized query returns `partition_required` with no partial misleading first batch. A reconciled ID-only result never claims complete metadata retrieval or a completed search run.
+- **Recovery:** callback injection supports atomic per-page storage by future callers, but does not yet implement durable checkpoint indexing or resume. Do not mark RUN-04, AT-07 or AT-09 complete.
+- **Security:** no new packages, no new credentials or network endpoint; the existing rejecting redirect handler and sanitised error reporting remain intact.
+- **Local test evidence:** Python 3.13.5/Linux, **93 PubMed probe + identifier pagination tests passed**; 96% branch-aware coverage of the new identifier module (overall 94% across locally loaded modules). Source compilation passed. Full GitHub Windows/Linux testing and Codex review are required before a merge recommendation.
