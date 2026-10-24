@@ -60,3 +60,10 @@ Original inline threads were replied to with evidence and marked resolved after 
 - **Integrity:** one transaction contains each write and its append-only audit event; version numbering is allocated under `BEGIN IMMEDIATE`; source queries can only refer to a group in their run's frozen strategy; failed audit inserts roll back.
 - **Security:** all database writes use static parameterised SQL. Untrusted query strings are stored as data only; no executing SQL, source network calls or credentials. Previously tracked Windows junction issue #11 remains deferred to project import work.
 - **Test plan:** persistent reopen/relocation, immutable versions, cross-version group rejection, unapproved proposals, invalid JSON values, unknown source counts, audit failure/rollback, Windows/Linux compatibility. CI evidence must be recorded after the branch is published. This is assistant self-review, not an external sign-off.
+
+## P1-02b GitHub Actions evidence — 24 October 2026
+
+- Code-bearing PR #13 head `1aed8dee684d`, [push workflow 40096279206](https://github.com/studeployed/RESEARCH-Y/actions/runs/40096279206): successful in all four jobs (Windows/Linux, Python 3.12 and Python 3.13).
+- Actual job logs each report **74 tests passed, 93% branch-inclusive code coverage**, successful requirement-to-test mapping, source compilation, dependency installation and dependency consistency.
+- This evidence validates tested persistence behaviour but does **not** demonstrate completed source retrieval, full study-count reconciliation, provider syntax validation, end-user GUI or all mandatory acceptance tests.
+- Codex code/security reviews and any final documentation-only commit CI must be inspected independently before a merge recommendation.
