@@ -507,3 +507,32 @@ def test_pause_survives_failed_inflight_page_request(tmp_path):
     assert "SECRET-API-CREDENTIAL" not in repr(outcome)
     retry = FakeProvider({Q: ["1", "2", "3", "4"]})
     assert resume_pubmed_checkpoint(open_project(p.root), q, retry).snapshot.identifiers_reconciled
+
+
+def test_final_status_transition_preserves_pause_arriving_inside_write_window(
+    tmp_path, monkeypatch,
+):
+    import research_y.pubmed_checkpoint_resume as resume_module
+
+    project, query_id = project_query(tmp_path)
+    create_pubmed_checkpoint(project, query_id, plan(), page_size=2)
+    original_status = resume_module._set_checkpoint_status
+
+    def pause_just_before_final(project_arg, query_id_arg, status, reason, **kwargs):
+        if status == "identifiers_reconciled_metadata_pending":
+            pause_pubmed_checkpoint(project_arg, query_id_arg)
+        return original_status(project_arg, query_id_arg, status, reason, **kwargs)
+
+    monkeypatch.setattr(resume_module, "_set_checkpoint_status", pause_just_before_final)
+    result = resume_module.resume_pubmed_checkpoint(
+        project, query_id, FakeProvider({Q: ["1", "2", "3", "4"]}),
+    )
+    assert result.status == "paused"
+    assert result.snapshot.stored_status == "paused"
+    assert result.snapshot.pmids == ("1", "2", "3", "4")
+    assert result.snapshot.identifiers_reconciled
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute(
+            "SELECT status FROM source_queries WHERE query_id=?", (query_id,)
+        ).fetchone()[0] == "paused"
+    assert not result.source_retrieval_verified

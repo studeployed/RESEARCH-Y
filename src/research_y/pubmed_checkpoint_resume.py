@@ -108,16 +108,21 @@ def resume_pubmed_checkpoint(
     if not snapshot.identifiers_reconciled:
         return fail("Committed PubMed identifiers did not reconcile with source count")
     try:
-        _set_checkpoint_status(project, query_id, "identifiers_reconciled_metadata_pending",
-                               "Recounted PubMed identifiers; bibliographic metadata still outstanding")
+        _set_checkpoint_status(
+            project, query_id, "identifiers_reconciled_metadata_pending",
+            "Recounted PubMed identifiers; bibliographic metadata still outstanding",
+            preserve_pause=True,
+        )
     except Exception:
         return CheckpointResumeResult(
             "incomplete", inspect_pubmed_checkpoint(project, query_id),
             "Final checkpoint status could not be audited; identifier pages retained",
         )
+    latest = inspect_pubmed_checkpoint(project, query_id)
+    if latest.stored_status == "paused":
+        return CheckpointResumeResult("paused", latest, "Retrieval paused by user")
     return CheckpointResumeResult(
-        "identifiers_reconciled_metadata_pending",
-        inspect_pubmed_checkpoint(project, query_id),
+        "identifiers_reconciled_metadata_pending", latest,
     )
 
 
