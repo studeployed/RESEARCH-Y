@@ -353,3 +353,68 @@ def test_no_checkpoint_state_is_never_a_fictional_hit_count(tmp_path):
         inspect_pubmed_checkpoint(p, q)
     with sqlite3.connect(p.database_path) as db:
         assert db.execute("SELECT reported_matches FROM source_queries WHERE query_id=?", (q,)).fetchone()[0] is None
+
+
+def test_start_entrypoint_checkpoints_before_first_page_and_resumes_without_duplicate_fetch(tmp_path):
+    from research_y.pubmed_checkpoint_resume import start_checkpointed_pubmed_retrieval
+
+    project, query_id = project_query(tmp_path)
+    remote = FakeProvider({Q: ["1", "2", "3", "4"]})
+    remote.fail_at_offset = 2
+    first = start_checkpointed_pubmed_retrieval(
+        project, query_id, remote, date_window=WINDOW, page_size=2,
+    )
+    assert first.status == "incomplete"
+    assert first.snapshot.pmids == ("1", "2")
+    assert first.snapshot.pages_committed == 1
+    resumed_provider = FakeProvider({Q: ["1", "2", "3", "4"]})
+    second = start_checkpointed_pubmed_retrieval(
+        open_project(project.root), query_id, resumed_provider,
+        date_window=WINDOW, page_size=2,
+    )
+    assert second.status == "identifiers_reconciled_metadata_pending"
+    assert second.snapshot.pmids == ("1", "2", "3", "4")
+    assert resumed_provider.pages == [(Q, 2, 2)]
+    assert not second.source_retrieval_verified
+
+
+def test_start_entrypoint_rolls_back_failed_plan_audit_before_any_pages(tmp_path):
+    from research_y.pubmed_checkpoint_resume import start_checkpointed_pubmed_retrieval
+
+    project, query_id = project_query(tmp_path)
+    with sqlite3.connect(project.database_path) as db:
+        db.execute("""CREATE TRIGGER deny_new_plan BEFORE INSERT ON audit_events
+            WHEN NEW.event_type='pubmed_checkpoint_created'
+            BEGIN SELECT RAISE(ABORT, 'local audit failure'); END""")
+    fake = FakeProvider({Q: ["1", "2", "3", "4"]})
+    result = start_checkpointed_pubmed_retrieval(
+        project, query_id, fake, date_window=WINDOW, page_size=2,
+    )
+    assert result.status == "incomplete"
+    assert fake.pages == []
+    with sqlite3.connect(project.database_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM pubmed_checkpoint_runs").fetchone()[0] == 0
+        assert db.execute("SELECT reported_matches FROM source_queries WHERE query_id=?", (query_id,)).fetchone()[0] is None
+
+
+def test_start_entrypoint_date_partition_result_is_persisted(tmp_path):
+    from research_y.pubmed_checkpoint_resume import start_checkpointed_pubmed_retrieval
+
+    project, query_id = project_query(tmp_path)
+    left, right = WINDOW.split()
+    all_ids = [str(n) for n in range(1, 9002)]
+    fake = FakeProvider({
+        Q: all_ids,
+        WINDOW.query_for(Q): all_ids,
+        left.query_for(Q): all_ids[:4500],
+        right.query_for(Q): all_ids[4500:],
+    })
+    result = start_checkpointed_pubmed_retrieval(
+        project, query_id, fake, date_window=WINDOW, page_size=1000,
+    )
+    assert result.status == "identifiers_reconciled_metadata_pending"
+    assert result.snapshot.identifiers_reconciled
+    assert result.snapshot.pages_expected == 10
+    assert len(result.snapshot.pmids) == 9001
+    assert not result.source_retrieval_verified
+    assert inspect_pubmed_checkpoint(open_project(project.root), query_id).pmids == result.snapshot.pmids
