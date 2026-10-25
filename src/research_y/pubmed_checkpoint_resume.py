@@ -44,14 +44,21 @@ def resume_pubmed_checkpoint(
 
     def fail(message: str) -> CheckpointResumeResult:
         try:
-            _set_checkpoint_status(project, query_id, "incomplete", "Provider verification incomplete")
+            _set_checkpoint_status(
+                project, query_id, "incomplete", "Provider verification incomplete",
+                preserve_pause=True,
+            )
         except Exception:
             # A failed status audit cannot undo previously committed pages.
             return CheckpointResumeResult(
                 "incomplete", inspect_pubmed_checkpoint(project, query_id),
                 "Checkpoint status update failed; earlier pages remain intact",
             )
-        return CheckpointResumeResult("incomplete", inspect_pubmed_checkpoint(project, query_id), message)
+        latest = inspect_pubmed_checkpoint(project, query_id)
+        return CheckpointResumeResult(
+            "paused" if latest.stored_status == "paused" else "incomplete",
+            latest, message,
+        )
 
     if snapshot.stored_status == "paused":
         try:
@@ -135,7 +142,11 @@ def start_checkpointed_pubmed_retrieval(
         create_pubmed_checkpoint(project, query_id, result, page_size=page_size)
 
     def on_page(page: PubMedIdentifierPage) -> None:
-        commit_pubmed_checkpoint_page(project, query_id, page)
+        snap = commit_pubmed_checkpoint_page(project, query_id, page)
+        if snap.stored_status == "paused":
+            # The original in-memory collector understands callback errors as
+            # incomplete. We preserve the durable pause and stop its next page.
+            raise RuntimeError("PubMed checkpoint paused after committed page")
 
     result = retrieve_date_partitioned_identifiers(
         client, _source_query_text(project, query_id), date_window=date_window,
@@ -150,6 +161,8 @@ def start_checkpointed_pubmed_retrieval(
             "incomplete", (), 0, 0, (), False),
             "A complete checkpoint plan could not be established",
         )
+    if snap.stored_status == "paused":
+        return CheckpointResumeResult("paused", snap, "Retrieval paused by user")
     if not result.identifiers_reconciled:
         return CheckpointResumeResult("incomplete", snap,
                                       "Initial PubMed retrieval incomplete; checkpoint retained")

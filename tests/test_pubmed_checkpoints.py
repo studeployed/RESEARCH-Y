@@ -462,3 +462,48 @@ def test_failed_final_status_audit_returns_incomplete_and_keeps_page_data(tmp_pa
         db.execute("DROP TRIGGER deny_final_checkpoint_status")
     second = resume_pubmed_checkpoint(open_project(p.root), q, FakeProvider({Q: ["1", "2", "3", "4"]}))
     assert second.status == "identifiers_reconciled_metadata_pending"
+
+
+def test_initial_collection_honours_pause_without_automatic_resume(tmp_path):
+    from research_y.pubmed_checkpoint_resume import start_checkpointed_pubmed_retrieval
+
+    p, q = project_query(tmp_path)
+    fake = FakeProvider({Q: ["1", "2", "3", "4"]})
+    original_fetch = fake.fetch_esearch_page
+
+    def pause_during_first_page(query, *, retstart, retmax):
+        if retstart == 0:
+            pause_pubmed_checkpoint(p, q)
+        return original_fetch(query, retstart=retstart, retmax=retmax)
+
+    fake.fetch_esearch_page = pause_during_first_page
+    initial = start_checkpointed_pubmed_retrieval(p, q, fake, date_window=WINDOW, page_size=2)
+    assert initial.status == "paused"
+    assert initial.snapshot.stored_status == "paused"
+    assert initial.snapshot.pmids == ("1", "2")
+    assert fake.pages == [(Q, 0, 2)]
+    fresh = FakeProvider({Q: ["1", "2", "3", "4"]})
+    completed = start_checkpointed_pubmed_retrieval(
+        open_project(p.root), q, fresh, date_window=WINDOW, page_size=2,
+    )
+    assert completed.status == "identifiers_reconciled_metadata_pending"
+    assert fresh.pages == [(Q, 2, 2)]
+
+
+def test_pause_survives_failed_inflight_page_request(tmp_path):
+    p, q = project_query(tmp_path)
+    create_pubmed_checkpoint(p, q, plan(), page_size=2)
+    fake = FakeProvider({Q: ["1", "2", "3", "4"]})
+
+    def pause_then_error(query, *, retstart, retmax):
+        pause_pubmed_checkpoint(p, q)
+        raise RuntimeError("SECRET-API-CREDENTIAL-EXCEPTION")
+
+    fake.fetch_esearch_page = pause_then_error
+    outcome = resume_pubmed_checkpoint(p, q, fake)
+    assert outcome.status == "paused"
+    assert outcome.snapshot.stored_status == "paused"
+    assert not outcome.snapshot.pmids
+    assert "SECRET-API-CREDENTIAL" not in repr(outcome)
+    retry = FakeProvider({Q: ["1", "2", "3", "4"]})
+    assert resume_pubmed_checkpoint(open_project(p.root), q, retry).snapshot.identifiers_reconciled

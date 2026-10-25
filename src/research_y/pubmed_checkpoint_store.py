@@ -454,12 +454,19 @@ def commit_pubmed_checkpoint_page(
         return _snapshot_from_db(con, query_id)
 
 
-def _set_checkpoint_status(project: Project, query_id: str, status: str, reason: str) -> None:
+def _set_checkpoint_status(
+    project: Project, query_id: str, status: str, reason: str,
+    *, preserve_pause: bool = False,
+) -> None:
     if status not in ("incomplete", "paused", "identifiers_reconciled_metadata_pending"):
         raise ValueError("A checkpoint cannot mark a source search completed_verified")
     with _validated_project_connection(project) as con:
         con.execute("BEGIN IMMEDIATE")
         previous = _snapshot_from_db(con, query_id)
+        # The write lock is held. A user pause cannot be lost to a later
+        # failure transition even if the pause arrived after a caller read.
+        if preserve_pause and previous.stored_status == "paused":
+            return
         if status == "identifiers_reconciled_metadata_pending" and not previous.identifiers_reconciled:
             raise CheckpointIntegrityError("Identifier pages have not reconciled")
         if previous.stored_status == status:
