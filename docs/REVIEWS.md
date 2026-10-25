@@ -174,3 +174,12 @@ The shared existing count-only `parse_esearch_count` parser also accepted unboun
   actual count/date coverage acceptance on live PubMed and final
   publication/master result reconciliation. No claim that full AT-07/AT-09
   acceptance is complete.
+
+## P1-04c initial design review — 25 October 2026
+
+- **Scope:** additive SQLite schema v3 and recoverable PubMed page/partition checkpointing; no source restriction, query-compiler changes, credentials, external runtime dependencies or new services.
+- **Scientific integrity:** exact submitted source query and date subquery plan are immutable; every saved page records the count/translation and index relationship. Resume first rechecks source counts/translation and never equates identifier reconciliation with final verified publication retrieval.
+- **Storage integrity:** pages/PMIDs/audit events are one transaction, offsets are sequential, unique PMIDs cannot occur in multiple leaves, page replay is idempotent, page and plan digests are checked at reopen. Migration requires a consistent pre-upgrade snapshot and rollback on failure.
+- **Failure tests:** interrupted migration/audit, crash before/after page commit, missing/corrupt pages, changed source counts and translations, pause/resume, relocation, multi-partition union, and no false source-completion state.
+- **Open limitations:** original provider payload retention beyond digest, per-source licence metadata, single-day overflow alternative, live source acceptance, full EFetch, complete UI/job scheduler, full performance test. No completed acceptance scenario is invented.
+- **Verification:** independent current-head Windows/Linux GitHub Actions and staged Codex code/security reviews are mandatory before recommending a merge.

@@ -1,4 +1,4 @@
-# SQLite schema v2 (P1-02a)
+# SQLite schema v3 (P1-04c; additive to v2)
 
 This document describes storage **provided by the current increment**, not a completed literature-search engine. The definitive design constraints are in [the approved specification](../RESEARCH-Y_SPEC.md).
 
@@ -34,3 +34,16 @@ The `research_y.storage` API uses the existing v2 tables without another schema 
 The `plan_source_query` helper stores exact **unexecuted** PubMed or Web of Science Starter query text and caller-supplied parameters in association with a group belonging to the run's frozen strategy. Source-reported counts remain `NULL` and execution timestamps remain unset. The helper **does not validate provider syntax, translate terms, send requests or infer hit counts**; those functions belong to later source-specific compiler and connector increments.
 
 Transactions include their audit events. A failed audit write rolls back the associated approved strategy, run or planned query. These limited APIs do not implement public screening, deduplication, metadata processing, automatic model output acceptance or source-wide reconciliation.
+
+## PubMed durable checkpoint schema v3 (P1-04c)
+
+A new source-query-scoped, append-only **identifier checkpoint ledger** extends the v2 database:
+- `pubmed_checkpoint_runs`: query_id foreign key, immutable exact root query/count/partition plan, plan SHA-256 digest, explicitly nonfinal checkpoint status.
+- `pubmed_checkpoint_pages`: immutable partition index + page offset, bounded size, canonical validated page, digest and source response digest.
+- `pubmed_checkpoint_ids`: individual unique PMIDs with foreign-key association to the exact committed page, preventing accidental cross-page/partition duplicates.
+
+Every page is inserted with its PMIDs and append-only audit event in **one `BEGIN IMMEDIATE` transaction**. Failed audit/ID writes roll back all page rows. Reopening validates plan hashes, date splits, offsets, page hashes and index equality before any resume. This is accidental-corruption detection, not a cryptographic authenticity guarantee against an attacker who controls the entire SQLite file.
+
+**Migration and rollback.** Newly created projects start directly at schema v3. Existing v1 projects are backed up and upgraded atomically through v2 definitions to v3; existing v2 projects receive a consistent `researchy-before-v3-*.sqlite3` backup before v3 tables are applied. On migration failure, the original database version/data and verified backup remain intact. No unsupported future schema is silently opened.
+
+**Completeness boundary.** A stored checkpoint can be `paused`, `incomplete` or `identifiers_reconciled_metadata_pending`. The source query is **never** advanced to `completed_verified` by this layer. Actual metadata EFetch, source run reconciliation, Web of Science integration and project archives are separate increments.

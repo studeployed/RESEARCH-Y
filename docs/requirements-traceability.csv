@@ -13,7 +13,7 @@ PROJ-02,1,"AT-01,AT-02",tests/test_projects.py,partial
 PROJ-03,1,AT-02,tests/test_projects.py,partial
 PROJ-04,1,"AT-01,AT-09",tests/test_projects.py,partial
 PROJ-05,1,"AT-03,AT-21",planned,planned
-PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py (pre-migration snapshots only),partial
+PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py (v2->v3 backup/rollback; archives pending),partial
 PROJ-07,1,"AT-01,AT-09",planned,planned
 SEARCH-01,1,AT-04,planned,planned
 SEARCH-02,1,"AT-04,AT-05",planned,planned
@@ -44,12 +44,12 @@ SRC-12,2,AT-16,planned,planned
 SRC-13,2,AT-16,planned,planned
 SRC-14,2,AT-16,planned,planned
 RUN-01,1,AT-09,planned,planned
-RUN-02,1,AT-09,tests/test_strategy_storage.py (pending state only),partial
+RUN-02,1,AT-09,tests/test_pubmed_checkpoints.py (paused/incomplete checkpoint states),partial
 RUN-03,1,"AT-08,AT-09",tests/test_pubmed_partition.py (split count/ID progress; no UI),partial
-RUN-04,1,AT-09,planned,planned
+RUN-04,1,AT-09,tests/test_pubmed_checkpoints.py (bounded no-retry resume; backoff future),partial
 RUN-05,1,AT-19,tests/test_pubmed_ids.py (ID-count reconciliation only),partial
-RUN-06,1,AT-09,planned,planned
-RUN-07,1,"AT-09,AT-21",planned,planned
+RUN-06,1,AT-09,tests/test_pubmed_checkpoints.py (close/reopen/resume and pause),partial
+RUN-07,1,"AT-09,AT-21",tests/test_pubmed_checkpoints.py (hashed PMID pages/audit, no provider payload archive),partial
 DATA-01,1,"AT-10,AT-11,AT-13",tests/test_schema_migrations.py (schema entities only),partial
 DATA-02,1,"AT-10,AT-11",tests/test_schema_migrations.py (publication identity schema only),partial
 DATA-03,1,"AT-10,AT-12,AT-13",planned,planned
@@ -124,7 +124,7 @@ AT-05,1,AT-05,tests/test_query_compiler.py (offline OR union fixture only),parti
 AT-06,1,AT-06,tests/test_pubmed_probe.py (simulated response; accepted real translation pending),partial
 AT-07,1,AT-07,tests/test_pubmed_partition.py (>10000 controlled fixture; live verification pending),partial
 AT-08,1,AT-08,planned,planned
-AT-09,1,AT-09,planned,planned
+AT-09,1,AT-09,tests/test_pubmed_checkpoints.py (SQLite recovery fixture; live failure pending),partial
 AT-10,1,AT-10,planned,planned
 AT-11,2,AT-11,planned,planned
 AT-12,2,AT-12,planned,planned
