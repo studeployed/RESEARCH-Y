@@ -49,7 +49,7 @@ RUN-03,1,"AT-08,AT-09",tests/test_pubmed_partition.py (split count/ID progress; 
 RUN-04,1,AT-09,tests/test_pubmed_checkpoints.py (bounded no-retry resume; backoff future),partial
 RUN-05,1,AT-19,tests/test_pubmed_ids.py (ID-count reconciliation only),partial
 RUN-06,1,AT-09,tests/test_pubmed_checkpoints.py (close/reopen/resume and pause),partial
-RUN-07,1,"AT-09,AT-21",tests/test_pubmed_checkpoints.py (hashed PMID pages/audit, no provider payload archive),partial
+RUN-07,1,"AT-09,AT-21",tests/test_pubmed_checkpoints.py (hashed PMID pages/audit; no provider payload archive),partial
 DATA-01,1,"AT-10,AT-11,AT-13",tests/test_schema_migrations.py (schema entities only),partial
 DATA-02,1,"AT-10,AT-11",tests/test_schema_migrations.py (publication identity schema only),partial
 DATA-03,1,"AT-10,AT-12,AT-13",planned,planned
