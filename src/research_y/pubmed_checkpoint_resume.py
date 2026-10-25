@@ -43,8 +43,21 @@ def resume_pubmed_checkpoint(
     query = plan["root_query"]
 
     def fail(message: str) -> CheckpointResumeResult:
-        _set_checkpoint_status(project, query_id, "incomplete", "Provider verification incomplete")
+        try:
+            _set_checkpoint_status(project, query_id, "incomplete", "Provider verification incomplete")
+        except Exception:
+            # A failed status audit cannot undo previously committed pages.
+            return CheckpointResumeResult(
+                "incomplete", inspect_pubmed_checkpoint(project, query_id),
+                "Checkpoint status update failed; earlier pages remain intact",
+            )
         return CheckpointResumeResult("incomplete", inspect_pubmed_checkpoint(project, query_id), message)
+
+    if snapshot.stored_status == "paused":
+        try:
+            _set_checkpoint_status(project, query_id, "incomplete", "Explicit resume requested")
+        except Exception:
+            return CheckpointResumeResult("incomplete", snapshot, "Unable to resume paused checkpoint")
 
     root = _safe_probe(client, query)
     if root is None or root.reported_matches != plan["root_count"]:
@@ -58,6 +71,8 @@ def resume_pubmed_checkpoint(
     for leaf in leaves:
         while True:
             snapshot = inspect_pubmed_checkpoint(project, query_id)
+            if snapshot.stored_status == "paused":
+                return CheckpointResumeResult("paused", snapshot, "Retrieval paused by user")
             offsets = dict(snapshot.next_offsets)
             offset = offsets[leaf["index"]]
             if offset == leaf["reported_matches"]:
@@ -81,10 +96,18 @@ def resume_pubmed_checkpoint(
     if final is None or final.reported_matches != plan["root_count"]:
         return fail("PubMed root count/translation changed during retrieval")
     snapshot = inspect_pubmed_checkpoint(project, query_id)
+    if snapshot.stored_status == "paused":
+        return CheckpointResumeResult("paused", snapshot, "Retrieval paused by user")
     if not snapshot.identifiers_reconciled:
         return fail("Committed PubMed identifiers did not reconcile with source count")
-    _set_checkpoint_status(project, query_id, "identifiers_reconciled_metadata_pending",
-                           "Recounted PubMed identifiers; bibliographic metadata still outstanding")
+    try:
+        _set_checkpoint_status(project, query_id, "identifiers_reconciled_metadata_pending",
+                               "Recounted PubMed identifiers; bibliographic metadata still outstanding")
+    except Exception:
+        return CheckpointResumeResult(
+            "incomplete", inspect_pubmed_checkpoint(project, query_id),
+            "Final checkpoint status could not be audited; identifier pages retained",
+        )
     return CheckpointResumeResult(
         "identifiers_reconciled_metadata_pending",
         inspect_pubmed_checkpoint(project, query_id),

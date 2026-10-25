@@ -418,3 +418,46 @@ def test_start_entrypoint_date_partition_result_is_persisted(tmp_path):
     assert len(result.snapshot.pmids) == 9001
     assert not result.source_retrieval_verified
     assert inspect_pubmed_checkpoint(open_project(project.root), query_id).pmids == result.snapshot.pmids
+
+
+def test_pause_during_inflight_request_commits_page_but_stops_next_request(tmp_path):
+    p, q = project_query(tmp_path)
+    create_pubmed_checkpoint(p, q, plan(), page_size=2)
+    fake = FakeProvider({Q: ["1", "2", "3", "4"]})
+    orig = fake.fetch_esearch_page
+
+    def pauses_after_request(query, *, retstart, retmax):
+        if retstart == 0:
+            pause_pubmed_checkpoint(p, q)
+        return orig(query, retstart=retstart, retmax=retmax)
+
+    fake.fetch_esearch_page = pauses_after_request
+    paused = resume_pubmed_checkpoint(p, q, fake)
+    assert paused.status == "paused"
+    assert paused.snapshot.pmids == ("1", "2")
+    assert paused.snapshot.stored_status == "paused"
+    assert fake.pages == [(Q, 0, 2)]
+    fresh = FakeProvider({Q: ["1", "2", "3", "4"]})
+    resumed = resume_pubmed_checkpoint(open_project(p.root), q, fresh)
+    assert resumed.status == "identifiers_reconciled_metadata_pending"
+    assert fresh.pages == [(Q, 2, 2)]
+
+
+def test_failed_final_status_audit_returns_incomplete_and_keeps_page_data(tmp_path):
+    p, q = project_query(tmp_path)
+    create_pubmed_checkpoint(p, q, plan(), page_size=2)
+    with sqlite3.connect(p.database_path) as db:
+        db.execute("""CREATE TRIGGER deny_final_checkpoint_status BEFORE INSERT ON audit_events
+            WHEN NEW.event_type='pubmed_checkpoint_status'
+            BEGIN SELECT RAISE(ABORT, 'SECRET-AUDIT-FAIL'); END""")
+    fake = FakeProvider({Q: ["1", "2", "3", "4"]})
+    result = resume_pubmed_checkpoint(p, q, fake)
+    assert result.status == "incomplete"
+    assert result.snapshot.pmids == ("1", "2", "3", "4")
+    assert result.snapshot.pages_committed == 2
+    assert result.snapshot.stored_status == "incomplete"
+    assert "SECRET-AUDIT-FAIL" not in repr(result)
+    with sqlite3.connect(p.database_path) as db:
+        db.execute("DROP TRIGGER deny_final_checkpoint_status")
+    second = resume_pubmed_checkpoint(open_project(p.root), q, FakeProvider({Q: ["1", "2", "3", "4"]}))
+    assert second.status == "identifiers_reconciled_metadata_pending"

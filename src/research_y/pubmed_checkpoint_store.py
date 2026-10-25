@@ -442,10 +442,11 @@ def commit_pubmed_checkpoint_page(
             )
         except sqlite3.IntegrityError:
             raise CheckpointIntegrityError("PMIDs overlap with previously committed pages") from None
-        con.execute(
-            "UPDATE pubmed_checkpoint_runs SET status='incomplete',updated_at_utc=? WHERE query_id=?",
-            (_utc_now(), query_id),
-        )
+        if _state != "paused":
+            con.execute(
+                "UPDATE pubmed_checkpoint_runs SET status='incomplete',updated_at_utc=? WHERE query_id=?",
+                (_utc_now(), query_id),
+            )
         _audit(con, kind="pubmed_checkpoint_page_committed", timestamp=_utc_now(),
                details={"query_id": query_id, "partition_index": leaf["index"],
                         "retstart": page.retstart, "pmid_count": len(page.pmids),
