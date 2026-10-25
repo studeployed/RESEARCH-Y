@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from hashlib import sha256
 import json
+from contextlib import closing
 from pathlib import Path
 import shutil
 import sqlite3
@@ -98,7 +99,7 @@ def test_checkpoint_plan_is_tied_to_approved_pubmed_query(tmp_path):
     result = create_pubmed_checkpoint(project, query_id, plan(), page_size=2)
     assert result.root_count == 4 and result.pages_expected == 2
     assert result.pages_committed == 0 and result.stored_status == "incomplete"
-    with sqlite3.connect(project.database_path) as db:
+    with closing(sqlite3.connect(project.database_path)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         assert db.execute("SELECT reported_matches,status FROM source_queries WHERE query_id=?", (query_id,)).fetchone() == (4, "incomplete")
         assert db.execute("SELECT event_type FROM audit_events ORDER BY event_id DESC LIMIT 1").fetchone()[0] == "pubmed_checkpoint_created"
@@ -110,7 +111,7 @@ def test_checkpoint_plan_idempotent_but_changed_counts_rejected(tmp_path):
     create_pubmed_checkpoint(project, q, plan(), page_size=2)
     with pytest.raises(CheckpointIntegrityError, match="different immutable"):
         create_pubmed_checkpoint(project, q, plan(6), page_size=2)
-    with sqlite3.connect(project.database_path) as db:
+    with closing(sqlite3.connect(project.database_path)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM audit_events WHERE event_type='pubmed_checkpoint_created'").fetchone()[0] == 1
 
 
@@ -120,7 +121,7 @@ def test_validated_page_and_individual_ids_commit_atomically(tmp_path):
     result = commit_pubmed_checkpoint_page(p, q, page())
     assert result.pmids == ("1", "2") and result.next_offsets == ((-1, 2),)
     assert result.pages_committed == 1 and not result.identifiers_reconciled
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM pubmed_checkpoint_ids").fetchone()[0] == 2
         assert db.execute("SELECT COUNT(*) FROM audit_events WHERE event_type='pubmed_checkpoint_page_committed'").fetchone()[0] == 1
 
@@ -130,7 +131,7 @@ def test_identical_replay_does_not_add_duplicate_audit(tmp_path):
     create_pubmed_checkpoint(p, q, plan(), page_size=2)
     commit_pubmed_checkpoint_page(p, q, page())
     commit_pubmed_checkpoint_page(p, q, page())
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM pubmed_checkpoint_pages").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM audit_events WHERE event_type='pubmed_checkpoint_page_committed'").fetchone()[0] == 1
 
@@ -179,7 +180,7 @@ def test_resume_fetches_missing_page_not_older_committed_page(tmp_path):
     assert not out.source_retrieval_verified
     assert remote.pages == [(Q, 2, 2)]
     assert len(remote.counts) == 2
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         assert db.execute("SELECT status FROM source_queries WHERE query_id=?", (q,)).fetchone()[0] == "incomplete"
 
 
@@ -201,7 +202,7 @@ def test_crash_before_commit_refetches_and_does_not_claim_complete(tmp_path):
 def test_database_trigger_failure_rolls_back_page_ids_and_audit(tmp_path):
     p, q = project_query(tmp_path)
     create_pubmed_checkpoint(p, q, plan(), page_size=2)
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         db.execute("""CREATE TRIGGER deny_checkpoint_audit BEFORE INSERT ON audit_events
             WHEN NEW.event_type='pubmed_checkpoint_page_committed'
             BEGIN SELECT RAISE(ABORT, 'simulated failing audit'); END""")
@@ -209,7 +210,7 @@ def test_database_trigger_failure_rolls_back_page_ids_and_audit(tmp_path):
         commit_pubmed_checkpoint_page(p, q, page())
     snap = inspect_pubmed_checkpoint(p, q)
     assert snap.pmids == () and snap.pages_committed == 0
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM pubmed_checkpoint_ids").fetchone()[0] == 0
         db.execute("DROP TRIGGER deny_checkpoint_audit")
     resumed = resume_pubmed_checkpoint(p, q, FakeProvider({Q: ["1", "2", "3", "4"]}))
@@ -220,7 +221,7 @@ def test_existing_pages_are_sql_immutable(tmp_path):
     p, q = project_query(tmp_path)
     create_pubmed_checkpoint(p, q, plan(), page_size=2)
     commit_pubmed_checkpoint_page(p, q, page())
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         with pytest.raises(sqlite3.IntegrityError):
             db.execute("UPDATE pubmed_checkpoint_pages SET page_json='{}'")
         with pytest.raises(sqlite3.IntegrityError):
@@ -231,7 +232,7 @@ def test_tampered_page_digest_detected_before_reuse(tmp_path):
     p, q = project_query(tmp_path)
     create_pubmed_checkpoint(p, q, plan(), page_size=2)
     commit_pubmed_checkpoint_page(p, q, page())
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         db.execute("DROP TRIGGER immutable_pubmed_checkpoint_pages_update")
         db.execute("UPDATE pubmed_checkpoint_pages SET page_json='{}'")
     with pytest.raises(CheckpointIntegrityError, match="checksum"):
@@ -242,7 +243,7 @@ def test_tampered_identifier_index_detected_even_with_intact_page(tmp_path):
     p, q = project_query(tmp_path)
     create_pubmed_checkpoint(p, q, plan(), page_size=2)
     commit_pubmed_checkpoint_page(p, q, page())
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         db.execute("DROP TRIGGER immutable_pubmed_checkpoint_ids_update")
         db.execute("UPDATE pubmed_checkpoint_ids SET pmid='998' WHERE pmid='2'")
     with pytest.raises(CheckpointIntegrityError, match="identifier index"):
@@ -276,7 +277,7 @@ def test_paused_checkpoint_survives_reopening_and_does_not_mark_run_verified(tmp
     paused = pause_pubmed_checkpoint(p, q)
     assert paused.stored_status == "paused"
     assert inspect_pubmed_checkpoint(open_project(p.root), q).stored_status == "paused"
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         assert db.execute("SELECT status FROM source_queries WHERE query_id=?", (q,)).fetchone()[0] == "paused"
 
 
@@ -351,7 +352,7 @@ def test_no_checkpoint_state_is_never_a_fictional_hit_count(tmp_path):
     p, q = project_query(tmp_path)
     with pytest.raises(KeyError, match="No PubMed checkpoint"):
         inspect_pubmed_checkpoint(p, q)
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         assert db.execute("SELECT reported_matches FROM source_queries WHERE query_id=?", (q,)).fetchone()[0] is None
 
 
@@ -382,7 +383,7 @@ def test_start_entrypoint_rolls_back_failed_plan_audit_before_any_pages(tmp_path
     from research_y.pubmed_checkpoint_resume import start_checkpointed_pubmed_retrieval
 
     project, query_id = project_query(tmp_path)
-    with sqlite3.connect(project.database_path) as db:
+    with closing(sqlite3.connect(project.database_path)) as db, db:
         db.execute("""CREATE TRIGGER deny_new_plan BEFORE INSERT ON audit_events
             WHEN NEW.event_type='pubmed_checkpoint_created'
             BEGIN SELECT RAISE(ABORT, 'local audit failure'); END""")
@@ -392,7 +393,7 @@ def test_start_entrypoint_rolls_back_failed_plan_audit_before_any_pages(tmp_path
     )
     assert result.status == "incomplete"
     assert fake.pages == []
-    with sqlite3.connect(project.database_path) as db:
+    with closing(sqlite3.connect(project.database_path)) as db, db:
         assert db.execute("SELECT COUNT(*) FROM pubmed_checkpoint_runs").fetchone()[0] == 0
         assert db.execute("SELECT reported_matches FROM source_queries WHERE query_id=?", (query_id,)).fetchone()[0] is None
 
@@ -446,7 +447,7 @@ def test_pause_during_inflight_request_commits_page_but_stops_next_request(tmp_p
 def test_failed_final_status_audit_returns_incomplete_and_keeps_page_data(tmp_path):
     p, q = project_query(tmp_path)
     create_pubmed_checkpoint(p, q, plan(), page_size=2)
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         db.execute("""CREATE TRIGGER deny_final_checkpoint_status BEFORE INSERT ON audit_events
             WHEN NEW.event_type='pubmed_checkpoint_status'
             BEGIN SELECT RAISE(ABORT, 'SECRET-AUDIT-FAIL'); END""")
@@ -457,7 +458,7 @@ def test_failed_final_status_audit_returns_incomplete_and_keeps_page_data(tmp_pa
     assert result.snapshot.pages_committed == 2
     assert result.snapshot.stored_status == "incomplete"
     assert "SECRET-AUDIT-FAIL" not in repr(result)
-    with sqlite3.connect(p.database_path) as db:
+    with closing(sqlite3.connect(p.database_path)) as db, db:
         db.execute("DROP TRIGGER deny_final_checkpoint_status")
     second = resume_pubmed_checkpoint(open_project(p.root), q, FakeProvider({Q: ["1", "2", "3", "4"]}))
     assert second.status == "identifiers_reconciled_metadata_pending"
