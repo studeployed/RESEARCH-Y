@@ -55,6 +55,7 @@ class PubMedRecord:
     keywords: tuple[str, ...]
     mesh_headings: tuple[dict[str, object], ...]
     citation_status: str | None
+    other_abstracts: tuple[dict[str, object], ...] = ()
 
     def source_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -135,6 +136,8 @@ def _record(element: ET.Element) -> PubMedRecord:
     identifiers: dict[str, list[str]] = {"pmid": [pmid]}
     for n in element.findall("./PubmedData/ArticleIdList/ArticleId"):
         kind, value = n.get("IdType"), _text(n)
+        if kind == "pubmed" and value != pmid:
+            raise PubMedMetadataError("Conflicting PubMed PMID identifiers")
         if kind and value:
             identifiers.setdefault(kind, []).append(value)
     for n in article.findall("ELocationID"):
@@ -148,6 +151,19 @@ def _record(element: ET.Element) -> PubMedRecord:
             value = _text(n)
             if value:
                 abstracts.append({"label": n.get("Label"), "category": n.get("NlmCategory"), "text": value})
+    other_abstracts: list[dict[str, object]] = []
+    for other in citation.findall("OtherAbstract"):
+        sections = []
+        for text_node in other.findall("AbstractText"):
+            value = _text(text_node)
+            if value:
+                sections.append({"label": text_node.get("Label"),
+                                 "category": text_node.get("NlmCategory"), "text": value})
+        other_abstracts.append({
+            "type": other.get("Type"), "language": other.get("Language"),
+            "sections": sections,
+            "copyright": _path(other, "CopyrightInformation"),
+        })
     dates: list[dict[str, str | None]] = []
     if journal is not None:
         pub = journal.find("./JournalIssue/PubDate")
@@ -179,7 +195,7 @@ def _record(element: ET.Element) -> PubMedRecord:
     return PubMedRecord(
         pmid=pmid, title=_path(article, "ArticleTitle"),
         abstract_sections=tuple(abstracts),
-        abstract_status="present" if abstracts else "not_supplied_in_response",
+        abstract_status="present" if abstracts or any(x["sections"] for x in other_abstracts) else "not_supplied_in_response",
         abstract_copyright=_path(abstract, "CopyrightInformation") if abstract is not None else None,
         authors=_authors(article), journal=journal_data, publication_dates=tuple(dates),
         identifiers={k: _unique(v) for k, v in identifiers.items()},
@@ -187,6 +203,7 @@ def _record(element: ET.Element) -> PubMedRecord:
         publication_types=_unique([_text(x) for x in article.findall("./PublicationTypeList/PublicationType")]),
         keywords=_unique([_text(x) for x in citation.findall("./KeywordList/Keyword")]),
         mesh_headings=tuple(headings), citation_status=citation.get("Status"),
+        other_abstracts=tuple(other_abstracts),
     )
 
 
@@ -196,13 +213,17 @@ def parse_efetch_xml(payload: bytes, expected_pmids: tuple[str, ...] | list[str]
     pmids = validate_pmids(expected_pmids)
     if not isinstance(payload, bytes) or not 1 <= len(payload) <= MAX_EFETCH_BYTES:
         raise PubMedMetadataError("PubMed EFetch returned an invalid or oversized response")
-    # Standard NCBI PUBLIC DTD headers are allowed; internal entity declarations
-    # or subsets cannot be treated as trusted XML. ElementTree does not fetch DTDs.
-    if re.search(br"<!\s*(?:ENTITY|\[|DOCTYPE\b[^>]*\[)", payload, flags=re.I):
+    # Explicitly accept UTF-8 only. Byte-level scans are bypassed by UTF-16
+    # null interleaving; verify declarations on decoded Unicode before parsing.
+    try:
+        document = payload.decode("utf-8-sig")
+    except UnicodeError:
+        raise PubMedMetadataError("PubMed EFetch XML requires UTF-8") from None
+    if re.search(r"<\!\s*ENTITY\b|<\!DOCTYPE\b[^>]*\[", document, flags=re.I):
         raise PubMedMetadataError("PubMed EFetch XML contains unsafe declarations")
     try:
-        root = ET.fromstring(payload)
-    except ET.ParseError:
+        root = ET.fromstring(document)
+    except (ET.ParseError, ValueError):
         raise PubMedMetadataError("PubMed EFetch returned malformed XML") from None
     if root.tag != "PubmedArticleSet":
         raise PubMedMetadataError("PubMed EFetch returned an unexpected document type")
