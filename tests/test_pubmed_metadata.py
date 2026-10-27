@@ -203,7 +203,7 @@ def project_with_pmids(tmp_path, pmids=("111", "222", "333")):
     query = plan_source_query(p, run_id=run.run_id, group_id="g1", source_name="pubmed", exact_query=Q)
     root = PubMedPartitionResult(Q, DateWindow(date(2025, 1, 1), date(2025, 1, 2)), len(pmids),
                                  "identifiers_reconciled_metadata_pending", (), (), ())
-    create_pubmed_checkpoint(p, query.query_id, root, page_size=len(pmids))
+    create_pubmed_checkpoint(p, query.query_id, root, page_size=max(1, len(pmids)))
     if pmids:
         page = PubMedIdentifierPage(
             exact_query=Q, retstart=0, requested_retmax=len(pmids), reported_matches=len(pmids),
