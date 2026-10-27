@@ -121,7 +121,7 @@ AT-02,1,AT-02,tests/test_projects.py (partial: metadata path relocation only),pa
 AT-03,3,AT-03,planned,planned
 AT-04,2,AT-04,tests/test_strategy_storage.py (approval gate only),partial
 AT-05,1,AT-05,tests/test_query_compiler.py (offline OR union fixture only),partial
-AT-06,1,AT-06,tests/test_pubmed_probe.py (simulated response; accepted real translation pending),partial
+AT-06,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_live_workflow.py (manual real-source gate not yet run),partial
 AT-07,1,AT-07,tests/test_pubmed_partition.py (>10000 controlled fixture; live verification pending),partial
 AT-08,1,AT-08,planned,planned
 AT-09,1,AT-09,tests/test_pubmed_checkpoints.py (SQLite recovery fixture; live failure pending),partial
