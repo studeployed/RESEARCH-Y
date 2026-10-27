@@ -151,6 +151,15 @@ restart and avoid refetching previously committed pages.
 no result is marked `completed_verified` until later metadata acquisition and
 all mandated source-level checks. Details: [checkpoint method](docs/PUBMED_CHECKPOINTS.md).
 
-## PubMed EFetch bibliographic metadata (P1-04d proposed)
+## PubMed EFetch bibliographic metadata (P1-04d merged in PR #21)
 
 Bounded PubMed EFetch XML acquisition, source-field/abstract parsing, and transactional metadata persistence for PMIDs already reconciled by the checkpoint ledger. Identical source records are replay-safe; conflicting source metadata is never silently overwritten. Source copyright notices and an abstract redistribution-rights review flag are retained. Missing abstracts and incomplete source runs remain explicitly flagged. See docs/PUBMED_EFETCH.md. Live verification requires private NCBI contact details at runtime and has not yet been performed.
+
+## Live PubMed source acceptance (P1-04e, manual-only proposal)
+
+The existing PubMed ESearch/EFetch source smoke script can be run with a private
+NCBI developer contact. This PR adds a **manual-only** GitHub Actions workflow
+using repository secrets and a fixed public query; it cannot be used until
+reviewed and merged into `main`. No live NCBI validation has been completed
+in this execution environment. See [the exact procedure, evidence requirements
+and outstanding acceptance tests](docs/PUBMED_LIVE_VALIDATION.md).
