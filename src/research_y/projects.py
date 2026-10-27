@@ -20,6 +20,7 @@ from typing import Iterator
 from uuid import UUID, uuid4
 
 from research_y.schema import SCHEMA_VERSION, apply_v2_schema
+from research_y.checkpoint_schema import apply_v3_schema
 
 MANIFEST_FILENAME = "project.ryproj"
 DATABASE_RELATIVE_PATH = Path("data") / "researchy.sqlite3"
@@ -141,6 +142,7 @@ def _create_database(database_path: Path, project: Project) -> None:
         # Initialise the current schema directly for new projects. Existing
         # schema-v1 projects instead receive a recoverable upgrade on opening.
         apply_v2_schema(connection)
+        apply_v3_schema(connection)
         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         connection.execute(
             "INSERT INTO project_metadata "
@@ -230,11 +232,13 @@ def _parse_manifest(path: Path) -> tuple[UUID, str, str]:
     return identifier, name, created_at_utc
 
 
-def _snapshot_before_upgrade(project: Project, connection: sqlite3.Connection) -> Path:
+def _snapshot_before_upgrade(
+    project: Project, connection: sqlite3.Connection, expected_version: int = 1,
+) -> Path:
     """Create a verified, independently readable SQLite snapshot before DDL."""
     backups = project.root / "backups"
     backups.mkdir(mode=0o700, exist_ok=True)
-    filename = f"researchy-before-v2-{uuid4().hex}.sqlite3"
+    filename = f"researchy-before-v{expected_version + 1}-{uuid4().hex}.sqlite3"
     snapshot = backups / filename
     temporary = backups / f"{filename}.partial"
     try:
@@ -242,7 +246,7 @@ def _snapshot_before_upgrade(project: Project, connection: sqlite3.Connection) -
             connection.backup(destination)
             if destination.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise sqlite3.DatabaseError("Snapshot integrity check failed")
-            if destination.execute("PRAGMA user_version").fetchone()[0] != 1:
+            if destination.execute("PRAGMA user_version").fetchone()[0] != expected_version:
                 raise sqlite3.DatabaseError("Unexpected snapshot schema version")
         temporary.replace(snapshot)
     except (OSError, sqlite3.DatabaseError) as exc:
@@ -260,6 +264,7 @@ def _upgrade_v1_project(project: Project, connection: sqlite3.Connection) -> Non
         if connection.execute("PRAGMA user_version").fetchone()[0] != 1:
             raise sqlite3.DatabaseError("Schema changed during migration")
         apply_v2_schema(connection)
+        apply_v3_schema(connection)
         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         connection.execute(
             "INSERT INTO audit_events (occurred_at_utc, event_type, details_json) "
@@ -267,6 +272,35 @@ def _upgrade_v1_project(project: Project, connection: sqlite3.Connection) -> Non
             (_utc_now(), "schema_migrated", json.dumps({
                 "from_version": 1,
                 "to_version": SCHEMA_VERSION,
+                "backup": snapshot.name,
+            }, sort_keys=True)),
+        )
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        raise ProjectMigrationError(
+            f"Schema upgrade failed; original data and snapshot preserved: {snapshot.name}"
+        ) from exc
+
+
+def _upgrade_v2_project(project: Project, connection: sqlite3.Connection) -> None:
+    """Create v3 PubMed checkpoints with an independently verified v2 backup.
+
+    Backup publication precedes all schema DDL. A failed audit or DDL insert
+    rolls back the complete migration and preserves the pre-migration store.
+    """
+    snapshot = _snapshot_before_upgrade(project, connection, expected_version=2)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        if connection.execute("PRAGMA user_version").fetchone()[0] != 2:
+            raise sqlite3.DatabaseError("Schema changed during migration")
+        apply_v3_schema(connection)
+        connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+        connection.execute(
+            "INSERT INTO audit_events (occurred_at_utc, event_type, details_json) "
+            "VALUES (?, ?, ?)",
+            (_utc_now(), "schema_migrated", json.dumps({
+                "from_version": 2, "to_version": SCHEMA_VERSION,
                 "backup": snapshot.name,
             }, sort_keys=True)),
         )
@@ -298,7 +332,7 @@ def _validated_project_connection(project: Project) -> Iterator[sqlite3.Connecti
     with closing(connection):
         try:
             schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if schema_version not in (1, SCHEMA_VERSION):
+            if schema_version not in (1, 2, SCHEMA_VERSION):
                 raise ProjectVersionError(f"Unsupported database schema: {schema_version}")
             application_id = connection.execute("PRAGMA application_id").fetchone()[0]
             if application_id != SQLITE_APPLICATION_ID:
@@ -313,6 +347,8 @@ def _validated_project_connection(project: Project) -> Iterator[sqlite3.Connecti
             raise ProjectFormatError("Project database cannot be read") from exc
         if schema_version == 1:
             _upgrade_v1_project(project, connection)
+        elif schema_version == 2:
+            _upgrade_v2_project(project, connection)
         # Do not convert operational exceptions inside yield into format errors.
         # In particular, an audit-insert failure must rollback *and* remain
         # identifiable as a failed write, not a malformed project.

@@ -9,6 +9,7 @@ resumed after a process exits. Those are later separately verified steps.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from typing import Protocol
 
@@ -16,6 +17,7 @@ from research_y.pubmed_ids import (
     DEFAULT_PAGE_SIZE,
     DEFAULT_SINGLE_QUERY_CEILING,
     PubMedIdentifierResult,
+    PubMedIdentifierPage,
     retrieve_bounded_identifiers,
 )
 from research_y.pubmed_probe import PubMedCountProbe, PubMedProbeError
@@ -106,6 +108,8 @@ def retrieve_date_partitioned_identifiers(
     page_size: int = DEFAULT_PAGE_SIZE,
     max_records: int = DEFAULT_SINGLE_QUERY_CEILING,
     max_count_probes: int = DEFAULT_COUNT_PROBE_BUDGET,
+    on_plan_ready: Callable[[PubMedPartitionResult], None] | None = None,
+    on_verified_page: Callable[[PubMedIdentifierPage], None] | None = None,
 ) -> PubMedPartitionResult:
     """Recursively count and collect an exact, non-overlapping date partition.
 
@@ -127,6 +131,11 @@ def retrieve_date_partitioned_identifiers(
         raise ValueError("page_size must be between 1 and 1000")
     if type(max_count_probes) is not int or not 1 <= max_count_probes <= 10000:
         raise ValueError("max_count_probes must be an integer from 1 to 10000")
+
+    if on_plan_ready is not None and not callable(on_plan_ready):
+        raise TypeError("on_plan_ready must be callable")
+    if on_verified_page is not None and not callable(on_verified_page):
+        raise TypeError("on_verified_page must be callable")
 
     partitions: list[CountedPartition] = []
     leaves: list[CountedPartition] = []
@@ -152,11 +161,17 @@ def retrieve_date_partitioned_identifiers(
         if root_count < 0:
             return report("incomplete", "Invalid source-reported baseline count")
         if root_count <= max_records:
+            if on_plan_ready is not None:
+                try:
+                    on_plan_ready(report("incomplete"))
+                except Exception:
+                    return report("incomplete", "PubMed checkpoint plan could not be committed")
             # For bounded queries the original exact search can be collected
             # without introducing any administrative date constraint.
             try:
                 small = retrieve_bounded_identifiers(
                     client, approved_query, page_size=page_size, max_records=max_records,
+                    on_verified_page=on_verified_page,
                 )
             except Exception:
                 return report("incomplete", "Bounded identifier request failed; no completion is claimed")
@@ -214,11 +229,17 @@ def retrieve_date_partitioned_identifiers(
             return idx, count
 
         count_window(date_window, None, 0)
+        if on_plan_ready is not None:
+            try:
+                on_plan_ready(report("incomplete"))
+            except Exception:
+                return report("incomplete", "PubMed checkpoint partition plan could not be committed")
         for leaf in leaves:
             try:
                 result = retrieve_bounded_identifiers(
                     client, leaf.exact_subquery, page_size=page_size,
                     max_records=max_records, allow_crdt_partition=True,
+                    on_verified_page=on_verified_page,
                 )
             except Exception:
                 return report("incomplete", "Date partition identifier retrieval failed; prior leaves retained")

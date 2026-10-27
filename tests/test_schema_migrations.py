@@ -78,7 +78,7 @@ def test_new_projects_start_on_v2_and_have_distinct_entities(tmp_path: Path) -> 
         "organisations", "publication_organisations", "classifications", "documents",
     }
     with closing(_connection(project)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 3
         tables = {
             row[0] for row in db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
@@ -178,14 +178,14 @@ def test_v1_upgrades_with_pre_migration_snapshot_and_preserves_data(tmp_path: Pa
     backups = list((project.root / "backups").glob("researchy-before-v2-*.sqlite3"))
     assert len(backups) == 1
     with closing(_connection(project)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         assert db.execute("SELECT event_type FROM audit_events ORDER BY event_id").fetchall() == [
             ("legacy_note",), ("schema_migrated",)
         ]
         details = json.loads(db.execute(
             "SELECT details_json FROM audit_events WHERE event_type='schema_migrated'"
         ).fetchone()[0])
-        assert details == {"from_version": 1, "to_version": 2, "backup": backups[0].name}
+        assert details == {"from_version": 1, "to_version": 3, "backup": backups[0].name}
     with closing(sqlite3.connect(backups[0])) as snapshot:
         assert snapshot.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert snapshot.execute("PRAGMA user_version").fetchone()[0] == 1
@@ -280,3 +280,77 @@ def test_failed_snapshot_prevents_all_schema_modifications(
         assert db.execute("PRAGMA user_version").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == 1
     assert not list((project.root / "backups").iterdir())
+
+
+
+def _simulate_existing_v2(project: project_module.Project) -> None:
+    """Construct an unmodified schema-v2 database, preserving its source data."""
+    with closing(sqlite3.connect(project.database_path)) as db:
+        db.execute("PRAGMA foreign_keys=OFF")
+        for name in (
+            "immutable_pubmed_checkpoint_pages_update",
+            "immutable_pubmed_checkpoint_pages_delete",
+            "immutable_pubmed_checkpoint_ids_update",
+            "immutable_pubmed_checkpoint_ids_delete",
+        ):
+            db.execute(f"DROP TRIGGER {name}")
+        db.execute("DROP TABLE pubmed_checkpoint_ids")
+        db.execute("DROP TABLE pubmed_checkpoint_pages")
+        db.execute("DROP TABLE pubmed_checkpoint_runs")
+        db.execute("PRAGMA user_version=2")
+
+
+def test_v2_to_v3_migration_creates_independent_verified_snapshot(tmp_path: Path) -> None:
+    project = create_project(tmp_path, "Upgrading original v2")
+    _simulate_existing_v2(project)
+    reopened = open_project(project.root)
+    assert reopened.identifier == project.identifier
+    backups = list((project.root / "backups").glob("researchy-before-v3-*.sqlite3"))
+    assert len(backups) == 1
+    with closing(sqlite3.connect(backups[0])) as snapshot:
+        assert snapshot.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert snapshot.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert snapshot.execute(
+            "SELECT name FROM sqlite_master WHERE name='pubmed_checkpoint_pages'"
+        ).fetchone() is None
+    with closing(sqlite3.connect(project.database_path)) as upgraded:
+        assert upgraded.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert upgraded.execute(
+            "SELECT name FROM sqlite_master WHERE name='pubmed_checkpoint_pages'"
+        ).fetchone() == ("pubmed_checkpoint_pages",)
+        payload = upgraded.execute(
+            "SELECT details_json FROM audit_events WHERE event_type='schema_migrated' "
+            "ORDER BY event_id DESC LIMIT 1"
+        ).fetchone()[0]
+        assert json.loads(payload)["from_version"] == 2
+        assert json.loads(payload)["to_version"] == 3
+    assert open_project(project.root).identifier == project.identifier
+    assert len(list((project.root / "backups").glob("researchy-before-v3-*.sqlite3"))) == 1
+
+
+def test_interrupted_v2_to_v3_migration_rolls_back_and_preserves_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from research_y.checkpoint_schema import V3_STATEMENTS
+
+    project = create_project(tmp_path, "Interrupted v3 migration")
+    _simulate_existing_v2(project)
+    original = project_module.apply_v3_schema
+
+    def fail_after_first_table(db: sqlite3.Connection) -> None:
+        db.execute(V3_STATEMENTS[0])
+        raise RuntimeError("simulated interruption")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(project_module, "apply_v3_schema", fail_after_first_table)
+        with pytest.raises(ProjectMigrationError, match="snapshot preserved"):
+            open_project(project.root)
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute(
+            "SELECT name FROM sqlite_master WHERE name='pubmed_checkpoint_runs'"
+        ).fetchone() is None
+    backups = list((project.root / "backups").glob("researchy-before-v3-*.sqlite3"))
+    assert len(backups) == 1
+    assert project_module.apply_v3_schema is original
+    assert open_project(project.root).identifier == project.identifier
