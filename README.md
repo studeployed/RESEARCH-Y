@@ -139,7 +139,7 @@ truncated success. Even a reconciled PMID set remains
 `identifiers_reconciled_metadata_pending`, never a verified full-text/metadata
 search. See [the partitioning protocol](docs/PUBMED_DATE_PARTITIONING.md).
 
-## Durable PubMed checkpoints (P1-04c, proposed and unmerged)
+## Durable PubMed checkpoints (P1-04c merged in PR #20)
 
 An internal version-3 SQLite checkpoint ledger persistently records the frozen
 date partition plan, validated PubMed PMID pages, exact source provenance and
@@ -150,3 +150,7 @@ restart and avoid refetching previously committed pages.
 **Important:** a reconciled identifier list is not a complete literature search;
 no result is marked `completed_verified` until later metadata acquisition and
 all mandated source-level checks. Details: [checkpoint method](docs/PUBMED_CHECKPOINTS.md).
+
+## PubMed EFetch bibliographic metadata (P1-04d proposed)
+
+Bounded PubMed EFetch XML acquisition, source-field/abstract parsing, and transactional metadata persistence for PMIDs already reconciled by the checkpoint ledger. Identical source records are replay-safe; conflicting source metadata is never silently overwritten. Source copyright notices and an abstract redistribution-rights review flag are retained. Missing abstracts and incomplete source runs remain explicitly flagged. See docs/PUBMED_EFETCH.md. Live verification requires private NCBI contact details at runtime and has not yet been performed.

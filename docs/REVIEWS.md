@@ -183,3 +183,9 @@ The shared existing count-only `parse_esearch_count` parser also accepted unboun
 - **Failure tests:** interrupted migration/audit, crash before/after page commit, missing/corrupt pages, changed source counts and translations, pause/resume, relocation, multi-partition union, and no false source-completion state.
 - **Open limitations:** original provider payload retention beyond digest, per-source licence metadata, single-day overflow alternative, live source acceptance, full EFetch, complete UI/job scheduler, full performance test. No completed acceptance scenario is invented.
 - **Verification:** independent current-head Windows/Linux GitHub Actions and staged Codex code/security reviews are mandatory before recommending a merge.
+
+## P1-04d — EFetch metadata initial review (27 October 2026)
+
+Science: only checkpoint-verified PMIDs may be stored; every bounded EFetch batch must contain exactly its requested identifier set. Missing abstract text is explicitly not supplied, never invented. Original source values retain provenance separately from later chosen publication metadata. Source conflicts require review.
+
+Security/integrity: HTTPS-only NCBI endpoint, no redirects, shared request pacing, runtime contact/keys only, bounded XML, no internal entity declarations, atomic batch, query membership and audit rollback. Abstract redistribution requires a rights review. No new runtime dependencies. Provider network verification is explicitly not claimed; full live source completeness, EFetch book record formats, deduplication and Web of Science remain separate. The pull request requires Windows/Linux CI, completed Codex code review followed by separately commenced and completed security review before any merge recommendation.

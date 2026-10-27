@@ -32,7 +32,7 @@ SEARCH-14,1,AT-17,planned,planned
 SRC-01,1,AT-06,tests/test_pubmed_probe.py (ESearch count-only contact and rate pacing; no live smoke),partial
 SRC-02,1,AT-07,tests/test_pubmed_partition.py (recursive Create Date ID split; offline only),partial
 SRC-03,1,"AT-07,AT-19",tests/test_pubmed_partition.py (counted split provenance and incomplete cases),partial
-SRC-04,1,AT-07,planned,planned
+SRC-04,1,AT-07,tests/test_pubmed_metadata.py (EFetch source metadata offline; live verification pending),partial
 SRC-05,1,AT-08,planned,planned
 SRC-06,1,"AT-08,AT-09",planned,planned
 SRC-07,1,"AT-08,AT-16",planned,planned
@@ -43,7 +43,7 @@ SRC-11,2,"AT-13,AT-19",planned,planned
 SRC-12,2,AT-16,planned,planned
 SRC-13,2,AT-16,planned,planned
 SRC-14,2,AT-16,planned,planned
-RUN-01,1,AT-09,planned,planned
+RUN-01,1,AT-09,tests/test_pubmed_metadata.py (metadata stage only; full job engine future),partial
 RUN-02,1,AT-09,tests/test_pubmed_checkpoints.py (paused/incomplete checkpoint states),partial
 RUN-03,1,"AT-08,AT-09",tests/test_pubmed_partition.py (split count/ID progress; no UI),partial
 RUN-04,1,AT-09,tests/test_pubmed_checkpoints.py (bounded no-retry resume; backoff future),partial
@@ -52,10 +52,10 @@ RUN-06,1,AT-09,tests/test_pubmed_checkpoints.py (close/reopen/resume and pause),
 RUN-07,1,"AT-09,AT-21",tests/test_pubmed_checkpoints.py (hashed PMID pages/audit; no provider payload archive),partial
 DATA-01,1,"AT-10,AT-11,AT-13",tests/test_schema_migrations.py (schema entities only),partial
 DATA-02,1,"AT-10,AT-11",tests/test_schema_migrations.py (publication identity schema only),partial
-DATA-03,1,"AT-10,AT-12,AT-13",planned,planned
-DATA-04,1,"AT-10,AT-16",planned,planned
-DATA-05,1,AT-16,planned,planned
-DATA-06,1,"AT-16,AT-21",planned,planned
+DATA-03,1,"AT-10,AT-12,AT-13",tests/test_pubmed_metadata.py (PubMed metadata subset only),partial
+DATA-04,1,"AT-10,AT-16",tests/test_pubmed_metadata.py (source provenance separate from chosen publication),partial
+DATA-05,1,AT-16,tests/test_pubmed_metadata.py (absent abstracts and conflicting metadata),partial
+DATA-06,1,"AT-16,AT-21",tests/test_pubmed_metadata.py (rights review flag; export enforcement future),partial
 DUP-01,1,AT-10,planned,planned
 DUP-02,1,"AT-10,AT-11",planned,planned
 DUP-03,1,AT-10,planned,planned

@@ -47,3 +47,7 @@ Every page is inserted with its PMIDs and append-only audit event in **one `BEGI
 **Migration and rollback.** Newly created projects start directly at schema v3. Existing v1 projects are backed up and upgraded atomically through v2 definitions to v3; existing v2 projects receive a consistent `researchy-before-v3-*.sqlite3` backup before v3 tables are applied. On migration failure, the original database version/data and verified backup remain intact. No unsupported future schema is silently opened.
 
 **Completeness boundary.** A stored checkpoint can be `paused`, `incomplete` or `identifiers_reconciled_metadata_pending`. The source query is **never** advanced to `completed_verified` by this layer. Actual metadata EFetch, source run reconciliation, Web of Science integration and project archives are separate increments.
+
+## P1-04d — PubMed EFetch records (proposed)
+
+No schema change: the existing source_retrievals and query_retrievals tables support atomic storage of parsed original PubMed metadata, source response digests and query membership, with a matching audit event. These records remain separate from chosen publication metadata and cannot establish completed_verified.
