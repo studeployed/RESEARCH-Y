@@ -236,5 +236,10 @@ def collect_pubmed_metadata(project: Project, query_id: str, client: PubMedEFetc
         except Exception:
             # No untrusted provider/callback/SQLite exception messages are logged.
             return report("incomplete", fetched, "PubMed metadata batch failed; previously committed records retained")
+    try:
+        if inspect_pubmed_checkpoint(project, query_id).stored_status == "paused":
+            return report("paused", fetched)
+    except Exception:
+        return report("incomplete", fetched, "Checkpoint status could not be revalidated")
     return report("metadata_acquired_reconciliation_pending" if not remaining else "incomplete",
                   fetched, None if not remaining else "Batch budget reached; more metadata remains")
