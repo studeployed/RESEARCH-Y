@@ -372,3 +372,53 @@ def test_zero_hit_checkpoint_acquires_no_fabricated_metadata(tmp_path):
     assert result.status == "metadata_acquired_reconciliation_pending"
     assert result.expected_ids == 0 and result.committed_metadata_ids == 0
     assert calls == []
+
+def test_utf16_entity_declaration_is_rejected_before_xml_expansion():
+    payload = ('<?xml version="1.0" encoding="UTF-16"?>'
+               '<!DOCTYPE PubmedArticleSet [<!ENTITY risk "EXPANDED">]>'
+               '<PubmedArticleSet>' + article_xml("111", title="&risk;") +
+               '</PubmedArticleSet>').encode("utf-16")
+    with pytest.raises(PubMedMetadataError):
+        parse_efetch_xml(payload, ("111",), retrieved_at_utc=UTC)
+
+
+def test_other_abstract_and_its_rights_are_preserved():
+    alternate = ('<OtherAbstract Type="Publisher" Language="fre">'
+                 '<AbstractText Label="RESUME">Texte clinique.</AbstractText>'
+                 '<CopyrightInformation>Rights reserved</CopyrightInformation>'
+                 '</OtherAbstract>')
+    xml = article_xml("111", abstract=False).replace(
+        '</MedlineCitation>', alternate + '</MedlineCitation>'
+    )
+    record = parse_efetch_xml(
+        ('<PubmedArticleSet>' + xml + '</PubmedArticleSet>').encode(),
+        ("111",), retrieved_at_utc=UTC,
+    ).records[0]
+    assert record.abstract_status == "present"
+    assert record.abstract_sections == ()
+    assert record.other_abstracts[0]["language"] == "fre"
+    assert record.other_abstracts[0]["sections"][0]["text"] == "Texte clinique."
+    assert record.other_abstracts[0]["copyright"] == "Rights reserved"
+
+
+def test_conflicting_pubmed_article_identifier_rejected():
+    xml = article_xml("111").replace(
+        '<ArticleId IdType="pubmed">111</ArticleId>',
+        '<ArticleId IdType="pubmed">222</ArticleId>',
+    )
+    with pytest.raises(PubMedMetadataError, match="Conflicting PubMed PMID"):
+        parse_efetch_xml(('<PubmedArticleSet>' + xml + '</PubmedArticleSet>').encode(),
+                         ("111",), retrieved_at_utc=UTC)
+
+
+def test_pause_after_final_metadata_batch_reports_paused(tmp_path):
+    p, query_id = project_with_pmids(tmp_path, ("111",))
+    def after_commit(batch):
+        pause_pubmed_checkpoint(p, query_id)
+    progress = collect_pubmed_metadata(
+        p, query_id, make_client(lambda req, timeout: response("111")),
+        batch_size=1, after_commit=after_commit,
+    )
+    assert progress.status == "paused"
+    assert progress.committed_metadata_ids == 1
+    assert not progress.source_retrieval_verified
