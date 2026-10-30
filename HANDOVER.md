@@ -5,8 +5,8 @@
 - Public repository: https://github.com/studeployed/RESEARCH-Y, protected `main`.
 - Authoritative specification: `RESEARCH-Y_SPEC.md` version `1.0.0-draft.1`, approved 23 October 2026; **unchanged**.
 - Merged PRs: #10, #12, #13, #15, #16, #17, #18, #19, #20 and **[#21](https://github.com/studeployed/RESEARCH-Y/pull/21)** on 27 October 2026, commit `a91af6ee2217b27e8a73e7f46c05c59d901d2ba0`.
-- [PR #21 post-merge Actions](https://github.com/studeployed/RESEARCH-Y/actions/runs/40506608637): all four Windows/Linux × Python 3.12/3.13 jobs passed, 321 tests per job. Security review of the PR final head found no issues; prior code review's five findings were fixed, threads resolved. A redundant later code review stalled after the completed acceptance reviews.
-- **Current proposal, unmerged:** P1-04e `feat/p1-04e-optin-live-pubmed-smoke` to make live PubMed smoke acceptance manually executable in GitHub Actions with private repository secrets. Explicit owner approval required for its PR merge.
+- [PR #21 post-merge Actions](https://github.com/studeployed/RESEARCH-Y/actions/runs/40506608637): all four Windows/Linux × Python 3.12/3.13 jobs passed, 321 tests per job. Security review of the PR final head found no issues; prior code review's five findings were fixed, threads resolved. A further code-review request was made because previous final-head completion evidence was ambiguous; that request stalled.
+- **Merged:** P1-04e PR #22 on 27 October 2026 (`bafdc073dadbc33acc0af4534102b1c0b7f48c19`) introduced a manually triggered real PubMed acceptance workflow. Post-merge checks passed all four jobs.
 - Independent issue [#11](https://github.com/studeployed/RESEARCH-Y/issues/11): deferred Windows junction hardening before untrusted archives/release.
 
 ## Completed in merged implementation
@@ -16,12 +16,15 @@
 - PubMed EFetch metadata/abstract XML parser and original source-retrieval/link persistence, explicit missingness and source rights flags, bounded/credential-safe HTTP transport, and incomplete metadata-batch recovery.
 - Source-wide final completion status is **not** claimed from counted/identifier-only responses or a single EFetch response.
 
-## Live-source verification blocker and P1-04e scope
+## Live-source verification baseline
 
-- **No successful real NCBI ESearch/EFetch source request was executed here.** On 27 October 2026 the local environment failed DNS resolution for the NCBI E-utilities hostname; the web retriever also could not access ESearch. The runtime private `RESEARCHY_NCBI_CONTACT_EMAIL` is not configured. Do not assert AT-06, AT-07 or live AT-09 passed.
-- Existing `scripts/pubmed_source_smoke.py` is read-only, requires a private contact, checks exact ESearch query translation, one bounded ESearch PMID page and matching EFetch bibliographic XML; prints no raw abstract text or API keys.
-- P1-04e introduces **manual-only** GitHub Actions workflow `.github/workflows/pubmed-live-smoke.yml`, a private-secret presence gate, fixed public `("ECMO"[All Fields])` query, a strict no-network-in-normal-CI regression test, and public-source-safe evidence protocol in `docs/PUBMED_LIVE_VALIDATION.md`.
-- GitHub dispatch needs the workflow on the default branch; this proposal cannot be run from an unmerged PR. After owner approval and merge, set `RESEARCHY_NCBI_CONTACT_EMAIL` as a private repository Actions secret and run manually. Optional private `RESEARCHY_NCBI_API_KEY`; never commit either.
+- The P1-04e manual workflow is already on main; a real NCBI ESearch response was received on 30 October 2026 (see next section). No real PMID page or EFetch record has yet passed the smoke workflow.
+- The live workflow uses a deliberately generic fixed query; ordinary CI runs remain offline. Credentials are provided separately in GitHub Actions repository secrets and are not committed.
+## P1-04f — First real ESearch failure and proposed correction
+
+On 30 October 2026, [manual run #41066478463](https://github.com/studeployed/RESEARCH-Y/actions/runs/41066478463) contacted NCBI successfully. PubMed accepted the fixed query '("ECMO"[All Fields])' as '"ECMO"[All Fields]' with no warnings. The client incorrectly required identical parentheses and exited query_review_required (3) before ID or EFetch retrieval; the source count was not printed.
+
+P1-04f proposes a shared, conservative whole-expression outer-parenthesis equivalence check in count probes, ID pages, and checkpoint persistence/reopen. Raw NCBI translations stay unchanged; other field, term or operator differences remain review-required. Offline tests and exact-HEAD code/security review are required; no live acceptance is claimed until a new manual run after merge.
 
 ## Still outstanding
 
@@ -32,6 +35,6 @@
 
 ## Next review action
 
-1. Review P1-04e against approved scope. Four required Windows/Linux Actions jobs must pass on its final commit; request Codex code review, wait for 👀 **and completion**, then request security review and verify its `running` and `completed` status for the same head. Resolve substantive findings.
-2. Present P1-04e **unmerged** for explicit owner approval.
-3. After merge and authorised secret configuration, perform the controlled real-source smoke and record accurate evidence; do not claim anything executed while network/contact requirements are unmet.
+1. Verify cross-platform CI for P1-04f on its final HEAD and obtain completed commit-specific Codex code and security reviews, resolving material findings. Do not merge without explicit owner authorisation.
+2. After merge, rerun the P1-04e manual workflow and record the accepted translation, NCBI reported count, one PMID page and EFetch metadata or explicit failure.
+3. Continue full AT-06/07/09 source acceptance without conflating one-record smoke evidence with complete retrieval. Next planned connector is P1-05 Web of Science Starter.

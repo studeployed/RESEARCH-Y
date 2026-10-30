@@ -25,7 +25,7 @@ from research_y.pubmed_ids import (
     parse_identifier_page,
 )
 from research_y.pubmed_partition import DateWindow, PubMedPartitionResult
-from research_y.pubmed_probe import PubMedESearchProbeClient
+from research_y.pubmed_probe import PubMedESearchProbeClient, _translation_matches_submitted
 from research_y.storage import _audit
 
 MAX_LEAF_COUNT = DEFAULT_SINGLE_QUERY_CEILING
@@ -327,7 +327,8 @@ def _validated_pages(con, query_id, plan, leaves):
                 or p.get("retmax") != requested or p.get("partition_index") != partition
                 or p.get("exact_query") != leaf["exact_subquery"]
                 or p.get("reported_matches") != count
-                or p.get("accepted_translation") != leaf["exact_subquery"]
+                or not _translation_matches_submitted(
+                    leaf["exact_subquery"], p.get("accepted_translation"))
                 or p.get("warnings") != [] or p.get("review_reasons") != []):
             raise CheckpointIntegrityError("Checkpoint page does not match immutable partition/count")
         _sha(p.get("response_sha256"))
@@ -394,7 +395,8 @@ def commit_pubmed_checkpoint_page(
     """
     if not isinstance(page, PubMedIdentifierPage):
         raise TypeError("Page must be a validated PubMedIdentifierPage")
-    if page.review_required or page.accepted_translation != page.exact_query or page.warnings:
+    if (page.review_required or page.warnings
+            or not _translation_matches_submitted(page.exact_query, page.accepted_translation)):
         raise CheckpointIntegrityError("Only source-accepted, warning-free ID pages may be saved")
     with _validated_project_connection(project) as con:
         con.execute("BEGIN IMMEDIATE")
