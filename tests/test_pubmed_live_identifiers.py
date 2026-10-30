@@ -148,7 +148,17 @@ def test_actual_10005_source_ids_pause_then_reopen_reconcile_without_duplicate_p
     assert final["first_page_unchanged"]
     assert not final["source_retrieval_verified"] and not final["metadata_acquired"]
     assert sum(p["retmax"] for p in final["pages"]) == 10_005
+    # The evidence contains the public PMIDs, permitting an independent
+    # union/count/hash check after ephemeral runner storage disappears.
+    from hashlib import sha256
+    listed = [pid for p in final["pages"] for pid in p["pmids"]]
+    assert len(listed) == len(set(listed)) == 10_005
+    assert set(listed) == {pid for pid, _ in source.records}
+    assert sha256("\n".join(sorted(listed)).encode("ascii")).hexdigest() == (
+        final["pmid_union_sha256"]
+    )
     assert all(p["response_sha256"] and p["checkpoint_sha256"]
+               and p["exact_query"] and p["retrieved_at_utc"]
                for p in final["pages"])
     assert "SYNTHETIC-DO-NOT-LOG" not in json.dumps(final)
 
@@ -196,8 +206,13 @@ def test_bad_provider_field_or_missing_date_coverage_cannot_pass(tmp_path):
 
     second = SyntheticNCBI()
     second.exclude_one_from_dates = True
-    with pytest.raises(Exception):
+    with pytest.raises(live.ValidationFailure, match="partition plan"):
         _start(tmp_path / "different", second)
+    evidence_file = tmp_path / "different" / "live-test" / live.EVIDENCE_FILENAME
+    evidence = json.loads(evidence_file.read_text(encoding="utf-8"))
+    assert evidence["status"] == "incomplete"
+    assert evidence["source_retrieval_verified"] is False
+    assert evidence["pages_committed"] == 0
     assert not (tmp_path / "different" / "live-test" / live.STATE_FILENAME).exists()
 
 

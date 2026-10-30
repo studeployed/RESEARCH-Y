@@ -115,6 +115,7 @@ class GuardedESearchTransport:
         self.requests = 0
         self.page_requests: list[tuple[str, int]] = []
         self._paused = False
+        self.forbidden_attempt = False
 
     def __call__(self, request: Request, timeout: float) -> bytes:
         if request.full_url != ESEARCH_URL or request.get_method() != "POST":
@@ -128,6 +129,7 @@ class GuardedESearchTransport:
         size = int(fields["retmax"][0])
         identity = (query, offset)
         if size > 0 and identity == self.forbidden_page:
+            self.forbidden_attempt = True
             raise ValidationFailure("Previously committed page would be refetched")
         self.requests += 1
         if self.requests > self.request_budget:
@@ -221,17 +223,30 @@ def start_phase(
         date_window=window, page_size=PAGE_SIZE,
         max_count_probes=MAX_COUNT_PROBES,
     )
-    snapshot = inspect_pubmed_checkpoint(project, pending.query_id)
+    try:
+        snapshot = inspect_pubmed_checkpoint(project, pending.query_id)
+    except KeyError:
+        _write_json(workspace / EVIDENCE_FILENAME, {
+            "stage": "durable_pause", "status": "incomplete",
+            "reported_matches": pilot.reported_matches,
+            "retrieved_unique_pmids": 0, "pages_committed": 0,
+            "source_requests": guard.requests,
+            "reason": result.error or "No verified immutable partition plan",
+            "source_retrieval_verified": False,
+            "metadata_acquired": False,
+        })
+        raise ValidationFailure("No verified partition plan was established") from None
     summary = _safe_summary("durable_pause", snapshot, requests=guard.requests,
                             error=result.error)
     if (result.status != "paused" or snapshot.stored_status != "paused"
             or snapshot.pages_committed != 1 or snapshot.identifiers_reconciled
             or snapshot.root_count != pilot.reported_matches
             or not guard._paused):
-        raise ValidationFailure(
-            "Source plan or durable one-page pause was not established; "
-            + json.dumps(summary, sort_keys=True)
-        )
+        _write_json(workspace / EVIDENCE_FILENAME, {
+            **summary, "metadata_acquired": False,
+            "identifiers_reconciled": False,
+        })
+        raise ValidationFailure("Source plan or one-page pause was not established")
 
     first = _first_page(project, pending.query_id)
     state = {
@@ -279,6 +294,11 @@ def _evidence_from_db(project, query_id: str, snapshot) -> dict[str, object]:
             "accepted_translation": p["accepted_translation"],
             "response_sha256": p["response_sha256"],
             "checkpoint_sha256": digest,
+            "exact_query": p["exact_query"],
+            "retrieved_at_utc": p["retrieved_at_utc"],
+            # PMIDs in this fixed, public diagnostic are public identifiers,
+            # not copyrighted abstracts; retain them to audit the true union.
+            "pmids": p["pmids"],
         })
     return {
         "query": QUERY, "reported_matches": snapshot.root_count,
@@ -338,7 +358,7 @@ def resume_phase(
         "source_requests": guard.requests,
         "new_page_requests": len(guard.page_requests),
         "first_page_unchanged": first_after["sha256"] == state["first_page_sha256"],
-        "replayed_committed_page": False,
+        "replayed_committed_page": guard.forbidden_attempt,
         "date_start": state["date_start"], "date_end": state["date_end"],
     })
     ok = (
@@ -349,6 +369,7 @@ def resume_phase(
         and len(set(snapshot.pmids)) == snapshot.root_count
         and snapshot.root_count > 10_000
         and evidence["first_page_unchanged"]
+        and not guard.forbidden_attempt
         and evidence["source_query_status"] == "incomplete"
         and not result.source_retrieval_verified
     )

@@ -23,7 +23,7 @@
 
 ## Current authorised increment — P1-04g proposal
 
-A separate manual GitHub workflow, `pubmed-live-identifiers.yml`, is being prepared to validate source-reconciled full ID retrieval and deliberate SQLite checkpoint interruption/reopen. The procedure uses a fixed public ECMO query and an explicitly recorded disjoint Create Date coverage window, safe request/size ceilings, NCBI off-peak hours, strict source rechecking and independent stage processes. It will not fetch all ~19,000 metadata records and will not mark complete bibliographic retrieval.
+A separate manual GitHub workflow, `pubmed-live-identifiers.yml`, is being prepared to validate source-reconciled full ID retrieval and deliberate SQLite checkpoint interruption/reopen. The procedure uses a fixed public ECMO query and an explicitly recorded disjoint Create Date coverage window, safe request/size ceilings, NCBI off-peak hours, strict source rechecking and independent stage processes. Its public, fixed-query evidence artifact retains canonical PMIDs by page so the identifier union is independently auditable; it excludes credentials and protected abstracts. It will not fetch all ~19,000 metadata records or mark complete bibliographic retrieval.
 
 - See `docs/PUBMED_LIVE_IDENTIFIERS.md` for the controlled test protocol and evidence schema.
 - Offline tests and four-platform CI, completed current-HEAD Codex code and security reviews, and explicit project-owner authorisation are mandatory before **any merge**.

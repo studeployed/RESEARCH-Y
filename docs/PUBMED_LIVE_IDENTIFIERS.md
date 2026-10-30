@@ -82,12 +82,15 @@ A successful or incomplete second stage writes an
 `identifier-evidence.json` with run commit/time, exact fixed query,
 date range, partition geometry/counts, pagination offsets,
 source-reported accepted translations, provider-response SHA-256
-digests, SQLite page checksums, total unique PMID count and a
-hash of the sorted PMID union. It records
+digests, SQLite page checksums, **public canonical PMIDs on every page**,
+total unique PMID count and a hash of the sorted PMID union. The included
+PMIDs allow independent recomputation of the entire count and union. It records
 `source_retrieval_verified=false` and
 `metadata_acquired=false`. GitHub uploads **only** this credential-free
-JSON artifact (retained 14 days); no SQLite database, complete PMID list,
+JSON artifact (retained 14 days); no SQLite database,
 source XML, protected abstracts, contact address or API key are uploaded.
+The diagnostic query and canonical PMIDs are publicly available literature
+identifiers and have no proprietary research-specific terms.
 
 This GitHub runner project is temporary. The evidence JSON does
 **not** make it possible to resume the project on a different day,
