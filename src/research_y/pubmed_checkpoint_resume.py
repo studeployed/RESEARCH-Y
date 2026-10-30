@@ -9,7 +9,7 @@ from __future__ import annotations
 from research_y.projects import Project, _utc_now, _validated_project_connection
 from research_y.pubmed_ids import PubMedIdentifierPage, parse_identifier_page
 from research_y.pubmed_partition import DateWindow, PubMedPartitionResult, retrieve_date_partitioned_identifiers
-from research_y.pubmed_probe import PubMedESearchProbeClient
+from research_y.pubmed_probe import PubMedESearchProbeClient, _translation_matches_submitted
 from research_y.pubmed_checkpoint_store import (
     CheckpointSnapshot, CheckpointResumeResult, create_pubmed_checkpoint,
     commit_pubmed_checkpoint_page, inspect_pubmed_checkpoint,
@@ -21,7 +21,7 @@ def _safe_probe(client: PubMedESearchProbeClient, query: str, *, internal: bool 
         response = client.probe(query, allow_crdt_partition=True) if internal else client.probe(query)
         if (response.review_required or type(response.reported_matches) is not int
                 or response.reported_matches < 0
-                or response.accepted_translation.strip() != query.strip()):
+                or not _translation_matches_submitted(query, response.accepted_translation)):
             return None
         return response
     except Exception:

@@ -1,6 +1,6 @@
 # P1-04e — Controlled live PubMed source acceptance
 
-**Status:** Manual-only execution procedure proposed for review. **No live PubMed
+**Status:** Manual workflow merged; first live ESearch attempt on 30 October 2026 exposed a conservative translation-comparison false positive. **No live PubMed
 response was obtained in the development environment on 27 October 2026.**
 The local execution environment cannot resolve the NCBI E-utilities hostname;
 the public web retriever also could not access the ESearch API endpoint. No
@@ -11,6 +11,19 @@ The authoritative requirements remain `RESEARCH-Y_SPEC.md` (SEARCH-07,
 SRC-01 through SRC-04, RUN-04/05 and AT-06/07/09/19). No substantive
 specification or source-query logic is changed in this increment.
 
+## First real NCBI response — 30 October 2026
+
+[Actions run #41066478463](https://github.com/studeployed/RESEARCH-Y/actions/runs/41066478463)
+submitted the generic query ("ECMO"[All Fields]). PubMed accepted
+"ECMO"[All Fields] (without redundant outer parentheses) and issued no warnings.
+The script returned query_review_required / exit code 3 because it required
+literal string equality. No count was printed, no PMID page retrieved,
+and no EFetch metadata acquired. The contact and transport worked.
+
+P1-04f proposes treating only balanced *whole-expression* outer grouping
+as equivalent. Every other term, field, operator or internal-group change
+still requires review. Exact provider translation is retained for audit.
+AT-06/07/09 remain partial pending rerun and larger live validations.
 ## What can be tested now, and what cannot be inferred
 
 The already merged `scripts/pubmed_source_smoke.py` uses the actual
@@ -58,9 +71,8 @@ necessary NCBI registration policy. Optionally configure
 `RESEARCHY_NCBI_API_KEY` in the same location. **Do not** paste values in
 workflow inputs, public commit history or PR comments.
 
-Once the new `.github/workflows/pubmed-live-smoke.yml` file is reviewed and
-merged on `main`, open **Actions → PubMed live ESearch / EFetch smoke
-(manual) → Run workflow**. GitHub only exposes manual dispatch for workflow
+The workflow is already merged on `main`. Open **Actions → PubMed live
+ESearch / EFetch smoke (manual) → Run workflow**. GitHub only exposes manual dispatch for workflow
 files available on the default branch. This workflow is deliberately absent
 from automatic PR/push/scheduled events. There is no credentialed action on a
 pull request. The script runs the generic query only; GitHub Actions logs of

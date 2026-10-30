@@ -25,6 +25,19 @@ It returns:
 No journal articles or bibliographic records are downloaded. Source query
 status cannot become `completed_verified` based on this count probe.
 
+## Confirmed live translation edge case (P1-04f)
+
+On 30 October 2026, live NCBI ESearch returned the accepted translation
+'"ECMO"[All Fields]' for submitted '("ECMO"[All Fields])', with no
+provider warnings. The original exact-string comparator flagged review
+and stopped before any PMID or EFetch request.
+
+The P1-04f correction treats only balanced parentheses surrounding the
+**entire** expression as equivalent. It does not ignore field substitutions,
+altered terms, introduced Boolean operations, unexpected internal-group
+changes or provider warnings. The raw accepted translation stays auditable.
+Tests using this real response shape remain offline until the manual
+provider workflow is rerun. Acceptance test AT-06 stays partial.
 ## Reliability and scientific interpretation
 
 - Only the fixed NCBI HTTPS ESearch endpoint is used, with **all redirects refused** (including cross-host and HTTPS-to-HTTP downgrade), via Python's standard

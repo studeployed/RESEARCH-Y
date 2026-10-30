@@ -99,6 +99,52 @@ def _translate_warning_map(value: Any, *, field: str) -> tuple[str, ...]:
     return tuple(messages)
 
 
+def _outer_group_normal_form(expression: str) -> str:
+    """Remove only balanced parentheses enclosing the entire expression.
+
+    Internal Boolean grouping and quoted literal content are never changed.
+    Invalid parentheses or quotes leave the expression untouched. The scan
+    is linear even for unusually deeply nested outer groups.
+    """
+    original = expression.strip()
+    stack: list[int] = []
+    closing: dict[int, int] = {}
+    in_quote = False
+    for index, char in enumerate(original):
+        if char == '"':
+            in_quote = not in_quote
+        elif not in_quote and char == "(":
+            stack.append(index)
+        elif not in_quote and char == ")":
+            if not stack:
+                return original
+            closing[stack.pop()] = index
+    if stack or in_quote:
+        return original
+
+    start, end = 0, len(original) - 1
+    while start < end and original[start] == "(" and closing.get(start) == end:
+        start += 1
+        end -= 1
+        while start <= end and original[start].isspace():
+            start += 1
+        while start <= end and original[end].isspace():
+            end -= 1
+    return original[start:end + 1]
+
+
+def _translation_matches_submitted(submitted: str, accepted: str) -> bool:
+    """Check literal identity except for redundant whole-expression grouping.
+
+    Do not consider rewritten operators, terms, fields, internal grouping,
+    whitespace, or source mapping equivalent; preserve source text verbatim.
+    """
+    return (
+        isinstance(submitted, str) and isinstance(accepted, str)
+        and _outer_group_normal_form(submitted) == _outer_group_normal_form(accepted)
+    )
+
+
 def _review_translation(
     exact_query: str, accepted: str, warnings: tuple[str, ...],
     *, allow_crdt_partition: bool = False,
@@ -107,7 +153,7 @@ def _review_translation(
     reasons: list[str] = []
     if warnings:
         reasons.append("PubMed reported warnings/errors requiring query review")
-    if accepted.strip() != exact_query.strip():
+    if not _translation_matches_submitted(exact_query, accepted):
         reasons.append("PubMed query translation differs from the submitted query")
     if re.search(r"\[(?:MeSH\s+(?:Terms|Major Topic|Subheading)|MeSH)\]", accepted, re.I):
         reasons.append("PubMed may have introduced unwanted Medical Subject Headings mapping")
@@ -116,7 +162,7 @@ def _review_translation(
     # an OR-only concept query with ONE date interval. This is not a new user
     # concept operator. Exempt only the exact accepted and correctly shaped
     # internal suffix; unexpected extra AND/NOT still triggers review.
-    if allow_crdt_partition and accepted.strip() == exact_query.strip() and re.fullmatch(
+    if allow_crdt_partition and _translation_matches_submitted(exact_query, accepted) and re.fullmatch(
         r"\(.+\) AND \(\d{4}/\d{2}/\d{2}:\d{4}/\d{2}/\d{2}\[crdt\]\)",
         exact_query.strip(), flags=re.DOTALL,
     ):
@@ -167,7 +213,7 @@ def parse_esearch_count(
     reasons = _review_translation(
         exact_query, translation, warnings, allow_crdt_partition=allow_crdt_partition,
     )
-    identical = translation.strip() == exact_query.strip()
+    equivalent = _translation_matches_submitted(exact_query, translation)
     return PubMedCountProbe(
         exact_query=exact_query,
         accepted_translation=translation,
@@ -175,7 +221,7 @@ def parse_esearch_count(
         checked_at_utc=checked_at_utc,
         warnings=warnings,
         review_reasons=reasons,
-        translation_matches_submitted=identical,
+        translation_matches_submitted=equivalent,
     )
 
 
