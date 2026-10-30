@@ -1,7 +1,6 @@
 # P1-04e — Controlled live PubMed source acceptance
 
-**Status:** Manual workflow merged; first live ESearch attempt on 30 October 2026 exposed a conservative translation-comparison false positive. **No live PubMed
-response was obtained in the development environment on 27 October 2026.**
+**Status:** P1-04e manual workflow merged. Its second live PubMed ESearch / one-PMID EFetch smoke **succeeded on 30 October 2026**; this does not establish complete retrieval.
 The local execution environment cannot resolve the NCBI E-utilities hostname;
 the public web retriever also could not access the ESearch API endpoint. No
 runtime NCBI contact email or private API key is configured here. These are
@@ -24,6 +23,23 @@ P1-04f proposes treating only balanced *whole-expression* outer grouping
 as equivalent. Every other term, field, operator or internal-group change
 still requires review. Exact provider translation is retained for audit.
 AT-06/07/09 remain partial pending rerun and larger live validations.
+## Verified one-record live smoke — 30 October 2026
+
+[GitHub Actions run #41073931474](https://github.com/studeployed/RESEARCH-Y/actions/runs/41073931474)
+on merged commit `19ba4d2de7359d9f814858bd90b7f2b46db171b1` completed
+successfully at 14:42 UTC. The exact query `("ECMO"[All Fields])`
+was accepted as `"ECMO"[All Fields]` with no warnings. PubMed reported
+**19,479** source matches. The first fetched PMID was `42958294`;
+matching EFetch metadata and a three-section abstract were received.
+The script correctly retained `source_retrieval_verified=false`.
+Thus query acceptance for this test expression and the one-record
+metadata path are live-verified, but full AT-06 terminology coverage,
+full >10,000 source ID union (AT-07), and real checkpoint recovery
+(AT-09) are **not** established by this smoke.
+
+The next proposed increment P1-04g adds a separate strictly manual
+>10,000-ID + first-page durable pause + fresh-process resume validation.
+See [P1-04g validation procedure](PUBMED_LIVE_IDENTIFIERS.md).
 ## What can be tested now, and what cannot be inferred
 
 The already merged `scripts/pubmed_source_smoke.py` uses the actual
