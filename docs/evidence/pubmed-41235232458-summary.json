@@ -1,0 +1,54 @@
+{
+  "evidence_kind": "scoped_live_pubmed_identifier_acceptance_summary",
+  "run_id": 41235232458,
+  "run_url": "https://github.com/studeployed/RESEARCH-Y/actions/runs/41235232458",
+  "artifact_id": 13054274715,
+  "artifact_expires_at_utc": "2026-11-14T19:39:54Z",
+  "commit_sha": "0fd89c1bdac509513c9c1cf25c83683556472dac",
+  "run_completed_at_utc": "2026-10-31T19:39:57Z",
+  "exact_query": "(\"ECMO\"[All Fields])",
+  "create_date_start": "1900-01-01",
+  "create_date_end": "2026-11-01",
+  "reported_matches": 19483,
+  "retrieved_identifiers": 19483,
+  "unique_identifiers": 19483,
+  "duplicate_identifiers": 0,
+  "pages_committed": 43,
+  "pages_expected": 43,
+  "partition_nodes": 11,
+  "leaf_partitions": [
+    {"start":"1900-01-01","end":"1963-06-02","count":2,"pages":1},
+    {"start":"1963-06-03","end":"1995-02-16","count":639,"pages":2},
+    {"start":"1995-02-17","end":"2010-12-25","count":1740,"pages":4},
+    {"start":"2010-12-26","end":"2018-11-28","count":3976,"pages":8},
+    {"start":"2018-11-29","end":"2022-11-15","count":5621,"pages":12},
+    {"start":"2022-11-16","end":"2026-11-01","count":7505,"pages":16}
+  ],
+  "pmid_union_sha256": "65bef2ceee5f198b33a0537b64d31ff0205a9d043db7233edeef8f88f6fd9c55",
+  "source_evidence_json_sha256": "4b1efef205de33670b9e710819286ff953f6d096e7c4203938b9b2bf3eeb4bf2",
+  "source_artifact_zip_sha256": "80b2c34f96b52430ea49266b70efdc7d6e16c75e8d6171651f0860f416015073",
+  "checkpoint_recovery": {
+    "scenario": "controlled pause after one committed page; separate-process reopen on one runner",
+    "initial_pages": 1,
+    "initial_identifiers": 2,
+    "new_page_requests": 42,
+    "first_page_unchanged_reported_by_runner": true,
+    "replayed_committed_page_reported_by_runner": false
+  },
+  "acceptance": {
+    "AT-07": "live >10000 identifier reconciliation scenario passed for this query/run",
+    "AT-09": "PubMed identifier-stage controlled pause/reopen scenario passed",
+    "global_product_acceptance": "partial",
+    "source_retrieval_verified": false,
+    "metadata_acquired": false,
+    "status": "identifiers_reconciled_metadata_pending"
+  },
+  "limits": [
+    "This repository file is a summary, not the complete per-page identifier artifact.",
+    "The full artifact and independent audit were downloaded and supplied in the project conversation; retain them beyond the Actions expiration for independent replay.",
+    "Page/partition counts and unique identifier union were checked from the original artifact; the source JSON and sorted union hashes were recomputed again before committing this summary.",
+    "Raw provider responses and the ephemeral SQLite database were not archived here; their original byte hashes and runtime recovery flags are not independently recreated by this summary.",
+    "Controlled pause/reopen is not abrupt-power-loss, multi-day interruption or every possible provider failure testing.",
+    "No full metadata/abstract acquisition for the 19483 records, global literature completeness or frozen backend snapshot is established."
+  ]
+}

@@ -2,44 +2,46 @@
 
 ## Authority and merged baseline
 
-- Repository: https://github.com/studeployed/RESEARCH-Y; protected `main`. Authoritative approved specification: `RESEARCH-Y_SPEC.md`, version `1.0.0-draft.1`, unchanged.
-- Independent Python project; no RESEARCH-X assumptions, code or dependencies.
-- Core increments through **P1-04h (PR #25)** are merged. Current base for P1-04i is `cccb6b4d37ce0c5df02c9a545fd6c38b58188098`.
-- P1-04g (PR #24) added the controlled manual >10,000-identifier and checkpoint-recovery workflow. P1-04h (PR #25) added the two-request count-only diagnostic to capture the first partition failure precisely. No routine continuous integration uses live credentials.
-- Deferred [Windows junction hardening #11](https://github.com/studeployed/RESEARCH-Y/issues/11) remains relevant before untrusted archives/import.
+Repository: https://github.com/studeployed/RESEARCH-Y. The approved version-controlled `RESEARCH-Y_SPEC.md` (1.0.0-draft.1) remains authoritative and unchanged. Development is independent and Python-based. Current merged base is **`0fd89c1bdac509513c9c1cf25c83683556472dac`**, PR #26 / P1-04i. The post-merge four Windows/Linux Python 3.12/3.13 checks passed. The owner has authorised in-scope development and opening pull requests directly; **merging still requires explicit owner authorisation**. Substantive specification changes require separate approval.
 
-## Existing implementation
+Existing portable projects, recoverable SQLite migrations, immutable broad OR-only strategies, PubMed All Fields / Web of Science Starter Topic compiler, PubMed counts/partitioning/checkpoints and EFetch metadata foundations remain merged. Deferred Windows junction hardening issue #11 remains open for future untrusted archives/import work.
 
-Portable project folders, recoverable SQLite migrations, immutable approved broad-OR strategy snapshots, PubMed All Fields and Web of Science Starter Topic query compilation; PubMed count/translation checks, bounded identifier pagination, recursive disjoint Create Date partitions and counted unique-identifier union; transactional page/index/audit checkpoints and pause/reopen recovery; EFetch bibliographic metadata/abstract parser, source provenance, missingness/rights flags and recoverable metadata persistence. Offline fixtures do not establish complete live literature retrieval.
+## PubMed live gate — verified scoped success
 
-## Live source evidence
+[Run #41235232458](https://github.com/studeployed/RESEARCH-Y/actions/runs/41235232458), completed 31 October 2026 at 19:39:57 UTC on the merged base, retrieved **19,483 unique PubMed identifiers**, matching its source count, across **43/43 pages and six disjoint leaf partitions**. The first process paused after one page containing two identifiers; a separate process reopened and fetched the remaining 42 pages. Runtime evidence reports that the original page was unchanged and not requested again.
 
-1. [Run #41073931474](https://github.com/studeployed/RESEARCH-Y/actions/runs/41073931474), 30 October 2026: successful one-record ESearch/EFetch smoke. Source count 19,479; PubMed identifier 42958294; matching metadata and structured abstract. This is **one-record evidence only**.
-2. [Run #41207501975](https://github.com/studeployed/RESEARCH-Y/actions/runs/41207501975), 31 October: 19,483 matches but failure during initial partition planning; zero committed pages or identifiers and no live recovery evidence.
-3. [Count-only diagnostic #41216318046](https://github.com/studeployed/RESEARCH-Y/actions/runs/41216318046), 31 October at 15:45 UTC: unrestricted and date-partition counts both **19,483**, no provider warnings or transport error. The client rejected the actual source translation:
+The downloaded artifact and independent audit were inspected in the project conversation. `docs/evidence/pubmed-41235232458-summary.json` retains exact run/commit, intervals/counts, artifact/evidence/union hashes and limitations. It is explicitly a summary, not a replacement for the full per-page evidence. The original Actions artifact expires 14 November 2026; the full evidence and audit were also supplied as conversation files and should be retained for independent replay.
 
-```text
-Submitted: (("ECMO"[All Fields])) AND (1900/01/01:2026/11/01[crdt])
-Accepted:  "ECMO"[All Fields] AND 1900/01/01:2026/11/01[Date - Create]
-```
+The scoped AT-07 >10,000-ID live scenario and PubMed identifier-stage AT-09 controlled pause/reopen scenario **passed**. Broader AT-06 terminology, full bibliographic metadata/abstract reconciliation, abrupt failures, multi-day source changes and product-wide acceptance remain partial. `identifiers_reconciled_metadata_pending` and `source_retrieval_verified=false` remain correct. The dated count is not a permanently expected total.
 
-This establishes the immediate validator incompatibility: redundant clause wrappers and the documented Create Date field alias. It does **not** prove complete identifier retrieval or guarantee every future provider translation.
+## Current increment — P1-05a, Web of Science Starter source contract
 
-## Current authorised corrective increment — P1-04i
+Parent issue #8 and roadmap milestone P1-05. This is the **first incremental portion**, not completion of the entire connector/recovery milestone. Read `docs/WOS_STARTER.md` for the official contract, implementation boundaries and live hypotheses.
 
-See `docs/PUBMED_DATE_TRANSLATION.md`. The proposed correction uses a restricted, quote-aware, iterative grammar to recognise the exact observed administrative date translation **only with explicit internal partition context**. It requires an unchanged ordered All Fields OR clause, one administrative AND and identical valid date boundaries; it rejects changed fields, terms, bounds, warnings, extra operators and ambiguous grouping. It preserves the original submitted/accepted text and stored checksums.
+- `wos_starter.py`: quoted OR-only Topic requests; strict requested/returned page, size and count checks; accession uniqueness; original source fields retained in memory; unavailable abstracts explicitly marked; no inferred translated query or full-source success.
+- `wos_starter_client.py`: fixed HTTPS endpoint, key header only, no redirects, 1.05-second serial pacing, finite request budget, observed quota rather than configured assumptions, safe error categories and Retry-After handling without implicit retries.
+- Daily allowance of at least 5,000 must be actually observed before continuing beyond the initial access probe. Missing/invalid quota headers are unverified. The OpenAPI schema does not guarantee the adapter's candidate quota headers; the live check must verify them. No reset time or licence scope is inferred.
+- `scripts/wos_source_smoke.py` and manual-only `.github/workflows/wos-starter-live-smoke.yml`: fixed public `TS=("ECMO")`, explicit Core Collection `db=WOS`, one-record access probe then at most two adjacent 50-record pages. Maximum three requests. No automatic credentialled CI calls or licensed source-record content in public artifacts. No project database is modified.
+- No dependencies or authoritative requirements changed. Normal tests are synthetic and offline. The new unit tests were run locally; full cross-platform CI and reviews must be checked on the actual PR HEAD.
 
-The same context-aware comparator is used in count parsing, existing identifier-page review, checkpoint-restart recounts, page commit and stored-page validation. Checkpoint context is derived from its immutable plan. No source request construction, schema, dependency, workflow, field coverage, search scope or completion rule changes.
+**Not implemented by P1-05a:** durable SQLite source-page/audit storage, cross-day restart/quota accounting, full-search completion, bounded scheduled retries, source/master linkage, enrichment or GUI. These are P1-05b/acceptance work, not silently deferred release requirements.
 
-Tests: `tests/test_pubmed_date_translation.py` (55 focused parser cases executed locally before submission), and `tests/test_pubmed_date_translation_integration.py` (offline production parser/checkpoint paths; 10,005 synthetic identifiers; pause, reopen, no refetch, legacy-page preservation and failed/rejected recovery). Full cross-platform results and Codex reviews must be checked against the exact current pull-request HEAD before merge advice.
+## Windows test-reporting incident and correction within PR #27
 
-The owner has authorised implementing proposed in-scope fixes and opening a pull request directly for approval, rather than requesting another permission merely to create it. **That is not merge authorisation.** Any substantive specification change still requires separate approval.
+The owner supplied both Windows logs from run #41239845805 at HEAD `03c6c396f56e7bf5ed67d0ebe0497a6b5c68f2ff`. Both reached 100% of collected test progress around 20:41 UTC, showed `EE` in `test_wos_starter.py`, and began the errors section before a very long `test_invalid_json_and_size[xxxxx...]` setup-error heading appeared around 21:52 UTC. Thus this was not simply an uncompleted retrieval test. The supplied excerpts do not include the underlying exception traceback; no specific Windows exception code is claimed.
 
-## Acceptance gates and next action
+The offending parametrization passed `b'x' * (MAX_RESPONSE_BYTES + 1)` without an explicit short ID, so pytest embedded the entire 2,097,153-byte payload in its node identifier. Pytest 9.0.2 sets the node identifier plus execution stage in `PYTEST_CURRENT_TEST`; Windows environment values are limited to 32,767 characters. This is a strong explanation of the platform-specific setup error and oversized error heading. A local Linux collection-only reproduction using the actual parameter lists confirmed a greater-than-two-million-character node identifier, and a simulated Windows environment-length guard rejected it. That simulation is not a substitute for rerunning Windows CI.
 
-- AT-06: one real All Fields query accepted; diverse phrases and group unions remain partial.
-- AT-07: complete live >10,000 identifier union still unverified.
-- AT-09: live checkpoint/reopen/recovery still unverified.
-- AT-19: no false-complete outcome is permitted; final source reconciliation remains outstanding.
+Correction: compact explicit IDs for the six malformed/oversized-response cases and six invalid-key cases; a regression assertion checks actual collected Starter node IDs are no longer than 256 characters. The original payloads, parser assertions, 2 MiB response ceiling, key checks and all production source code are unchanged. Normal test jobs now have a 15-minute limit and short traceback formatting. No new dependencies, test skips, licence/credential changes, or live provider calls are introduced.
 
-After exact-HEAD tests and reviews, leave P1-04i unmerged for owner approval. After an approved merge, run the **existing** large identifier-validation workflow on the new `main` commit with existing secrets and safeguards, then inspect actual partitions, pages, source counts and recovery evidence. Do not equate the observed historical 19,483 count with an immutable current total. No extra diagnostic-only workflow is needed for this correction. Web of Science Starter P1-05 remains next after the PubMed evidence gate.
+The owner reports that `RESEARCHY_WOS_STARTER_API_KEY` has been configured. Do not expose or re-enter it to fix these offline test failures. Recheck the new commit's four CI jobs and obtain exact-HEAD reviews; reviews of the previous commit do not clear the amended PR.
+
+References: [pytest current-test environment](https://docs.pytest.org/en/stable/example/simple.html#pytest-current-test-environment-variable); [Windows environment-variable limit](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables).
+
+## Next action
+
+Complete exact-HEAD automated tests and independent reviews, then leave the pull request for owner approval; do not merge automatically. Automatic code/security reviews may already be running: inspect summary, individual receipts and findings before requesting anything, and do not duplicate valid reviews. Missing/contradictory evidence is unverified, not passed.
+
+After an approved merge, use the privately configured **`RESEARCHY_WOS_STARTER_API_KEY`** repository secret (the institutional Starter key, not the PubMed key). Run **Web of Science Starter entitlement and paging smoke (manual)** once on the new `main`. Inspect actual quota and page evidence, without treating the sample as full retrieval. **No live Starter access is yet verified.**
+
+Next development portion is P1-05b: transactional durable pages and source records, pause/reopen across quota resets, bounded retry timing, no repeat of committed pages, source drift detection and final reconciliation. The full AT-08/09 gate remains open until those behaviours and live entitlement are demonstrated.
