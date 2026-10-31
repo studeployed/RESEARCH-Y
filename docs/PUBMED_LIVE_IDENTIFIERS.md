@@ -1,7 +1,6 @@
 # P1-04g — Controlled live PubMed >10,000-ID recovery acceptance
 
-**Status:** Proposed, unmerged validation workflow. Offline tests are not
-evidence that the live >10,000-ID test has succeeded.
+**Status:** Merged in PR #24 on 31 October 2026. First live execution failed during partition planning, before any PMID page; offline tests are not live completion evidence.
 **Specification:** SEARCH-07, SRC-01–03, RUN-04–07, COUNT-01/03/05,
 AT-07/09/19 in the unchanged authoritative `RESEARCH-Y_SPEC.md`.
 
@@ -17,6 +16,24 @@ PubMed ESearch exposes only the first 10,000 matching identifiers for
 a single query. A source count exceeding that ceiling requires
 non-overlapping, count-reconciled partitions before any completeness
 claim. This increment tests the existing production implementation.
+
+## First live >10,000-ID attempt — incomplete
+
+[Actions run #41207501975](https://github.com/studeployed/RESEARCH-Y/actions/runs/41207501975)
+on 31 October 2026 (commit `d08402931d5e4cc23d662b71c0da65a30931afeb`)
+reported **19,483** unrestricted PubMed matches, then stopped after
+**three source count-only requests**, with **zero** PMID pages committed
+and **zero** identifiers retrieved. The saved reason was
+`A complete checkpoint plan could not be established`; the second
+process (reopen/resume) was not reached. The code did not preserve
+the decisive Create Date query translation, warnings or count.
+
+This is **incomplete**, not a verified retrieval. The cause is
+unverified: provider rewrite, source warning/transport failure or
+a count/coverage difference are all possible.
+
+P1-04h therefore proposes a separate [manual two-request count-only diagnostic](PUBMED_PARTITION_DIAGNOSTIC.md)
+to distinguish these causes before altering any retrieval logic.
 
 ## Opt-in bounds and source etiquette
 
