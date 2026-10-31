@@ -21,7 +21,7 @@ SEARCH-03,1,AT-04,planned,planned
 SEARCH-04,1,AT-04,tests/test_strategy_storage.py (explicit approval gate only),partial
 SEARCH-05,1,"AT-04,AT-18",tests/test_strategy_storage.py (term provenance snapshot only),partial
 SEARCH-06,1,AT-05,tests/test_query_compiler.py (offline union only),partial
-SEARCH-07,1,AT-06,tests/test_query_compiler.py; tests/test_pubmed_probe.py; tests/test_pubmed_translation.py (conservative offline translation equivalence; live rerun pending),partial
+SEARCH-07,1,AT-06,tests/test_query_compiler.py; tests/test_pubmed_probe.py; tests/test_pubmed_partition_count_diagnostic.py (root and first Create Date accepted query evidence pending),partial
 SEARCH-08,1,AT-08,tests/test_query_compiler.py (TS preview only),partial
 SEARCH-09,1,"AT-05,AT-06",tests/test_query_compiler.py (literal validation and chunking; limits unverified),partial
 SEARCH-10,1,AT-05,tests/test_query_compiler.py (no default exclusions),partial
@@ -30,8 +30,8 @@ SEARCH-12,1,AT-17,tests/test_strategy_storage.py (frozen approved snapshot only)
 SEARCH-13,1,"AT-17,AT-19",tests/test_pubmed_probe.py (count-only time and query translation; no run persistence),partial
 SEARCH-14,1,AT-17,planned,planned
 SRC-01,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_translation.py (real ESearch response observed; full live acceptance pending),partial
-SRC-02,1,AT-07,tests/test_pubmed_partition.py; tests/test_pubmed_live_identifiers.py (controlled large ID split and durable recovery fixture; live execution pending),partial
-SRC-03,1,"AT-07,AT-19",tests/test_pubmed_partition.py; tests/test_pubmed_live_identifiers.py (counted disjoint partitions and truthful incomplete statuses),partial
+SRC-02,1,AT-07,tests/test_pubmed_partition.py; tests/test_pubmed_live_identifiers.py; tests/test_pubmed_partition_count_diagnostic.py (live partition plan failed before IDs; first count diagnostic pending),partial
+SRC-03,1,"AT-07,AT-19",tests/test_pubmed_partition.py; tests/test_pubmed_partition_count_diagnostic.py (explicit incomplete partition diagnostics; full source reconciliation pending),partial
 SRC-04,1,AT-07,tests/test_pubmed_metadata.py (EFetch source metadata offline; live verification pending),partial
 SRC-05,1,AT-08,planned,planned
 SRC-06,1,"AT-08,AT-09",planned,planned
@@ -122,9 +122,9 @@ AT-03,3,AT-03,planned,planned
 AT-04,2,AT-04,tests/test_strategy_storage.py (approval gate only),partial
 AT-05,1,AT-05,tests/test_query_compiler.py (offline OR union fixture only),partial
 AT-06,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_translation.py (live NCBI one-term count and EFetch run 41073931474; broader phrases pending),partial
-AT-07,1,AT-07,tests/test_pubmed_partition.py; tests/test_pubmed_live_identifiers.py (>10000 controlled fixture; live full union pending),partial
+AT-07,1,AT-07,tests/test_pubmed_partition.py; tests/test_pubmed_live_identifiers.py; tests/test_pubmed_partition_count_diagnostic.py (live run 41207501975 incomplete; zero IDs),partial
 AT-08,1,AT-08,planned,planned
-AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_pubmed_live_identifiers.py (offline two-stage resume; live recovery pending),partial
+AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_pubmed_live_identifiers.py (live recovery not reached; pending),partial
 AT-10,1,AT-10,planned,planned
 AT-11,2,AT-11,planned,planned
 AT-12,2,AT-12,planned,planned
@@ -134,7 +134,7 @@ AT-15,2,AT-15,planned,planned
 AT-16,2,AT-16,planned,planned
 AT-17,1,AT-17,tests/test_strategy_storage.py (immutable history only),partial
 AT-18,1,AT-18,planned,planned
-AT-19,1,AT-19,tests/test_pubmed_ids.py; tests/test_pubmed_live_identifiers.py (failed source remains incomplete),partial
+AT-19,1,AT-19,tests/test_pubmed_ids.py; tests/test_pubmed_live_identifiers.py; tests/test_pubmed_partition_count_diagnostic.py (no false completion after failed live planning),partial
 AT-20,2,AT-20,planned,planned
 AT-21,3,AT-21,tests/test_schema_migrations.py (migration recovery only),partial
 AT-22,3,AT-22,planned,planned

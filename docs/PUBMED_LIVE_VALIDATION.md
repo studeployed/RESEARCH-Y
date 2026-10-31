@@ -122,6 +122,21 @@ failure. Do not translate a failed test into a fabricated zero-hit result.
 - Final metadata and source-count reconciliation, changing provider
   collections, overfull single-day partition fallback and rights compliance.
 
+## Large-scale validation incident — 31 October 2026
+
+On merged commit `d08402931d5e4cc23d662b71c0da65a30931afeb`,
+[live run #41207501975](https://github.com/studeployed/RESEARCH-Y/actions/runs/41207501975)
+reported 19,483 unrestricted PubMed matches but could not
+establish the first Create Date partition plan. It made three
+source requests and committed zero PMID pages; no recovery
+stage was reached. The earlier script retained only a generic
+failure reason, not the first partition's accepted translation,
+warnings or reported count.
+
+P1-04h adds a separate [manual count-only diagnostic](PUBMED_PARTITION_DIAGNOSTIC.md)
+to capture those distinctions without changing the accepted
+query or fetching identifiers. AT-07 and live AT-09 remain partial.
+
 ## NCBI references
 
 - E-utilities parameters and PubMed 10,000-identifier limit:
