@@ -21,7 +21,8 @@ def _safe_probe(client: PubMedESearchProbeClient, query: str, *, internal: bool 
         response = client.probe(query, allow_crdt_partition=True) if internal else client.probe(query)
         if (response.review_required or type(response.reported_matches) is not int
                 or response.reported_matches < 0
-                or not _translation_matches_submitted(query, response.accepted_translation)):
+                or not _translation_matches_submitted(
+                    query, response.accepted_translation, allow_crdt_partition=internal)):
             return None
         return response
     except Exception:

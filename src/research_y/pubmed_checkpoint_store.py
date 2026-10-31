@@ -328,7 +328,8 @@ def _validated_pages(con, query_id, plan, leaves):
                 or p.get("exact_query") != leaf["exact_subquery"]
                 or p.get("reported_matches") != count
                 or not _translation_matches_submitted(
-                    leaf["exact_subquery"], p.get("accepted_translation"))
+                    leaf["exact_subquery"], p.get("accepted_translation"),
+                    allow_crdt_partition=leaf["index"] >= 0)
                 or p.get("warnings") != [] or p.get("review_reasons") != []):
             raise CheckpointIntegrityError("Checkpoint page does not match immutable partition/count")
         _sha(p.get("response_sha256"))
@@ -395,13 +396,19 @@ def commit_pubmed_checkpoint_page(
     """
     if not isinstance(page, PubMedIdentifierPage):
         raise TypeError("Page must be a validated PubMedIdentifierPage")
-    if (page.review_required or page.warnings
-            or not _translation_matches_submitted(page.exact_query, page.accepted_translation)):
+    if page.review_required or page.warnings:
         raise CheckpointIntegrityError("Only source-accepted, warning-free ID pages may be saved")
     with _validated_project_connection(project) as con:
         con.execute("BEGIN IMMEDIATE")
         plan, leaves, _state = _load_checkpoint(con, query_id)
         leaf = _find_leaf(leaves, page.exact_query)
+        # Context comes from the validated immutable plan, not source text
+        # or an untrusted page's claimed review flags.
+        if not _translation_matches_submitted(
+            page.exact_query, page.accepted_translation,
+            allow_crdt_partition=leaf["index"] >= 0,
+        ):
+            raise CheckpointIntegrityError("Only source-accepted, warning-free ID pages may be saved")
         if (page.reported_matches != leaf["reported_matches"]
                 or type(page.retstart) is not int or page.retstart < 0
                 or type(page.requested_retmax) is not int
@@ -488,5 +495,4 @@ def _set_checkpoint_status(
 def pause_pubmed_checkpoint(project: Project, query_id: str) -> CheckpointSnapshot:
     _set_checkpoint_status(project, query_id, "paused", "User paused identifier retrieval")
     return inspect_pubmed_checkpoint(project, query_id)
-
 
