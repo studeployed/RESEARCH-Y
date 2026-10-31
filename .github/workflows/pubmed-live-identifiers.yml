@@ -1,0 +1,53 @@
+name: PubMed live >10k identifier checkpoint validation (manual)
+
+# Large, provider-credentialled search is NEVER executed by push, PR or schedule.
+# This workflow is available after review and owner-approved merge into main.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Share the original PubMed smoke's lock to avoid competing NCBI API requests.
+concurrency:
+  group: research-y-pubmed-source-smoke
+  cancel-in-progress: false
+
+jobs:
+  live-identifiers:
+    name: Disjoint PubMed IDs, durable pause and process-restart recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RESEARCHY_NCBI_CONTACT_EMAIL: ${{ secrets.RESEARCHY_NCBI_CONTACT_EMAIL }}
+      RESEARCHY_NCBI_API_KEY: ${{ secrets.RESEARCHY_NCBI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.13"
+      - name: Require authorised private NCBI contact
+        shell: bash
+        run: |
+          if [ -z "$RESEARCHY_NCBI_CONTACT_EMAIL" ]; then
+            echo "::error::Set RESEARCHY_NCBI_CONTACT_EMAIL as a repository Actions secret."
+            exit 2
+          fi
+      - name: Install application
+        run: python -m pip install -e .
+      - name: Count and partition, then deliberately pause after one committed real PMID page
+        # Fixed public query and explicit range only; no proprietary study terms.
+        # Enforced by script: >10k and <=30k IDs; <=160 calls/stage; off-peak ET.
+        shell: bash
+        run: python scripts/pubmed_live_identifier_validation.py start --workspace "$RUNNER_TEMP/researchy-pubmed-identifiers"
+      - name: Reopen SQLite in a fresh process and reconcile every remaining PMID page
+        shell: bash
+        run: python scripts/pubmed_live_identifier_validation.py resume --workspace "$RUNNER_TEMP/researchy-pubmed-identifiers"
+      - name: Preserve credential-free validation evidence only
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: pubmed-identifier-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/researchy-pubmed-identifiers/identifier-evidence.json
+          if-no-files-found: ignore
+          retention-days: 14

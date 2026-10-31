@@ -30,8 +30,8 @@ SEARCH-12,1,AT-17,tests/test_strategy_storage.py (frozen approved snapshot only)
 SEARCH-13,1,"AT-17,AT-19",tests/test_pubmed_probe.py (count-only time and query translation; no run persistence),partial
 SEARCH-14,1,AT-17,planned,planned
 SRC-01,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_translation.py (real ESearch response observed; full live acceptance pending),partial
-SRC-02,1,AT-07,tests/test_pubmed_partition.py (recursive Create Date ID split; offline only),partial
-SRC-03,1,"AT-07,AT-19",tests/test_pubmed_partition.py (counted split provenance and incomplete cases),partial
+SRC-02,1,AT-07,tests/test_pubmed_partition.py; tests/test_pubmed_live_identifiers.py (controlled large ID split and durable recovery fixture; live execution pending),partial
+SRC-03,1,"AT-07,AT-19",tests/test_pubmed_partition.py; tests/test_pubmed_live_identifiers.py (counted disjoint partitions and truthful incomplete statuses),partial
 SRC-04,1,AT-07,tests/test_pubmed_metadata.py (EFetch source metadata offline; live verification pending),partial
 SRC-05,1,AT-08,planned,planned
 SRC-06,1,"AT-08,AT-09",planned,planned
@@ -46,9 +46,9 @@ SRC-14,2,AT-16,planned,planned
 RUN-01,1,AT-09,tests/test_pubmed_metadata.py (metadata stage only; full job engine future),partial
 RUN-02,1,AT-09,tests/test_pubmed_checkpoints.py (paused/incomplete checkpoint states),partial
 RUN-03,1,"AT-08,AT-09",tests/test_pubmed_partition.py (split count/ID progress; no UI),partial
-RUN-04,1,AT-09,tests/test_pubmed_checkpoints.py (bounded no-retry resume; backoff future),partial
-RUN-05,1,AT-19,tests/test_pubmed_ids.py (ID-count reconciliation only),partial
-RUN-06,1,AT-09,tests/test_pubmed_checkpoints.py (close/reopen/resume and pause),partial
+RUN-04,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_pubmed_live_identifiers.py (bounded transport failure and checkpoint recovery; live pending),partial
+RUN-05,1,AT-19,tests/test_pubmed_ids.py; tests/test_pubmed_live_identifiers.py (reconciled IDs not metadata or source-complete),partial
+RUN-06,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_pubmed_live_identifiers.py (pause reopen and no repeat fetch),partial
 RUN-07,1,"AT-09,AT-21",tests/test_pubmed_checkpoints.py (hashed PMID pages/audit; no provider payload archive),partial
 DATA-01,1,"AT-10,AT-11,AT-13",tests/test_schema_migrations.py (schema entities only),partial
 DATA-02,1,"AT-10,AT-11",tests/test_schema_migrations.py (publication identity schema only),partial
@@ -121,10 +121,10 @@ AT-02,1,AT-02,tests/test_projects.py (partial: metadata path relocation only),pa
 AT-03,3,AT-03,planned,planned
 AT-04,2,AT-04,tests/test_strategy_storage.py (approval gate only),partial
 AT-05,1,AT-05,tests/test_query_compiler.py (offline OR union fixture only),partial
-AT-06,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_live_workflow.py; tests/test_pubmed_translation.py (observed accepted translation; next live rerun pending),partial
-AT-07,1,AT-07,tests/test_pubmed_partition.py (>10000 controlled fixture; live verification pending),partial
+AT-06,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_translation.py (live NCBI one-term count and EFetch run 41073931474; broader phrases pending),partial
+AT-07,1,AT-07,tests/test_pubmed_partition.py; tests/test_pubmed_live_identifiers.py (>10000 controlled fixture; live full union pending),partial
 AT-08,1,AT-08,planned,planned
-AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_pubmed_translation.py (checkpoint reopen with normalized translation; live interruption pending),partial
+AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_pubmed_live_identifiers.py (offline two-stage resume; live recovery pending),partial
 AT-10,1,AT-10,planned,planned
 AT-11,2,AT-11,planned,planned
 AT-12,2,AT-12,planned,planned
@@ -134,7 +134,7 @@ AT-15,2,AT-15,planned,planned
 AT-16,2,AT-16,planned,planned
 AT-17,1,AT-17,tests/test_strategy_storage.py (immutable history only),partial
 AT-18,1,AT-18,planned,planned
-AT-19,1,AT-19,tests/test_pubmed_ids.py (incomplete state only),partial
+AT-19,1,AT-19,tests/test_pubmed_ids.py; tests/test_pubmed_live_identifiers.py (failed source remains incomplete),partial
 AT-20,2,AT-20,planned,planned
 AT-21,3,AT-21,tests/test_schema_migrations.py (migration recovery only),partial
 AT-22,3,AT-22,planned,planned
