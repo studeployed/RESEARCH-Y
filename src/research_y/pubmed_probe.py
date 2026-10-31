@@ -18,6 +18,7 @@ from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from research_y.query_compiler import CompiledSource
+from research_y.pubmed_date_translation import internal_create_date_equivalent
 
 ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 MAX_RESPONSE_BYTES = 512 * 1024
@@ -133,12 +134,17 @@ def _outer_group_normal_form(expression: str) -> str:
     return original[start:end + 1]
 
 
-def _translation_matches_submitted(submitted: str, accepted: str) -> bool:
-    """Check literal identity except for redundant whole-expression grouping.
+def _translation_matches_submitted(
+    submitted: str, accepted: str, *, allow_crdt_partition: bool = False,
+) -> bool:
+    """Compare source text; partition equivalence requires explicit context.
 
-    Do not consider rewritten operators, terms, fields, internal grouping,
-    whitespace, or source mapping equivalent; preserve source text verbatim.
+    Roots retain the existing whole-expression outer-group rule. Internal
+    partitions additionally require the exact OR-only literals, one date AND
+    and identical valid boundaries, allowing only the observed date alias.
     """
+    if allow_crdt_partition:
+        return internal_create_date_equivalent(submitted, accepted)
     return (
         isinstance(submitted, str) and isinstance(accepted, str)
         and _outer_group_normal_form(submitted) == _outer_group_normal_form(accepted)
@@ -153,24 +159,19 @@ def _review_translation(
     reasons: list[str] = []
     if warnings:
         reasons.append("PubMed reported warnings/errors requiring query review")
-    if not _translation_matches_submitted(exact_query, accepted):
+    equivalent = _translation_matches_submitted(
+        exact_query, accepted, allow_crdt_partition=allow_crdt_partition,
+    )
+    if not equivalent:
         reasons.append("PubMed query translation differs from the submitted query")
     if re.search(r"\[(?:MeSH\s+(?:Terms|Major Topic|Subheading)|MeSH)\]", accepted, re.I):
         reasons.append("PubMed may have introduced unwanted Medical Subject Headings mapping")
     outside_quotes = re.sub(r'"[^"\n]*"', '""', accepted)
-    # Internal, explicit disjoint Create-Date partitions necessarily intersect
-    # an OR-only concept query with ONE date interval. This is not a new user
-    # concept operator. Exempt only the exact accepted and correctly shaped
-    # internal suffix; unexpected extra AND/NOT still triggers review.
-    if allow_crdt_partition and _translation_matches_submitted(exact_query, accepted) and re.fullmatch(
-        r"\(.+\) AND \(\d{4}/\d{2}/\d{2}:\d{4}/\d{2}/\d{2}\[crdt\]\)",
-        exact_query.strip(), flags=re.DOTALL,
-    ):
-        outside_quotes = re.sub(
-            r" AND \(\d{4}/\d{2}/\d{2}:\d{4}/\d{2}/\d{2}\[crdt\]\)$",
-            "", outside_quotes,
-        )
-    if re.search(r"\b(?:AND|NOT)\b", outside_quotes, flags=re.I):
+    # Only the restricted, equivalent internal grammar proves that the sole
+    # conjunction is administrative. Never grant an AND exemption merely
+    # because a date-looking suffix or matching total count was returned.
+    if (re.search(r"\b(?:AND|NOT)\b", outside_quotes, flags=re.I)
+            and not (allow_crdt_partition and equivalent)):
         reasons.append("PubMed translation includes AND/NOT outside quoted literals")
     return tuple(reasons)
 
@@ -213,7 +214,9 @@ def parse_esearch_count(
     reasons = _review_translation(
         exact_query, translation, warnings, allow_crdt_partition=allow_crdt_partition,
     )
-    equivalent = _translation_matches_submitted(exact_query, translation)
+    equivalent = _translation_matches_submitted(
+        exact_query, translation, allow_crdt_partition=allow_crdt_partition,
+    )
     return PubMedCountProbe(
         exact_query=exact_query,
         accepted_translation=translation,

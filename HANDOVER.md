@@ -1,42 +1,45 @@
 # RESEARCH-Y handover — 31 October 2026
 
-## Authority and latest repository state
+## Authority and merged baseline
 
-- Repository: https://github.com/studeployed/RESEARCH-Y; protected `main`. The approved version-controlled `RESEARCH-Y_SPEC.md` version `1.0.0-draft.1` remains authoritative and is unchanged.
-- Independent Python-based development; no architecture, code or requirements imported from RESEARCH-X.
-- Core PRs through **P1-04g (#24)** are merged. PR #23 added conservative outer-parenthesis translation recognition and passed 4/4 cross-platform post-merge tests.
-- [PR #24](https://github.com/studeployed/RESEARCH-Y/pull/24) merged 31 October 2026, commit `d08402931d5e4cc23d662b71c0da65a30931afeb`. It introduced the manual-only, count-reconciled >10,000-ID PubMed validation and deliberate first-page pause/reopen. Its four Windows/Linux Python 3.12/3.13 post-merge test jobs passed.
-- Deferred [Windows junction hardening issue #11](https://github.com/studeployed/RESEARCH-Y/issues/11) applies to future untrusted archive import work.
+- Repository: https://github.com/studeployed/RESEARCH-Y; protected `main`. Authoritative approved specification: `RESEARCH-Y_SPEC.md`, version `1.0.0-draft.1`, unchanged.
+- Independent Python project; no RESEARCH-X assumptions, code or dependencies.
+- Core increments through **P1-04h (PR #25)** are merged. Current base for P1-04i is `cccb6b4d37ce0c5df02c9a545fd6c38b58188098`.
+- P1-04g (PR #24) added the controlled manual >10,000-identifier and checkpoint-recovery workflow. P1-04h (PR #25) added the two-request count-only diagnostic to capture the first partition failure precisely. No routine continuous integration uses live credentials.
+- Deferred [Windows junction hardening #11](https://github.com/studeployed/RESEARCH-Y/issues/11) remains relevant before untrusted archives/import.
 
-## Offline-tested foundations already merged
+## Existing implementation
 
-- Portable local projects; recoverable SQLite migrations; immutable approved broad OR-only query strategies; PubMed All Fields and Web of Science Starter Topic compilation.
-- PubMed ESearch counts and accepted translations, recursive non-overlapping Create Date partitions, bounded ID pagination with unique-PMID reconciliation.
-- Immutable, transactionally committed per-page SQLite checkpoint/PMID/audit ledger, explicit pause, reopen and no-repeat resumption, conservative source recount checks.
-- PubMed EFetch XML bibliographic metadata and abstracts, source identity, missingness and rights flags, and recoverable metadata-batch storage.
-- Credentialled GitHub Actions tests are **manually dispatched only**; normal PR and push CI is offline. NCBI contact/key values are private repository secrets, not committed.
+Portable project folders, recoverable SQLite migrations, immutable approved broad-OR strategy snapshots, PubMed All Fields and Web of Science Starter Topic query compilation; PubMed count/translation checks, bounded identifier pagination, recursive disjoint Create Date partitions and counted unique-identifier union; transactional page/index/audit checkpoints and pause/reopen recovery; EFetch bibliographic metadata/abstract parser, source provenance, missingness/rights flags and recoverable metadata persistence. Offline fixtures do not establish complete live literature retrieval.
 
-## Real PubMed evidence and unresolved incident
+## Live source evidence
 
-1. [Live run #41073931474](https://github.com/studeployed/RESEARCH-Y/actions/runs/41073931474), 30 October 2026, **passed**: submitted `("ECMO"[All Fields])`; NCBI accepted `"ECMO"[All Fields]`; 19,479 matches; PMID 42958294 retrieved with matching EFetch bibliographic metadata and a three-section abstract. This verifies **one record only**, not the full source.
-2. [Live large-identifier run #41207501975](https://github.com/studeployed/RESEARCH-Y/actions/runs/41207501975), 31 October 2026, **failed safely**: 19,483 source-reported matches, three count-only source requests, no committed PMID pages and no identifiers; the second process never executed. Recorded message: `A complete checkpoint plan could not be established`. Status remained `incomplete`, not `completed_verified`.
-3. The exact first Create Date query's provider-accepted translation, warnings and count were not retained by that run. Thus the cause **cannot yet** be attributed to translated syntax, provider warnings, date coverage mismatch or transport errors. Do not revise or relax the conservative search logic on inference alone.
+1. [Run #41073931474](https://github.com/studeployed/RESEARCH-Y/actions/runs/41073931474), 30 October 2026: successful one-record ESearch/EFetch smoke. Source count 19,479; PubMed identifier 42958294; matching metadata and structured abstract. This is **one-record evidence only**.
+2. [Run #41207501975](https://github.com/studeployed/RESEARCH-Y/actions/runs/41207501975), 31 October: 19,483 matches but failure during initial partition planning; zero committed pages or identifiers and no live recovery evidence.
+3. [Count-only diagnostic #41216318046](https://github.com/studeployed/RESEARCH-Y/actions/runs/41216318046), 31 October at 15:45 UTC: unrestricted and date-partition counts both **19,483**, no provider warnings or transport error. The client rejected the actual source translation:
 
-## Current authorised proposal — P1-04h
+```text
+Submitted: (("ECMO"[All Fields])) AND (1900/01/01:2026/11/01[crdt])
+Accepted:  "ECMO"[All Fields] AND 1900/01/01:2026/11/01[Date - Create]
+```
 
-P1-04h introduces a separate **manual, count-only, maximum-two-request diagnostic**, described in `docs/PUBMED_PARTITION_DIAGNOSTIC.md`, to distinguish those possible causes using the actual live provider response. It reuses the same fixed public ECMO query, date interval, PubMed client and private GitHub Actions contact/key secrets. A second request checks the first whole-interval Create Date partition **without requesting any identifiers**. Its public-safe artifact records each provider count, accepted translation, warnings, review reasons, explicit count difference and controlled error category; it never claims full retrieval.
+This establishes the immediate validator incompatibility: redundant clause wrappers and the documented Create Date field alias. It does **not** prove complete identifier retrieval or guarantee every future provider translation.
 
-- The proposed workflow: `.github/workflows/pubmed-partition-count-diagnostic.yml`, dispatchable only **after a reviewed, owner-approved merge**.
-- Tests: `tests/test_pubmed_partition_count_diagnostic.py` (offline source simulations, source rewriting, warnings, count drift, transport errors, secrets redaction and manual-only constraints).
-- Any genuine source-side query rewrite or date mismatch requires further investigation **before** changing the production validator or large retrieval algorithm.
-- Four cross-platform CI jobs, a verified Codex code review **and** security review on the exact PR HEAD, no unresolved material findings and **explicit owner merge authorisation** are required.
+## Current authorised corrective increment — P1-04i
 
-## Open acceptance gates and sequence
+See `docs/PUBMED_DATE_TRANSLATION.md`. The proposed correction uses a restricted, quote-aware, iterative grammar to recognise the exact observed administrative date translation **only with explicit internal partition context**. It requires an unchanged ordered All Fields OR clause, one administrative AND and identical valid date boundaries; it rejects changed fields, terms, bounds, warnings, extra operators and ambiguous grouping. It preserves the original submitted/accepted text and stored checksums.
 
-- AT-06: one generic real PubMed All Fields query accepted; diverse biomedical phrase/OR translations still unverified.
-- AT-07: full >10,000-PMID disjoint counted union **not achieved** in live service.
-- AT-09: real persisted pause/reopen/recovery **not reached** in last live run; fixture evidence partial.
-- AT-19: incomplete status correctly retained; complete final-source reconciliation remains unverified.
-- Full abstract/metadata reconciliation, Web of Science Starter P1-05 (#8), deduplication, reporting/export, GUI, archives, installer and other release gates remain pending.
+The same context-aware comparator is used in count parsing, existing identifier-page review, checkpoint-restart recounts, page commit and stored-page validation. Checkpoint context is derived from its immutable plan. No source request construction, schema, dependency, workflow, field coverage, search scope or completion rule changes.
 
-**Next action:** review and test P1-04h; do not merge without owner approval. After merge, manually run the two-count diagnostic once, examine actual provider evidence, then determine the smallest scientifically justified correction before repeating the >10,000-ID workflow.
+Tests: `tests/test_pubmed_date_translation.py` (55 focused parser cases executed locally before submission), and `tests/test_pubmed_date_translation_integration.py` (offline production parser/checkpoint paths; 10,005 synthetic identifiers; pause, reopen, no refetch, legacy-page preservation and failed/rejected recovery). Full cross-platform results and Codex reviews must be checked against the exact current pull-request HEAD before merge advice.
+
+The owner has authorised implementing proposed in-scope fixes and opening a pull request directly for approval, rather than requesting another permission merely to create it. **That is not merge authorisation.** Any substantive specification change still requires separate approval.
+
+## Acceptance gates and next action
+
+- AT-06: one real All Fields query accepted; diverse phrases and group unions remain partial.
+- AT-07: complete live >10,000 identifier union still unverified.
+- AT-09: live checkpoint/reopen/recovery still unverified.
+- AT-19: no false-complete outcome is permitted; final source reconciliation remains outstanding.
+
+After exact-HEAD tests and reviews, leave P1-04i unmerged for owner approval. After an approved merge, run the **existing** large identifier-validation workflow on the new `main` commit with existing secrets and safeguards, then inspect actual partitions, pages, source counts and recovery evidence. Do not equate the observed historical 19,483 count with an immutable current total. No extra diagnostic-only workflow is needed for this correction. Web of Science Starter P1-05 remains next after the PubMed evidence gate.
