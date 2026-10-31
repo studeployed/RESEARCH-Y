@@ -1,39 +1,40 @@
 # RESEARCH-Y milestones and planned GitHub issues
 
-The scope and gates are fixed in section 20 of the approved specification. These tracking units are implemented as GitHub issues, with phases M0–M3 represented in the roadmap. GitHub milestone objects should be linked when an authorised milestone-creation operation becomes available.
+The scope and gates are fixed in section 20 of the approved specification. Tracking units are GitHub issues. Staged implementation does not waive full acceptance criteria.
 
 ## Milestone M0 — Foundation (Phase 0)
 
 - **P0-01:** Record baseline approval verbatim; version-controlled specification and revision history. Pass: approval recorded, requirements unchanged; source-of-truth check.
-- **P0-02:** Python project, pinned development dependencies, GitHub Actions on Windows and Linux, minimal maintainability/security guidance. Pass: CI jobs succeed on both operating systems, branch-protection recommendation documented.
-- **P0-03:** Requirement-to-test traceability, representative synthetic fixture plan and source-access smoke-test plan. Pass: every numbered requirement has a traceability row, all 22 acceptance tests mapped; no unverified live-source claims.
+- **P0-02:** Python project, pinned development dependencies, GitHub Actions on Windows and Linux, maintainability/security guidance. Pass: CI on both operating systems; repository controls documented.
+- **P0-03:** Requirement-to-test traceability, synthetic fixtures and source-access test plan. Pass: every requirement and all 22 acceptance scenarios mapped; no unsupported live-source claims.
 
 ## Milestone M1 — Durable end-to-end core (Phase 1)
 
-- **P1-01:** Create/open/relocate project with safe versioned index and SQLite transactional metadata. **Merged PR #10 (24 October 2026)**; 44 tests passed on Windows/Linux Python 3.12/3.13, 95% coverage at merge. AT-01/AT-02 remain partial.
-- **P1-02:** Versioned research storage and migrations. **P1-02a merged PR #12** (schema v2 and recoverable migration); **P1-02b merged PR #13** (approved strategy snapshots, pending runs and exact unexecuted query plans). Pre-merge checks: 74 tests and 93% branch-aware coverage across Windows/Linux and Python 3.12/3.13. Post-merge runner allocation recovered when the repository became public; issue [#14](https://github.com/studeployed/RESEARCH-Y/issues/14) is resolved. Advanced provenance APIs and multi-writer controls remain separate.
-- **P1-03:** Approved broad OR-only strategies and source-specific compilation. **P1-03a merged in PR #15**; deterministic PubMed All Fields / Web of Science Starter Topic compiler verified across Windows/Linux. **P1-03b merged in PR #17** (24 October 2026): opt-in PubMed ESearch count/translation probe, conservative phrase/mapping checks, controlled fixture tests, no IDs or false completion. Real-source contact/translation verification remains an independent mandatory gate (AT-06 unverified), as do Web of Science Starter acceptance and PRESS/pre-run interface. AT-05 remains partial.
-- **P1-04:** PubMed complete retrieval and recovery. **P1-04a merged PR #18**: bounded ESearch IDs; **P1-04b merged PR #19**: recursive Create Date partitions and verified unique-ID union; **P1-04c merged PR #20**: transactional SQLite v3 checkpoints with recoverable page/partition state; **P1-04d merged PR #21 (27 October 2026)**: bounded EFetch bibliographic metadata/abstracts, validated PMID identity and recoverable metadata persistence. **P1-04e merged PR #22 (27 October 2026)**: manual-only opt-in NCBI ESearch/EFetch live acceptance workflow; real source run on 30 October identified a query-translation comparison false positive. **AT-06/07/09/19 remain partial** until actual provider evidence, full >10,000-hit unique-ID reconciliation, real interruption/recovery, and final metadata/source completeness. No routine CI uses live credentials. **P1-04f merged PR #23 (30 October 2026):** corrected harmless source outer-parenthesis normalisation across count/page/checkpoint checks; post-merge CI passed. Live [ESearch/one-record EFetch #41073931474](https://github.com/studeployed/RESEARCH-Y/actions/runs/41073931474) succeeded with 19,479 source-reported ECMO matches, one verified PMID and metadata; not full ID retrieval. **P1-04g merged PR #24 (31 October 2026):** manual source-reconciled >10,000-ID and durable pause/reopen acceptance workflow. First [live attempt #41207501975](https://github.com/studeployed/RESEARCH-Y/actions/runs/41207501975) reported 19,483 hits and stopped during first date partition planning after three count requests, with no PMID pages; AT-07/09 remain partial. **P1-04h proposal:** fixed two-request count-only PubMed diagnostic capturing exact accepted root/partition translations, warnings, counts and failure reason before considering a source adapter change; see docs/PUBMED_PARTITION_DIAGNOSTIC.md.
-- **P1-05:** Web of Science Starter connectivity, quota-aware paging and resumption. Pass: AT-08/09, live-source entitlement verification.
-- **P1-06:** Conservative deduplication, reconcilable master results, initial Excel output and minimal application shell. Pass: AT-10/18/19 and end-to-end fixture run.
+- **P1-01:** Create/open/relocate project with safe versioned index and SQLite transactional metadata. Merged PR #10 (24 October 2026); 44 tests passed on Windows/Linux Python 3.12/3.13, 95% coverage at merge. AT-01/02 remain partial.
+- **P1-02:** Versioned research storage and migrations. P1-02a merged PR #12 (schema v2 and recoverable migration); P1-02b merged PR #13 (approved snapshots, pending runs and exact query plans). Historical pre-merge 74 tests/93% coverage. Post-merge allocation issue #14 resolved. Advanced provenance and multi-writer controls remain separate.
+- **P1-03:** Broad OR-only strategy/source compilation. P1-03a merged PR #15; PubMed All Fields and Web of Science Starter Topic compiler. P1-03b merged PR #17; count/translation probe. A generic live PubMed query is accepted; broader phrase/OR cases, Starter live interpretation and PRESS/pre-run interface remain partial.
+- **P1-04:** PubMed complete retrieval/recovery. P1-04a–d merged PRs #18–21: bounded identifiers, disjoint Create Date partitioning, transactional SQLite checkpoints and bounded EFetch metadata persistence. P1-04e–h merged PRs #22–25: manual live smoke, outer-parenthesis compatibility, large-ID/restart workflow and count diagnostic. P1-04i merged PR #26: context-bound Create Date alias compatibility. [Run #41235232458](https://github.com/studeployed/RESEARCH-Y/actions/runs/41235232458) passed the **19,483 unique-identifier, 43-page, controlled pause/reopen** scenario on 31 October 2026. The scoped AT-07 live scenario and identifier-stage AT-09 scenario are passed; full metadata, broader queries/failures and product-level acceptance are still partial. See `docs/evidence/pubmed-41235232458-summary.json` for precise boundaries and hashes.
+- **P1-05:** Web of Science Starter connectivity, quota-aware paging and resumption ([issue #8](https://github.com/studeployed/RESEARCH-Y/issues/8)). Full gate: AT-08/09 plus real-source entitlement and completeness checks.
+  - **P1-05a — current proposed increment:** fixed-origin transport, observed institutional daily quota, strict 1–50-record page validation, exact source-record preservation/missingness, safe errors and maximum-three-request manual entitlement/two-page smoke. No durable job state yet. See `docs/WOS_STARTER.md`.
+  - **P1-05b — next:** recoverable SQLite schema/storage, atomic record/page/audit commits, quota-aware pause and cross-day reopen without repeating committed pages, bounded retry scheduling, source drift handling and full count/unique-accession reconciliation. Build against the observed live source contract, not fixture assumptions.
+  - **P1-05c — acceptance:** controlled live pagination/recovery and provider-limit evidence with actual institutional credentials; no exhaustive-source claim without reconciliation.
+- **P1-06:** Conservative deduplication, reconcilable master results, initial Excel output and minimal application shell. Pass: AT-10/18/19 and end-to-end fixtures.
 
 ## Milestone M2 — Specialist processing (Phase 2)
 
-- **P2-01:** AI terminology and classification modes, reproducible biomedical benchmarks. Pass: AT-04/15/20.
+- **P2-01:** AI terminology/classification and reproducible biomedical benchmarks. Pass: AT-04/15/20.
 - **P2-02:** Conference abstracts, supplements and distinct locators. Pass: AT-11/12.
-- **P2-03:** Society guidance workflows, official-page provenance and manual tasks. Pass: AT-13.
-- **P2-04:** Classification, manual review, Crossref enrichment. Pass: AT-14/15/16.
+- **P2-03:** Society guidance workflows, official provenance and manual tasks. Pass: AT-13.
+- **P2-04:** Classification, manual review and Crossref enrichment. Pass: AT-14/15/16.
 
 ## Milestone M3 — Complete workflow and release verification (Phase 3)
 
 - **P3-01:** Full UI, tables, review queues and accessible results.
-- **P3-02:** Project archive import/export, migration recovery and complete Excel/bibliographic reporting. Pass: AT-03/18/21.
-- **P3-03:** Windows packaging, security review, 100,000-record performance test and complete AT-01…AT-22 evidence. Pass: all mandatory acceptance gates verified and exceptions documented.
+- **P3-02:** Archive import/export, migration recovery and complete Excel/bibliographic reporting. Pass: AT-03/18/21.
+- **P3-03:** Windows packaging, security review, 100,000-record performance and complete AT-01–22 evidence. Pass: all mandatory acceptance gates verified and exceptions documented.
 
-## Source-access and fixture test strategy (P0-03)
+## Source-access and fixture strategy
 
-- Deterministic offline fixtures for counts, partition boundaries, paginated duplicates, missing or contradictory metadata, repeated query membership, abstract/supplement separation, server errors, quota exhaustion and crash/resume.
-- Real-source smoke tests on permitted credentials: PubMed ESearch/translation/metadata and partition behaviour; Web of Science Starter entitlement, 50-record pages and quota consumption; record results without leaking keys or licensed response content.
-- No live credentials or networking are required in ordinary pull-request CI. Any external verification is separately reported with date, source and limitations.
+Offline fixtures cover counts, boundaries, duplicates, metadata gaps, repeated memberships, abstract separation, source errors, quota and recovery. Real-source checks use authorised credentials and retain dated evidence without publishing keys or licensed content. Normal pull-request and push CI is offline. A source sample or success HTTP status is never equivalent to a complete literature search.
 
-**Live PubMed acceptance status (31 October 2026):** single-term ESearch and one-EFetch live smoke succeeded; complete >10,000-identifier retrieval and external interruption/recovery have not yet passed. See docs/PUBMED_LIVE_VALIDATION.md and docs/PUBMED_LIVE_IDENTIFIERS.md.
+**Current live boundary, 31 October 2026:** PubMed one-record EFetch and the full identifier/restart scenario passed. Complete metadata acquisition and broad recovery acceptance remain outstanding. **No live Starter access or quota result has been verified in P1-05a.**
