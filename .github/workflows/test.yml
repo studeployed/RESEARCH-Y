@@ -18,6 +18,8 @@ jobs:
   quality:
     name: Test ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    # Bound failed test/reporting runs; ordinary matrix jobs take minutes.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +39,6 @@ jobs:
       - name: Compile Python source
         run: python -m compileall -q src tests scripts
       - name: Test
-        run: python -m pytest --cov=research_y --cov-report=term-missing
+        run: python -m pytest --cov=research_y --cov-report=term-missing --tb=short
       - name: Verify installed dependencies
         run: python -m pip check

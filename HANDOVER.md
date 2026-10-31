@@ -26,10 +26,22 @@ Parent issue #8 and roadmap milestone P1-05. This is the **first incremental por
 
 **Not implemented by P1-05a:** durable SQLite source-page/audit storage, cross-day restart/quota accounting, full-search completion, bounded scheduled retries, source/master linkage, enrichment or GUI. These are P1-05b/acceptance work, not silently deferred release requirements.
 
+## Windows test-reporting incident and correction within PR #27
+
+The owner supplied both Windows logs from run #41239845805 at HEAD `03c6c396f56e7bf5ed67d0ebe0497a6b5c68f2ff`. Both reached 100% of collected test progress around 20:41 UTC, showed `EE` in `test_wos_starter.py`, and began the errors section before a very long `test_invalid_json_and_size[xxxxx...]` setup-error heading appeared around 21:52 UTC. Thus this was not simply an uncompleted retrieval test. The supplied excerpts do not include the underlying exception traceback; no specific Windows exception code is claimed.
+
+The offending parametrization passed `b'x' * (MAX_RESPONSE_BYTES + 1)` without an explicit short ID, so pytest embedded the entire 2,097,153-byte payload in its node identifier. Pytest 9.0.2 sets the node identifier plus execution stage in `PYTEST_CURRENT_TEST`; Windows environment values are limited to 32,767 characters. This is a strong explanation of the platform-specific setup error and oversized error heading. A local Linux collection-only reproduction using the actual parameter lists confirmed a greater-than-two-million-character node identifier, and a simulated Windows environment-length guard rejected it. That simulation is not a substitute for rerunning Windows CI.
+
+Correction: compact explicit IDs for the six malformed/oversized-response cases and six invalid-key cases; a regression assertion checks actual collected Starter node IDs are no longer than 256 characters. The original payloads, parser assertions, 2 MiB response ceiling, key checks and all production source code are unchanged. Normal test jobs now have a 15-minute limit and short traceback formatting. No new dependencies, test skips, licence/credential changes, or live provider calls are introduced.
+
+The owner reports that `RESEARCHY_WOS_STARTER_API_KEY` has been configured. Do not expose or re-enter it to fix these offline test failures. Recheck the new commit's four CI jobs and obtain exact-HEAD reviews; reviews of the previous commit do not clear the amended PR.
+
+References: [pytest current-test environment](https://docs.pytest.org/en/stable/example/simple.html#pytest-current-test-environment-variable); [Windows environment-variable limit](https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables).
+
 ## Next action
 
 Complete exact-HEAD automated tests and independent reviews, then leave the pull request for owner approval; do not merge automatically. Automatic code/security reviews may already be running: inspect summary, individual receipts and findings before requesting anything, and do not duplicate valid reviews. Missing/contradictory evidence is unverified, not passed.
 
-After an approved merge, configure **`RESEARCHY_WOS_STARTER_API_KEY`** privately as a repository Actions secret using the user's institutional Starter key (not the PubMed key). Run **Web of Science Starter entitlement and paging smoke (manual)** once on the new `main`. Inspect actual quota and page evidence, without treating the sample as full retrieval. **No live Starter access is yet verified.**
+After an approved merge, use the privately configured **`RESEARCHY_WOS_STARTER_API_KEY`** repository secret (the institutional Starter key, not the PubMed key). Run **Web of Science Starter entitlement and paging smoke (manual)** once on the new `main`. Inspect actual quota and page evidence, without treating the sample as full retrieval. **No live Starter access is yet verified.**
 
 Next development portion is P1-05b: transactional durable pages and source records, pause/reopen across quota resets, bounded retry timing, no repeat of committed pages, source drift detection and final reconciliation. The full AT-08/09 gate remains open until those behaviours and live entitlement are demonstrated.

@@ -133,7 +133,11 @@ def test_malformed_truncated_duplicate_error_pages_fail_closed(mutation):
 
 
 @pytest.mark.parametrize('data', [b'{', b'[]', b'{"metadata":{},"metadata":{}}',
-    b'{"metadata":{"total":NaN}}', b'\xff', b'x'*(MAX_RESPONSE_BYTES+1)])
+    b'{"metadata":{"total":NaN}}', b'\xff', b'x'*(MAX_RESPONSE_BYTES+1)],
+    # pytest includes parameter IDs in PYTEST_CURRENT_TEST and error headings.
+    # Never turn a multi-megabyte hostile payload into a test/environment name.
+    ids=('truncated-json', 'wrong-root', 'duplicate-keys', 'nonfinite-number',
+         'invalid-utf8', 'oversized-response'))
 def test_invalid_json_and_size(data):
     with pytest.raises(WoSStarterError):
         parse_document_page(data, exact_query=QUERY, database='WOS', requested_page=1,
@@ -226,7 +230,9 @@ def test_redirect_handler_never_sends_credentials_to_other_origin():
     assert _RejectRedirects().redirect_request(None,None,302,'',{},'http://evil.invalid') is None
 
 
-@pytest.mark.parametrize('key', ['',None,'bad key','abc\nsecret','é','x'*4097])
+@pytest.mark.parametrize('key', ['',None,'bad key','abc\nsecret','é','x'*4097],
+    ids=('empty-key', 'missing-key', 'space-in-key', 'newline-in-key',
+         'non-ascii-key', 'oversized-key'))
 def test_invalid_keys_do_not_attempt_transport(key):
     with pytest.raises(WoSStarterError,match='api_key'): client(key=key)
 
@@ -263,3 +269,14 @@ def test_response_type_failure_is_sanitised():
     for response in (None,WoSHTTPResponse(True,HEADERS,b''),WoSHTTPResponse(200,None,b'')):
         c,_=client(lambda request,timeout:response)
         with pytest.raises(WoSStarterError,match='transport_response'): c.fetch_page(QUERY)
+
+
+def test_starter_collected_node_ids_are_bounded(request):
+    """Keep raw test payloads out of Windows environment values and reports."""
+    lengths = [len(item.nodeid) for item in request.session.items
+               if item.path == request.node.path]
+    # Check the identifiers pytest actually collected, not an alternate formatter.
+    # Only lengths appear in a failure, never a hostile payload or giant name.
+    assert lengths and max(lengths) <= 256, (
+        f"Starter test identifiers must be compact; longest length: {max(lengths, default=0)}"
+    )
