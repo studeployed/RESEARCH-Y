@@ -126,9 +126,12 @@ def _source(db: sqlite3.Connection, retrieval_id: str) -> dict[str, Any]:
     ).fetchone()
     if row is None:
         raise KeyError("Unknown source retrieval")
+    run = db.execute("SELECT status FROM search_runs WHERE run_id=?", (row[1],)).fetchone()
+    if run is None:
+        raise PublicationIntegrityError("Source retrieval has no parent run")
     return dict(zip(("retrieval_id", "run_id", "source_name", "source_record_id",
                      "retrieved_at_utc"), row[:5]), original_metadata=_object(row[5]),
-                source_sha256=_hash(row))
+                source_sha256=_hash(row), run_status=run[0])
 
 
 def _link(db: sqlite3.Connection, retrieval_id: str) -> tuple[str, int, dict[str, Any]] | None:
@@ -194,14 +197,16 @@ def _snapshot(db: sqlite3.Connection, publication_id: str) -> PublicationSnapsho
             raise PublicationIntegrityError("Inconsistent publication association")
         memberships = db.execute(
             "SELECT q.query_id,q.run_id,q.strategy_version_id,q.group_id,q.source_name,"
-            "q.exact_query,q.reported_matches,q.status FROM query_retrievals m "
+            "q.exact_query,q.reported_matches,q.status,s.status FROM query_retrievals m "
             "JOIN source_queries q ON q.query_id=m.query_id AND q.run_id=m.run_id "
-            "AND q.source_name=m.source_name WHERE m.retrieval_id=? ORDER BY q.query_id",
+            "AND q.source_name=m.source_name "
+            "JOIN search_runs s ON s.run_id=q.run_id AND s.strategy_version_id=q.strategy_version_id "
+            "WHERE m.retrieval_id=? ORDER BY q.query_id",
             (retrieval_id,),
         ).fetchall()
         source.update(association_event_id=link[1], decision=link[2], memberships=[
             dict(zip(("query_id", "run_id", "strategy_version_id", "group_id", "source_name",
-                      "exact_query", "reported_matches", "status"), member)) for member in memberships])
+                      "exact_query", "reported_matches", "status", "run_status"), member)) for member in memberships])
         sources.append(source)
     field_state = _field_state(db, publication_id, row[1])
     by_id = {s["retrieval_id"]: s for s in sources}
