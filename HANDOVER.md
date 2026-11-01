@@ -1,121 +1,99 @@
-# RESEARCH-Y handover — PR #40 merged; application inspection foundation
+# RESEARCH-Y handover — PR #42 merged; supervised local operations
 
-## Authority and verified baseline
+## Authority and baseline
 
-Repository `RESEARCH-Y_SPEC.md` version 1.0.0-draft.1 is authoritative and unchanged.
-Independent Python implementation; no imported project assumptions.
-Owner-merged PR #40 is `730d5c8e2c4b220e69d4c9807581ca59b3634955`, merged
-1 November 2026 at 22:15 Coordinated Universal Time (UTC). All four post-merge
-configurations in run #41356206017 passed. This validates that baseline, not the
-new application-inspection branch.
+The repository RESEARCH-Y_SPEC.md version 1.0.0-draft.1 remains authoritative and
+unchanged. Independent Python implementation; no imported project assumptions.
+Owner-merged PR #42 is bc4666fa7aaefe8082ad7ea21a1918f0ac4187f1, merged on
+1 November 2026 at 22:41 Coordinated Universal Time (UTC). Its post-merge run is
+#41358424799; retrieve current outcomes rather than inheriting older status claims.
 
-Standing owner direction: begin the next ready approved task at each completion
-step without another routine continuation prompt. This does not authorise
-automatic merges, substantive scope/dependency changes, waived gates, live-source
-retention consent or asynchronous monitoring claims.
+Standing owner direction: start the next ready approved task at each completion,
+without another routine go. This does not authorise automatic merges, substantive
+scope/dependency changes, waived gates, live retention consent or asynchronous
+monitoring promises.
 
-## Current increment — P1-06e1 read model and export inventory
+## Current increment — P1-06e2a, parent #43 / #41 / #9
 
-Parent #41 / #9; read `docs/APPLICATION_INSPECTION.md` and the scoped
-`docs/application-inspection-traceability.csv`. New `application_inspection.py`
-provides a current project/run catalogue, optional selected-run strategy/count
-snapshot, durable export-request inventory, retained export reports and explicit
-current artifact observations. It reuses production count/capture, journal
-validation, read-only identity/schema checks and PR #40 path guards.
+Read docs/APPLICATION_WORKER.md and docs/application-worker-traceability.csv.
+application_commands.py allowlists six existing inspection/export services using
+an already-opened expected project identity. application_worker.py runs one task
+per explicitly spawned child with a supervisor thread and a fresh private pipe.
+Conflicts are refused; in-flight identical commands coalesce. Real service work
+runs off the future interface event loop. This is NOT a GUI, launcher or installer.
 
-One application snapshot reads its project setup, runs, export inventory and
-selected report on the same read transaction/handle. Separate calls are separate
-observations. No implicit newest-run selection, invented run-name column,
-progress percentage or fictional empty master table. Unknown counts remain
-unknown and group sums remain distinct from global publication identities.
+Operation identity is ephemeral. Export identity remains caller-supplied and
+journal-backed. Returned means a service returned, not that a search/export passed.
+Shutdown can interrupt but never fabricates cancellation or completion. Only a
+committed preparation receipt is a durable export request; restart reconciliation
+uses the existing validated inventory. Parent-death watching, bounded stop/escalation,
+reaping and explicit shutdown_unconfirmed are implemented. No reusable broken pipe,
+second persistent queue or unbounded operation backlog is introduced.
 
-Every inventory request is retained, including failures/cancellations, with its
-original stable ID and report hash. Inventory is not file verification or worker
-liveness: `audited_success=False`, `files_checked=False`, `worker_status=unknown`.
-Explicit observation distinguishes missing/changed original or output files,
-external destinations needing confirmation, an owned visible output missing its
-final receipt, and a genuinely verified published artifact. Observation neither
-repairs receipts nor writes, flushes or removes files. Successful file verification
-never promotes source/search completeness. A last audit event is NOT a source
-checkpoint; checkpoint verification remains explicitly not performed.
+Local Linux/Python 3.13.5: 83 targeted lifecycle/command cases passed, 92% rounded
+combined branch-aware coverage. Real processes/pipe/parent-death tests use synthetic
+service functions; routing tests substitute service boundaries. Fifteen actual
+project/workbook integration cases are committed for the full repository checks,
+not claimed locally executed. Full checkout download failed because local DNS could
+not resolve github.com. No native Windows or graphical acceptance is inferred.
 
-Corrupt/unsupported journals and invalid project evidence fail with static errors,
-not an empty list. Reads do not migrate/recover; use the existing explicit project
-open service when needed. The source data is untrusted plain data for a future
-renderer, not HTML or a claim of browser-injection defence.
+No dependency, workflow, database schema, source query, credential or specification
+change. The 32 MiB worker response bound fails explicitly without truncation; it does
+not change retrieval or workbook limits. Commands contain transient host paths and
+must never be exposed as a browser API. Future renderer/session/origin/path selection
+safeguards are still required. A Python watchdog is not a hostile-native-code sandbox.
 
-Local validation: 74 isolated contract tests pass on Linux/Python 3.13.5, 99%
-rounded branch-aware coverage of the new module. These use real SQLite for
-catalogue operations but replace existing project/capture/receipt/filesystem
-boundaries. No complete local checkout was available. Thirty-five additional
-repository integration cases use actual project/count/capture/workbook services,
-current files, concurrent committed changes and two actual child-process deaths.
-They require full repository continuous integration (CI); they are not counted
-as locally passed. Cross-platform checks and exact-commit reviews remain gates.
+## Next step already advanced
 
-No graphical interface, network server, worker orchestration, launcher, installer,
-new dependency, source request, credential access, schema migration, workflow
-change or specification amendment is included. This is the first bounded #41
-increment, not completion of the minimal application.
+Read docs/GUI_DEPENDENCY_PROPOSAL.md. Live upstream release checks identify NiceGUI
+3.18.0 and pywebview 6.2.1 as evaluation candidates. Their declared dependencies,
+licences, native prerequisites and relevant upstream security fixes were inspected.
+No dependency resolution, installed vulnerability audit, browser/native prototype or
+packaging test is claimed. No GUI dependency is adopted.
 
-## Immediate next step
+Obtain owner approval for a pinned isolated feasibility prototype, resolve/audit the
+full graph and frontend assets, then propose the graphical dependencies and thin
+adapter in a reviewed PR. Bind loopback explicitly, disable reload/remote sharing,
+use trusted native path selection, validate every request/socket/session boundary
+and render project/source text as plain data. Test actual Windows launch/close and
+server/worker cleanup. Do not keep fragmenting dependency-free infrastructure once
+these dependency gates are satisfied. #43/#41 remain open.
 
-Prepare the framework/dependency feasibility and minimal graphical adapter under
-#41: real new/open project and named-run selection, the inspected catalogue/counts,
-export request inventory, verified save/recovery actions and clear unavailable
-features. Evaluate the specification's preferred NiceGUI/native lifecycle option;
-material dependencies require explicit owner approval before adoption on main.
-Do not silently choose a hosted/shared application or require end-user Python setup.
+## Preserve existing guarantees and limits
 
-Capture/render/save/recovery must run off the interface event loop with serialized
-conflicting actions and honest shutdown/restart handling. Stable request IDs must
-survive accepted requests, double clicks and restarts. External locations require
-explicit local selection; browser parameters cannot become arbitrary paths.
-Session/origin/request enforcement, untrusted text rendering, real browser tests,
-Windows launch/interaction and lifecycle evidence are mandatory before claiming
-UI acceptance. A read model does not establish responsiveness or AT-22 performance.
-Dependent implementation must use a freshly verified owner-merged baseline.
+Read docs/APPLICATION_INSPECTION.md, docs/WORKBOOK_PUBLICATION.md,
+docs/WINDOWS_EXPORT_GUARD.md, docs/STRATEGY_WORKBOOK.md and their traceability files.
+The merged read model captures one consistent project/run/export snapshot; inventory
+never establishes live-worker or current-file success. File observation checks the
+retained original and output without repairing history. A last audit event is NOT
+a source checkpoint. Unknown counts are not zero; group sums are not global unions.
 
-## Preserved implementation and scientific limits
+Export saving preserves immutable original reports and independent original bytes,
+append-only receipts and no-overwrite publication. Visible files and database commits
+are separate; an unreceipted output requires validated recovery. No destructive cleanup,
+universal power-loss guarantee or hostile same-account sandbox. Existing 128 MiB
+workbook bound, filename/local-filesystem restrictions and Windows reparse limitations
+remain. Broader archive security #11 is open.
 
-PR #40's workbook publication retains independent original bytes and an immutable
-report, uses append-only receipts and no-overwrite publication, and distinguishes
-filesystem work from database commits. Windows directory guards now request
-FILE_LIST_DIRECTORY rather than zero access while forbidding delete sharing.
-Read `docs/WORKBOOK_PUBLICATION.md` and `docs/WINDOWS_EXPORT_GUARD.md`.
-No destructive fallback/automatic cleanup, universal power-cut guarantee or
-hostile same-account sandbox is claimed. Unicode output names, Windows network/
-device paths and unsupported hard-link filesystems remain explicit limitations.
-The 128 MiB artifact bound refuses rather than truncates. Broader #11 remains open.
+PubMed run #41235232458 observed 19,483 identifiers, 43 pages, six disjoint leaves and
+controlled restart; full metadata/broader live acceptance remain partial. Starter run
+#41306953908 observed 19,584 reported/committed records, 392 acquisition and 392
+verification pages, 786 requests and a separate-process restart. Neither a frozen
+provider snapshot nor complete abstracts/live multi-day recovery is inferred. Keep
+#7/#8 open; never repeat live calls merely for documentation or request secrets in chat.
 
-Read count/publication documentation for provisional identity versus verified
-unique-publication totals, queryless/unmaterialised records, stale decisions,
-manual reversible associations and the 2–32-record candidate-helper limit.
-That helper is not a retrieval or count cap. Project-wide duplicate discovery,
-automatic rerun propagation, full master/conference/guideline workbooks and
-portable archives remain outstanding. Keep #33, #35 and #37 open as applicable.
+Keep #33/#35/#37 open for project-wide duplicate discovery/scaling, broader reconciled
+counts and full exports. Manual candidate review's 2–32-record limit is not an
+acquisition limit. Preserve transactional creation, recoverable schema-v4 migrations,
+immutable source metadata/plans, all memberships, fencing, retry budgets and provider-
+wide longest cooldowns. Local request budgets pause rather than consume failure
+budgets. Final Starter verification still needs an uninterrupted available-quota session.
 
-PubMed run #41235232458 observed 19,483 unique identifiers, 43 pages, six disjoint
-leaves and controlled restart; full metadata and broader acceptance remain partial.
-Starter run #41306953908 observed 19,584 reported/committed records, 392 acquisition
-and 392 verification pages, 786 requests, separate-process restart and
-4,214/5,000 quota requests remaining. No frozen snapshot, full abstract enrichment,
-live multi-day quota-reset acceptance or whole-product completeness is inferred.
-Retained aggregate evidence is not an independent record-level audit. Keep #7/#8
-open. Never request configured credentials in chat or repeat live calls merely
-for documentation.
+## Reviews
 
-Preserve transactional creation, recoverable schema-v4 migrations, durability,
-immutable source/plans, memberships, request journals, worker fencing and genuine
-failure budgets. Provider-wide longest Retry-After and unknown request outcomes
-remain binding. Local budgets are resumable pauses, not source errors. Final
-Starter verification needs an uninterrupted session with available quota.
-
-## Review and merge protocol
-
-Before merge advice re-fetch current HEAD, all four required CI configurations,
-code/security summaries, completion timestamps, matching individual receipts and
-outstanding findings. Verify code first; then security unless a valid automatic
-current-commit review exists. Do not duplicate running reviews. A reaction or clean
-older review is not completion evidence. New commits invalidate prior acceptance.
-Never merge without explicit owner authorisation; no asynchronous work claims.
+Before merge advice retrieve current HEAD, all four required continuous integration
+(CI) results, code/security summaries, completion timestamps, matching individual
+receipts and outstanding findings. Definitive exact-HEAD code review first; then
+security unless valid automatic review already exists. No duplicate running reviews,
+reaction-based acceptance, waived gates or automatic merges. Every new commit invalidates
+earlier acceptance. Report the verified state without promising asynchronous work.
