@@ -18,13 +18,19 @@ jobs:
   quality:
     name: Test ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    # Bound failed test/reporting runs; ordinary matrix jobs take minutes.
-    timeout-minutes: 15
+    # Run #41309516675 reached the old 15-minute limit while Windows tests
+    # were still passing. Keep a finite platform-specific limit and diagnostics.
+    timeout-minutes: ${{ matrix.timeout-minutes }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.12", "3.13"]
+        include:
+          - os: ubuntu-latest
+            timeout-minutes: 15
+          - os: windows-latest
+            timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4.2.2
@@ -39,6 +45,6 @@ jobs:
       - name: Compile Python source
         run: python -m compileall -q src tests scripts
       - name: Test
-        run: python -m pytest --cov=research_y --cov-report=term-missing --tb=short
+        run: python -m pytest --cov=research_y --cov-report=term-missing --tb=short -v --durations=20
       - name: Verify installed dependencies
         run: python -m pip check

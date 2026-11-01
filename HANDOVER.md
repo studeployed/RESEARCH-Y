@@ -4,7 +4,7 @@
 
 Repository: https://github.com/studeployed/RESEARCH-Y. The approved version-controlled `RESEARCH-Y_SPEC.md` version 1.0.0-draft.1 remains authoritative and unchanged. Independent Python implementation; no imported assumptions or code from another research project.
 
-**Merged baseline:** PR #28 / P1-05b, commit `a4bb2b308aa96fe4076cde31efef668c23199173`, 1 November 2026. Post-merge test run #41306431736 passed all four Windows/Linux Python 3.12/3.13 configurations. Keep compact test parameter labels and the 15-minute ordinary test-job timeout introduced after the earlier PR #27 reporting defect.
+**Merged baseline:** PR #28 / P1-05b, commit `a4bb2b308aa96fe4076cde31efef668c23199173`, 1 November 2026. Post-merge test run #41306431736 passed all four Windows/Linux Python 3.12/3.13 configurations. Keep compact test parameter labels and bounded ordinary test-job timeouts. PR #29 retains 15 minutes for Linux and allows 30 minutes for Windows, with per-test progress and slow-test timings; the failed 15-minute Windows executions and correction are documented below.
 
 **Standing owner direction, 1 November 2026:** "at each completion step, begin instituting the next step". Follow `CONTRIBUTING.md`: record verified completion and immediately initiate the next ready, in-scope task during active work. Do not repeatedly ask for routine continuation. This is not authority to merge, weaken checks, change the specification, bypass live-retention consent or claim background monitoring. Required approvals and exact-commit reviews remain unchanged.
 
@@ -33,6 +33,32 @@ P1-05c records the scoped live result and updates handover, roadmap and traceabi
 **P1-06a initiation:** prepare the first bounded publication-identity/provenance increment under issue #9. Consult DATA-01–06, DUP-01–05, COUNT-01–05 and AT-10/11/19 before implementation. Preserve source records, all source/group/run memberships, separate original/chosen metadata and explicit incomplete states. Define conservative matching and anti-false-merge fixtures before coding; reversible decisions and no container/study conflation are mandatory. This preparatory step is not implemented deduplication. Master counts, initial Excel output and a minimal application flow follow as separate reviewable increments.
 
 Do not let next-stage work hide the open source-acceptance gaps: broader PubMed queries, complete PubMed metadata, live Starter multi-day/quota-reset scenarios and full provider-limit behaviour remain open. Deferred Windows junction issue #11 must be addressed before untrusted archive import/release.
+
+## PR #29 continuous integration runtime correction
+
+[Run #41309516675](https://github.com/studeployed/RESEARCH-Y/actions/runs/41309516675)
+on `9cdc4216b2d6a5df9ebd090af16aeaea46c27dd2` passed both Linux jobs but
+cancelled both Windows jobs at the configured 15-minute job boundary on
+1 November 2026. Python 3.12 reported **569 passed, 1 skipped**; Python 3.13
+reported **517 passed, 1 skipped** before interruption. Neither log reported
+a failed assertion. All six `test_wos_live_evidence.py` cases passed in both.
+The interruption occurred in existing database/schema work at different suite
+positions, after continued progress; the logs do not establish the underlying
+runner or storage-performance bottleneck. This is not the earlier PR #27
+oversized-parameter-name failure.
+
+The amended workflow gives Windows a finite 30-minute job budget and retains
+Linux's 15-minute budget. All four required check names, test discovery,
+coverage, assertions, read-only permissions and offline-only execution remain
+unchanged. Verbose per-test progress and the 20 slowest test durations make a
+future slowdown diagnosable; short tracebacks and compact parameter labels are
+retained. No test is excluded, no failure is ignored, and no production code,
+source request budget, live workflow, dependency or acceptance requirement is
+changed. Two workflow-policy regressions guard these constraints. Fresh
+exact-HEAD Windows/Linux results and code/security reviews remain required;
+the earlier review receipts do not clear this amendment. A larger test budget
+is not a performance acceptance claim or evidence that the unfinished tests
+have passed.
 
 ## Review and stop conditions
 
