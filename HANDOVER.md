@@ -1,67 +1,47 @@
-# RESEARCH-Y handover — P1-05c evidence and P1-06a initiation
+# RESEARCH-Y handover — PR #29 merged; database initialisation correction
 
 ## Authority, progression and merged baseline
 
 Repository: https://github.com/studeployed/RESEARCH-Y. The approved version-controlled `RESEARCH-Y_SPEC.md` version 1.0.0-draft.1 remains authoritative and unchanged. Independent Python implementation; no imported assumptions or code from another research project.
 
-**Merged baseline:** PR #28 / P1-05b, commit `a4bb2b308aa96fe4076cde31efef668c23199173`, 1 November 2026. Post-merge test run #41306431736 passed all four Windows/Linux Python 3.12/3.13 configurations. Keep compact test parameter labels and bounded ordinary test-job timeouts. PR #29 retains 15 minutes for Linux and allows 30 minutes for Windows, with per-test progress and slow-test timings; the failed 15-minute Windows executions and correction are documented below.
+**Merged baseline:** PR #29 / P1-05c, commit `5b7ca06def03dff748c97231c5b70fcf07cb4711`, merged 1 November 2026 at 14:53 UTC. Its exact-HEAD pre-merge run #41316526667 passed all four Windows/Linux Python 3.12/3.13 checks, and both reviews completed with matching receipts. Those passes do not validate the new correction described below.
 
 **Standing owner direction, 1 November 2026:** "at each completion step, begin instituting the next step". Follow `CONTRIBUTING.md`: record verified completion and immediately initiate the next ready, in-scope task during active work. Do not repeatedly ask for routine continuation. This is not authority to merge, weaken checks, change the specification, bypass live-retention consent or claim background monitoring. Required approvals and exact-commit reviews remain unchanged.
+
+## Current focused correction — before extending P1-06a
+
+The database-initialisation correction is implemented on a separate review branch based on merged PR #29. Read `docs/PROJECT_INITIALISATION.md`. `_create_database` now starts `BEGIN IMMEDIATE` inside its initial script so schema, header values, identity and audit share one commit. It does not disable journalling/synchronous writes or alter schema version, existing migrations, queries, retries, timeouts, dependencies or credentials.
+
+The 16 new disk-backed regression cases in `tests/test_project_initialisation.py` reproduced 13 failures on the old code and pass locally after the correction, including injected schema/header/insert/commit failures, public cleanup/retry, unchanged logical contents and an abruptly exited child with a rollback journal. Source modules were hash-verified; local verification is a focused reconstruction, not a full checkout. Full Windows/Linux tests and completed exact-HEAD code/security reviews remain required. The isolated Linux creation benchmark is not a Windows/full-suite speedup or AT-22 acceptance claim.
+
+Once this bounded correction is verified, proceed directly with publication identity/provenance in **issue #30**, under #9. The first operation must preserve immutable source evidence and every source/group/run membership. It must not silently merge uncertain cross-source records, treat a container identifier as an abstract identifier, or turn partial retrieval into completed-source status. No deduplication or master-results implementation is claimed by this correction.
 
 ## Verified live boundaries
 
 - PubMed [run #41235232458](https://github.com/studeployed/RESEARCH-Y/actions/runs/41235232458), 31 October 2026: 19,483 unique identifiers, 43 pages, six disjoint leaves and controlled pause/reopen. Scoped AT-07 and identifier-stage AT-09 evidence passed. Full metadata, broader queries and product-wide completion remain partial. See `docs/evidence/pubmed-41235232458-summary.json`.
-- Starter [sample run #41254004073](https://github.com/studeployed/RESEARCH-Y/actions/runs/41254004073), 31 October 2026: actual 5,000/day allowance, 19,574 reported matches and 100 sample records across two pages. Abstract text was not returned in that sample. The original safe sample evidence is in `docs/evidence/wos-starter-41254004073.json`.
-- Starter [full-enumeration/recovery run #41306953908](https://github.com/studeployed/RESEARCH-Y/actions/runs/41306953908), 1 November 2026, 12:46 UTC: **19,584 reported and committed records, 392 acquisition pages, 392 verification pages, 786 requests, zero recorded failures/unknown outcomes**. First process paused after 50 records; a separate process resumed. First acquisition page was unchanged and acquired once. Observed quota remaining: 4,214 of 5,000.
-- The latter result is `completed_with_warnings` / `enumeration_reconciled=true` / `durable_recovery_tested=true`. It does **not** establish a frozen provider snapshot, full abstracts, live quota-exhaustion/reset, multi-day recovery or full multi-source retrieval. Those flags remain false.
-- `docs/WOS_LIVE_ACCEPTANCE.md` records expected/actual outcomes and scoped requirement disposition. `docs/evidence/wos-recovery-41306953908-summary.json` retains the unchanged aggregate audit and checksums. It is not the original page-hash artifact or a record-level independent audit; licensed data and the database were not exported. All 16 aggregate checks were rechecked when preparing this evidence update.
+- Starter [sample run #41254004073](https://github.com/studeployed/RESEARCH-Y/actions/runs/41254004073), 31 October 2026: actual 5,000/day allowance, 19,574 reported matches and 100 sample records across two pages. Abstract text was not returned in that sample. Safe sample evidence is in `docs/evidence/wos-starter-41254004073.json`.
+- Starter [full-enumeration/recovery run #41306953908](https://github.com/studeployed/RESEARCH-Y/actions/runs/41306953908), 1 November 2026 at 12:46 UTC: **19,584 reported and committed records, 392 acquisition pages, 392 verification pages, 786 requests, zero recorded failures/unknown outcomes**. A separate process resumed after the first 50 records; first acquisition page unchanged and acquired once. Remaining quota: 4,214 of 5,000.
+- That result is `completed_with_warnings` / `enumeration_reconciled=true` / `durable_recovery_tested=true`, not a frozen snapshot, full abstracts, live quota reset, multi-day recovery or full multi-source retrieval.
+- `docs/WOS_LIVE_ACCEPTANCE.md` records expected/actual outcomes and scoped requirement disposition. `docs/evidence/wos-recovery-41306953908-summary.json` retains the aggregate audit and checksums, not the original page-hash artifact or licensed record dataset. Its 16 aggregate checks are not a record-level independent audit.
 
-The working **`RESEARCHY_WOS_STARTER_API_KEY`** is already configured. Do not ask for the key in chat, repeat the resolved Elsevier/Clarivate setup, or rerun a live smoke merely to update documentation. No new provider requests are made by P1-05c.
+The working **`RESEARCHY_WOS_STARTER_API_KEY`** is configured. Do not ask for it in chat, repeat the resolved provider setup, or rerun a live smoke merely to update documentation. This correction makes no live provider requests. Broad AT-08/09/19/21 and parent issues #7/#8 remain open where evidence is outstanding.
 
 ## Existing implementation safeguards
 
-Read `docs/WOS_CHECKPOINTS.md`, `docs/WOS_PROVIDER_GUARDS.md` and the review history in PR #28. Schema v4 provides recoverable upgrades, immutable source plans, journalled attempts, original metadata, query memberships and accession-verification receipts. Atomic commits retain records and their audits. Recovery reopens approved plans and acquires only missing pages; a lost uncommitted response may be refetched with uncertainty recorded. Explicit stopped-worker confirmation and ownership fencing remain required for crash recovery.
+Read `docs/WOS_CHECKPOINTS.md`, `docs/WOS_PROVIDER_GUARDS.md` and PR #28. Schema v4 provides recoverable upgrades, immutable source plans, journalled attempts, original metadata, query memberships and accession-verification receipts. Atomic commits retain records and audits. Recovery acquires only missing pages; a lost uncommitted response may be refetched with uncertainty recorded. Explicit stopped-worker confirmation and ownership fencing remain required after a crash.
 
-Preserve real failure budgets across replayed verification prefixes; preserve Retry-After even on rejected responses; distinguish malformed from missing quota; pause at the smaller client/worker request budget without inventing source failure. Provider cooldowns and observed quota exhaustion apply across the project's Starter jobs, including cancelled/completed jobs. Pause/cancel/recovery cannot erase source-consistency failure reasons. The longest applicable pacing, server delay and exhausted-quota cooldown is binding. No reset time is assumed.
+Preserve real failure budgets across replayed verification prefixes and Retry-After even on rejected responses. Distinguish malformed from missing quota. Pause at the smaller client/worker request budget without inventing source failure. Provider cooldowns and observed quota exhaustion apply across the project's Starter jobs, including cancelled/completed jobs. Pause/cancel/recovery cannot erase source-consistency failures. The longest applicable delay remains binding; no reset time is assumed.
 
-Acquisition can span days in the tested design. **Final identity verification must fit one uninterrupted session and available quota.** Old verification receipts are retained but are not a current frozen snapshot. Count/identity/metadata conflicts remain incomplete. No matching result set is promoted to full abstract enrichment or whole-run completion.
+Acquisition can span days in the fixture-tested design. **Final identity verification must fit one uninterrupted session and available quota.** Old receipts are not a current frozen snapshot. Count/identity/metadata conflicts remain incomplete. Master counts, initial Excel output and a minimal application flow remain separate P1-06 increments after identity/provenance and conservative decisions. Deferred Windows junction issue #11 must be addressed before untrusted archive import/release.
 
-## Current evidence update and next ready work
+## Historical Windows runtime incident
 
-P1-05c records the scoped live result and updates handover, roadmap and traceability. Broad AT-08/09/19/21 statuses stay **partial**, and parent issue #8 stays open. New offline evidence-regression tests preserve the historical report identity, accounting and limitations; they do not replace live or record-level validation. This documentation/evidence increment requires its own reviewed, owner-approved merge.
+PR #29's original run #41309516675 cancelled both Windows jobs at the former 15-minute boundary: 569 passed/1 skipped on Python 3.12; 517 passed/1 skipped on 3.13. No failed assertion was recorded, and all six new evidence tests passed. The merged workflow now allows 30 minutes on Windows and 15 on Linux, with full discovery/coverage, verbose progress, short tracebacks and the 20 slowest durations. Keep compact parameter labels. Required check names, permissions and offline-only execution are unchanged.
 
-**P1-06a initiation:** prepare the first bounded publication-identity/provenance increment under issue #9. Consult DATA-01–06, DUP-01–05, COUNT-01–05 and AT-10/11/19 before implementation. Preserve source records, all source/group/run memberships, separate original/chosen metadata and explicit incomplete states. Define conservative matching and anti-false-merge fixtures before coding; reversible decisions and no container/study conflation are mandatory. This preparatory step is not implemented deduplication. Master counts, initial Excel output and a minimal application flow follow as separate reviewable increments.
-
-Do not let next-stage work hide the open source-acceptance gaps: broader PubMed queries, complete PubMed metadata, live Starter multi-day/quota-reset scenarios and full provider-limit behaviour remain open. Deferred Windows junction issue #11 must be addressed before untrusted archive import/release.
-
-## PR #29 continuous integration runtime correction
-
-[Run #41309516675](https://github.com/studeployed/RESEARCH-Y/actions/runs/41309516675)
-on `9cdc4216b2d6a5df9ebd090af16aeaea46c27dd2` passed both Linux jobs but
-cancelled both Windows jobs at the configured 15-minute job boundary on
-1 November 2026. Python 3.12 reported **569 passed, 1 skipped**; Python 3.13
-reported **517 passed, 1 skipped** before interruption. Neither log reported
-a failed assertion. All six `test_wos_live_evidence.py` cases passed in both.
-The interruption occurred in existing database/schema work at different suite
-positions, after continued progress; the logs do not establish the underlying
-runner or storage-performance bottleneck. This is not the earlier PR #27
-oversized-parameter-name failure.
-
-The amended workflow gives Windows a finite 30-minute job budget and retains
-Linux's 15-minute budget. All four required check names, test discovery,
-coverage, assertions, read-only permissions and offline-only execution remain
-unchanged. Verbose per-test progress and the 20 slowest test durations make a
-future slowdown diagnosable; short tracebacks and compact parameter labels are
-retained. No test is excluded, no failure is ignored, and no production code,
-source request budget, live workflow, dependency or acceptance requirement is
-changed. Two workflow-policy regressions guard these constraints. Fresh
-exact-HEAD Windows/Linux results and code/security reviews remain required;
-the earlier review receipts do not clear this amendment. A larger test budget
-is not a performance acceptance claim or evidence that the unfinished tests
-have passed.
+The subsequent exact-HEAD run #41316526667 passed; Windows test steps took 10m37s and 12m46s. The timeout amendment was containment, not a performance fix. The current initialisation correction targets a demonstrated source of repeated durable writes, without claiming it explains every runner slowdown.
 
 ## Review and stop conditions
 
-For every pull request, fetch current HEAD, all four required continuous integration results, code/security summaries, individual receipts and outstanding findings. Verify code review completion on that HEAD before requesting security review unless a valid automatic review already exists. New commits invalidate earlier acceptance. Missing timestamps, mismatched commits or contradictory evidence remain unverified; do not generate duplicate reviews or bypass protections. **Never merge without explicit owner authorisation.**
+For every pull request, fetch current HEAD, all four required continuous integration results, code/security summaries, individual receipts and outstanding findings. Verify code completion before requesting security review unless a valid automatic review exists. New commits invalidate earlier acceptance. Missing timestamps, mismatched commits or contradictory evidence remain unverified. Do not request duplicates or bypass protections. **Never merge without explicit owner authorisation.**
 
-At an external review/approval blocker, report the exact verified state and the next required action. Continue independent preparation where justified, but do not represent a queued review, a created issue or a proposed pull request as completed functionality.
+At an external review/approval blocker, report the exact verified state and required action. Continue independent preparation where justified, but do not represent a queued review, issue or proposed pull request as completed functionality.
