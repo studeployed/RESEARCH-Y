@@ -189,6 +189,11 @@ def inspect_wos_checkpoint(project: Project, query_id: str) -> WoSCheckpoint:
 
 
 def _quota_headers(quota: WoSQuota) -> dict[str, str]:
+    # These headers are local parser inputs, never stored as provider evidence.
+    # A malformed response canonicalises to WoSQuota(valid=False), distinct
+    # from missing headers. Preserve that state through reparse and reopening.
+    if quota.valid is False:
+        return {"X-RateLimit-Limit-Day": "invalid"}
     return {header: str(value) for header, value in (
         ("X-RateLimit-Limit-Day", quota.daily_limit),
         ("X-RateLimit-Remaining-Day", quota.daily_remaining),
