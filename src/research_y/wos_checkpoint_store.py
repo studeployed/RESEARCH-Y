@@ -462,8 +462,18 @@ def _accept(project: Project, query_id: str, token: str, attempt_id: str,
                            (query_id,))
             _audit_job(db, job, "page_committed", stamp, page=page.page, records=len(page.records), response_sha256=page.response_sha256)
         elif purpose == "verify":
+            # Replayed prefixes in a new epoch are not new forward progress.
+            # Derive the durable high-water mark from immutable prior receipts,
+            # so repeated failures at the same later page or final probe exhaust
+            # the retry budget even across fresh clients and verification epochs.
+            prior_high_water = db.execute(
+                "SELECT COALESCE(MAX(page_number),0) FROM wos_checkpoint_verifications WHERE query_id=?",
+                (query_id,),
+            ).fetchone()[0]
             db.execute("INSERT INTO wos_checkpoint_verifications VALUES (?,?,?,?)", (query_id, job["verify_epoch"], page.page, attempt_id))
-            db.execute("UPDATE wos_checkpoint_jobs SET verify_page=verify_page+1,failures=0 WHERE query_id=?", (query_id,))
+            db.execute("UPDATE wos_checkpoint_jobs SET verify_page=verify_page+1,"
+                       "failures=CASE WHEN ?>? THEN 0 ELSE failures END WHERE query_id=?",
+                       (page.page, prior_high_water, query_id))
             if page.page == max(1, page.estimated_total_pages):
                 db.execute("UPDATE wos_checkpoint_jobs SET stage='final' WHERE query_id=?", (query_id,))
             _audit_job(db, job, "identity_verified", stamp, page=page.page, epoch=job["verify_epoch"], response_sha256=page.response_sha256)

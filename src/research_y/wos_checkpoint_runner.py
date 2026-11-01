@@ -63,7 +63,10 @@ def _failure(project: Project, query_id: str, token: str, attempt_id: str,
     with _db(project, write=True) as db:
         job = _owned(db, project, query_id, token)
         failures = job["failures"] + 1
-        wait = max(30 * 2 ** min(failures - 1, 4), exc.retry_after_seconds or 0)
+        # A parsed HTTP 200 can still fail body or credential-echo validation.
+        # The client retains its server delay even if that exception omits it.
+        wait = max(30 * 2 ** min(failures - 1, 4), exc.retry_after_seconds or 0,
+                   client.retry_after_remaining)
         quota = asdict(client.quota)
         if client.quota.daily_remaining == 0:
             wait = max(wait, 3600)  # Probe cooldown, explicitly NOT a presumed reset.
