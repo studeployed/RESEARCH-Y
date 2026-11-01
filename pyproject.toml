@@ -12,6 +12,9 @@ license = {text = "Proprietary; no redistribution licence granted"}
 authors = [{name = "RESEARCH-Y project"}]
 dependencies = []
 
+[project.optional-dependencies]
+excel = ["openpyxl==3.1.5", "et-xmlfile==2.0.0"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

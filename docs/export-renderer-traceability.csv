@@ -1,0 +1,23 @@
+requirement_id,implementation_scope,test_reference,status
+EXPORT-01,Strategy/count subset only; master/conference/society outputs pending,tests/test_strategy_workbook.py,partial
+EXPORT-02,Frozen strategy/count workbook rendering; audited save and selectable interface pending,tests/test_strategy_report.py; tests/test_strategy_workbook.py,partial
+EXPORT-03,Named whole-run snapshot; unsupported filtered scopes refused,tests/test_strategy_report.py,partial
+EXPORT-04,Literal text; filters; freeze panes; long-text continuation; explicit row overflow refusal,tests/test_strategy_workbook.py,partial
+EXPORT-06,Method boundaries and incomplete reporting remain explicit,tests/test_strategy_workbook.py,partial
+SEARCH-05,Approved atomic terms and known provenance retained without invented ancestry,tests/test_strategy_report.py; tests/test_strategy_workbook.py,partial
+SEARCH-12,Frozen approved strategy captured on one read snapshot,tests/test_strategy_report.py,partial
+SEARCH-13,Exact query and stored dates/parameters retained; translations and full logs separate,tests/test_strategy_report.py,partial
+COUNT-01,Existing named denominators preserved; no new count acceptance,tests/test_strategy_report.py,partial
+COUNT-02,Source/group/global identity denominators not conflated,tests/test_strategy_report.py,partial
+COUNT-03,Unknown and zero remain distinct; no inferred reported union,tests/test_strategy_workbook.py,partial
+COUNT-04,Group/source workbook rows; verified deduplicated totals remain unknown,tests/test_strategy_report.py,partial
+COUNT-05,No verified-complete promotion by rendering,tests/test_strategy_workbook.py,partial
+AUDIT-01,Frozen report evidence/hash only; persistent export journal pending,tests/test_strategy_report.py,partial
+AUDIT-04,No invented PRISMA-S or PRESS completion,tests/test_strategy_workbook.py,partial
+DATA-06,Licensed original record text excluded; general export permission workflow pending,tests/test_strategy_report.py,partial
+SEC-01,No credential access; arbitrary query parameters refused; user-entered text not a secret classifier,tests/test_strategy_report.py,partial
+SEC-04,Spreadsheet literal safety only; output path/publication recovery not implemented,tests/test_strategy_workbook.py,partial
+AT-17,Current projection frozen as report input; historical run reconstruction not claimed,tests/test_strategy_report.py,partial
+AT-18,Real workbook rendering only; audited saving and complete export acceptance pending,tests/test_strategy_workbook.py; tests/test_strategy_report.py,partial
+AT-19,Incomplete source/deduplication boundaries preserved,tests/test_strategy_report.py; tests/test_strategy_workbook.py,partial
+AT-21,Literal text and no external workbook content; full security/recovery acceptance pending,tests/test_strategy_workbook.py,partial
