@@ -1,4 +1,6 @@
-# Fixed versions for the developer/test environment. Runtime uses Python stdlib at this stage.
+# Fixed versions for the developer/test environment; Excel backend is optional at runtime.
 pytest==9.0.2
 pytest-cov==7.0.0
 coverage==7.13.3
+openpyxl==3.1.5
+et-xmlfile==2.0.0
