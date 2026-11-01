@@ -117,11 +117,14 @@ def _sqlite_connection(path: Path) -> sqlite3.Connection:
 
 
 def _create_database(database_path: Path, project: Project) -> None:
-    # Database creation is part of a newly allocated project folder; on failure
-    # the caller removes that folder. Migrations and backups are not yet supported.
+    # Schema, header values, project identity and audit share one commit.
+    # The connection context manager does not begin a transaction for DDL.
+    # BEGIN must be inside executescript(), which would commit a transaction
+    # opened before that call. On failure the caller removes its new folder.
     with closing(sqlite3.connect(database_path)) as connection, connection:
         connection.executescript(
             f"""
+            BEGIN IMMEDIATE;
             PRAGMA application_id={SQLITE_APPLICATION_ID};
             CREATE TABLE project_metadata (
                 singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
