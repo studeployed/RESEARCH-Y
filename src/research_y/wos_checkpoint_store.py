@@ -19,6 +19,17 @@ from research_y.storage import _audit
 from research_y.wos_starter import WoSPage, WoSQuota, WoSStarterError, parse_document_page, validate_request
 
 
+# These failures require a new query/run, never a pause/recovery override.
+_BLOCKING_FAILURES = frozenset((
+    "source_count_changed", "source_identity_changed", "cross_page_duplicate",
+    "source_record_conflict", "checkpoint_write_failed",
+))
+
+
+def _blocking_failure(job: dict) -> bool:
+    return job["failures"] >= 3 or job["reason_code"] in _BLOCKING_FAILURES
+
+
 class WoSCheckpointError(ValueError):
     """Static error category; no provider payload or secret is interpolated."""
 
@@ -314,8 +325,14 @@ def pause_wos_checkpoint(project: Project, query_id: str, *, cancel: bool = Fals
         job = _job(db, project, query_id)
         if job["stage"] == "done" or job["status"] == "cancelled":
             return
-        _state(db, job, "cancelled" if cancel else "paused",
-               "cancelled_by_user" if cancel else "paused_by_user", _stamp())
+        # A UI pause is not permission to clear a source-consistency failure.
+        # An in-flight response can leave a blocked reason on a paused job too.
+        preserve_reason = job["status"] == "incomplete" or _blocking_failure(job)
+        if preserve_reason and not cancel:
+            return
+        reason = job["reason_code"] if preserve_reason else (
+            "cancelled_by_user" if cancel else "paused_by_user")
+        _state(db, job, "cancelled" if cancel else "paused", reason, _stamp())
 
 
 def recover_wos_worker(project: Project, query_id: str, *, previous_worker_stopped: bool) -> None:
@@ -333,9 +350,36 @@ def recover_wos_worker(project: Project, query_id: str, *, previous_worker_stopp
                    "reason_code='interrupted_outcome_unknown' WHERE query_id=? AND outcome='started'",
                    (stamp, query_id))
         db.execute("UPDATE wos_checkpoint_jobs SET owner_token=NULL WHERE query_id=?", (query_id,))
-        if job["status"] not in ("cancelled", "completed_with_warnings"):
+        if (job["status"] not in ("cancelled", "completed_with_warnings", "incomplete")
+                and not _blocking_failure(job)):
             _state(db, job, "incomplete", "interrupted_outcome_unknown", stamp)
         _audit_job(db, job, "worker_recovered", stamp)
+
+
+def _provider_hold(db, stamp: str, *, revalidate_quota: bool) -> tuple[str | None, str | None]:
+    """Project-wide Starter restrictions, derived from the existing durable ledger.
+
+    Credentials are not persisted or used to partition this guard: conservatively
+    share the longest deadline across every Starter job, including cancelled and
+    completed ones. A new query or client must not bypass provider restrictions.
+    """
+    deadline = db.execute("SELECT MAX(not_before_utc) FROM wos_checkpoint_jobs").fetchone()[0]
+    if deadline is not None:
+        if _stamp(datetime.fromisoformat(deadline)) != deadline:
+            raise WoSCheckpointError("invalid_provider_clock")
+        if stamp < deadline:
+            return "provider_cooldown", deadline
+    if not revalidate_quota:
+        # A failed/unknown observation does not prove an exhausted quota reset.
+        # Only a later successful page with observed usable quota clears it.
+        for row in db.execute("SELECT outcome,quota_json FROM wos_checkpoint_attempts "
+                              "WHERE sent=1 ORDER BY started_at_utc DESC,rowid DESC"):
+            quota = WoSQuota(**json.loads(row["quota_json"]))
+            if quota.daily_remaining == 0:
+                return "provider_quota_revalidation_required", deadline
+            if row["outcome"] == "success" and quota.can_continue:
+                break
+    return None, deadline
 
 
 def _claim(project: Project, query_id: str, stamp: str, *, revalidate_quota: bool) -> str | None:
@@ -345,9 +389,7 @@ def _claim(project: Project, query_id: str, stamp: str, *, revalidate_quota: boo
             raise WoSCheckpointError("worker_busy_or_interrupted")
         if job["status"] in ("cancelled", "completed_with_warnings"):
             return None
-        if job["failures"] >= 3 or job["reason_code"] in (
-                "source_count_changed", "source_identity_changed", "cross_page_duplicate",
-                "source_record_conflict", "checkpoint_write_failed"):
+        if _blocking_failure(job):
             return None
         if (job["status"] == "incomplete" and job["reason_code"] not in
                 ("interrupted_outcome_unknown", "not_started") and not revalidate_quota):
@@ -357,6 +399,16 @@ def _claim(project: Project, query_id: str, stamp: str, *, revalidate_quota: boo
         observed_quota = json.loads(job["quota_json"])
         if (job["reason_code"] in ("quota_revalidation_required", "entitlement_unverified")
                 or observed_quota.get("daily_remaining") == 0) and not revalidate_quota:
+            return None
+        hold, deadline = _provider_hold(db, stamp, revalidate_quota=revalidate_quota)
+        if hold:
+            # Give an untouched query an actionable pause without overwriting
+            # an existing query-specific failure, quota or cancellation reason.
+            if job["status"] == "pending" or job["reason_code"] in (
+                    "provider_cooldown", "provider_quota_revalidation_required"):
+                db.execute("UPDATE wos_checkpoint_jobs SET not_before_utc=? WHERE query_id=?",
+                           (deadline, query_id))
+                _state(db, job, "paused", hold, stamp)
             return None
         token = str(uuid4())
         try:

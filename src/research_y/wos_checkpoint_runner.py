@@ -134,10 +134,15 @@ def run_wos_checkpoint(
             return
         delay = client.retry_after_remaining
         stamp = _stamp(now())
-        # Protect even a process restart from the last request's pacing window.
-        next_allowed = _after(stamp, max(1.05, delay))
+        # Persist the strongest restriction with the response, before a pause,
+        # cancellation or final completion can skip the loop's quota check.
+        quota_delay = 3600 if page.quota.daily_remaining == 0 else 0
+        next_allowed = _after(stamp, max(1.05, delay, quota_delay))
         _accept(project, query_id, token, attempt, page, stamp, next_allowed)
-        if delay > 0:
+        if quota_delay:
+            _pause(project, query_id, token, stamp, "quota_revalidation_required",
+                   minimum_delay=max(delay, quota_delay))
+        elif delay > 0:
             _pause(project, query_id, token, stamp, "server_retry_after", minimum_delay=delay)
 
     try:
