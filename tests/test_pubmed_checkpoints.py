@@ -13,6 +13,7 @@ import sqlite3
 import pytest
 
 from research_y.projects import create_project, open_project
+from research_y.schema import SCHEMA_VERSION
 from research_y.pubmed_ids import PubMedIdentifierPage
 from research_y.pubmed_partition import CountedPartition, DateWindow, PubMedPartitionResult
 from research_y.pubmed_probe import PubMedCountProbe
@@ -100,7 +101,7 @@ def test_checkpoint_plan_is_tied_to_approved_pubmed_query(tmp_path):
     assert result.root_count == 4 and result.pages_expected == 2
     assert result.pages_committed == 0 and result.stored_status == "incomplete"
     with closing(sqlite3.connect(project.database_path)) as db, db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert db.execute("SELECT reported_matches,status FROM source_queries WHERE query_id=?", (query_id,)).fetchone() == (4, "incomplete")
         assert db.execute("SELECT event_type FROM audit_events ORDER BY event_id DESC LIMIT 1").fetchone()[0] == "pubmed_checkpoint_created"
 
@@ -352,7 +353,7 @@ def test_no_checkpoint_state_is_never_a_fictional_hit_count(tmp_path):
     p, q = project_query(tmp_path)
     with pytest.raises(KeyError, match="No PubMed checkpoint"):
         inspect_pubmed_checkpoint(p, q)
-    with closing(sqlite3.connect(p.database_path)) as db, db:
+    with closing(sqlite3.connect(p.database_path)) as db:
         assert db.execute("SELECT reported_matches FROM source_queries WHERE query_id=?", (q,)).fetchone()[0] is None
 
 
