@@ -305,6 +305,27 @@ def associate_retrieval(project: Project, retrieval_id: str, target_publication_
     An exact retry of the still-current decision is a no-op; stale earlier
     requests after another identity decision are rejected rather than replayed.
     """
+    with _validated_project_connection(project) as db:
+        db.execute("BEGIN IMMEDIATE")
+        return _associate_in_transaction(
+            db, retrieval_id, target_publication_id,
+            expected_source_revision=expected_source_revision,
+            expected_target_revision=expected_target_revision, actor=actor, evidence=evidence,
+            same_publication_confirmed=same_publication_confirmed,
+        )
+
+
+def _associate_in_transaction(db: sqlite3.Connection, retrieval_id: str,
+                              target_publication_id: str, *, expected_source_revision: str,
+                              expected_target_revision: str, actor: str, evidence: str,
+                              same_publication_confirmed: bool) -> PublicationSnapshot:
+    """Use the existing association guards in a caller-owned write transaction.
+
+    Candidate receipts and the identity change must commit or roll back together.
+    This helper never starts, commits or closes the caller's transaction.
+    """
+    if not db.in_transaction:
+        raise ValueError("An active caller-owned transaction is required")
     _identifier(retrieval_id)
     _identifier(target_publication_id)
     _text(actor, 200)
@@ -313,25 +334,23 @@ def associate_retrieval(project: Project, retrieval_id: str, target_publication_
         raise ValueError("Explicit same-publication confirmation is required")
     request = _hash(["associate", retrieval_id, target_publication_id, expected_source_revision,
                      expected_target_revision, actor, evidence])
-    with _validated_project_connection(project) as db:
-        db.execute("BEGIN IMMEDIATE")
-        link = _link(db, retrieval_id)
-        if link is None:
-            raise ValueError("Materialise the retrieval before reviewing an association")
-        if link[2].get("action") == "associate" and link[2].get("request_sha256") == request:
-            return _snapshot(db, link[0])
-        origin, target = _snapshot(db, link[0]), _snapshot(db, target_publication_id)
-        _expect(origin, expected_source_revision)
-        _expect(target, expected_target_revision)
-        if origin.publication_id == target.publication_id:
-            return target
-        if not target.active:
-            raise ValueError("Choose an active target publication, not a retained empty identity")
-        _movable(db, origin, retrieval_id)
-        _record_link(db, _source(db, retrieval_id), before=origin.publication_id,
-                     after=target.publication_id, previous_event_id=link[1], status="confirmed_match",
-                     action="associate", actor=actor, evidence=evidence, request_sha256=request)
-        return _snapshot(db, target.publication_id)
+    link = _link(db, retrieval_id)
+    if link is None:
+        raise ValueError("Materialise the retrieval before reviewing an association")
+    if link[2].get("action") == "associate" and link[2].get("request_sha256") == request:
+        return _snapshot(db, link[0])
+    origin, target = _snapshot(db, link[0]), _snapshot(db, target_publication_id)
+    _expect(origin, expected_source_revision)
+    _expect(target, expected_target_revision)
+    if origin.publication_id == target.publication_id:
+        return target
+    if not target.active:
+        raise ValueError("Choose an active target publication, not a retained empty identity")
+    _movable(db, origin, retrieval_id)
+    _record_link(db, _source(db, retrieval_id), before=origin.publication_id,
+                 after=target.publication_id, previous_event_id=link[1], status="confirmed_match",
+                 action="associate", actor=actor, evidence=evidence, request_sha256=request)
+    return _snapshot(db, target.publication_id)
 
 
 def reverse_association(project: Project, retrieval_id: str, decision_event_id: int, *,
