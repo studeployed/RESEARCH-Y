@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 import json
 import math
 import multiprocessing as mp
+from multiprocessing.connection import wait as wait_connections
 import os
 import threading
 from uuid import uuid4
@@ -44,6 +45,47 @@ class OperationStatus:
 
 def _encode(value) -> bytes:
     return json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')
+
+
+def _rebuild_windows_sender(handle):
+    from multiprocessing.connection import PipeConnection
+    return PipeConnection(handle, readable=False, writable=True)
+
+
+class _WindowsSpawnSender:
+    """Transfer ownership into the child, not a parent-side steal-on-unpickle copy.
+
+    CPython's default PipeConnection reducer duplicates a Windows writer in the
+    parent until the child unpickles it. Early child death can leave that writer
+    open, preventing EOF and leaking a handle. Use the spawn transport's existing
+    direct-child duplication instead. This internal CPython 3.12/3.13 boundary
+    is deliberately isolated and covered by native-Windows lifecycle tests.
+    """
+    def __init__(self, sender):
+        self.sender = sender
+
+    def __reduce__(self):
+        from multiprocessing.context import get_spawning_popen
+        popen = get_spawning_popen()
+        if popen is None:
+            raise RuntimeError('Sender transfer requires an active spawn')
+        handle = popen.duplicate_for_child(self.sender.fileno())
+        return _rebuild_windows_sender, (handle,)
+
+
+def _receive_response(receiver, process, stop):
+    # Child death is independent of pipe EOF (a duplicate writer can keep a pipe
+    # open). Wait on both, and give explicit shutdown priority over a late reply.
+    # A complete reply buffered before normal child exit must still be consumed.
+    while not stop.is_set():
+        ready = wait_connections([receiver, process.sentinel], timeout=.05)
+        if stop.is_set():
+            break
+        if receiver in ready:
+            return receiver.recv_bytes(MAX_RESULT_BYTES)
+        if process.sentinel in ready:
+            break
+    raise EOFError
 
 
 def _watch_parent():
@@ -187,8 +229,9 @@ class ApplicationWorker:
                 return
             ctx = mp.get_context('spawn')
             receiver, sender = ctx.Pipe(duplex=False)
+            child_sender = _WindowsSpawnSender(sender) if os.name == 'nt' else sender
             process = ctx.Process(target=_child_entry,
-                args=(sender, operation_id, command, execute_command), daemon=True)
+                args=(child_sender, operation_id, command, execute_command), daemon=True)
             process.start()
             started = True
             sender.close(); sender = None
@@ -196,7 +239,7 @@ class ApplicationWorker:
                 self._process = process
             if stop.is_set():
                 self._signal()
-            message = _decode(receiver.recv_bytes(MAX_RESULT_BYTES), operation_id)
+            message = _decode(_receive_response(receiver, process, stop), operation_id)
             process.join()  # Supervisor only; close() can still signal the child.
             if not process.is_alive() and process.exitcode == 0 and not stop.is_set():
                 state, error = message['state'], message['error']
