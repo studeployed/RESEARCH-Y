@@ -1,53 +1,42 @@
-# SQLite schema v3 (P1-04c; additive to v2)
+# SQLite schema v4 — P1-05b (additive to v3)
 
-This document describes storage **provided by the current increment**, not a completed literature-search engine. The definitive design constraints are in [the approved specification](../RESEARCH-Y_SPEC.md).
+The approved [specification](../RESEARCH-Y_SPEC.md) remains authoritative. The current implementation stores reproducible local evidence; it is not a declaration of a completed search product.
 
-## Entity structure
+## Existing entities retained
 
-- `project_metadata` and `audit_events`: the unchanged project identity and append-only audit history from schema v1.
-- `strategy_versions` and `strategy_groups`: approved strategy snapshots, named groups and ordered group identities; direct update/delete of approved snapshots/groups is rejected.
-- `search_runs`, `source_queries`, `source_retrievals`, `query_retrievals`: version-linked runs, exact source queries, unique provider records within a run/source, and many-to-many source/query/group memberships. Cross-run and cross-source query associations are rejected by composite foreign keys.
-- `publications`, `publication_retrievals`: a unique publication separate from its contributing database records. More than one retrieval can be associated with one publication.
-- `containers`, `publication_containers`, `organisations`, `publication_organisations`: separate abstract-containing items and authoring/collaborating/endorsing roles.
-- `classifications` and `documents`: separate classification provenance and documented file/link entities.
+Schema v1 introduced `project_metadata` and append-only `audit_events`. Schema v2 added immutable approved `strategy_versions` / `strategy_groups`; `search_runs`, `source_queries`, `source_retrievals`, `query_retrievals`; separate `publications` / `publication_retrievals`; containers, organisations, classifications and documents. Source counts are NULL until observed. Composite foreign keys prevent cross-run/source associations. Original source metadata is separate from chosen publication metadata.
 
-A reported query count is **NULL until a provider supplies it**. Inserting a source record or publication does not constitute verified retrieval or deduplication. No public CRUD interfaces, query compiler, API clients, classification pipeline or exports are included in P1-02a.
+The `research_y.storage` interface freezes explicitly approved atomic terms and OR-only groups, creates pending runs and stores exact unexecuted query plans. These operations include audit events in their transaction; they do not establish source acceptance or inferred counts.
 
-## Migration contract
+Schema v3 added `pubmed_checkpoint_runs`, `pubmed_checkpoint_pages` and `pubmed_checkpoint_ids`: disjoint counted plans, immutable pages/identifiers, checksums and transactional page/index/audit writes. P1-04d stores EFetch records through the v2 source-retrieval/membership tables. These PubMed structures are unchanged by v4. Their status remains distinct from full bibliographic retrieval.
 
-- Newly created projects initialise SQLite schema version **2**.
-- Opening a valid version-1 project verifies its identity before upgrading. It first creates a checked SQLite backup under `backups/researchy-before-v2-<unique>.sqlite3`.
-- The upgrade then creates all v2 objects, sets `PRAGMA user_version=2` and appends a `schema_migrated` audit event in **one transaction**.
-- A failed schema upgrade rolls back and retains the version-1 database and its backup; no silent database reset or guessed repair.
-- Opening a current project does not create another migration backup. Unsupported versions fail without modification.
+## Version 4 additions
 
-See `tests/test_schema_migrations.py` for legacy-file, rollback, migration-idempotence, source/group-membership and identity-integrity fixtures.
+See [durable Starter design](WOS_CHECKPOINTS.md) for operational contracts.
 
-## Deliberate limits
+| Table | Purpose |
+|---|---|
+| `wos_checkpoint_jobs` | Immutable approved query/collection plan; source baseline; progress, quota/backoff, ownership and truthful status |
+| `wos_checkpoint_attempts` | Reservation before network access; observed response/error/unknown outcome and attempt purpose |
+| `wos_checkpoint_observations` | Locally permitted raw response, context and checksums, including retained rejected observations |
+| `wos_checkpoint_pages` | Contiguous, immutable acquisition-page ledger and ordered accession digest |
+| `wos_checkpoint_ids` | Unique query/accession index, page position and source-retrieval identity/metadata digest |
+| `wos_checkpoint_verifications` | Independent identity-pass receipts per verification epoch; old epochs remain auditable |
 
-Multi-writer coordination, untrusted project-folder import, archive validation, source-specific retrieval logic, metadata reconciliation and complete provenance APIs remain scheduled for later work. [Issue #11](https://github.com/studeployed/RESEARCH-Y/issues/11) separately tracks Windows junction containment before untrusted project import or release.
+A page, source records, group/query memberships and audit commit together in `BEGIN IMMEDIATE`. Network calls occur outside database transactions. Immutable-history triggers reject mutation/deletion. A project permits only one active Starter worker; ownership tokens prevent a stale worker from committing after explicitly confirmed crash recovery.
 
-## P1-02b operational storage (proposed, not merged)
+Validated acquisition metadata uses the existing `source_retrievals` / `query_retrievals` tables. Identical source records may belong to more than one query; conflicting original metadata is not overwritten. Retention requires explicit confirmation of source permissions. No secret, publication deduplication or inferred abstract is added.
 
-The `research_y.storage` API uses the existing v2 tables without another schema migration. It serialises approved atomic terms (origin, rationale, enabled state and approval flag) into an immutable **OR-only** strategy snapshot, persists its named/ordered groups and an auditable researcher approval confirmation, and creates run records with initial `pending` status.
+## Recoverable migration
 
-The `plan_source_query` helper stores exact **unexecuted** PubMed or Web of Science Starter query text and caller-supplied parameters in association with a group belonging to the run's frozen strategy. Source-reported counts remain `NULL` and execution timestamps remain unset. The helper **does not validate provider syntax, translate terms, send requests or infer hit counts**; those functions belong to later source-specific compiler and connector increments.
+New projects initialise schema **4**. Opening an older supported project validates its identity before creating a consistent, independently checked backup. Names reflect the old version's next step: `researchy-before-v2-*` for v1, `researchy-before-v3-*` for v2, and `researchy-before-v4-*` for v3. The actual migration audit records the old version and target **4**, with all needed additive definitions applied in one transaction.
 
-Transactions include their audit events. A failed audit write rolls back the associated approved strategy, run or planned query. These limited APIs do not implement public screening, deduplication, metadata processing, automatic model output acceptance or source-wide reconciliation.
+Schema changes, `PRAGMA user_version=4` and the migration audit are atomic. A failed backup prevents migration; failed DDL or audit rolls back the original database, leaving the pre-upgrade backup intact. Reopening a current project creates no repeated backup. Unknown future versions and identity mismatches are rejected without migration. Existing source records, PubMed checkpoints and research setup are preserved.
 
-## PubMed durable checkpoint schema v3 (P1-04c)
+Tests: `tests/test_schema_migrations.py`, `tests/test_wos_migration.py`, `tests/test_wos_checkpoints.py`. These are fixtures until execution evidence is recorded; schema presence alone never proves data retrieval.
 
-A new source-query-scoped, append-only **identifier checkpoint ledger** extends the v2 database:
-- `pubmed_checkpoint_runs`: query_id foreign key, immutable exact root query/count/partition plan, plan SHA-256 digest, explicitly nonfinal checkpoint status.
-- `pubmed_checkpoint_pages`: immutable partition index + page offset, bounded size, canonical validated page, digest and source response digest.
-- `pubmed_checkpoint_ids`: individual unique PMIDs with foreign-key association to the exact committed page, preventing accidental cross-page/partition duplicates.
+## Acceptance and security boundary
 
-Every page is inserted with its PMIDs and append-only audit event in **one `BEGIN IMMEDIATE` transaction**. Failed audit/ID writes roll back all page rows. Reopening validates plan hashes, date splits, offsets, page hashes and index equality before any resume. This is accidental-corruption detection, not a cryptographic authenticity guarantee against an attacker who controls the entire SQLite file.
+Reconciliation uses source count, contiguous acquisition pages, accession uniqueness, source-record/membership integrity, a separate full ordered-accession pass and a final count probe. The strongest current Starter result is `completed_with_warnings`: enumeration observed consistent, provider snapshot unavailable, abstract enrichment and parent run completion pending. Changes/errors stay incomplete or paused/cancelled with durable evidence.
 
-**Migration and rollback.** Newly created projects start directly at schema v3. Existing v1 projects are backed up and upgraded atomically through v2 definitions to v3; existing v2 projects receive a consistent `researchy-before-v3-*.sqlite3` backup before v3 tables are applied. On migration failure, the original database version/data and verified backup remain intact. No unsupported future schema is silently opened.
-
-**Completeness boundary.** A stored checkpoint can be `paused`, `incomplete` or `identifiers_reconciled_metadata_pending`. The source query is **never** advanced to `completed_verified` by this layer. Actual metadata EFetch, source run reconciliation, Web of Science integration and project archives are separate increments.
-
-## P1-04d — PubMed EFetch records (proposed)
-
-No schema change: the existing source_retrievals and query_retrievals tables support atomic storage of parsed original PubMed metadata, source response digests and query membership, with a matching audit event. These records remain separate from chosen publication metadata and cannot establish completed_verified.
+Checksums detect accidental/inconsistent modification, not malicious wholesale rewriting of a database. Broad multi-writer orchestration, untrusted archives, full provenance UI, enrichment and exports remain later gates. [Windows junction issue #11](https://github.com/studeployed/RESEARCH-Y/issues/11) remains open before untrusted imports/release.

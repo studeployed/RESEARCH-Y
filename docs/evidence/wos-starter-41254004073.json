@@ -1,0 +1,67 @@
+{
+  "accepted_translation": null,
+  "access_probe_records_received": 1,
+  "checked_at_utc": "2026-10-31T23:47:59.177710+00:00",
+  "commit_sha": "cc0f695c2e5c8b2d9710cc6ddb091640890d9b20",
+  "database": "WOS",
+  "durable_recovery_tested": false,
+  "entitlement_status": "institutional_allowance_observed",
+  "full_retrieval_tested": false,
+  "github_run_id": "41254004073",
+  "licensed_record_content_exported": false,
+  "pages": [
+    {
+      "limit": 50,
+      "page": 1,
+      "records_received": 50,
+      "records_with_title": 50,
+      "records_without_abstract": 50,
+      "reported_matches": 19574,
+      "response_sha256": "4e4fd3c33b0cd991061efe4705afa932b31dfaaa1cf847976b604563af9a7a39",
+      "retrieved_at_utc": "2026-10-31T23:48:00.667174+00:00"
+    },
+    {
+      "limit": 50,
+      "page": 2,
+      "records_received": 50,
+      "records_with_title": 50,
+      "records_without_abstract": 50,
+      "reported_matches": 19574,
+      "response_sha256": "36708b704732a2e3b87d31ab1cd495ebc2791f61aa2f01980364238f47422bf7",
+      "retrieved_at_utc": "2026-10-31T23:48:01.615962+00:00"
+    }
+  ],
+  "pilot_response_sha256": "89ee2e056721462eebe70c823ffdd3fb463377ac350edb6dc85a67431fc0e33e",
+  "query": "TS=(\"ECMO\")",
+  "quota_observations": [
+    {
+      "daily_limit": 5000,
+      "daily_remaining": 4999,
+      "per_second_limit": 5,
+      "valid": true
+    },
+    {
+      "daily_limit": 5000,
+      "daily_remaining": 4998,
+      "per_second_limit": 5,
+      "valid": true
+    },
+    {
+      "daily_limit": 5000,
+      "daily_remaining": 4997,
+      "per_second_limit": 5,
+      "valid": true
+    }
+  ],
+  "reason_code": "sample_only_not_complete_retrieval",
+  "reported_matches": 19574,
+  "requests_made": 3,
+  "sample_accession_union_sha256": "b2e48970d4b5f0840f2cc9d81f31eed1f83ea567270c8e844ba89555219ba9ef",
+  "sort_field": "LD+A",
+  "source": "Web of Science Starter",
+  "source_coverage": "Web of Science Starter Topic (TS): title, abstract, author keywords and Keywords Plus; narrower than web-interface All Fields; not article full text.",
+  "source_retrieval_verified": false,
+  "status": "entitlement_and_two_page_sample_verified",
+  "translation_status": "not_exposed_by_starter_contract",
+  "validated_sample_records": 100
+}

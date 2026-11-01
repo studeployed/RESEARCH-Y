@@ -88,6 +88,11 @@ class WoSStarterClient:
         self.requests_made = 0
         self.quota = WoSQuota()
 
+    @property
+    def retry_after_remaining(self) -> float:
+        """Server-directed remaining delay, for persistence across process restarts."""
+        return max(0.0, self._retry_not_before - self._clock())
+
     def fetch_page(self, exact_query: str, *, database: str = "WOS", page: int = 1,
                    limit: int = 50) -> WoSPage:
         validate_request(exact_query, database, page, limit)
