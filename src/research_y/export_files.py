@@ -62,8 +62,12 @@ def _windows_directory(path: Path):
 
     get_info = kernel.GetFileInformationByHandle
     get_info.argtypes, get_info.restype = (w.HANDLE, ctypes.POINTER(Info)), w.BOOL
+    # FILE_LIST_DIRECTORY participates in Windows sharing checks; access=0 is
+    # metadata-only and does NOT enforce our no-delete-sharing rename guard.
+    # Fail closed if directory-read access is denied; never retry with access=0.
+    directory_read_access = 0x0001
     # OPEN_EXISTING, BACKUP_SEMANTICS | OPEN_REPARSE_POINT; share read/write, NOT delete.
-    handle = create(str(path), 0, 3, None, 3, 0x02000000 | 0x00200000, None)
+    handle = create(str(path), directory_read_access, 3, None, 3, 0x02000000 | 0x00200000, None)
     if handle == w.HANDLE(-1).value:
         raise OSError('Export directory cannot be locked')
     try:
