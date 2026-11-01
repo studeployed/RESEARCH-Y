@@ -1,55 +1,59 @@
-# RESEARCH-Y handover — PR #31 merged; P1-06a identity implementation
+# RESEARCH-Y handover — PR #32 merged; bounded P1-06b candidate review
 
-## Authority and baseline
+## Authority and verified baseline
 
-Repository: https://github.com/studeployed/RESEARCH-Y. The approved version-controlled
-`RESEARCH-Y_SPEC.md` version 1.0.0-draft.1 remains authoritative and unchanged.
-Independent Python implementation; no assumptions or code from another research project.
+The repository `RESEARCH-Y_SPEC.md` version 1.0.0-draft.1 remains authoritative and
+unchanged. Independent Python implementation; no imported project assumptions.
 
-**Merged baseline:** PR #31, commit `90ae817b69d2d85ee9aab14bde7f5d83f557f0db`,
-1 November 2026 at 15:20 UTC. Its post-merge run #41320722923 passed all four
-Windows/Linux Python 3.12/3.13 configurations. This establishes the baseline, not
-acceptance of the new identity modules. PR #29's evidence/traceability and bounded
-Windows test-timeout/reporting changes are included.
+**Merged baseline:** PR #32, commit `87f6d087b6273ccaf2377179113380664e2a2568`,
+1 November 2026 at 16:04 UTC. Its post-merge run #41324431002 completed successfully.
+The baseline includes PR #31 atomic project initialisation and P1-06a publication
+identities, reversible retrieval associations and source-backed field choices.
+Read `docs/PUBLICATION_IDENTITY.md` and `docs/PUBLICATION_RUN_STATUS.md`: parent-run
+status and query status both affect review revisions, without changing source hashes.
 
-**Standing owner direction, 1 November 2026:** "at each completion step, begin
-instituting the next step". During active work, initiate the next ready in-scope
-task without another routine continuation prompt. This does not authorise merging,
-scope changes, waived tests, live-retention consent or background monitoring.
+**Standing owner direction:** "at each completion step, begin instituting the next
+step". Initiate the next ready in-scope task during active work without another
+routine prompt. This does not authorise merging, scope changes, waived tests,
+live-retention consent or claims of asynchronous monitoring.
 
-## Current increment — P1-06a, implementation for review
+## Current implementation for review — first bounded P1-06b increment
 
-Read `docs/PUBLICATION_IDENTITY.md`; parent issues #30 and #9. The new modules
-`publication_identity.py` and `publication_fields.py` use the existing schema-v4
-publication/source associations and append-only audit. No schema migration, dependency,
-source call, credential change or workflow change is introduced.
+Read `docs/PUBLICATION_CANDIDATES.md`; parent #33 under #9. New modules
+`publication_match_evidence.py` and `publication_candidates.py` provide read-only
+explicit-pair comparisons, an intentionally bounded 2–32 retrieval candidate batch,
+and immutable confirmed-match/rejection receipts. Missing or contradictory values
+never silently agree. Identifiers are source-reported, not registration-verified;
+container scope stays unverified. No automatic matching threshold is enabled.
 
-Implemented: idempotent provisional identity creation, consistent source/group/run
-projections, explicit researcher-confirmed retrieval reassociation with stale-review
-guards, append-only reversal and readable decision history, and source-backed chosen
-fields with separate provenance. Empty retained identities are inactive. Equal
-identifiers/titles/containers never automatically merge records. Source metadata,
-missingness/rights, memberships, reported counts and source/run status stay unchanged.
+Confirmed decisions reuse the existing retrieval association guards via a shared
+caller-owned transaction helper. Identity/link/receipt writes are atomic. Rejection
+never splits an already combined identity. Exact current retries are no-ops; changed
+context, new relevant receipts or reversals require fresh review. Previous-run
+namespaced source-pair decisions are visible but never automatically propagated.
+Source records, all source/group/run memberships, rights, reported counts and statuses
+remain unchanged. Receipts contain generated comparison paths/hashes rather than
+copied titles or abstracts; researcher actor/evidence remain explicit assertions.
 
-Field choices retain references rather than duplicate licensed text. A chosen field
-must be cleared before its contributing retrieval is reassociated. Specialist
-annotations block reassociation until a later annotation-aware merge/split workflow
-can disposition them. Unsupported existing provenance fails closed. Returned fields
-are not redistribution permissions or verified unique-publication counts.
+81 targeted disk-backed local cases pass, with 97% rounded combined branch-aware
+coverage of the two new modules; four intentional negative mutations were caught.
+This used seven hash-verified reconstructed baseline modules, not a full checkout
+or Windows run. Full repository checks and exact-commit reviews remain outstanding
+until actually verified; no merge is authorised. No new dependency, schema change,
+provider request, credential or workflow change was needed.
 
-Local targeted verification: 62 disk-backed cases passed, including separate-process
-concurrency and abrupt-exit rollback, with ResourceWarning treated as errors and
-92% combined branch-aware new-module coverage. Baseline project/schema modules were
-reconstructed and Git-blob-hash verified; this was not a full repository checkout.
-All four full-suite configurations and completed exact-HEAD code/security reviews
-remain required before merge advice. Do not call review-branch work merged/accepted.
+## Next ready work
 
-**Next ready step:** P1-06b candidate generation/explicit match-rejection evidence,
-then annotation-aware decisions, reconciled master counts, genuine Excel export and
-minimal application flow. Start with fixtures for identifier and bibliographic
-conflicts, container/abstract separation, repeated runs and prior confirmed/rejected
-decisions. No unvalidated fuzzy/automatic threshold. The current increment is not
-full deduplication, automatic propagation across runs, or a completed interface.
+Prepare P1-06c reconciled count projections: source denominators versus group unions
+and global identity unions; unmaterialised/unreviewed records must stay visible;
+provisional identity counts must not be labelled verified unique-publication counts.
+Define queryless records, repeated groups/runs, inactive retained identities,
+confirmed associations/reversals and partial-source fixtures before implementation.
+
+Keep #33 open for indexed project-wide candidate discovery, large-history performance,
+validated automatic rules and fuller rerun decision propagation. Annotation-aware
+publication-wide merge/split, genuine Excel export and the minimal application flow
+remain separately reviewed work. A prepared issue is not implemented functionality.
 
 ## Verified live boundaries — unchanged
 
@@ -58,48 +62,40 @@ disjoint leaves and controlled pause/reopen. Scoped AT-07/identifier-stage AT-09
 passed; full metadata, broader queries/failures and whole-product acceptance remain
 partial. See `docs/evidence/pubmed-41235232458-summary.json`.
 
-Starter sample run #41254004073 (31 October 2026): observed 5,000/day allowance,
-19,574 reported matches, two adjacent 50-record pages; abstract text not returned.
-Starter full-enumeration/recovery run #41306953908 (1 November 2026 at 12:46 UTC):
-19,584 reported/committed records, 392 acquisition and 392 verification pages,
-786 requests, zero recorded failures/unknown outcomes. A second process resumed
-after 50 records; first acquisition page unchanged/acquired once; quota remaining
-4,214/5,000. `completed_with_warnings` / `enumeration_reconciled=true` /
-`durable_recovery_tested=true` are scoped observations, not frozen-snapshot, full
-abstract, live quota-reset, multi-day or whole-source/product acceptance.
+Starter sample run #41254004073: observed 5,000/day allowance, 19,574 reported matches,
+two adjacent 50-record pages, no returned abstracts. Full-enumeration/recovery run
+#41306953908 (1 November 2026 at 12:46 UTC): 19,584 reported/committed records, 392
+acquisition and 392 verification pages, 786 requests, zero recorded failures/unknown
+outcomes. Separate-process restart preserved the first page; 4,214/5,000 quota remained.
+`completed_with_warnings`, `enumeration_reconciled=true` and `durable_recovery_tested=true`
+are scoped observations, not frozen-snapshot, complete abstracts, live quota-reset,
+multi-day or whole-product acceptance. Exported aggregate/hash evidence is not an
+independent record-level audit. Read `docs/WOS_LIVE_ACCEPTANCE.md`.
 
-`docs/WOS_LIVE_ACCEPTANCE.md` and the retained aggregate audit preserve evidence and
-limitations. Exported aggregate/hash evidence is not an independent record-level
-audit. Source issues #7/#8 and broad AT-08/09/19/21 remain open where applicable.
+Source issues #7/#8 and broad AT-08/09/19/21 remain partial where evidence is outstanding.
 The working `RESEARCHY_WOS_STARTER_API_KEY` is configured; do not request it in chat
-or repeat live access tests simply to update documentation.
+or rerun source access just to update documentation.
 
-## Existing safeguards
+## Preserved safeguards
 
-PR #31 made new-project schema/header/identity/audit creation one transaction without
-disabling journalling or synchronous writes. Read `docs/PROJECT_INITIALISATION.md`.
-Its isolated Linux benchmark is not a Windows/full-suite performance guarantee.
+Retain transactional project creation, recoverable schema-v4 upgrades, full durability,
+immutable source plans/payloads, query memberships, request journalling, worker fencing
+and explicit stopped-worker confirmation. Acquire only missing committed pages; record
+uncertain lost responses. Preserve failure budgets, malformed/missing quota distinctions,
+Retry-After, project-wide restrictions and the longest applicable delay. Local session
+budgets are normal pauses; never guess a quota-reset time. Final Starter verification
+must fit one uninterrupted session/available quota; conflicts stay incomplete.
 
-Preserve schema-v4 backup/upgrade atomicity, immutable source plans and payloads,
-query memberships, request journalling, worker fencing and explicit stopped-worker
-confirmation. Acquire only missing committed pages; record uncertain lost responses.
-Preserve real failure budgets, malformed/missing quota distinctions, Retry-After,
-project-wide provider restrictions and the longest applicable delay. Local session
-budgets are normal pauses, not source failures. Never guess a quota-reset time.
-
-Final Starter identity verification must fit one uninterrupted session/available
-quota; older receipts do not prove an atomic snapshot. Count/identity/metadata
-conflicts remain incomplete. Keep the complete offline test suite, four required
-check names, compact test labels, verbose/short-trace reporting and current bounded
-30-minute Windows/15-minute Linux budgets. Deferred Windows junction issue #11 must
-be addressed before untrusted archive import/release.
+Keep all four full-suite check names, compact test labels, verbose/short-trace reporting,
+and bounded 30-minute Windows/15-minute Linux jobs. Isolated database benchmarks are not
+whole-application performance acceptance. Windows junction issue #11 remains a release
+blocker before untrusted archive import.
 
 ## Review and approvals
 
-Before merge advice, retrieve current HEAD, required checks, code/security summaries,
-individual receipts and all findings. Verify exact-HEAD code completion before
-requesting security review unless a valid automatic review already exists. Do not
-duplicate running reviews. New commits invalidate older acceptance. Missing timestamps,
-mismatched commits or contradictory evidence remain unverified. Never merge without
-explicit owner authorisation. At a review/approval blocker report the verified state;
-independent preparation is allowed, not claims of asynchronous monitoring.
+Retrieve current HEAD, required checks, code/security summaries, individual receipts
+and all findings before merge advice. Verify exact-HEAD code completion first, then
+request security review unless a valid automatic one exists. Do not duplicate reviews.
+Any new commit invalidates previous acceptance. Missing timestamps, mismatched commits
+or contradictory evidence remain unverified. Never merge without explicit owner approval.
+At an external review/approval blocker, report the verified state and next action.
