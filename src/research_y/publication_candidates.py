@@ -87,11 +87,12 @@ def _comparison_receipt(comparison: dict) -> dict:
     }
 
 
-def _receipts(db: sqlite3.Connection, keys: list[list[str]]) -> list[dict]:
+def _receipts(db: sqlite3.Connection, keys: list[list[str]] | None) -> list[dict]:
     """Fail closed on unsupported/corrupt receipts; no audit schema migration.
 
     This bounded first increment scans candidate receipts, not all source pairs.
     Indexed project-wide discovery and large-history performance are later work.
+    keys=None returns all validated receipts for a single-pass count projection.
     """
     related = []
     previous: dict[tuple[str, str], int] = {}
@@ -143,7 +144,7 @@ def _receipts(db: sqlite3.Connection, keys: list[list[str]]) -> list[dict]:
         except (ValueError, TypeError, KeyError):
             raise identity.PublicationIntegrityError("Invalid candidate decision receipt") from None
         previous[tuple(pair)] = event_id
-        if event["source_keys"] == keys:
+        if keys is None or event["source_keys"] == keys:
             related.append({"event_id": event_id, **event})
     return related
 
