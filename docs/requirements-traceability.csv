@@ -11,7 +11,7 @@ ARCH-04,0,AT-22,planned,planned
 PROJ-01,1,AT-01,planned,planned
 PROJ-02,1,"AT-01,AT-02",tests/test_projects.py,partial
 PROJ-03,1,AT-02,tests/test_projects.py,partial
-PROJ-04,1,"AT-01,AT-09",tests/test_projects.py; tests/test_wos_checkpoints.py; tests/test_project_initialisation.py (atomic new schema/header/identity/audit creation and rollback),partial
+PROJ-04,1,"AT-01,AT-09",tests/test_projects.py; tests/test_wos_checkpoints.py; tests/test_project_initialisation.py (atomic new schema/header/identity/audit creation and rollback); tests/test_publication_identity.py; tests/test_publication_fields.py (atomic identity/field/audit rollback),partial
 PROJ-05,1,"AT-03,AT-21",planned,planned
 PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py; tests/test_wos_migration.py (recoverable v1/v2/v3 to v4; archives pending),partial
 PROJ-07,1,"AT-01,AT-09",planned,planned
@@ -50,17 +50,17 @@ RUN-04,1,AT-09,tests/test_wos_checkpoints.py; tests/test_wos_budget_regressions.
 RUN-05,1,AT-19,tests/test_pubmed_ids.py; tests/test_pubmed_date_translation_integration.py; tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py (observed count/identity reconciliation; no whole-source-complete claim),partial
 RUN-06,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py; docs/evidence/wos-recovery-41306953908-summary.json (both sources controlled live restart passed; killed-process fixtures; live multi-day pending),partial
 RUN-07,1,"AT-09,AT-21",tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py (licensed local payload and unknown request journal retained),partial
-DATA-01,1,"AT-10,AT-11,AT-13",tests/test_schema_migrations.py (schema entities only),partial
-DATA-02,1,"AT-10,AT-11",tests/test_schema_migrations.py (publication identity schema only),partial
+DATA-01,1,"AT-10,AT-11,AT-13",tests/test_schema_migrations.py (schema entities only); tests/test_publication_identity.py; tests/test_publication_fields.py (distinct source/publication identities and memberships),partial
+DATA-02,1,"AT-10,AT-11",tests/test_schema_migrations.py (publication identity schema only); tests/test_publication_identity.py; tests/test_publication_fields.py (provisional identities with explicit association only),partial
 DATA-03,1,"AT-10,AT-12,AT-13",tests/test_pubmed_metadata.py; tests/test_wos_checkpoints.py (all returned source metadata retained; enrichment pending),partial
-DATA-04,1,"AT-10,AT-16",tests/test_pubmed_metadata.py; tests/test_wos_checkpoints.py (original source provenance and per-query memberships),partial
-DATA-05,1,AT-16,tests/test_pubmed_metadata.py; tests/test_wos_checkpoints.py (missing abstracts and metadata conflicts distinct),partial
-DATA-06,1,"AT-16,AT-21",tests/test_pubmed_metadata.py; tests/test_wos_checkpoint_validation.py (retention approval and aggregate-only artifacts; general export future),partial
-DUP-01,1,AT-10,planned,planned
+DATA-04,1,"AT-10,AT-16",tests/test_pubmed_metadata.py; tests/test_wos_checkpoints.py (original source provenance and per-query memberships); tests/test_publication_identity.py; tests/test_publication_fields.py (separate source values and traced chosen-field references),partial
+DATA-05,1,AT-16,tests/test_pubmed_metadata.py; tests/test_wos_checkpoints.py (missing abstracts and metadata conflicts distinct); tests/test_publication_identity.py; tests/test_publication_fields.py (source missingness and conflicting alternatives retained),partial
+DATA-06,1,"AT-16,AT-21",tests/test_pubmed_metadata.py; tests/test_wos_checkpoint_validation.py (retention approval and aggregate-only artifacts; general export future); tests/test_publication_identity.py; tests/test_publication_fields.py (source rights retained; field choice is not redistribution permission),partial
+DUP-01,1,AT-10,tests/test_publication_identity.py; tests/test_publication_fields.py (explicit cross-source/group/run associations; automatic deduplication pending),partial
 DUP-02,1,"AT-10,AT-11",planned,planned
-DUP-03,1,AT-10,planned,planned
-DUP-04,1,"AT-10,AT-17",planned,planned
-DUP-05,1,AT-11,planned,planned
+DUP-03,1,AT-10,tests/test_publication_identity.py; tests/test_publication_fields.py (review_required and confirmed_match; candidate/rejection workflow pending),partial
+DUP-04,1,"AT-10,AT-17",tests/test_publication_identity.py; tests/test_publication_fields.py (current retrieval association reversal; annotated publication merge/split and rerun propagation pending),partial
+DUP-05,1,AT-11,tests/test_publication_identity.py; tests/test_publication_fields.py (no automatic shared-container or abstract/full-paper merge),partial
 CONF-01,2,AT-11,planned,planned
 CONF-02,2,AT-11,planned,planned
 CONF-03,2,AT-12,planned,planned
@@ -96,14 +96,14 @@ UI-07,3,"AT-18,AT-22",planned,planned
 UI-08,3,"AT-10,AT-15",planned,planned
 UI-09,3,"AT-10,AT-15",planned,planned
 UI-10,3,"AT-03,AT-18",planned,planned
-COUNT-01,1,"AT-10,AT-19",tests/test_wos_checkpoints.py (query memberships preserve per-query counts; global master pending),partial
+COUNT-01,1,"AT-10,AT-19",tests/test_wos_checkpoints.py (query memberships preserve per-query counts; global master pending); tests/test_publication_identity.py; tests/test_publication_fields.py (source denominators preserved; final publication counts pending),partial
 COUNT-02,1,AT-10,planned,planned
 COUNT-03,1,"AT-07,AT-08,AT-19",tests/test_pubmed_partition.py; tests/test_wos_checkpoints.py (source-page unique identity reconciliation; full cross-source counts pending),partial
 COUNT-04,1,"AT-10,AT-18",planned,planned
-COUNT-05,1,AT-19,tests/test_wos_checkpoints.py (explicit incomplete and unknown attempt states),partial
+COUNT-05,1,AT-19,tests/test_wos_checkpoints.py (explicit incomplete and unknown attempt states); tests/test_publication_identity.py; tests/test_publication_fields.py (identity operations do not promote source/run completion),partial
 AUDIT-01,1,AT-17,tests/test_schema_migrations.py; tests/test_wos_checkpoints.py (durable approved query and request/page provenance),partial
 AUDIT-02,1,AT-17,planned,planned
-AUDIT-03,1,"AT-10,AT-17",tests/test_schema_migrations.py (audit append-only),partial
+AUDIT-03,1,"AT-10,AT-17",tests/test_schema_migrations.py (audit append-only); tests/test_publication_identity.py; tests/test_publication_fields.py (append-only association/reversal/field evidence and readable identity history),partial
 AUDIT-04,1,"AT-17,AT-18",planned,planned
 EXPORT-01,3,AT-18,planned,planned
 EXPORT-02,3,AT-18,planned,planned
@@ -116,25 +116,25 @@ SEC-02,3,"AT-20,AT-21",planned,planned
 SEC-03,3,AT-21,tests/test_wos_checkpoint_validation.py (explicit local retention gate; licensed contents not exported),partial
 SEC-04,3,"AT-03,AT-21",planned,planned
 SEC-05,3,"AT-09,AT-21",tests/test_pubmed_probe.py; tests/test_wos_starter.py; tests/test_wos_checkpoints.py (static error codes and durable recovery),partial
-AT-01,1,AT-01,tests/test_projects.py; tests/test_project_initialisation.py (project metadata and single-transaction creation only),partial
-AT-02,1,AT-02,tests/test_projects.py (partial: metadata path relocation only),partial
+AT-01,1,AT-01,tests/test_projects.py; tests/test_project_initialisation.py (project metadata and single-transaction creation only); tests/test_publication_identity.py; tests/test_publication_fields.py (identity/provenance reopening; full interface pending),partial
+AT-02,1,AT-02,tests/test_projects.py (partial: metadata path relocation only); tests/test_publication_identity.py; tests/test_publication_fields.py (identity/provenance relocation fixture),partial
 AT-03,3,AT-03,planned,planned
 AT-04,2,AT-04,tests/test_strategy_storage.py (approval gate only),partial
 AT-05,1,AT-05,tests/test_query_compiler.py (offline OR union fixture only),partial
 AT-06,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_translation.py; tests/test_pubmed_date_translation.py (observed source alias fixture; broader live phrases pending),partial
 AT-07,1,AT-07,tests/test_pubmed_partition.py; docs/evidence/pubmed-41235232458-summary.json (19483 live IDs reconciled; scoped scenario passed not full product acceptance),partial
 AT-08,1,AT-08,tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py; docs/evidence/wos-recovery-41306953908-summary.json (live 19584-record enumeration passed; live quota-reset and multi-day scope pending),partial
-AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py; tests/test_project_initialisation.py; docs/evidence/wos-recovery-41306953908-summary.json (controlled live restarts and initialisation crash fixtures; broader live recovery remains open),partial
-AT-10,1,AT-10,planned,planned
-AT-11,2,AT-11,planned,planned
+AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py; tests/test_project_initialisation.py; docs/evidence/wos-recovery-41306953908-summary.json (controlled live restarts and initialisation crash fixtures; broader live recovery remains open); tests/test_publication_identity.py; tests/test_publication_fields.py (identity transaction crash rollback; source acceptance remains partial),partial
+AT-10,1,AT-10,tests/test_publication_identity.py; tests/test_publication_fields.py (explicit two-source/group association; automatic matching pending),partial
+AT-11,2,AT-11,tests/test_publication_identity.py; tests/test_publication_fields.py (shared-container and abstract/full-paper separation; extraction pending),partial
 AT-12,2,AT-12,planned,planned
 AT-13,2,AT-13,planned,planned
 AT-14,2,AT-14,planned,planned
 AT-15,2,AT-15,planned,planned
 AT-16,2,AT-16,planned,planned
-AT-17,1,AT-17,tests/test_strategy_storage.py (immutable history only),partial
+AT-17,1,AT-17,tests/test_strategy_storage.py (immutable history only); tests/test_publication_identity.py; tests/test_publication_fields.py (cross-run provenance and preserved decisions; automatic rerun propagation pending),partial
 AT-18,1,AT-18,planned,planned
-AT-19,1,AT-19,tests/test_pubmed_ids.py; tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py (scoped warnings retained after successful live enumeration; no full-source claim),partial
+AT-19,1,AT-19,tests/test_pubmed_ids.py; tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py (scoped warnings retained after successful live enumeration; no full-source claim); tests/test_publication_identity.py; tests/test_publication_fields.py (source/run status and counts unchanged by identity decisions),partial
 AT-20,2,AT-20,planned,planned
-AT-21,3,AT-21,tests/test_schema_migrations.py; tests/test_wos_migration.py; tests/test_wos_checkpoints.py; tests/test_project_initialisation.py (backup and creation rollback; full security pending),partial
+AT-21,3,AT-21,tests/test_schema_migrations.py; tests/test_wos_migration.py; tests/test_wos_checkpoints.py; tests/test_project_initialisation.py (backup and creation rollback; full security pending); tests/test_publication_identity.py; tests/test_publication_fields.py (concurrent identities and fail-closed source/audit checks; full security pending),partial
 AT-22,3,AT-22,planned,planned
