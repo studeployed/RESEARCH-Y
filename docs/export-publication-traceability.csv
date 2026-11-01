@@ -1,0 +1,20 @@
+requirement_id,test_reference,status,scope
+PROJ-04,tests/test_workbook_export_integration.py; tests/test_workbook_export_protocol.py,partial,Append-only export receipts; database and filesystem crash boundaries are distinct
+PROJ-06,tests/test_workbook_export_protocol.py,partial,Concurrent retries serialized; broader project archives remain open
+EXPORT-01,tests/test_workbook_export_integration.py,partial,Existing strategy-count workbook is published; full master export pending
+EXPORT-02,tests/test_workbook_export_integration.py,partial,Strategy-count workbook save only; publication-ready whole-product acceptance pending
+EXPORT-03,tests/test_workbook_export_protocol.py; tests/test_workbook_export_integration.py,partial,Frozen whole-run snapshot retained on retries; no filtered export claim
+EXPORT-04,tests/test_export_files.py; tests/test_workbook_export_integration.py,partial,Existing literal-safe renderer unchanged; no-overwrite file publication
+EXPORT-06,tests/test_workbook_export_integration.py,partial,Audited output is not proof of a complete systematic review
+COUNT-05,tests/test_workbook_export_integration.py,partial,Saving never promotes source or run completion
+AUDIT-01,tests/test_workbook_export_protocol.py,partial,Snapshot and artifact digests bound to append-only receipts
+AUDIT-03,tests/test_workbook_export_integration.py,partial,Export journal append-only; source and identity rows unchanged
+DATA-06,tests/test_workbook_export_integration.py,partial,Existing strategy report excludes licensed record text; broad rights handling remains open
+SEC-01,tests/test_workbook_export_protocol.py; tests/test_workbook_export_integration.py,partial,Static diagnostics and no absolute destination paths in receipts; no credentials accessed
+SEC-04,tests/test_export_files.py; tests/test_workbook_export_integration.py,partial,Exclusive files and guarded local paths; archive and hostile same-user sandbox acceptance not claimed
+AT-01,tests/test_workbook_export_integration.py,partial,Export receipts and files reopen; full application workflow pending
+AT-02,tests/test_workbook_export_protocol.py; tests/test_workbook_export_integration.py,partial,Prepared and completed exports survive supported relocation
+AT-17,tests/test_workbook_export_protocol.py; tests/test_workbook_export_integration.py,partial,Retained export snapshot not silently replaced by later research changes
+AT-18,tests/test_workbook_export_integration.py,partial,Genuine strategy-count workbook saved and checksum verified; full export acceptance pending
+AT-19,tests/test_workbook_export_integration.py,partial,Workbook remains INCOMPLETE after successful file save
+AT-21,tests/test_export_files.py; tests/test_workbook_export_protocol.py; tests/test_workbook_export_integration.py,partial,Failure and actual process-crash recovery; broader security remains open
