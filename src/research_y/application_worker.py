@@ -122,6 +122,7 @@ class ApplicationWorker:
         self._process = None
         self._command = None
         self._status = None
+        self._pending_status = None
         self._closed = False
         self._stop = threading.Event()
 
@@ -130,6 +131,7 @@ class ApplicationWorker:
             raise ApplicationCommandError('invalid_command')
         command.__post_init__()
         with self._lock:
+            self._refresh_completed_locked()
             if self._closed:
                 raise ApplicationWorkerError('worker_closed')
             if self._thread is not None and self._thread.is_alive():
@@ -139,6 +141,7 @@ class ApplicationWorker:
             operation_id = str(uuid4())
             self._command = command
             self._stop = threading.Event()
+            self._pending_status = None
             self._status = OperationStatus(operation_id, command.operation, command.export_id, 'running')
             self._thread = threading.Thread(target=self._supervise,
                 args=(command, operation_id, self._stop), daemon=True, name='researchy-local-operation')
@@ -150,8 +153,18 @@ class ApplicationWorker:
                 self._thread = None
             return operation_id
 
+    def _refresh_completed_locked(self):
+        # The child result is only public once its supervisor has actually exited.
+        # This keeps terminal poll() and readiness for submit() the same boundary;
+        # callers need neither private thread access nor a racy is_alive workaround.
+        if (self._pending_status is not None and self._thread is not None
+                and not self._thread.is_alive()):
+            self._status = self._pending_status
+            self._pending_status = None
+
     def poll(self, operation_id: str) -> OperationStatus:
         with self._lock:
+            self._refresh_completed_locked()
             if self._status is None or self._status.operation_id != operation_id:
                 raise ApplicationWorkerError('unknown_operation')
             return self._status
@@ -210,8 +223,8 @@ class ApplicationWorker:
                     # Retain ownership; close() reports an unconfirmed shutdown.
                     with self._lock:
                         self._closed = True
-                        self._status = OperationStatus(operation_id, command.operation, command.export_id,
-                                                       'interrupted', 'shutdown_unconfirmed')
+                        self._pending_status = OperationStatus(operation_id, command.operation, command.export_id,
+                                                               'interrupted', 'shutdown_unconfirmed')
                     return
                 with self._lock:
                     self._process = None
@@ -221,8 +234,8 @@ class ApplicationWorker:
             if stop.is_set():
                 state, error, payload = 'interrupted', 'worker_interrupted', None
             with self._lock:
-                self._status = OperationStatus(operation_id, command.operation, command.export_id,
-                                               state, error, payload)
+                self._pending_status = OperationStatus(operation_id, command.operation, command.export_id,
+                                                       state, error, payload)
 
     def close(self, *, grace_seconds: float = 2, kill_seconds: float = 2) -> None:
         """Stop accepting tasks, finish bounded work or interrupt without cancellation.
@@ -253,6 +266,7 @@ class ApplicationWorker:
                 self._signal(kill=True)
                 leftover.join(kill_seconds)
         with self._lock:
+            self._refresh_completed_locked()
             process = self._process
             live = process is not None and process.is_alive()
         if live or (thread is not None and thread.is_alive()):

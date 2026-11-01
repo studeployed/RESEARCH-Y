@@ -25,7 +25,9 @@ thread. That thread owns one explicitly spawned child process and a fresh privat
 pipe. Database reads, capture, rendering and file work run in that child. There is
 one active operation per worker, no persistent second queue and no unbounded backlog.
 Identical in-flight requests return the same operation ID. Conflicting requests fail
-with `worker_busy`. Completed operations are not cached as current observations.
+with `worker_busy`. Completed operations are not cached as current observations. Public terminal status
+is released only after the supervisor thread exits. `poll` and `submit` share that
+same readiness check; no private thread join is required to begin the next action.
 
 The interface-facing caller supplies and retains the export ID. The worker never
 creates a replacement export ID. `prepare_export` is a separate operation: only its
@@ -70,11 +72,11 @@ exclude project paths/names and result content. No provider credential is access
 
 ## Evidence and remaining gates
 
-83 local worker/command cases passed on Linux/Python 3.13.5. These include real spawn,
+89 local worker/command cases passed on Linux/Python 3.13.5. These include real spawn,
 large pipe messages, concurrent/double submissions, shutdown during startup, child
 crash, abrupt parent death, bounded-size rejection and explicit unconfirmed cleanup.
 Command adapter tests deliberately substitute existing service boundaries. Combined
-branch-aware coverage of the two new modules: 92% rounded; child-process coverage
+branch-aware coverage of the two new modules: 93% rounded; child-process coverage
 is not presumed from execution alone.
 
 15 additional full-repository integration cases are committed for continuous
@@ -84,7 +86,10 @@ external re-selection, immutable journals, a busy database, two abrupt child dea
 and explicit shutdown after committed preparation. The local environment could not
 resolve github.com for cloning, so no complete local checkout or full regression
 is claimed. All four repository CI configurations and exact-commit code/security
-reviews remain mandatory. No old tests or workflow gates are changed.
+reviews remain mandatory. No old tests or workflow gates are weakened. Six completion-boundary regression
+cases were added after review; three deterministically failed against the initial
+implementation and passed after correction. The integration helper's private-thread
+join workaround was removed.
 
 No browser interaction, Windows native window/installer or 100,000-record
 responsiveness acceptance is established here. Keep #43/#41 and broader source,

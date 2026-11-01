@@ -32,8 +32,6 @@ def run(pool, command):
     while time.monotonic()<until:
         done=pool.poll(oid)
         if done.state!='running':
-            # Drain the tiny supervisor-finalisation interval before resubmission.
-            pool._thread.join(2)
             return done
         time.sleep(.01)
     pytest.fail('bounded application operation did not finish')

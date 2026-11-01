@@ -19,7 +19,10 @@ Read docs/APPLICATION_WORKER.md and docs/application-worker-traceability.csv.
 application_commands.py allowlists six existing inspection/export services using
 an already-opened expected project identity. application_worker.py runs one task
 per explicitly spawned child with a supervisor thread and a fresh private pipe.
-Conflicts are refused; in-flight identical commands coalesce. Real service work
+Conflicts are refused; in-flight identical commands coalesce. Public terminal status
+and readiness for a fresh submission now both wait for supervisor exit, correcting
+the initial review's stale-result race. Six regressions were added and the integration
+helper no longer joins a private thread before submitting the next operation. Real service work
 runs off the future interface event loop. This is NOT a GUI, launcher or installer.
 
 Operation identity is ephemeral. Export identity remains caller-supplied and
@@ -30,7 +33,7 @@ uses the existing validated inventory. Parent-death watching, bounded stop/escal
 reaping and explicit shutdown_unconfirmed are implemented. No reusable broken pipe,
 second persistent queue or unbounded operation backlog is introduced.
 
-Local Linux/Python 3.13.5: 83 targeted lifecycle/command cases passed, 92% rounded
+Local Linux/Python 3.13.5: 89 targeted lifecycle/command cases passed, 93% rounded
 combined branch-aware coverage. Real processes/pipe/parent-death tests use synthetic
 service functions; routing tests substitute service boundaries. Fifteen actual
 project/workbook integration cases are committed for the full repository checks,
