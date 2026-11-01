@@ -33,10 +33,10 @@ SRC-01,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_translation.py (rea
 SRC-02,1,AT-07,tests/test_pubmed_partition.py; tests/test_pubmed_date_translation_integration.py; docs/evidence/pubmed-41235232458-summary.json (19483 live IDs reconcile; broader failure scenarios remain),partial
 SRC-03,1,"AT-07,AT-19",tests/test_pubmed_partition.py; tests/test_pubmed_date_translation_integration.py (exact date scope; changed counts or fields remain incomplete),partial
 SRC-04,1,AT-07,tests/test_pubmed_metadata.py (one-record EFetch live smoke passed; full metadata reconciliation pending),partial
-SRC-05,1,AT-08,tests/test_wos_starter.py; docs/evidence/wos-starter-41254004073.json (actual 5000/day allowance and access live-verified),partial
-SRC-06,1,"AT-08,AT-09",tests/test_wos_checkpoints.py (durable acquisition and next-day quota fixtures; large live recovery pending),partial
+SRC-05,1,AT-08,tests/test_wos_starter.py; docs/evidence/wos-starter-41254004073.json; docs/evidence/wos-recovery-41306953908-summary.json (actual 5000/day allowance observed in sample and full enumeration),partial
+SRC-06,1,"AT-08,AT-09",tests/test_wos_checkpoints.py; docs/evidence/wos-recovery-41306953908-summary.json (19584 records and 392 pages reconcile after live restart; live multi-day/quota-reset pending),partial
 SRC-07,1,"AT-08,AT-16",tests/test_wos_checkpoints.py (persistent original source fields and memberships; abstract enrichment pending),partial
-SRC-08,1,"AT-08,AT-19",tests/test_wos_checkpoints.py (count and same-count identity drift fail closed; no frozen-snapshot claim),partial
+SRC-08,1,"AT-08,AT-19",tests/test_wos_checkpoints.py; docs/evidence/wos-recovery-41306953908-summary.json (scoped enumeration only; no frozen-snapshot claim; broader provider limits pending),partial
 SRC-09,2,AT-13,planned,planned
 SRC-10,2,AT-13,planned,planned
 SRC-11,2,"AT-13,AT-19",planned,planned
@@ -46,9 +46,9 @@ SRC-14,2,AT-16,planned,planned
 RUN-01,1,AT-09,tests/test_pubmed_metadata.py; tests/test_wos_checkpoints.py (durable source stages; full GUI job engine pending),partial
 RUN-02,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py (durable paused/incomplete/cancelled and scoped warnings),partial
 RUN-03,1,"AT-08,AT-09",tests/test_pubmed_partition.py; tests/test_wos_checkpoints.py (source counts and attempted/unknown request progress; UI pending),partial
-RUN-04,1,AT-09,tests/test_wos_checkpoints.py (persisted backoff and finite retry budget; no guessed daily reset),partial
-RUN-05,1,AT-19,tests/test_pubmed_ids.py; tests/test_pubmed_date_translation_integration.py; tests/test_wos_checkpoints.py (count and unique identity passes; no whole-source-complete claim),partial
-RUN-06,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py (controlled restart and killed-process fixtures; Starter live recovery pending),partial
+RUN-04,1,AT-09,tests/test_wos_checkpoints.py; tests/test_wos_budget_regressions.py; tests/test_wos_provider_guard_regressions.py (persisted guards and bounded retries; live quota reset pending),partial
+RUN-05,1,AT-19,tests/test_pubmed_ids.py; tests/test_pubmed_date_translation_integration.py; tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py (observed count/identity reconciliation; no whole-source-complete claim),partial
+RUN-06,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py; docs/evidence/wos-recovery-41306953908-summary.json (both sources controlled live restart passed; killed-process fixtures; live multi-day pending),partial
 RUN-07,1,"AT-09,AT-21",tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py (licensed local payload and unknown request journal retained),partial
 DATA-01,1,"AT-10,AT-11,AT-13",tests/test_schema_migrations.py (schema entities only),partial
 DATA-02,1,"AT-10,AT-11",tests/test_schema_migrations.py (publication identity schema only),partial
@@ -70,7 +70,7 @@ CONF-06,2,AT-12,planned,planned
 GUIDE-01,2,AT-13,planned,planned
 GUIDE-02,2,"AT-13,AT-15",planned,planned
 GUIDE-03,2,AT-13,planned,planned
-GUIDE-04,2,AT-13,planned,planned
+GUIDE-04,2,"AT-13,AT-15",planned,planned
 GUIDE-05,2,"AT-10,AT-13",planned,planned
 CLASS-01,2,"AT-14,AT-15",planned,planned
 CLASS-02,2,AT-15,planned,planned
@@ -80,7 +80,7 @@ CLASS-05,2,"AT-15,AT-20",planned,planned
 CLASS-06,2,AT-15,planned,planned
 CLASS-07,2,"AT-15,AT-17",planned,planned
 AI-01,2,AT-20,planned,planned
-AI-02,2,AT-20,planned,planned
+AI-02,2,"AT-20,AT-21",planned,planned
 AI-03,2,"AT-20,AT-21",planned,planned
 AI-04,2,"AT-15,AT-20",planned,planned
 AI-05,2,"AT-20,AT-21",planned,planned
@@ -123,8 +123,8 @@ AT-04,2,AT-04,tests/test_strategy_storage.py (approval gate only),partial
 AT-05,1,AT-05,tests/test_query_compiler.py (offline OR union fixture only),partial
 AT-06,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_translation.py; tests/test_pubmed_date_translation.py (observed source alias fixture; broader live phrases pending),partial
 AT-07,1,AT-07,tests/test_pubmed_partition.py; docs/evidence/pubmed-41235232458-summary.json (19483 live IDs reconciled; scoped scenario passed not full product acceptance),partial
-AT-08,1,AT-08,tests/test_wos_checkpoints.py; docs/evidence/wos-starter-41254004073.json (live entitlement/sample passed; full live enumeration and quota recovery pending),partial
-AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py (PubMed live restart passed; Starter offline recovery including killed process; live pending),partial
+AT-08,1,AT-08,tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py; docs/evidence/wos-recovery-41306953908-summary.json (live 19584-record enumeration passed; live quota-reset and multi-day scope pending),partial
+AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py; docs/evidence/wos-recovery-41306953908-summary.json (both controlled live restarts passed; broader live recovery remains open),partial
 AT-10,1,AT-10,planned,planned
 AT-11,2,AT-11,planned,planned
 AT-12,2,AT-12,planned,planned
@@ -134,7 +134,7 @@ AT-15,2,AT-15,planned,planned
 AT-16,2,AT-16,planned,planned
 AT-17,1,AT-17,tests/test_strategy_storage.py (immutable history only),partial
 AT-18,1,AT-18,planned,planned
-AT-19,1,AT-19,tests/test_pubmed_ids.py; tests/test_wos_checkpoints.py (no source snapshot or full metadata claim),partial
+AT-19,1,AT-19,tests/test_pubmed_ids.py; tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py (scoped warnings retained after successful live enumeration; no full-source claim),partial
 AT-20,2,AT-20,planned,planned
 AT-21,3,AT-21,tests/test_schema_migrations.py; tests/test_wos_migration.py; tests/test_wos_checkpoints.py (backup rollback and fenced workers; full security pending),partial
 AT-22,3,AT-22,planned,planned
