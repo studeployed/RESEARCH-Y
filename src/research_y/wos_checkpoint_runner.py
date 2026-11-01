@@ -96,6 +96,8 @@ def run_wos_checkpoint(
     pass compares every captured page; a restarted verification pass starts at
     page 1 (old receipts are preserved). Final source count is checked again.
     A verified enumeration is not an atomic provider snapshot or a full run.
+    Each session honours the smaller worker/client request allowance, including
+    its resume probe. A local budget stop is a pause, not a source failure.
 
     After a quota stop the caller must explicitly request revalidation, and the
     saved cooldown/Retry-After still applies. Three failures without forward
@@ -107,6 +109,9 @@ def run_wos_checkpoint(
         raise WoSCheckpointError("invalid_revalidation_flag")
     if not isinstance(client, WoSStarterClient) or client.requests_made != 0:
         raise WoSCheckpointError("fresh_starter_client_required")
+    # Both positive limits remain in force. This worker exclusively uses the
+    # fresh client; never raise its allowance to match the worker's default.
+    session_request_budget = min(max_requests, client.requests_remaining)
     validate_wos_checkpoint(project, query_id)
     before = inspect_wos_checkpoint(project, query_id)
     token = _claim(project, query_id, _stamp(now()), revalidate_quota=revalidate_quota)
@@ -148,7 +153,7 @@ def run_wos_checkpoint(
             if used and not client.quota.can_continue:
                 _pause(project, query_id, token, _stamp(now()), "quota_revalidation_required", minimum_delay=3600)
                 break
-            if used >= max_requests:
+            if used >= session_request_budget:
                 _pause(project, query_id, token, _stamp(now()), "session_budget_reached")
                 break
             with _db(project) as db:

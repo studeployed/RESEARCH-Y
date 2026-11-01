@@ -89,6 +89,16 @@ class WoSStarterClient:
         self.quota = WoSQuota()
 
     @property
+    def requests_remaining(self) -> int:
+        """Local client allowance only; not provider quota or retry permission.
+
+        The checkpoint worker uses this to pause before reserving work that the
+        client would refuse. The existing locked transport guard still enforces
+        the hard limit independently, including unsuccessful attempts.
+        """
+        return max(0, self._budget - self.requests_made)
+
+    @property
     def retry_after_remaining(self) -> float:
         """Server-directed remaining delay, for persistence across process restarts."""
         return max(0.0, self._retry_not_before - self._clock())
