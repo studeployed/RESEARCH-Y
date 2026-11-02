@@ -1,0 +1,14 @@
+requirement_id,implementation,test_evidence,scope_status
+ARCH-01,application_commands and application_worker independent of GUI,test_application_commands.py,partial no graphical adapter
+ARCH-02,spawned service work with responsive submit and poll,test_application_worker.py,partial no real interface or live network
+PROJ-03,expected identity retained and no saved absolute worker paths,test_application_worker_integration.py,partial local opened-project operations only
+PROJ-04,delegation to existing transactional export services,test_application_worker_integration.py,partial no new database semantics
+UI-05,ephemeral operation state distinct from durable source states,test_application_worker.py,partial no monitor screen
+UI-10,allowlisted export prepare resume observe cancel and report commands,test_application_worker_integration.py,partial no export centre screen
+COUNT-05,domain completeness unchanged by returned worker results,test_application_worker_integration.py,partial source acceptance remains open
+EXPORT-03,whole-run service reused without view filtering,test_application_commands.py,partial existing strategy workbook only
+SEC-01,no credential fields or source calls and sanitized errors,test_application_commands.py,partial not browser or sandbox security
+SEC-04,existing identity and path guards remain in delegated services,test_application_worker_integration.py,partial broader archive and reparse acceptance open
+SEC-05,busy errors and interrupted outcomes explicit with original export IDs,test_application_worker_integration.py,partial no full diagnostic UI
+AT-18,actual workbook service through spawned operation,test_application_worker_integration.py,partial no full master workbook or graphical interaction
+AT-22,work isolated from caller with no fabricated responsiveness claims,test_application_worker.py,not accepted representative large-data interface test outstanding
