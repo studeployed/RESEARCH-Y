@@ -636,6 +636,87 @@ def run_scenario(mode):
             revived['original_request_retained'] = True
             revived['damaged_stage_retained'] = partial is not None
 
+        # Unlike previous independent fault subprocess fixtures, this case
+        # terminates the GUI's own supervised ApplicationWorker child while it
+        # has already written a real but incomplete retained workbook stage.
+        worker_parent = root / 'gui-worker-death-case'
+        worker_parent.mkdir()
+        worker_project, worker_run = fixture(worker_parent)
+        worker_id = str(uuid4())
+        output_name = 'strategy-summary-' + worker_run + '.xlsx'
+        workbook_exports.prepare_workbook_export(
+            worker_project, worker_run, output_name, export_id=worker_id)
+        original_report = read_application_snapshot(
+            worker_project, selected_run_id=worker_run).as_dict()
+        killed = run_app(mode, 'worker_killed', worker_project,
+                         worker_parent, worker_run, worker_id)
+        results.append(killed)
+        if not killed['passed']:
+            return results
+        interrupted = read_application_snapshot(
+            worker_project, selected_run_id=worker_run).as_dict()
+        require(len(interrupted['exports']) == 1 and
+                interrupted['exports'][0]['export_id'] == worker_id and
+                interrupted['exports'][0]['recorded_state'] == 'staging' and
+                interrupted['exports'][0]['last_error'] is None and
+                interrupted['report']['status'] == 'incomplete' and
+                not interrupted['source_retrieval_verified'],
+                'gui_worker_interruption_lost_checkpoint')
+        with workbook_exports._transaction(worker_project, write=False) as db:
+            journal = workbook_exports._required(db, worker_project, worker_id)
+        partial = (worker_project.root / 'exports' / workbook_exports.STORE /
+                   journal['stage']['name'])
+        partial_bytes = partial.read_bytes()
+        partial_identity = (partial.stat().st_dev, partial.stat().st_ino)
+        require(0 < len(partial_bytes) < journal['stage']['size'] and
+                sha256(partial_bytes).hexdigest() != journal['stage']['sha256'],
+                'terminated_worker_did_not_leave_real_partial_file')
+        negative = observe_export_request(worker_project, worker_id)
+        require(negative.outcome == 'retained_artifact_changed'
+                and not negative.audited_success
+                and not negative.source_retrieval_verified,
+                'interrupted_worker_falsely_verified')
+        with closing(sqlite3.connect(worker_project.database_path)) as db:
+            early_events = db.execute(
+                'SELECT COUNT(*) FROM audit_events WHERE event_type=?',
+                (f'{workbook_exports.EVENT}:{worker_id}',)).fetchone()[0]
+        require(early_events == 2 and
+                interrupted['report'] == original_report['report']
+                and not (worker_project.root / 'exports' / output_name).exists(),
+                'terminated_worker_changed_scientific_evidence')
+        revived = run_app(mode, 'worker_recovered', worker_project,
+                          worker_parent, worker_run, worker_id)
+        results.append(revived)
+        if not revived['passed']:
+            return results
+        recovered = read_application_snapshot(
+            worker_project, selected_run_id=worker_run).as_dict()
+        workbook = worker_project.root / 'exports' / output_name
+        with ZipFile(workbook) as archive:
+            require(archive.testzip() is None and
+                    'xl/workbook.xml' in archive.namelist(),
+                    'worker_recovery_workbook_corrupt')
+        final_observation = observe_export_request(worker_project, worker_id)
+        with closing(sqlite3.connect(worker_project.database_path)) as db:
+            final_events = db.execute(
+                'SELECT COUNT(*) FROM audit_events WHERE event_type=?',
+                (f'{workbook_exports.EVENT}:{worker_id}',)).fetchone()[0]
+        require(len(recovered['exports']) == 1
+                and recovered['exports'][0]['export_id'] == worker_id
+                and recovered['exports'][0]['recorded_state'] == 'published'
+                and recovered['report'] == original_report['report']
+                and not recovered['source_retrieval_verified']
+                and final_observation.outcome == 'published_verified'
+                and final_observation.audited_success
+                and sha256(workbook.read_bytes()).hexdigest() ==
+                    final_observation.request.artifact_sha256
+                and final_events == 6
+                and partial.is_file() and partial.read_bytes() == partial_bytes
+                and (partial.stat().st_dev, partial.stat().st_ino) == partial_identity,
+                'worker_recovery_overwrote_or_falsified_evidence')
+        revived['original_request_retained'] = True
+        revived['damaged_stage_retained'] = True
+        revived['gui_worker_termination_confirmed'] = True
         return results
 
 
