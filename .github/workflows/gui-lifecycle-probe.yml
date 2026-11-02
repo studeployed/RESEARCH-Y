@@ -63,6 +63,12 @@ jobs:
       - name: Exercise real requests and native Windows window lifecycle
         if: runner.os == 'Windows'
         run: python tools/gui_feasibility/run_prototype.py --directory .gui-lifecycle --native
+      - name: Install already-declared optional Excel backend for real-workbook tests
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --report .gui-lifecycle/excel-installation.json -e ".[excel]"
+      - name: Verify the approved Excel pins and compatible environment
+        run: python -c "from importlib.metadata import version; assert version('openpyxl') == '3.1.5' and version('et-xmlfile') == '2.0.0'"
+      - name: Verify combined test-environment requirements
+        run: python -m pip check
       - name: Exercise actual project/run/workbook via local transport
         if: runner.os == 'Linux'
         run: python tools/gui_feasibility/run_real_project.py --directory .gui-lifecycle
@@ -77,6 +83,7 @@ jobs:
           path: |
             .gui-lifecycle/prototype-evidence.json
             .gui-lifecycle/real-project-evidence.json
+            .gui-lifecycle/excel-installation.json
             .gui-lifecycle/dependency-evidence.json
             .gui-lifecycle/candidate-lock.txt
             .gui-lifecycle/probe-error.json

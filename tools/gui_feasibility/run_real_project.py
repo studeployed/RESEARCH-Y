@@ -72,7 +72,11 @@ def transport_steps(port, token, scenario, run_id, export_id):
         status, _, payload = request(port, '/_probe/start', method='POST', headers=auth)
         require(status == 200, 'action_http_failed')
         state = json.loads(payload)
-        require(state['error'] is None and state['actions'][-1] == action, 'actual_action_failed')
+        code = state.get('error')
+        require(code is None, 'actual_action_failed_' + action + '_' +
+                (code if isinstance(code, str) and code.replace('_', '').isalnum()
+                 and len(code) <= 64 else 'unknown'))
+        require(state['actions'] and state['actions'][-1] == action, 'action_sequence_changed_' + action)
         observed.append(action)
         result = state['state']
         require(result['source_retrieval_verified'] is False, 'false_source_completeness')
@@ -122,6 +126,17 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 report_path = app_dir / 'app-result.json'
                 require(report_path.is_file(), 'missing_real_gui_report')
                 report = json.loads(report_path.read_text(encoding='utf-8'))
+                # Keep only static status and action names in failure evidence. Never
+                # publish child paths, project/source labels, secrets or raw reports.
+                result['observed_status'] = report.get('status')
+                result['observed_actions'] = [x for x in report.get('actions', [])
+                    if x in ('open', 'select_run', 'select_export', 'prepare', 'resume', 'observe')]
+                code = report.get('error')
+                result['observed_error'] = (code if isinstance(code, str) and
+                     code.replace('_', '').isalnum() and len(code) <= 64 else None)
+                result['observed_worker_reaped'] = report.get('worker_reaped')
+                result['observed_supervisor_stopped'] = report.get('supervisor_stopped')
+                result['observed_outcome'] = report.get('observed_outcome')
                 require(report['status'] == 'finished' and report['real_services'] is True
                         and report['source_retrieval_verified'] is False
                         and report['selected_run_matches'] is True

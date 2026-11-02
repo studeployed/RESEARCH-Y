@@ -131,6 +131,36 @@ def test_genuine_run_export_observation_and_relocation(tmp_path):
         second.close()
 
 
+def test_export_selection_cannot_mix_two_distinct_run_versions(tmp_path):
+    p, first_run = sample(tmp_path)
+    first = RealProjectFlow(selected_root=p.root, selected_parent=tmp_path)
+    try:
+        first.open_selected(); first.select_run(first_run)
+        original_export = first.prepare()['selected_export_id']
+    finally:
+        first.close()
+    version = approve_strategy(p, theme='Separate second strategy',
+        approved_by='Fixture', approval_confirmed=True,
+        groups=(StrategyGroup('other', 'Different', (ApprovedTerm('heart failure', 'researcher', True),)),))
+    second_run = create_search_run(p, version.strategy_version_id).run_id
+    before = journal_count(p)
+    reopened = RealProjectFlow(selected_root=p.root, selected_parent=tmp_path)
+    try:
+        snapshot = reopened.open_selected()
+        assert len(snapshot['runs']) == 2 and len(snapshot['exports']) == 1
+        reopened.select_run(second_run)
+        with pytest.raises(ProjectFlowError, match='export_run_mismatch'):
+            reopened.select_export(original_export)
+        assert reopened.state()['selected_export_id'] is None
+        assert reopened.state()['report']['run']['run_id'] == second_run
+        assert journal_count(p) == before
+        reopened.select_run(first_run)
+        assert reopened.select_export(original_export)['selected_export_id'] == original_export
+        assert reopened.state()['report']['run']['run_id'] == first_run
+    finally:
+        reopened.close()
+
+
 def test_existing_request_requires_explicit_selection_after_restart(tmp_path):
     p, run_id = sample(tmp_path)
     first = RealProjectFlow(selected_root=p.root, selected_parent=tmp_path)
@@ -161,6 +191,7 @@ def test_untrusted_bytes_have_no_browser_path_route():
     assert 'create_file_dialog' not in text
     assert not any('path' in str(x) for x in inspect.signature(RealProjectFlow.select_run).parameters)
     assert not any('path' in str(x) for x in inspect.signature(RealProjectFlow.prepare).parameters)
+    assert "item['run_id'] != state['selected_run_id']" in text
     assert "data-testid=exact-query" in text and "ui.label('Exact query: ' + item['exact_query'])" in text
     assert "'unknown' if count is None else str(count)" in text
 

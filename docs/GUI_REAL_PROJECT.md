@@ -31,7 +31,11 @@ for new creation; the production project service validates that name and
 allocates a new directory without replacing anything.
 
 The `RealProjectFlow` adapter accepts run and export identifiers only after
-matching them against the storage-backed snapshot. All durable services run
+matching them against the storage-backed snapshot. An export must also belong
+to the **currently selected run**; a saved request from another run cannot be
+selected or shown alongside a different run's report. The graphical list
+likewise offers only requests belonging to that selected run.
+All durable services run
 through `ApplicationWorker` off the interface event loop. A request's original
 universally unique identifier remains stable across retries and restarts.
 Opening a saved project never silently selects its most recent run, and an
@@ -39,6 +43,15 @@ existing matching export requires an explicit saved-request selection instead
 of generating an accidental second request.
 
 ## Real-world-sized boundary of the evidence
+
+The first four-platform runner attempt exposed a missing approved workbook
+backend: the graphical-only isolated environment contained NiceGUI and
+pywebview but not `openpyxl`. The amended lifecycle workflow installs the
+repository's already-declared `.[excel]` extra **after** separately validating
+the graphical dependency graph, records that additional pip installation
+report and verifies exact `openpyxl==3.1.5` and `et-xmlfile==2.0.0` versions
+and `pip check`. This does not add a new graphical dependency or claim a
+complete licence/vulnerability audit for the combined environment.
 
 The dedicated runner seeds a **real disk-backed project** with a frozen, approved
 one-group OR strategy and a planned but unexecuted PubMed query. This is a

@@ -125,8 +125,16 @@ class RealProjectFlow:
     def select_export(self, export_id: str):
         with self._guard:
             self._require_open()
-            if type(export_id) is not str or export_id not in {r['export_id'] for r in self.snapshot['exports']}:
+            if type(export_id) is not str:
                 raise ProjectFlowError('unknown_export')
+            row = next((item for item in self.snapshot['exports']
+                        if item['export_id'] == export_id), None)
+            if row is None:
+                raise ProjectFlowError('unknown_export')
+            # An export belongs to one immutable run. Never display run B's
+            # report while operating on run A's saved workbook.
+            if self.selected_run_id is None or row['run_id'] != self.selected_run_id:
+                raise ProjectFlowError('export_run_mismatch')
             self.selected_export_id = export_id
             self.observation = None
             return self._publish()

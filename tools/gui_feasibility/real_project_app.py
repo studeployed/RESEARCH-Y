@@ -126,6 +126,9 @@ def run(args):
                             ui.label('Reported matches: ' +
                                      ('unknown' if count is None else str(count))).props('data-testid=query-count')
                 for item in state['exports']:
+                    # Only offer requests belonging to the explicitly selected run.
+                    if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:
+                        continue
                     eid = item['export_id']
                     ui.button('Select stored export ' + eid,
                               on_click=lambda eid=eid: act('select_export', eid)).props('data-testid=select-export')
