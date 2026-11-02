@@ -15,6 +15,26 @@ import time
 from research_y.application_commands import execute_command
 
 
+def publish_gui_owner_marker(path: Path) -> None:
+    """Record the *actual* Python GUI host PID, not its Windows venv redirector.
+
+    Called only inside the trusted disposable GUI test process. It writes to
+    a freshly allocated private marker and never accepts browser input.
+    """
+    if not isinstance(path, Path) or not path.is_absolute():
+        raise RuntimeError('test_gui_owner_marker_invalid')
+    flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+             getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0))
+    fd = os.open(path, flags, 0o600)
+    try:
+        raw = str(os.getpid()).encode('ascii')
+        if os.write(fd, raw) != len(raw):
+            raise OSError('test_gui_owner_marker_write_failed')
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def pause_during_retained_stage(command):
     """Run real publication until midway through writing a retained artifact."""
     if command.operation != 'resume_export':
