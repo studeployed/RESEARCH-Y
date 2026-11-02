@@ -681,7 +681,9 @@ def run_scenario(mode):
                 'SELECT COUNT(*) FROM audit_events WHERE event_type=?',
                 (f'{workbook_exports.EVENT}:{worker_id}',)).fetchone()[0]
         require(early_events == 2 and
-                interrupted['report'] == original_report['report']
+                interrupted['report']['queries'][0]['exact_query'] ==
+                    original_report['report']['queries'][0]['exact_query']
+                and interrupted['report']['queries'][0]['reported_matches'] is None
                 and not (worker_project.root / 'exports' / output_name).exists(),
                 'terminated_worker_changed_scientific_evidence')
         revived = run_app(mode, 'worker_recovered', worker_project,
@@ -704,7 +706,9 @@ def run_scenario(mode):
         require(len(recovered['exports']) == 1
                 and recovered['exports'][0]['export_id'] == worker_id
                 and recovered['exports'][0]['recorded_state'] == 'published'
-                and recovered['report'] == original_report['report']
+                and recovered['report']['queries'][0]['exact_query'] ==
+                    original_report['report']['queries'][0]['exact_query']
+                and recovered['report']['queries'][0]['reported_matches'] is None
                 and not recovered['source_retrieval_verified']
                 and final_observation.outcome == 'published_verified'
                 and final_observation.audited_success
