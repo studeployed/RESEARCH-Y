@@ -14,6 +14,7 @@ on:
       - 'tests/test_gui_receipt_recovery.py'
       - 'tests/test_gui_staging_fault_recovery.py'
       - 'tests/test_gui_worker_death_recovery.py'
+      - 'tests/test_gui_native_folders.py'
   workflow_dispatch:
 
 permissions:

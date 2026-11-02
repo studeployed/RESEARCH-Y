@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard
 from tools.gui_feasibility.prototype_app import guarded_open_window
 from tools.gui_feasibility.real_project_flow import ProjectFlowError, RealProjectFlow
+from tools.gui_feasibility.native_folder_selection import NativeFolderError, select_from_native_window
 
 LITERAL_NAME = '<img src=x onerror="window.__researchy_injected=true">'
 
@@ -106,9 +107,25 @@ def run(args):
                         if name == 'observe':
                             return flow.observe()
                         raise ProjectFlowError('unsupported_action')
-                    await asyncio.to_thread(perform)
+                    if name in ('native_open', 'native_create'):
+                        # The browser only requests the OS dialog; it cannot
+                        # supply or replace the trusted host-selected path.
+                        if args.mode != 'native':
+                            raise ProjectFlowError('native_dialog_unavailable')
+                        selected = await select_from_native_window(app.native.main_window)
+                        if selected is not None:
+                            if name == 'native_open':
+                                await asyncio.to_thread(flow.open_native_folder, selected)
+                            else:
+                                await asyncio.to_thread(flow.create_native_parent,
+                                                        selected, value)
+                            events.append(name)
+                    else:
+                        await asyncio.to_thread(perform)
+                        events.append(name)
                     last_error['code'] = None
-                    events.append(name)
+                except NativeFolderError as exc:
+                    last_error['code'] = str(exc)
                 except ProjectFlowError as exc:
                     last_error['code'] = str(exc)
                 except Exception:
@@ -225,6 +242,15 @@ def run(args):
             project_name = ui.input('New project name', value='New local project')
             ui.button('Create in host-selected parent',
                       on_click=lambda: act('create', project_name.value)).props('data-testid=create')
+            if args.mode == 'native':
+                ui.button('Choose project folder with Windows dialog',
+                          on_click=lambda: act('native_open')).props('data-testid=native-open-folder')
+                ui.button('Choose new-project parent folder with Windows dialog',
+                          on_click=lambda: act('native_create', project_name.value)).props(
+                              'data-testid=native-create-folder')
+            else:
+                ui.label('Native folder selection is available only in the desktop window.').props(
+                    'data-testid=native-folder-unavailable')
             panel()
 
         @app.get('/_probe/state')
@@ -321,6 +347,8 @@ def run(args):
                                  "receipt: Boolean(document.querySelector('[data-testid=receipt-missing]')),"
                                  "stage: Boolean(document.querySelector('[data-testid=stage-recovery]')),"
                                  "error: document.querySelector('[data-testid=export-error]')?.textContent || '',"
+                                 "nativeOpen: Boolean(document.querySelector('[data-testid=native-open-folder]')),"
+                                 "nativeCreate: Boolean(document.querySelector('[data-testid=native-create-folder]')),"
                                  "injected: window.__researchy_injected === true})")
                 if check is None:
                     raise RuntimeError('native_document_unavailable')
@@ -333,7 +361,8 @@ def run(args):
                         or (args.scenario == 'render_fault'
                             and 'render_failed' not in data['error'])
                         or (args.scenario == 'stage_fault'
-                            and 'storage_failed' not in data['error'])):
+                            and 'storage_failed' not in data['error'])
+                        or not data['nativeOpen'] or not data['nativeCreate']):
                     raise RuntimeError('native_rendering_invalid')
                 report['native_rendering_verified'] = True
                 report['status'] = 'finished'

@@ -15,6 +15,9 @@ from research_y.application_commands import ApplicationCommand
 from research_y.application_worker import ApplicationWorker
 from research_y.projects import (ProjectFormatError, ProjectVersionError,
                                   create_project, open_project)
+from research_y.export_files import Directory
+from tools.gui_feasibility.native_folder_selection import (
+    NativeFolderError, checked_folder)
 
 
 class ProjectFlowError(ValueError):
@@ -44,6 +47,12 @@ class RealProjectFlow:
         self.retained_export_report = None
         self._public_state = self._build_state()
 
+    def _require_no_unresolved_selection(self):
+        if self._closed:
+            raise ProjectFlowError('flow_closed')
+        if self._pending_export_id is not None:
+            raise ProjectFlowError('export_reconciliation_required')
+
     def _require_open(self):
         if self._closed:
             raise ProjectFlowError('flow_closed')
@@ -52,7 +61,11 @@ class RealProjectFlow:
 
     def _operation(self, name, **kwargs):
         self._require_open()
-        command = ApplicationCommand.for_project(self.project, name, **kwargs)
+        return self._operation_for_project(self.project, name, **kwargs)
+
+    def _operation_for_project(self, project, name, **kwargs):
+        """Run a worker against an explicit candidate without switching state."""
+        command = ApplicationCommand.for_project(project, name, **kwargs)
         try:
             operation_id = self._worker.submit(command)
             deadline = time.monotonic() + 35
@@ -82,39 +95,92 @@ class RealProjectFlow:
             raise ProjectFlowError('worker_unavailable') from None
 
     def _set_project(self, project):
+        # The candidate is not active until its actual read model passes the
+        # supervised inspection. Otherwise a failed switch leaves the host
+        # pointed at project B while the displayed snapshot still describes A.
+        # This also protects freshly created projects: never erase the new
+        # folder merely because opening its initial inspection failed.
+        inspected = self._operation_for_project(project, 'inspect')
+        snapshot = inspected.get('snapshot')
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get('runs'), list) or not isinstance(snapshot.get('exports'), list):
+            raise ProjectFlowError('invalid_worker_result')
         self.project = project
         self.selected_run_id = None
         self.selected_export_id = None
         self._pending_export_id = None
         self.observation = None
         self.retained_export_report = None
-        self.last_result = None
-        self.snapshot = self._operation('inspect')['snapshot']
+        self.last_result = inspected
+        self.snapshot = snapshot
         return self._publish()
 
     def open_selected(self):
-        """The host, never a browser request, selected this exact project location."""
+        """The trusted launcher may select a folder OR a project.ryproj file."""
         with self._guard:
-            if self._closed:
-                raise ProjectFlowError('flow_closed')
+            self._require_no_unresolved_selection()
             try:
                 project = open_project(self._root)
             except ProjectVersionError:
                 raise ProjectFlowError('unsupported_project_version') from None
-            except (ProjectFormatError, OSError, ValueError):
+            except (ProjectFormatError, OSError, ValueError, TypeError):
                 raise ProjectFlowError('invalid_project') from None
             return self._set_project(project)
 
     def create_selected(self, name: str):
-        """Create in a host-selected parent folder; the core owns path safety."""
+        """Create in the current host-selected parent; name alone is browser text."""
+        try:
+            return self.create_native_parent(self._parent, name)
+        except ProjectFlowError as exc:
+            if str(exc) in ('native_selection_invalid', 'native_selection_unsafe'):
+                raise ProjectFlowError('project_creation_failed') from None
+            raise
+
+    @staticmethod
+    def _validated_host_directory(selected: Path) -> Path:
+        # The raw native dialog result is never passed through an HTTP route.
+        # Revalidate before a service call: the folder could change after
+        # the dialog closed. A Directory handle additionally anchors/locks
+        # the project path while its manifest/database is opened.
+        if not isinstance(selected, Path):
+            raise ProjectFlowError('native_selection_invalid')
+        try:
+            path = checked_folder((str(selected),))
+        except NativeFolderError as exc:
+            raise ProjectFlowError(str(exc)) from None
+        if path is None:
+            raise ProjectFlowError('native_selection_invalid')
+        return path
+
+    def open_native_folder(self, selected: Path):
+        """Open only an OS/launcher-selected existing folder on the host."""
         with self._guard:
-            if self._closed:
-                raise ProjectFlowError('flow_closed')
+            self._require_no_unresolved_selection()
+            path = self._validated_host_directory(selected)
             try:
-                project = create_project(self._parent, name)
+                with Directory(path):
+                    project = open_project(path)
+            except ProjectVersionError:
+                raise ProjectFlowError('unsupported_project_version') from None
+            except (ProjectFormatError, OSError, ValueError, TypeError):
+                raise ProjectFlowError('invalid_project') from None
+            state = self._set_project(project)
+            self._root = path
+            return state
+
+    def create_native_parent(self, selected: Path, name: str):
+        """Create exclusively in a host-selected parent, never a browser path."""
+        with self._guard:
+            self._require_no_unresolved_selection()
+            path = self._validated_host_directory(selected)
+            try:
+                with Directory(path):
+                    project = create_project(path, name)
             except (OSError, ValueError, TypeError):
                 raise ProjectFlowError('project_creation_failed') from None
-            return self._set_project(project)
+            state = self._set_project(project)
+            self._parent = path
+            self._root = project.root
+            return state
 
     def select_run(self, run_id: str):
         with self._guard:

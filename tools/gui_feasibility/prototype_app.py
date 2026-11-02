@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import http.client
 import re
 from importlib.metadata import version
 import json
@@ -22,7 +23,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'src'))
-from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard
+from tools.gui_feasibility.prototype_guard import BOOTSTRAP_HTML, LaunchSession, PrototypeGuard
 
 INJECTION = '<img src=x onerror="window.__researchy_injected=true"> & literal text'
 
@@ -55,6 +56,42 @@ def valid_initial_bootstrap(url: str, origin: str) -> bool:
             and re.fullmatch(r'[a-f0-9]{64}', target.fragment) is not None)
 
 
+def wait_for_native_http_ready(origin: str, *, seconds: float = 8) -> None:
+    """Verify the bootstrap HTTP route before the first WebView2 navigation.
+
+    The pinned NiceGUI 3.18.0 native launcher checks only that a TCP socket is
+    accepting connections. A cold Windows WebView2 can navigate before the
+    application route actually responds; an internal browser error page does
+    not automatically retry. This bounded local HTTP-only preflight never
+    transmits the launch token, cookies or project data and does not redeem
+    any session. It raises rather than masking a non-ready server.
+    """
+    target = urlsplit(origin)
+    if (target.scheme != 'http' or target.hostname != '127.0.0.1'
+            or target.username is not None or target.password is not None
+            or target.path or target.query or target.fragment
+            or target.port is None or not 1024 <= target.port <= 65535):
+        raise ValueError('native_readiness_origin_invalid')
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        connection = http.client.HTTPConnection('127.0.0.1', target.port,
+                                                timeout=min(1, max(0.1, remaining)))
+        try:
+            connection.request('GET', '/bootstrap',
+                               headers={'X-ResearchY-Native-Readiness': '1'})
+            response = connection.getresponse()
+            body = response.read(8192)
+            if response.status == 200 and body == BOOTSTRAP_HTML:
+                return
+        except (OSError, http.client.HTTPException):
+            pass
+        finally:
+            connection.close()
+        time.sleep(min(.05, max(0, deadline - time.monotonic())))
+    raise RuntimeError('native_http_bootstrap_unavailable')
+
+
 def install_native_navigation_veto(window, allowed_origin: str, marker_dir: Path,
                                    trusted_bootstrap: str) -> None:
     """Attach the actual WebView2 pre-navigation gate; fail if it is unavailable."""
@@ -73,7 +110,10 @@ def install_native_navigation_veto(window, allowed_origin: str, marker_dir: Path
         if pending_bootstrap:
             pending_bootstrap = False
             if uri == trusted_bootstrap:
+                (marker_dir / 'native-bootstrap-navigated').write_text('1', encoding='ascii')
                 return
+        if navigation_allowed(uri, allowed_origin) and uri == allowed_origin + '/':
+            (marker_dir / 'native-home-navigated').write_text('1', encoding='ascii')
         if not navigation_allowed(uri, allowed_origin):
             event.Cancel = True
             (marker_dir / 'navigation-blocked').write_text('blocked', encoding='ascii')
@@ -92,8 +132,10 @@ def create_guarded_window(real_create_window, allowed_origin: str, marker_dir: P
     if not valid_initial_bootstrap(initial_url, allowed_origin):
         raise RuntimeError('unexpected_native_bootstrap')
     window = real_create_window(*window_args, **window_kwargs)
+    (marker_dir / 'native-window-created').write_text('1', encoding='ascii')
 
     def before_show():
+        (marker_dir / 'native-before-show').write_text('1', encoding='ascii')
         install_native_navigation_veto(window, allowed_origin, marker_dir, initial_url)
 
     window.events.before_show += before_show
@@ -106,6 +148,10 @@ def guarded_open_window(*args, **kwargs):
     import webview
     allowed_origin = os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN']
     marker_dir = Path(os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'])
+    # The HTTP layer must be ready, not merely the TCP listener. Validate
+    # the route before WebView2's first (non-retrying) navigation.
+    wait_for_native_http_ready(allowed_origin)
+    (marker_dir / 'native-http-verified').write_text('1', encoding='ascii')
     real_create_window = webview.create_window
 
     def create_window(*window_args, **window_kwargs):
@@ -327,6 +373,20 @@ def run(args):
                     report['state'] = 'failed'
                     report['error'] = error_record(exc)
                 finally:
+                    # Fixed booleans expose *which* startup stage failed.
+                    # Never record the launch URL, token, cookie, origin or
+                    # native/private filesystem paths in public evidence.
+                    report['native_startup_stages'] = {
+                        **session.startup_stages(),
+                        'native_http_verified': (args.directory / 'native-http-verified').is_file(),
+                        'window_created': (args.directory / 'native-window-created').is_file(),
+                        'before_show': (args.directory / 'native-before-show').is_file(),
+                        'bootstrap_navigation': (args.directory / 'native-bootstrap-navigated').is_file(),
+                        'home_navigation': (args.directory / 'native-home-navigated').is_file(),
+                        'nicegui_page_created': bool(clients),
+                        'nicegui_websocket_connected': any(
+                            client.has_socket_connection for client in clients),
+                    }
                     # Exercise genuine window closure, not merely server shutdown.
                     app.native.main_window.destroy()
 
