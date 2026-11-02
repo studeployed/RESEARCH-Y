@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import threading
+import time
 from uuid import uuid4
 
 import pytest
@@ -194,6 +196,37 @@ def test_fully_valid_catalog_rejects_unsupported_version_without_deletion(tmp_pa
     with pytest.raises(RecentProjectsError, match='^recent_history_unavailable$'):
         recents.items()
     assert recents.path.read_bytes() == original_bytes
+
+
+def test_header_validation_waits_for_concurrent_schema_commit(tmp_path):
+    history = tmp_path / 'history'
+    history.mkdir()
+    catalog = RecentProjects(history)
+    # Simulate another GUI host after creating its SQLite file and building
+    # the correct schema but BEFORE the initialization transaction commits.
+    # An unlocked PRAGMA read would see a temporary 0 application ID.
+    with sqlite3.connect(catalog.path, timeout=5) as writer:
+        writer.execute('BEGIN IMMEDIATE')
+        writer.execute(f'PRAGMA application_id={APPLICATION_ID}')
+        writer.execute('''CREATE TABLE recent_projects (
+            project_uuid TEXT PRIMARY KEY,
+            project_name TEXT NOT NULL,
+            project_root TEXT NOT NULL,
+            visited_ns INTEGER NOT NULL CHECK(visited_ns > 0)
+        )''')
+        writer.execute('PRAGMA user_version=1')
+        started = threading.Event()
+        def blocked_reader():
+            started.set()
+            return catalog.items()
+        with ThreadPoolExecutor(max_workers=1) as workers:
+            reading = workers.submit(blocked_reader)
+            assert started.wait(timeout=3)
+            time.sleep(.1)
+            assert not reading.done(), 'Catalog reader bypassed the writer lock'
+            writer.commit()
+            assert reading.result(timeout=5) == []
+    assert catalog.items() == []
 
 
 def test_concurrent_updates_are_transactional_and_bounded(tmp_path):
