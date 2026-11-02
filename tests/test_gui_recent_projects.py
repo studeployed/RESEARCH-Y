@@ -147,6 +147,44 @@ def test_stale_or_forged_recent_entries_cannot_change_active_project(tmp_path):
         flow.close()
 
 
+def test_mismatched_legacy_recent_uuid_cannot_trigger_migration(tmp_path):
+    history = tmp_path / 'history'
+    selected = create_project(tmp_path, 'Selected')
+    unrelated = create_project(tmp_path, 'Different older project')
+
+    # Mark the unrelated database as a supported older schema. If it is
+    # actually opened, the core migration pathway would create a backup and
+    # append a schema_migrated audit event BEFORE returning. This test must
+    # reject the catalog identity without opening the unrelated project.
+    with sqlite3.connect(unrelated.database_path) as db:
+        db.execute('PRAGMA user_version=3')
+        prior_events = db.execute(
+            'SELECT COUNT(*) FROM audit_events').fetchone()[0]
+    assert list((unrelated.root / 'backups').iterdir()) == []
+
+    flow = _flow(selected.root, tmp_path, history)
+    try:
+        flow.open_selected()
+        prior_state = flow.state()
+        with sqlite3.connect(history / FILENAME) as db:
+            db.execute('UPDATE recent_projects SET project_root=? WHERE project_uuid=?',
+                       (str(unrelated.root), str(selected.identifier)))
+        with pytest.raises(ProjectFlowError, match='^recent_project_identity_mismatch$'):
+            flow.open_recent(str(selected.identifier))
+        assert flow.state() == prior_state
+        assert flow.project.identifier == selected.identifier
+    finally:
+        flow.close()
+
+    with sqlite3.connect(unrelated.database_path) as db:
+        assert db.execute('PRAGMA user_version').fetchone()[0] == 3
+        assert db.execute('SELECT COUNT(*) FROM audit_events').fetchone()[0] == prior_events
+        assert db.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type='schema_migrated'"
+        ).fetchone()[0] == 0
+    assert list((unrelated.root / 'backups').iterdir()) == []
+
+
 def test_recent_catalog_corruption_preserved_not_silently_rebuilt(tmp_path):
     history = tmp_path / 'private-history'
     history.mkdir()
