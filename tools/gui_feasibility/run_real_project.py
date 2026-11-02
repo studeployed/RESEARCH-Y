@@ -114,6 +114,95 @@ def seed_unreceipted_workbook(project, run_id):
     return export_id, workbook
 
 
+# The test harness injects errors ONLY in a disposable subprocess after a
+# normally committed preparation. Neither GUI request handlers nor production
+# worker code accept a fault selector, model or filesystem path from the browser.
+_INJECT_EARLY_EXPORT_FAILURE = r'''
+import errno
+import sys
+from research_y import workbook_exports as exports
+from research_y.export_files import Directory
+from research_y.projects import open_project
+
+project = open_project(sys.argv[1])
+export_id, kind = sys.argv[2:]
+if kind == 'render':
+    renderer_original = exports._renderer
+    def permission_denied_renderer():
+        method, _ = renderer_original()
+        def denied(_):
+            raise PermissionError(errno.EACCES, 'injected renderer access denied')
+        return method, denied
+    exports._renderer = permission_denied_renderer
+elif kind == 'stage':
+    write_original = Directory.write_new
+    def disk_full_write(self, name, data):
+        if name.startswith('retained-') and name.endswith('.xlsx'):
+            write_original(self, name, b'PARTIAL-OWNED-STAGE')
+            raise OSError(errno.ENOSPC, 'injected stage disk full')
+        return write_original(self, name, data)
+    Directory.write_new = disk_full_write
+else:
+    raise SystemExit(90)
+
+try:
+    exports.resume_workbook_export(project, export_id)
+except exports.WorkbookExportError as exc:
+    if exc.code == {'render': 'render_failed', 'stage': 'storage_failed'}[kind]:
+        raise SystemExit(0)
+raise SystemExit(91)
+'''
+
+
+def seed_failed_export(project, run_id, kind):
+    """Create real durable failure evidence using an isolated faulted subprocess.
+
+    Permission/disk-full are deterministic *injected* errors, not claims that
+    the runner's host disk was actually exhausted or ACLs actually changed.
+    """
+    require(kind in ('render', 'stage'), 'unsupported_fault_fixture')
+    export_id = str(uuid4())
+    output_name = 'strategy-summary-' + run_id + '.xlsx'
+    workbook_exports.prepare_workbook_export(project, run_id, output_name, export_id=export_id)
+    allowed = {'PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
+               'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMFILES',
+               'PROGRAMFILES(X86)', 'PROGRAMDATA', 'SYSTEMDRIVE', 'LANG'}
+    env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
+    env['PYTHONPATH'] = os.pathsep.join([str(ROOT), str(ROOT / 'src')])
+    attempt = subprocess.run(
+        [sys.executable, '-c', _INJECT_EARLY_EXPORT_FAILURE,
+         str(project.root), export_id, kind],
+        cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=45, check=False)
+    require(attempt.returncode == 0, 'early_export_fault_fixture_not_triggered')
+    expected_state = 'staging' if kind == 'stage' else 'prepared'
+    expected_error = 'storage_failed' if kind == 'stage' else 'render_failed'
+    expected_outcome = ('retained_artifact_changed' if kind == 'stage'
+                        else 'not_yet_staged')
+    snapshot = read_application_snapshot(project, selected_run_id=run_id).as_dict()
+    observation = observe_export_request(project, export_id)
+    require(len(snapshot['exports']) == 1
+            and snapshot['exports'][0]['export_id'] == export_id
+            and snapshot['exports'][0]['recorded_state'] == expected_state
+            and snapshot['exports'][0]['last_error'] == expected_error
+            and snapshot['report']['status'] == 'incomplete'
+            and not snapshot['source_retrieval_verified']
+            and observation.outcome == expected_outcome
+            and not observation.audited_success,
+            'early_export_failure_not_retained')
+    partial = None
+    if kind == 'stage':
+        with workbook_exports._transaction(project, write=False) as db:
+            state = workbook_exports._required(db, project, export_id)
+        partial = (project.root / 'exports' / workbook_exports.STORE /
+                   state['stage']['name'])
+        require(partial.is_file() and partial.read_bytes() == b'PARTIAL-OWNED-STAGE',
+                'failed_stage_not_preserved')
+    require(not (project.root / 'exports' / output_name).exists(),
+            'failed_export_has_final_workbook')
+    return export_id, partial
+
+
 # A prepare action can perform three independently supervised commands, each
 # with a 35-second bound. The normal 3-second probing timeout is appropriate
 # for health checks, but not for a complete approved export operation.
