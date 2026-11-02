@@ -52,7 +52,23 @@ def _worker_parent_is_gui(child_pid, gui_pid):
     return False
 
 
-def terminate_marked_gui_worker(host, marker, stopping, result):
+def _gui_owner_matches_launcher(actual_gui_pid, launched_pid):
+    """Verify the GUI owner PID against the process initially launched by us.
+
+    On Windows a virtual-environment python.exe is a redirector: Popen may
+    return its PID, while the actual GUI Python interpreter is its direct
+    child. This does NOT relax worker parentage; that separate check must
+    prove the worker is a direct child of the actual GUI interpreter.
+    """
+    if actual_gui_pid <= 0 or launched_pid <= 0:
+        return False
+    if actual_gui_pid == launched_pid:
+        return True
+    return (os.name == 'nt' and
+            windows_process_table().get(actual_gui_pid) == launched_pid)
+
+
+def terminate_marked_gui_worker(host, marker, owner_marker, stopping, result):
     """Terminate only a confirmed direct child of the real GUI host.
 
     This is a trusted parent-side test harness. It never searches for
@@ -80,8 +96,31 @@ def terminate_marked_gui_worker(host, marker, stopping, result):
                     result['error'] = 'worker_marker_invalid'
                     return
                 pid = int(text)
+                result['phase'] = 'gui_owner_check'
+                # Worker and owner markers are separate, private, exclusive
+                # files: the GUI itself writes its actual PID before launching
+                # the supervised worker. Browser data cannot spoof either.
+                if not owner_marker.is_file() or owner_marker.stat().st_size == 0:
+                    time.sleep(.05)
+                    continue
+                if owner_marker.stat().st_size > 24:
+                    result['error'] = 'gui_owner_marker_invalid'
+                    return
+                owner_text = owner_marker.read_text(encoding='ascii')
+                if not owner_text.isdecimal() or int(owner_text) <= 0:
+                    result['error'] = 'gui_owner_marker_invalid'
+                    return
+                gui_pid = int(owner_text)
+                if host.poll() is not None:
+                    result['error'] = 'gui_exited_before_worker_stage'
+                    return
+                if not _gui_owner_matches_launcher(gui_pid, host.pid):
+                    result['error'] = 'gui_owner_mismatch'
+                    return
+                result['gui_owner_relation'] = (
+                    'direct' if gui_pid == host.pid else 'verified_launcher_child')
                 result['phase'] = 'parentage_check'
-                if not _worker_parent_is_gui(pid, host.pid):
+                if not _worker_parent_is_gui(pid, gui_pid):
                     result['error'] = 'worker_parent_mismatch'
                     return
                 result['phase'] = 'signal_delivery'
@@ -405,8 +444,10 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                    RESEARCHY_GUI_EXPECTED_RUN_ID=run_id,
                    RESEARCHY_GUI_EXPECTED_EXPORT_ID=expected_export or '')
         marker = root / 'private-worker-stage-pid'
+        owner_marker = root / 'private-gui-owner-pid'
         if scenario == 'worker_killed':
             env['RESEARCHY_GUI_TEST_STAGE_MARKER'] = str(marker)
+            env['RESEARCHY_GUI_TEST_OWNER_MARKER'] = str(owner_marker)
         stopping = threading.Event()
         termination = {'terminated': False, 'error': None}
         monitor = None
@@ -418,7 +459,7 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 if scenario == 'worker_killed':
                     monitor = threading.Thread(
                         target=terminate_marked_gui_worker,
-                        args=(process, marker, stopping, termination),
+                        args=(process, marker, owner_marker, stopping, termination),
                         name='researchy-test-owned-worker-termination', daemon=True)
                     monitor.start()
                 if mode == 'transport':
@@ -488,6 +529,8 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                     result['worker_termination_error'] = termination.get('error')
                     result['worker_termination_confirmed'] = termination['terminated']
                     result['worker_stage_marker_seen'] = marker.is_file()
+                    result['gui_owner_marker_seen'] = owner_marker.is_file()
+                    result['gui_owner_relation'] = termination.get('gui_owner_relation')
     require(token not in json.dumps(result), 'secret_in_evidence')
     return result
 
