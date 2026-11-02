@@ -25,10 +25,12 @@ The owner may create a new project in a host-selected parent directory or open
 an existing host-selected project. The initial browser/native feasibility fixture
 provides those paths from a trusted parent-process environment—not an HTTP
 body, query string, JavaScript argument, cookie or user-supplied browser path.
-**A real interactive native directory picker and recent-project directory
-are not yet implemented or accepted.** The browser may supply a project *name*
-for new creation; the production project service validates that name and
-allocates a new directory without replacing anything.
+**At this PR #48 baseline, a real native directory picker and a recent-project
+directory were not implemented.** The subsequent isolated native-picker
+increment is documented in `docs/GUI_NATIVE_FOLDER_SELECTION.md`; actual manual
+Windows dialog acceptance and a recent-project index still remain open.
+The browser may supply only a project *name* for creation; the core project
+service validates that name and exclusively allocates a new directory.
 
 The `RealProjectFlow` adapter accepts run and export identifiers only after
 matching them against the storage-backed snapshot. An export must also belong
