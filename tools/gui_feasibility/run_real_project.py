@@ -59,11 +59,14 @@ def terminate_marked_gui_worker(host, marker, stopping, result):
     arbitrary user processes or accepts PID/path arguments over HTTP.
     """
     deadline = time.monotonic() + NATIVE_SCENARIO_TIMEOUT
+    result['phase'] = 'await_marker'
     try:
         while not stopping.is_set() and time.monotonic() < deadline:
             if marker.is_file():
+                result['phase'] = 'marker_detected'
                 size = marker.stat().st_size
                 if size == 0:
+                    result['phase'] = 'marker_incomplete'
                     # O_EXCL creation can precede the worker's PID write.
                     # This is an incomplete marker, not a bad PID: retry
                     # without expanding the original bounded deadline.
@@ -77,11 +80,14 @@ def terminate_marked_gui_worker(host, marker, stopping, result):
                     result['error'] = 'worker_marker_invalid'
                     return
                 pid = int(text)
+                result['phase'] = 'parentage_check'
                 if not _worker_parent_is_gui(pid, host.pid):
                     result['error'] = 'worker_parent_mismatch'
                     return
+                result['phase'] = 'signal_delivery'
                 os.kill(pid, signal.SIGTERM)
                 result['terminated'] = True
+                result['phase'] = 'signal_sent'
                 return
             if host.poll() is not None:
                 result['error'] = 'gui_exited_before_worker_stage'
@@ -316,7 +322,13 @@ def transport_steps(port, token, scenario, run_id, export_id):
         code = state.get('error')
         if scenario == 'worker_killed' and action == 'resume':
             # A real child died during staging: failure is the required result.
-            require(code == 'worker_interrupted', 'worker_death_not_reported')
+            require(code == 'worker_interrupted',
+                    'worker_death_returned_' + code
+                    if code in ('worker_timeout', 'worker_interrupted',
+                                'worker_unavailable', 'worker_start_failed',
+                                'operation_failed', 'worker_protocol_failed',
+                                'worker_busy')
+                    else 'worker_death_not_reported')
             require(state['actions'] == ['open', 'select_run', 'select_export'],
                     'worker_failure_recorded_as_success')
             damaged = state['state']
@@ -469,6 +481,13 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 stop_owned_process(process)
                 if monitor is not None:
                     monitor.join(timeout=2)
+                    # No PID, path, source content or OS exception is public.
+                    # This bounded evidence distinguishes an absent marker,
+                    # failed parentage check and a delivered termination.
+                    result['worker_termination_phase'] = termination.get('phase')
+                    result['worker_termination_error'] = termination.get('error')
+                    result['worker_termination_confirmed'] = termination['terminated']
+                    result['worker_stage_marker_seen'] = marker.is_file()
     require(token not in json.dumps(result), 'secret_in_evidence')
     return result
 
