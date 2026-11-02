@@ -90,6 +90,8 @@ def transport_steps(port, token, scenario, run_id, export_id):
     require(request(port, '/', headers=auth)[0] == 200, 'nicegui_page_missing')
     expected = (('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
                 if scenario == 'publish' else
+                ('open', 'select_run', 'prepare', 'cancel', 'observe')
+                if scenario == 'cancel' else
                 ('open', 'select_run', 'select_export', 'observe'))
     observed = []
     for action in expected:
@@ -111,9 +113,15 @@ def transport_steps(port, token, scenario, run_id, export_id):
             require(result['report']['queries'][0]['reported_matches'] is None, 'unknown_changed')
         if action == 'prepare':
             require(result['selected_export_id'] is not None, 'no_durable_request_id')
+        if action == 'cancel':
+            require(result['exports'][0]['recorded_state'] == 'cancelled'
+                    and result['observation'] is None, 'cancellation_not_durable')
         if action == 'observe':
-            require(result['observation']['outcome'] == 'published_verified'
-                    and result['observation']['audited_success'], 'output_not_verified')
+            cancelled = scenario in ('cancel', 'cancel_reopen')
+            require(result['observation']['outcome'] ==
+                    ('recorded_cancelled' if cancelled else 'published_verified')
+                    and result['observation']['audited_success'] is (not cancelled),
+                    'output_not_verified')
     require(request(port, '/_probe/stop', method='POST', headers=auth)[0] == 200,
             'stop_request_failed')
     return observed
@@ -154,19 +162,21 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 # publish child paths, project/source labels, secrets or raw reports.
                 result['observed_status'] = report.get('status')
                 result['observed_actions'] = [x for x in report.get('actions', [])
-                    if x in ('open', 'select_run', 'select_export', 'prepare', 'resume', 'observe')]
+                    if x in ('open', 'select_run', 'select_export', 'prepare', 'resume', 'cancel', 'observe')]
                 code = report.get('error')
                 result['observed_error'] = (code if isinstance(code, str) and
                      code.replace('_', '').isalnum() and len(code) <= 64 else None)
                 result['observed_worker_reaped'] = report.get('worker_reaped')
                 result['observed_supervisor_stopped'] = report.get('supervisor_stopped')
                 result['observed_outcome'] = report.get('observed_outcome')
+                cancelled = scenario in ('cancel', 'cancel_reopen')
                 require(report['status'] == 'finished' and report['real_services'] is True
                         and report['source_retrieval_verified'] is False
                         and report['selected_run_matches'] is True
                         and report['selected_export_matches'] is True
-                        and report['observed_outcome'] == 'published_verified'
-                        and report['observation_audited'] is True
+                        and report['observed_outcome'] ==
+                            ('recorded_cancelled' if cancelled else 'published_verified')
+                        and report['observation_audited'] is (not cancelled)
                         and report['session_revoked'] is True
                         and report['worker_reaped'] is True
                         and report['supervisor_stopped'] is True, 'real_gui_evidence_not_accepted')
@@ -177,7 +187,7 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                     require(report.get('native_rendering_verified') is True, 'native_rendering_not_verified')
                 result.update(passed=True, export_id=report['export_id'],
                               project_identity_retained=True,
-                              workbook_file_verified=True, native_rendering_verified=bool(
+                              workbook_file_verified=not cancelled, native_rendering_verified=bool(
                                   report.get('native_rendering_verified', False)))
                 with socket.socket() as sock:
                     require(sock.connect_ex(('127.0.0.1', port)) != 0, 'listener_not_closed')
@@ -214,7 +224,34 @@ def run_scenario(mode):
             second_events = db.execute("SELECT COUNT(*) FROM audit_events WHERE event_type LIKE 'workbook_export_v1:%'").fetchone()[0]
         second['journal_unchanged_on_reopen'] = first_events == second_events
         require(second['journal_unchanged_on_reopen'], 'reopen_appended_export_receipt')
-        return [first, second]
+
+        # Independent, real disk-backed cancellation. The initial preparation
+        # receipt and cancellation must survive a second app process; no Excel
+        # artifact may be written, and observation must never claim verification.
+        cancel_parent = root / 'cancel-case'
+        cancel_parent.mkdir()
+        cancel_project, cancel_run_id = fixture(cancel_parent)
+        cancelled = run_app(mode, 'cancel', cancel_project, cancel_parent, cancel_run_id, '')
+        if not cancelled['passed']:
+            return [first, second, cancelled]
+        cancel_workbook = (cancel_project.root / 'exports' /
+                           ('strategy-summary-' + cancel_run_id + '.xlsx'))
+        require(not cancel_workbook.exists(), 'cancelled_export_wrote_workbook')
+        with closing(sqlite3.connect(cancel_project.database_path)) as db:
+            original_events = db.execute(
+                "SELECT COUNT(*) FROM audit_events WHERE event_type LIKE 'workbook_export_v1:%'"
+            ).fetchone()[0]
+        require(original_events == 2, 'cancelled_journal_not_precise')
+        cancelled_reopen = run_app(mode, 'cancel_reopen', cancel_project,
+                                    cancel_parent, cancel_run_id, cancelled['export_id'])
+        with closing(sqlite3.connect(cancel_project.database_path)) as db:
+            later_events = db.execute(
+                "SELECT COUNT(*) FROM audit_events WHERE event_type LIKE 'workbook_export_v1:%'"
+            ).fetchone()[0]
+        cancelled_reopen['journal_unchanged_on_reopen'] = original_events == later_events
+        require(cancelled_reopen['journal_unchanged_on_reopen'], 'cancel_reopen_appended_receipt')
+        require(not cancel_workbook.exists(), 'cancel_reopen_wrote_workbook')
+        return [first, second, cancelled, cancelled_reopen]
 
 
 def main(argv=None):
