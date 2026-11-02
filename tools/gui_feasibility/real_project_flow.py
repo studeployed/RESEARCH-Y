@@ -102,13 +102,16 @@ class RealProjectFlow:
         return self._publish()
 
     def open_selected(self):
-        """The existing launcher selected this location, not a browser request."""
-        try:
-            return self.open_native_folder(self._root)
-        except ProjectFlowError as exc:
-            if str(exc) in ('native_selection_invalid', 'native_selection_unsafe'):
+        """The trusted launcher may select a folder OR a project.ryproj file."""
+        with self._guard:
+            self._require_no_unresolved_selection()
+            try:
+                project = open_project(self._root)
+            except ProjectVersionError:
+                raise ProjectFlowError('unsupported_project_version') from None
+            except (ProjectFormatError, OSError, ValueError, TypeError):
                 raise ProjectFlowError('invalid_project') from None
-            raise
+            return self._set_project(project)
 
     def create_selected(self, name: str):
         """Create in the current host-selected parent; name alone is browser text."""
