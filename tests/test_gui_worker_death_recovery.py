@@ -31,6 +31,12 @@ from tools.gui_feasibility.real_project_app import run
 from tools.gui_feasibility.worker_death_fixture import pause_during_retained_stage
 
 
+def _marker_matches_live_worker(marker, child):
+    """Never consume an O_EXCL-created or partially written PID marker."""
+    return (child is not None and child.is_alive() and marker.is_file()
+            and marker.read_text(encoding='ascii') == str(child.pid))
+
+
 def event_count(project, export_id):
     with closing(sqlite3.connect(project.database_path)) as db:
         return db.execute('SELECT COUNT(*) FROM audit_events WHERE event_type=?',
@@ -57,7 +63,8 @@ def test_actual_supervised_worker_death_keeps_original_request_and_partial_stage
         flow.select_export(export_id)
         with ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(flow.resume)
-            wait_until(lambda: marker.is_file(), timeout=30)
+            wait_until(lambda: _marker_matches_live_worker(
+                marker, flow._worker._process), timeout=30)
             child = flow._worker._process
             assert child is not None and child.is_alive()
             child_pid = int(marker.read_text(encoding='ascii'))
@@ -193,3 +200,17 @@ def test_unrelated_process_marker_is_rejected_without_killing(tmp_path, monkeypa
     runner.terminate_marked_gui_worker(
         SimpleNamespace(pid=12345, poll=lambda: None), marker, stopped, status)
     assert status == {'terminated': False, 'error': 'worker_parent_mismatch'}
+
+
+def test_integration_marker_must_match_live_child_before_consumption(tmp_path):
+    marker = tmp_path / 'private-worker-pid'
+    child = SimpleNamespace(pid=54321, is_alive=lambda: True)
+    assert not _marker_matches_live_worker(marker, child)
+    marker.touch()  # O_EXCL has returned but write has not started.
+    assert not _marker_matches_live_worker(marker, child)
+    marker.write_text('543', encoding='ascii')  # incomplete PID
+    assert not _marker_matches_live_worker(marker, child)
+    marker.write_text('54321', encoding='ascii')
+    assert _marker_matches_live_worker(marker, child)
+    assert not _marker_matches_live_worker(
+        marker, SimpleNamespace(pid=54321, is_alive=lambda: False))
