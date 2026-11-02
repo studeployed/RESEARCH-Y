@@ -1,0 +1,4 @@
+# Owner approved 2 November 2026 for isolated evaluation ONLY, issue #43.
+# These are the two approved top-level candidates, not a transitive lock.
+nicegui[native]==3.18.0
+pywebview==6.2.1

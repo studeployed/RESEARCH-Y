@@ -1,0 +1,70 @@
+name: Graphical dependency feasibility
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/gui-dependency-probe.yml'
+      - 'scripts/gui_dependency_probe.py'
+      - 'tools/gui_feasibility/**'
+      - 'tests/test_gui_dependency_probe.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gui-dependency-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: GUI dependencies ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Create isolated evaluation environment
+        shell: python
+        run: |
+          import os, pathlib, venv
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'research-y-gui-probe'
+          venv.EnvBuilder(with_pip=True, system_site_packages=False).create(root)
+          executable_dir = root / ('Scripts' if os.name == 'nt' else 'bin')
+          with open(os.environ['GITHUB_PATH'], 'a', encoding='utf-8') as stream:
+              stream.write(str(executable_dir) + '\n')
+          pathlib.Path('.gui-evidence').mkdir()
+      - name: Resolve approved candidates without installing application dependencies
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --dry-run --ignore-installed --report .gui-evidence/resolution.json -r tools/gui_feasibility/requirements.txt
+      - name: Validate archives and collect release-specific vulnerability evidence
+        run: python scripts/gui_dependency_probe.py prepare --directory .gui-evidence
+      - name: Install exact observed runtime artifacts in isolated environment
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --require-hashes --report .gui-evidence/installation.json -r .gui-evidence/candidate-lock.txt
+      - name: Check dependency compatibility
+        run: python -m pip check
+      - name: Verify installation and import candidate frameworks without launching a server
+        run: python scripts/gui_dependency_probe.py verify --directory .gui-evidence
+      - name: Preserve public dependency evidence even when a stage fails
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: gui-dependency-evidence-${{ matrix.os }}-${{ matrix.python-version }}
+          path: |
+            .gui-evidence/dependency-evidence.json
+            .gui-evidence/candidate-lock.txt
+            .gui-evidence/probe-error.json
+            .gui-evidence/resolution.json
+            .gui-evidence/installation.json
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true
