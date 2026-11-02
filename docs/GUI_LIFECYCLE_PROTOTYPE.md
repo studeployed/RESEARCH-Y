@@ -107,7 +107,15 @@ is named `window`, and because it rejected this required bootstrap fragment.
 The corrected callback takes zero arguments, closes over the created window, and
 registers the native veto before normal loading. Contract tests exercise that
 real callback signature, exact bootstrap rules and replay/foreign-navigation
-rejection. This complements the existing HTTP/Socket.IO guard; it does not make
+rejection. The following amended Windows run (#41423245865) passed all seven
+scenarios with Python 3.12 but passed six of seven with Python 3.13. Its sole
+failure was an intermittent `None` returned by pywebview's JS bridge during
+initial native document inspection, before the worker had begun. The experiment
+now retries **only that unavailable-bridge result** under the original eight-
+second readiness limit, and requires a fully validated document snapshot before
+any native success; malformed or unexpected responses fail immediately. Contract
+tests prove transient recovery and permanent/unexpected failures remain rejected.
+This complements the existing HTTP/Socket.IO guard; it does not make
 arbitrary same-origin script execution safe.
 
 A fourth Windows-native scenario starts slow synthetic work and then abruptly

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard, BOOTSTRAP_HTML, SOCKET_PATH
 from tools.gui_feasibility.prototype_app import (navigation_allowed, valid_initial_bootstrap,
-    create_guarded_window)
+    create_guarded_window, read_native_document)
 from tools.gui_feasibility.run_prototype import validate_result, environment, ExperimentFailure
 
 TOKEN = 'a' * 64
@@ -335,6 +335,44 @@ def test_bootstrap_cannot_be_reopened_after_first_foreign_attempt(tmp_path):
         event = SimpleNamespace(Uri=uri, Cancel=False)
         nav.callback(None, event)
         assert event.Cancel
+
+
+def test_native_document_retry_after_transient_unavailable_js_bridge():
+    calls = []
+    data = {'text': '<literal>', 'injected': False, 'url': '/',
+            'fragment': '', 'cookie': ''}
+    async def js(expression):
+        calls.append(expression)
+        return None if len(calls) < 3 else json.dumps(data)
+    assert asyncio.run(read_native_document(js, 'document expression', seconds=0.5)) == data
+    assert len(calls) == 3
+
+
+def test_native_document_permanently_unavailable_fails_closed():
+    attempts = []
+    async def js(expression):
+        attempts.append(expression)
+        return None
+    with pytest.raises(TimeoutError, match='native_document_not_ready'):
+        asyncio.run(read_native_document(js, 'document expression', seconds=0.02))
+    assert attempts
+
+
+@pytest.mark.parametrize('raw,code', [
+    (123, 'native_document_invalid_type'),
+    (b'{}', 'native_document_invalid_type'),
+    ('not JSON', 'native_document_invalid_json'),
+    ('[]', 'native_document_invalid_shape'),
+    ('null', 'native_document_invalid_shape'),
+    (json.dumps({'text': '<literal>', 'injected': False, 'url': '/'}), 'native_document_invalid_shape'),
+    (json.dumps({'text': '<literal>', 'injected': 'false', 'url': '/',
+                 'fragment': '', 'cookie': ''}), 'native_document_invalid_shape'),
+])
+def test_native_document_invalid_response_does_not_count_as_ready(raw, code):
+    async def js(expression):
+        return raw
+    with pytest.raises(RuntimeError, match=code):
+        asyncio.run(read_native_document(js, 'document expression', seconds=0.5))
 
 
 def test_native_prototype_contains_pre_navigation_veto_and_owner_death_watch():

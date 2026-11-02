@@ -125,6 +125,39 @@ def guarded_open_window(*args, **kwargs):
     return native_mode._open_window(*args, **kwargs)
 
 
+async def read_native_document(js, expression: str, *, seconds: float = 8.0):
+    """Require a real document snapshot; tolerate only a transient unavailable window.
+
+    The first Socket.IO client may connect before pywebview's native JS bridge
+    returns a value. A None response is not evidence of a loaded document. Retry
+    for a fixed finite window, then fail. Malformed/non-string responses fail
+    immediately rather than being treated as readiness.
+    """
+    deadline = time.monotonic() + seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('native_document_not_ready')
+        try:
+            value = await asyncio.wait_for(js(expression), timeout=remaining)
+        except asyncio.TimeoutError:
+            raise TimeoutError('native_document_not_ready') from None
+        if value is None:
+            await asyncio.sleep(min(0.1, max(0, deadline - time.monotonic())))
+            continue
+        if type(value) is not str:
+            raise RuntimeError('native_document_invalid_type')
+        try:
+            result = json.loads(value)
+        except (ValueError, TypeError):
+            raise RuntimeError('native_document_invalid_json') from None
+        if (type(result) is not dict or set(result) != {'text', 'injected', 'url', 'fragment', 'cookie'}
+                or type(result['text']) is not str or type(result['injected']) is not bool
+                or not all(type(result[key]) is str for key in ('url', 'fragment', 'cookie'))):
+            raise RuntimeError('native_document_invalid_shape')
+        return result
+
+
 def synthetic_work(command):
     """Trusted fixed service substituted only in this disposable prototype host."""
     from research_y.application_commands import ApplicationCommandError
@@ -240,11 +273,11 @@ def run(args):
             async def native_probe():
                 try:
                     await until(lambda: session.redeemed and clients and clients[-1].has_socket_connection)
-                    result = await js("JSON.stringify({text: document.querySelector('[data-testid=literal]').textContent, "
-                                      "injected: window.__researchy_injected === true, "
-                                      "url: location.pathname, fragment: location.hash, "
-                                      "cookie: document.cookie})")
-                    result = json.loads(result)
+                    result = await read_native_document(
+                        js, "JSON.stringify({text: document.querySelector('[data-testid=literal]').textContent, "
+                            "injected: window.__researchy_injected === true, "
+                            "url: location.pathname, fragment: location.hash, "
+                            "cookie: document.cookie})")
                     if result['text'] != INJECTION or result['injected'] or result['url'] != '/' or result['fragment']:
                         raise RuntimeError('native_literal_or_bootstrap_failed')
                     if session.cookie_name in result['cookie']:
