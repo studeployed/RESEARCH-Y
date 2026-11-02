@@ -20,6 +20,7 @@ from tools.gui_feasibility.native_folder_selection import (
 )
 from tools.gui_feasibility.real_project_flow import RealProjectFlow, ProjectFlowError
 from tools.gui_feasibility.real_project_app import run
+from tools.gui_feasibility.run_real_project import fixture
 
 
 @pytest.mark.parametrize('result', [None, [], ()])
@@ -152,6 +153,141 @@ def test_old_launcher_contracts_remain_compatible(tmp_path):
             created['project']['project_id'])
     finally:
         old_launcher.close()
+
+
+def test_failed_native_open_inspection_keeps_active_run_and_export(tmp_path, monkeypatch):
+    original_project, run_id = fixture(tmp_path)
+    other = create_project(tmp_path, 'Another research project')
+    flow = RealProjectFlow(selected_root=original_project.root, selected_parent=tmp_path)
+    try:
+        flow.open_selected()
+        flow.select_run(run_id)
+        original_export_id = flow.prepare()['selected_export_id']
+        before = flow.state()
+        original_operation = flow._operation_for_project
+
+        def fail_only_other(project, operation, **kwargs):
+            if project.identifier == other.identifier and operation == 'inspect':
+                raise ProjectFlowError('worker_interrupted')
+            return original_operation(project, operation, **kwargs)
+
+        monkeypatch.setattr(flow, '_operation_for_project', fail_only_other)
+        with pytest.raises(ProjectFlowError, match='^worker_interrupted
+    code = inspect.getsource(run)
+    chooser = inspect.getsource(select_from_native_window)
+    assert "name in ('native_open', 'native_create')" in code
+    assert "selected = await select_from_native_window(app.native.main_window)" in code
+    assert "await asyncio.to_thread(flow.open_native_folder, selected)" in code
+    assert "await asyncio.to_thread(flow.create_native_parent," in code
+    assert 'data-testid=native-open-folder' in code
+    assert 'data-testid=native-create-folder' in code
+    assert 'create_file_dialog' not in code
+    assert 'window.create_file_dialog(' in chooser
+    assert 'allow_multiple=False' in chooser
+    assert 'webview.FileDialog.FOLDER' in chooser
+    assert 'directory' not in inspect.signature(RealProjectFlow.observe).parameters
+):
+            flow.open_native_folder(other.root)
+
+        after = flow.state()
+        assert after == before
+        assert flow.project.identifier == original_project.identifier
+        assert flow._root == original_project.root
+        assert after['selected_run_id'] == run_id
+        assert after['selected_export_id'] == original_export_id
+        observed = flow.observe()
+        assert observed['observation']['audited_success'] is False
+        assert observed['selected_export_id'] == original_export_id
+    finally:
+        flow.close()
+
+
+def test_failed_native_create_inspection_preserves_active_project_and_new_folder(
+        tmp_path, monkeypatch):
+    original_project, run_id = fixture(tmp_path)
+    parent = tmp_path / 'separate-create-parent'
+    parent.mkdir()
+    flow = RealProjectFlow(selected_root=original_project.root, selected_parent=tmp_path)
+    try:
+        flow.open_selected()
+        flow.select_run(run_id)
+        original_export_id = flow.prepare()['selected_export_id']
+        before = flow.state()
+        original_operation = flow._operation_for_project
+
+        def fail_only_created(project, operation, **kwargs):
+            if project.root.parent == parent and operation == 'inspect':
+                raise ProjectFlowError('worker_interrupted')
+            return original_operation(project, operation, **kwargs)
+
+        monkeypatch.setattr(flow, '_operation_for_project', fail_only_created)
+        with pytest.raises(ProjectFlowError, match='^worker_interrupted
+    code = inspect.getsource(run)
+    chooser = inspect.getsource(select_from_native_window)
+    assert "name in ('native_open', 'native_create')" in code
+    assert "selected = await select_from_native_window(app.native.main_window)" in code
+    assert "await asyncio.to_thread(flow.open_native_folder, selected)" in code
+    assert "await asyncio.to_thread(flow.create_native_parent," in code
+    assert 'data-testid=native-open-folder' in code
+    assert 'data-testid=native-create-folder' in code
+    assert 'create_file_dialog' not in code
+    assert 'window.create_file_dialog(' in chooser
+    assert 'allow_multiple=False' in chooser
+    assert 'webview.FileDialog.FOLDER' in chooser
+    assert 'directory' not in inspect.signature(RealProjectFlow.observe).parameters
+):
+            flow.create_native_parent(parent, 'New candidate')
+
+        # Creation has already committed; do not silently destroy it or
+        # pretend the active session was switched to the uninspectable project.
+        created = list(parent.iterdir())
+        assert len(created) == 1
+        assert open_project(created[0]).name == 'New candidate'
+        assert flow.state() == before
+        assert flow.project.identifier == original_project.identifier
+        assert flow._root == original_project.root
+        assert flow._parent == tmp_path
+        assert flow.state()['selected_export_id'] == original_export_id
+        assert flow.observe()['selected_run_id'] == run_id
+    finally:
+        flow.close()
+
+
+def test_malformed_candidate_inspection_cannot_switch_project(tmp_path, monkeypatch):
+    original_project = create_project(tmp_path, 'Good project')
+    other = create_project(tmp_path, 'Bad projection')
+    flow = RealProjectFlow(selected_root=original_project.root, selected_parent=tmp_path)
+    try:
+        flow.open_selected()
+        before = flow.state()
+        original_operation = flow._operation_for_project
+
+        def bad_read_model(project, operation, **kwargs):
+            if project.identifier == other.identifier and operation == 'inspect':
+                return {'snapshot': {'runs': 'not-a-list', 'exports': []}}
+            return original_operation(project, operation, **kwargs)
+
+        monkeypatch.setattr(flow, '_operation_for_project', bad_read_model)
+        with pytest.raises(ProjectFlowError, match='^invalid_worker_result
+    code = inspect.getsource(run)
+    chooser = inspect.getsource(select_from_native_window)
+    assert "name in ('native_open', 'native_create')" in code
+    assert "selected = await select_from_native_window(app.native.main_window)" in code
+    assert "await asyncio.to_thread(flow.open_native_folder, selected)" in code
+    assert "await asyncio.to_thread(flow.create_native_parent," in code
+    assert 'data-testid=native-open-folder' in code
+    assert 'data-testid=native-create-folder' in code
+    assert 'create_file_dialog' not in code
+    assert 'window.create_file_dialog(' in chooser
+    assert 'allow_multiple=False' in chooser
+    assert 'webview.FileDialog.FOLDER' in chooser
+    assert 'directory' not in inspect.signature(RealProjectFlow.observe).parameters
+):
+            flow.open_native_folder(other.root)
+        assert flow.state() == before
+        assert flow.project.identifier == original_project.identifier
+    finally:
+        flow.close()
 
 
 def test_native_buttons_are_host_owned_not_client_supplied_paths():
