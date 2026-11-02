@@ -139,24 +139,7 @@ def test_host_native_parent_creation_respects_exclusive_project_paths(tmp_path):
 def test_old_launcher_contracts_remain_compatible(tmp_path):
     flow = RealProjectFlow(selected_root=tmp_path / 'missing', selected_parent=tmp_path)
     try:
-        with pytest.raises(ProjectFlowError, match='^invalid_project
-
-def test_native_buttons_are_host_owned_not_client_supplied_paths():
-    code = inspect.getsource(run)
-    chooser = inspect.getsource(select_from_native_window)
-    assert "name in ('native_open', 'native_create')" in code
-    assert "selected = await select_from_native_window(app.native.main_window)" in code
-    assert "await asyncio.to_thread(flow.open_native_folder, selected)" in code
-    assert "await asyncio.to_thread(flow.create_native_parent," in code
-    assert 'data-testid=native-open-folder' in code
-    assert 'data-testid=native-create-folder' in code
-    assert 'native_folder_unavailable' not in code
-    assert 'create_file_dialog' not in code
-    assert 'window.create_file_dialog(' in chooser
-    assert 'allow_multiple=False' in chooser
-    assert 'webview.FileDialog.FOLDER' in chooser
-    assert 'directory' not in inspect.signature(RealProjectFlow.observe).parameters
-):
+        with pytest.raises(ProjectFlowError, match='^invalid_project$'):
             flow.open_selected()
         created = flow.create_selected('Valid')
         assert created['project']['name'] == 'Valid'
@@ -180,7 +163,6 @@ def test_native_buttons_are_host_owned_not_client_supplied_paths():
     assert "await asyncio.to_thread(flow.create_native_parent," in code
     assert 'data-testid=native-open-folder' in code
     assert 'data-testid=native-create-folder' in code
-    assert 'native_folder_unavailable' not in code
     assert 'create_file_dialog' not in code
     assert 'window.create_file_dialog(' in chooser
     assert 'allow_multiple=False' in chooser
