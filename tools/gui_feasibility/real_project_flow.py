@@ -18,6 +18,7 @@ from research_y.projects import (ProjectFormatError, ProjectVersionError,
 from research_y.export_files import Directory
 from tools.gui_feasibility.native_folder_selection import (
     NativeFolderError, checked_folder)
+from tools.gui_feasibility.recent_projects import RecentProjects, RecentProjectsError
 
 
 class ProjectFlowError(ValueError):
@@ -25,7 +26,8 @@ class ProjectFlowError(ValueError):
 
 
 class RealProjectFlow:
-    def __init__(self, *, selected_root: Path, selected_parent: Path):
+    def __init__(self, *, selected_root: Path, selected_parent: Path,
+                 recent_parent: Path | None = None):
         self._root = Path(selected_root)
         self._parent = Path(selected_parent)
         if not self._root.is_absolute() or not self._parent.is_absolute():
@@ -45,6 +47,16 @@ class RealProjectFlow:
         self.last_result = None
         self.observation = None
         self.retained_export_report = None
+        self._recent_index = None
+        self._recent_items = []
+        self._recent_error = None
+        if recent_parent is not None:
+            try:
+                self._recent_index = RecentProjects(recent_parent)
+                self._recent_items = self._recent_index.items()
+            except RecentProjectsError:
+                # Corrupt launcher history never blocks work or silently resets.
+                self._recent_error = 'recent_history_unavailable'
         self._public_state = self._build_state()
 
     def _require_no_unresolved_selection(self):
@@ -52,6 +64,58 @@ class RealProjectFlow:
             raise ProjectFlowError('flow_closed')
         if self._pending_export_id is not None:
             raise ProjectFlowError('export_reconciliation_required')
+
+    def _remember_project(self, project):
+        if self._recent_index is None:
+            return
+        try:
+            self._recent_items = self._recent_index.record(project)
+            self._recent_error = None
+        except RecentProjectsError:
+            self._recent_items = []
+            self._recent_error = 'recent_history_unavailable'
+
+    def refresh_recents(self):
+        """Explicit refresh; never search arbitrary locations on the disk."""
+        with self._guard:
+            if self._closed:
+                raise ProjectFlowError('flow_closed')
+            if self._recent_index is None:
+                raise ProjectFlowError('recent_history_unavailable')
+            try:
+                self._recent_items = self._recent_index.items()
+                self._recent_error = None
+            except RecentProjectsError:
+                self._recent_items = []
+                self._recent_error = 'recent_history_unavailable'
+            return self._publish()
+
+    def open_recent(self, project_id: str):
+        """Look up one host-stored ID, then verify directory and real UUID."""
+        with self._guard:
+            self._require_no_unresolved_selection()
+            if self._recent_index is None or self._recent_error:
+                raise ProjectFlowError('recent_history_unavailable')
+            try:
+                entry = self._recent_index.get(project_id)
+            except RecentProjectsError as exc:
+                raise ProjectFlowError(str(exc)) from None
+            try:
+                folder = self._validated_host_directory(Path(entry['location']))
+                with Directory(folder):
+                    project = open_project(folder)
+            except ProjectFlowError:
+                raise ProjectFlowError('recent_project_unavailable') from None
+            except ProjectVersionError:
+                raise ProjectFlowError('unsupported_project_version') from None
+            except (ProjectFormatError, OSError, ValueError, TypeError):
+                raise ProjectFlowError('recent_project_unavailable') from None
+            if str(project.identifier) != entry['project_id']:
+                raise ProjectFlowError('recent_project_identity_mismatch')
+            self._set_project(project)
+            self._root = folder
+            self._remember_project(project)
+            return self._publish()
 
     def _require_open(self):
         if self._closed:
@@ -124,7 +188,9 @@ class RealProjectFlow:
                 raise ProjectFlowError('unsupported_project_version') from None
             except (ProjectFormatError, OSError, ValueError, TypeError):
                 raise ProjectFlowError('invalid_project') from None
-            return self._set_project(project)
+            self._set_project(project)
+            self._remember_project(project)
+            return self._publish()
 
     def create_selected(self, name: str):
         """Create in the current host-selected parent; name alone is browser text."""
@@ -163,9 +229,10 @@ class RealProjectFlow:
                 raise ProjectFlowError('unsupported_project_version') from None
             except (ProjectFormatError, OSError, ValueError, TypeError):
                 raise ProjectFlowError('invalid_project') from None
-            state = self._set_project(project)
+            self._set_project(project)
             self._root = path
-            return state
+            self._remember_project(project)
+            return self._publish()
 
     def create_native_parent(self, selected: Path, name: str):
         """Create exclusively in a host-selected parent, never a browser path."""
@@ -177,10 +244,11 @@ class RealProjectFlow:
                     project = create_project(path, name)
             except (OSError, ValueError, TypeError):
                 raise ProjectFlowError('project_creation_failed') from None
-            state = self._set_project(project)
+            self._set_project(project)
             self._parent = path
             self._root = project.root
-            return state
+            self._remember_project(project)
+            return self._publish()
 
     def select_run(self, run_id: str):
         with self._guard:
@@ -345,6 +413,8 @@ class RealProjectFlow:
                 'operation_state': self.operation_state,
                 'operation_error': self.operation_error,
                 'source_retrieval_verified': False,
+                'recent_projects': list(self._recent_items),
+                'recent_history_error': self._recent_error,
                 'gui_acceptance': False,
                 'production_adoption_approved': False,
             }
