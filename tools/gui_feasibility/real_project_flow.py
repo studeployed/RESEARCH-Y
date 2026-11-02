@@ -38,6 +38,7 @@ class RealProjectFlow:
         self.operation_error = None
         self.last_result = None
         self.observation = None
+        self.retained_export_report = None
         self._public_state = self._build_state()
 
     def _require_open(self):
@@ -80,6 +81,7 @@ class RealProjectFlow:
         self.selected_run_id = None
         self.selected_export_id = None
         self.observation = None
+        self.retained_export_report = None
         self.last_result = None
         self.snapshot = self._operation('inspect')['snapshot']
         return self._publish()
@@ -119,6 +121,7 @@ class RealProjectFlow:
             self.selected_run_id = run_id
             self.selected_export_id = None
             self.observation = None
+            self.retained_export_report = None
             self.snapshot = report
             return self._publish()
 
@@ -135,15 +138,23 @@ class RealProjectFlow:
             # report while operating on run A's saved workbook.
             if self.selected_run_id is None or row['run_id'] != self.selected_run_id:
                 raise ProjectFlowError('export_run_mismatch')
+            retained = self._operation('export_report', export_id=export_id)
+            if retained.get('run', {}).get('run_id') != self.selected_run_id:
+                raise ProjectFlowError('retained_report_run_mismatch')
             self.selected_export_id = export_id
+            self.retained_export_report = retained
             self.observation = None
             return self._publish()
 
-    def prepare(self, filename='strategy-summary.xlsx'):
+    def prepare(self, filename=None):
         with self._guard:
             self._require_open()
             if self.selected_run_id is None:
                 raise ProjectFlowError('run_selection_required')
+            if filename is None:
+                # The full canonical run UUID guarantees distinct default names
+                # for distinct runs; never reuse another run's output implicitly.
+                filename = 'strategy-summary-' + self.selected_run_id + '.xlsx'
             if self.selected_export_id is None:
                 if any(row['run_id'] == self.selected_run_id and row['filename'] == filename
                        for row in self.snapshot['exports']):
@@ -154,6 +165,10 @@ class RealProjectFlow:
             if result.get('export_id') != self.selected_export_id or result.get('audited_success') is True:
                 raise ProjectFlowError('invalid_preparation')
             self.snapshot = self._operation('inspect', run_id=self.selected_run_id)['snapshot']
+            retained = self._operation('export_report', export_id=self.selected_export_id)
+            if retained.get('run', {}).get('run_id') != self.selected_run_id:
+                raise ProjectFlowError('retained_report_run_mismatch')
+            self.retained_export_report = retained
             return self._publish()
 
     def resume(self):
@@ -186,6 +201,7 @@ class RealProjectFlow:
                 'exports': [] if data is None else data['exports'],
                 'selected_export_id': self.selected_export_id,
                 'observation': self.observation,
+                'retained_export_report': self.retained_export_report,
                 'operation_state': self.operation_state,
                 'operation_error': self.operation_error,
                 'source_retrieval_verified': False,

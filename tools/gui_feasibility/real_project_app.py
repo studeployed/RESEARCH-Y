@@ -116,6 +116,7 @@ def run(args):
                     if data is None:
                         ui.label('Report not available.')
                     else:
+                        ui.label('Current run projection (may differ from the retained export).')
                         ui.label('Report status: ' + str(data['status'])).props('data-testid=report-status')
                         unique = data['counts']['totals'].get('global_unique_publications')
                         ui.label('Global unique publications: ' +
@@ -133,12 +134,23 @@ def run(args):
                     ui.button('Select stored export ' + eid,
                               on_click=lambda eid=eid: act('select_export', eid)).props('data-testid=select-export')
                 if state['selected_run_id'] is not None:
+                    ui.label('Default workbook: strategy-summary-' +
+                             state['selected_run_id'] + '.xlsx')
                     ui.button('Prepare strategy workbook',
                               on_click=lambda: act('prepare')).props('data-testid=prepare')
                 if state['selected_export_id'] is not None:
                     ui.button('Resume publication', on_click=lambda: act('resume')).props('data-testid=resume')
                     ui.button('Verify workbook', on_click=lambda: act('observe')).props('data-testid=observe')
                     ui.label('Export request ID: ' + state['selected_export_id']).props('data-testid=export-id')
+                retained = state['retained_export_report']
+                if retained is not None:
+                    ui.label('Retained original export report — frozen when prepared.')
+                    ui.label('Retained report status: ' + str(retained['status']))
+                    for item in retained['queries']:
+                        ui.label('Retained exact query: ' + item['exact_query']).props('data-testid=retained-query')
+                        count = item['reported_matches']
+                        ui.label('Retained reported matches: ' +
+                                 ('unknown' if count is None else str(count))).props('data-testid=retained-count')
                 observed = state['observation']
                 if observed is not None:
                     ui.label('Observed outcome: ' + observed['outcome']).props('data-testid=observation')
@@ -205,11 +217,13 @@ def run(args):
                     raise RuntimeError('native_not_verified')
                 check = await js("JSON.stringify({incomplete: document.querySelector('[data-testid=incomplete]').textContent,"
                                  "query: document.querySelector('[data-testid=exact-query]').textContent,"
+                                 "retained: document.querySelector('[data-testid=retained-query]').textContent,"
                                  "injected: window.__researchy_injected === true})")
                 if check is None:
                     raise RuntimeError('native_document_unavailable')
                 data = json.loads(check)
-                if 'INCOMPLETE' not in data['incomplete'] or 'Exact query:' not in data['query'] or data['injected']:
+                if ('INCOMPLETE' not in data['incomplete'] or 'Exact query:' not in data['query']
+                        or 'Retained exact query:' not in data['retained'] or data['injected']):
                     raise RuntimeError('native_rendering_invalid')
                 report['native_rendering_verified'] = True
                 report['status'] = 'finished'

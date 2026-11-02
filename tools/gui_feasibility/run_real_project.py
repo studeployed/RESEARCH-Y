@@ -172,7 +172,7 @@ def run_scenario(mode):
         first = run_app(mode, 'publish', project, root, run_id, '')
         if not first['passed']:
             return [first]
-        workbook = project.root / 'exports' / 'strategy-summary.xlsx'
+        workbook = project.root / 'exports' / ('strategy-summary-' + run_id + '.xlsx')
         require(workbook.is_file(), 'real_workbook_missing')
         with ZipFile(workbook) as wb:
             require(wb.testzip() is None and 'xl/workbook.xml' in wb.namelist(), 'not_a_real_workbook')

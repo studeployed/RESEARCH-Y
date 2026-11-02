@@ -36,11 +36,24 @@ to the **currently selected run**; a saved request from another run cannot be
 selected or shown alongside a different run's report. The graphical list
 likewise offers only requests belonging to that selected run.
 All durable services run
-through `ApplicationWorker` off the interface event loop. A request's original
-universally unique identifier remains stable across retries and restarts.
+through `ApplicationWorker` off the interface event loop. Each run receives a distinct, Windows-safe default output name
+`strategy-summary-<canonical-run-UUID>.xlsx`, preventing a saved workbook from
+one run from blocking publication of another run through this thin interface.
+A request's original universally unique identifier remains stable across retries
+and restarts.
 Opening a saved project never silently selects its most recent run, and an
 existing matching export requires an explicit saved-request selection instead
 of generating an accidental second request.
+
+The page now has **separate current-run and retained-export report sections**.
+After selecting a validated export request, the adapter reads the original
+frozen report with the existing `export_report` command, verifies its run
+identity, and displays its original query/counts as exported. It does not
+silently relabel fresh counts as the workbook's historical counts when the
+underlying research state has changed since preparation. Selecting another run
+clears the retained report until an export belonging to that run is explicitly
+selected. A regression changes source counts after preparation and proves the
+current/retained values remain distinct following restart and publication.
 
 ## Real-world-sized boundary of the evidence
 

@@ -109,7 +109,7 @@ def test_genuine_run_export_observation_and_relocation(tmp_path):
         assert observed['observation']['outcome'] == 'published_verified'
         assert observed['observation']['audited_success'] is True
         assert observed['source_retrieval_verified'] is False
-        workbook = p.root / 'exports' / 'strategy-summary.xlsx'
+        workbook = p.root / 'exports' / ('strategy-summary-' + run_id + '.xlsx')
         with ZipFile(workbook) as archive:
             assert archive.testzip() is None and 'xl/workbook.xml' in archive.namelist()
     finally:
@@ -143,6 +143,8 @@ def test_export_selection_cannot_mix_two_distinct_run_versions(tmp_path):
         approved_by='Fixture', approval_confirmed=True,
         groups=(StrategyGroup('other', 'Different', (ApprovedTerm('heart failure', 'researcher', True),)),))
     second_run = create_search_run(p, version.strategy_version_id).run_id
+    plan_source_query(p, run_id=second_run, group_id='other', source_name='pubmed',
+                      exact_query='"heart failure"[All Fields]')
     before = journal_count(p)
     reopened = RealProjectFlow(selected_root=p.root, selected_parent=tmp_path)
     try:
@@ -157,8 +159,49 @@ def test_export_selection_cannot_mix_two_distinct_run_versions(tmp_path):
         reopened.select_run(first_run)
         assert reopened.select_export(original_export)['selected_export_id'] == original_export
         assert reopened.state()['report']['run']['run_id'] == first_run
+        reopened.select_run(second_run)
+        prepared = reopened.prepare()
+        second_export = prepared['selected_export_id']
+        assert second_export != original_export
+        reopened.resume()
+        assert reopened.observe()['observation']['outcome'] == 'published_verified'
+        first_path = p.root / 'exports' / ('strategy-summary-' + first_run + '.xlsx')
+        second_path = p.root / 'exports' / ('strategy-summary-' + second_run + '.xlsx')
+        assert first_path != second_path and second_path.is_file()
+        # The first was prepared but not published in this fixture.
+        assert not first_path.exists()
     finally:
         reopened.close()
+
+
+def test_retained_export_report_remains_distinct_after_source_count_changes(tmp_path):
+    p, run_id = sample(tmp_path)
+    first = RealProjectFlow(selected_root=p.root, selected_parent=tmp_path)
+    try:
+        first.open_selected(); first.select_run(run_id)
+        prepared = first.prepare()
+        export_id = prepared['selected_export_id']
+        assert prepared['retained_export_report']['queries'][0]['reported_matches'] is None
+    finally:
+        first.close()
+    with closing(sqlite3.connect(p.database_path)) as db, db:
+        db.execute('UPDATE source_queries SET reported_matches=17,status="failed" WHERE run_id=?',
+                   (run_id,))
+    second = RealProjectFlow(selected_root=p.root, selected_parent=tmp_path)
+    try:
+        second.open_selected(); selected = second.select_run(run_id)
+        assert selected['report']['queries'][0]['reported_matches'] == 17
+        assert selected['retained_export_report'] is None
+        chosen = second.select_export(export_id)
+        assert chosen['report']['queries'][0]['reported_matches'] == 17
+        assert chosen['retained_export_report']['queries'][0]['reported_matches'] is None
+        second.resume()
+        observed = second.observe()
+        assert observed['observation']['outcome'] == 'published_verified'
+        assert observed['retained_export_report']['queries'][0]['reported_matches'] is None
+        assert observed['source_retrieval_verified'] is False
+    finally:
+        second.close()
 
 
 def test_existing_request_requires_explicit_selection_after_restart(tmp_path):
@@ -192,7 +235,8 @@ def test_untrusted_bytes_have_no_browser_path_route():
     assert not any('path' in str(x) for x in inspect.signature(RealProjectFlow.select_run).parameters)
     assert not any('path' in str(x) for x in inspect.signature(RealProjectFlow.prepare).parameters)
     assert "item['run_id'] != state['selected_run_id']" in text
-    assert "data-testid=exact-query" in text and "ui.label('Exact query: ' + item['exact_query'])" in text
+    assert "data-testid=exact-query" in text
+    assert "data-testid=retained-query" in text and "ui.label('Exact query: ' + item['exact_query'])" in text
     assert "'unknown' if count is None else str(count)" in text
 
 
