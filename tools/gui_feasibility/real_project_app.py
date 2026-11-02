@@ -52,6 +52,20 @@ def run(args):
         session = LaunchSession(args.port, launch)
         expected_bootstrap = session.origin + '/bootstrap#' + launch
         del launch
+        if args.scenario == 'worker_killed':
+            # This swap is restricted to the disposable test runner process.
+            # The real ApplicationWorker spawns our importable, test-only
+            # callable; the browser cannot select a fault or filesystem path.
+            if not os.environ.get('RESEARCHY_GUI_TEST_STAGE_MARKER'):
+                raise RuntimeError('trusted_worker_fault_marker_required')
+            owner_marker = os.environ.pop('RESEARCHY_GUI_TEST_OWNER_MARKER', '')
+            if not owner_marker:
+                raise RuntimeError('trusted_gui_owner_marker_required')
+            from research_y import application_worker
+            from tools.gui_feasibility.worker_death_fixture import (
+                pause_during_retained_stage, publish_gui_owner_marker)
+            publish_gui_owner_marker(Path(owner_marker))
+            application_worker.execute_command = pause_during_retained_stage
         flow = RealProjectFlow(selected_root=root, selected_parent=parent)
         os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN'] = session.origin
         os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'] = str(args.directory)
@@ -64,7 +78,9 @@ def run(args):
                     if args.scenario == 'cancel' else
                     ('open', 'select_run', 'select_export', 'resume', 'observe')
                     if args.scenario in ('receipt_recovered', 'render_recovered',
-                                         'stage_recovered') else
+                                         'stage_recovered', 'worker_recovered') else
+                    ('open', 'select_run', 'select_export', 'resume')
+                    if args.scenario == 'worker_killed' else
                     ('open', 'select_run', 'select_export', 'observe'))
         action_lock = asyncio.Lock()
         select_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_RUN_ID')
@@ -92,9 +108,8 @@ def run(args):
                             return flow.observe()
                         raise ProjectFlowError('unsupported_action')
                     if name in ('native_open', 'native_create'):
-                        # The browser can invoke only this native OS dialog.
-                        # It cannot supply the selected path or bypass the
-                        # project's existing identity/reparse-point guards.
+                        # The browser only requests the OS dialog; it cannot
+                        # supply or replace the trusted host-selected path.
                         if args.mode != 'native':
                             raise ProjectFlowError('native_dialog_unavailable')
                         selected = await select_from_native_window(app.native.main_window)
@@ -211,6 +226,13 @@ def run(args):
                                  'is not success.').props('data-testid=stage-recovery')
             if last_error['code']:
                 ui.label('Operation error: ' + last_error['code']).props('data-testid=operation-error')
+                if (last_error['code'] == 'worker_interrupted' and
+                        state['selected_export_id'] is not None):
+                    ui.label('RECOVERY REQUIRED — the supervised export worker was '
+                             'interrupted. No successful workbook is verified. '
+                             'Reopen this saved request and inspect its durable '
+                             'phase before retrying; do not start a new export.').props(
+                                 'data-testid=worker-recovery')
 
         @ui.page('/')
         def page():
@@ -274,6 +296,32 @@ def run(args):
                     await js("document.querySelector('[data-testid=" + name + "]').click(); true")
                     await until(lambda: len(events) > index or last_error['code'] is not None,
                                 deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
+                    if args.scenario == 'worker_killed' and action == 'resume':
+                        if last_error['code'] != 'worker_interrupted' or len(events) != index:
+                            raise RuntimeError('native_worker_death_not_observed')
+                        current = flow.state()
+                        if (current['selected_export_id'] != expected_export or
+                                len(current['exports']) != 1 or
+                                current['exports'][0]['recorded_state'] != 'staging' or
+                                current['observation'] is not None or
+                                current['source_retrieval_verified'] is not False):
+                            raise RuntimeError('native_worker_death_false_success')
+                        await until_native_button('operation-error', js)
+                        await until_native_button('worker-recovery', js)
+                        evidence = await js(
+                            "JSON.stringify({error:document.querySelector('[data-testid=operation-error]').textContent,"
+                            "recovery:document.querySelector('[data-testid=worker-recovery]').textContent,"
+                            "injected:window.__researchy_injected===true})")
+                        if not evidence:
+                            raise RuntimeError('native_worker_error_not_rendered')
+                        proof = json.loads(evidence)
+                        if (not 'worker_interrupted' in proof['error'] or
+                                'RECOVERY REQUIRED' not in proof['recovery'] or
+                                proof['injected']):
+                            raise RuntimeError('native_worker_recovery_notice_missing')
+                        report['native_rendering_verified'] = True
+                        report['status'] = 'finished'
+                        return
                     if last_error['code'] is not None or events[index] != action:
                         raise RuntimeError('native_action_failed')
                 await until(lambda: flow.state()['observation'] is not None)
@@ -343,7 +391,11 @@ def run(args):
             state = flow.state()
             observed = state['observation']
             report.update(
-                status='finished' if args.mode == 'transport' and not last_error['code'] else report['status'],
+                status=('finished' if args.mode == 'transport' and
+                        (not last_error['code'] or
+                         (args.scenario == 'worker_killed' and
+                          last_error['code'] == 'worker_interrupted'))
+                        else report['status']),
                 actions=list(events), error=last_error['code'] or report.get('error'),
                 selected_run_matches=state['selected_run_id'] == select_id,
                 selected_export_matches=bool(state['selected_export_id']) and
@@ -394,7 +446,8 @@ if __name__ == '__main__':
     parser.add_argument('--scenario', choices=('publish', 'reopen', 'cancel', 'cancel_reopen',
                                                'receipt_missing', 'receipt_recovered',
                                                'render_fault', 'render_recovered',
-                                               'stage_fault', 'stage_recovered'), required=True)
+                                               'stage_fault', 'stage_recovered',
+                                               'worker_killed', 'worker_recovered'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))
