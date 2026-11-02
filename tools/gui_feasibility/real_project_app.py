@@ -61,6 +61,8 @@ def run(args):
                     if args.scenario == 'publish' else
                     ('open', 'select_run', 'prepare', 'cancel', 'observe')
                     if args.scenario == 'cancel' else
+                    ('open', 'select_run', 'select_export', 'resume', 'observe')
+                    if args.scenario == 'receipt_recovered' else
                     ('open', 'select_run', 'select_export', 'observe'))
         action_lock = asyncio.Lock()
         select_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_RUN_ID')
@@ -176,6 +178,12 @@ def run(args):
                 if observed is not None:
                     ui.label('Observed outcome: ' + observed['outcome']).props('data-testid=observation')
                     ui.label('Audited workbook success: ' + str(observed['audited_success']))
+                    if observed['outcome'] == 'published_receipt_missing':
+                        ui.label('RECOVERY REQUIRED — the workbook is visible, but the '
+                                 'final audited publication receipt is missing. '
+                                 'This is not verified. Resume the existing export '
+                                 'request to reconcile its original file.').props(
+                                     'data-testid=receipt-missing')
             if last_error['code']:
                 ui.label('Operation error: ' + last_error['code']).props('data-testid=operation-error')
 
@@ -237,20 +245,26 @@ def run(args):
                 await until(lambda: flow.state()['observation'] is not None)
                 current = flow.state()
                 expected_outcome = ('recorded_cancelled' if args.scenario in
-                                    ('cancel', 'cancel_reopen') else 'published_verified')
+                                    ('cancel', 'cancel_reopen') else
+                                    'published_receipt_missing' if args.scenario == 'receipt_missing'
+                                    else 'published_verified')
                 if (current['observation']['outcome'] != expected_outcome or
                         current['observation']['audited_success'] is not
                         (expected_outcome == 'published_verified')):
                     raise RuntimeError('native_not_verified')
+                if args.scenario == 'receipt_missing':
+                    await until_native_button('receipt-missing', js)
                 check = await js("JSON.stringify({incomplete: document.querySelector('[data-testid=incomplete]').textContent,"
                                  "query: document.querySelector('[data-testid=exact-query]').textContent,"
                                  "retained: document.querySelector('[data-testid=retained-query]').textContent,"
+                                 "receipt: Boolean(document.querySelector('[data-testid=receipt-missing]')),"
                                  "injected: window.__researchy_injected === true})")
                 if check is None:
                     raise RuntimeError('native_document_unavailable')
                 data = json.loads(check)
                 if ('INCOMPLETE' not in data['incomplete'] or 'Exact query:' not in data['query']
-                        or 'Retained exact query:' not in data['retained'] or data['injected']):
+                        or 'Retained exact query:' not in data['retained'] or data['injected']
+                        or data['receipt'] is not (args.scenario == 'receipt_missing')):
                     raise RuntimeError('native_rendering_invalid')
                 report['native_rendering_verified'] = True
                 report['status'] = 'finished'
@@ -327,7 +341,8 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=('transport', 'native'), required=True)
-    parser.add_argument('--scenario', choices=('publish', 'reopen', 'cancel', 'cancel_reopen'), required=True)
+    parser.add_argument('--scenario', choices=('publish', 'reopen', 'cancel', 'cancel_reopen',
+                                               'receipt_missing', 'receipt_recovered'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))
