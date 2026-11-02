@@ -2,7 +2,9 @@
 import asyncio
 import importlib.util
 import json
+import inspect
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
@@ -11,7 +13,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard, BOOTSTRAP_HTML, SOCKET_PATH
-from tools.gui_feasibility.prototype_app import navigation_allowed
+from tools.gui_feasibility.prototype_app import (navigation_allowed, valid_initial_bootstrap,
+    create_guarded_window)
 from tools.gui_feasibility.run_prototype import validate_result, environment, ExperimentFailure
 
 TOKEN = 'a' * 64
@@ -252,9 +255,92 @@ def test_native_navigation_policy_rejects_external_or_ambiguous_urls(url):
     assert not navigation_allowed(url, 'http://127.0.0.1:18765')
 
 
+
+def test_initial_native_bootstrap_requires_exact_origin_route_and_token():
+    origin = 'http://127.0.0.1:18765'
+    good = origin + '/bootstrap#' + 'a' * 64
+    assert valid_initial_bootstrap(good, origin)
+    for bad in (
+        origin + '/bootstrap', origin + '/bootstrap#wrong',
+        origin + '/bootstrap#' + 'A' * 64,
+        origin + '/bootstrap?x=1#' + 'a' * 64,
+        origin + '/other#' + 'a' * 64,
+        'http://127.0.0.1:18766/bootstrap#' + 'a' * 64,
+        'https://127.0.0.1:18765/bootstrap#' + 'a' * 64,
+        'http://evil@127.0.0.1:18765/bootstrap#' + 'a' * 64,
+        None, '', 123,
+    ):
+        assert not valid_initial_bootstrap(bad, origin)
+
+
+def test_before_show_uses_zero_argument_callback_and_one_use_bootstrap(tmp_path):
+    class Hook:
+        def __init__(self): self.callback = None
+        def __iadd__(self, callback):
+            self.callback = callback
+            return self
+
+    origin = 'http://127.0.0.1:18765'
+    initial = origin + '/bootstrap#' + 'a' * 64
+    nav = Hook()
+    before_show = Hook()
+    fake = SimpleNamespace(events=SimpleNamespace(before_show=before_show),
+        native=SimpleNamespace(browser=SimpleNamespace(
+            webview=SimpleNamespace(NavigationStarting=nav))))
+    created = create_guarded_window(lambda **kwargs: fake, origin, tmp_path, url=initial)
+    assert created is fake and before_show.callback is not None
+    # Real pywebview 6.2.1 before_show.set() passes no positional args.
+    assert len(inspect.signature(before_show.callback).parameters) == 0
+    before_show.callback()
+    assert nav.callback is not None
+
+    def navigate(url):
+        event = SimpleNamespace(Uri=url, Cancel=False)
+        nav.callback(None, event)
+        return event.Cancel
+
+    assert not navigate('about:blank')
+    assert not navigate(initial)
+    assert not navigate(origin + '/')
+    assert navigate(initial)  # The bootstrap fragment is permitted only once.
+    assert navigate('https://example.invalid/research-y-probe')
+    assert navigate('file:///C:/private')
+    assert (tmp_path / 'navigation-blocked').read_text(encoding='ascii') == 'blocked'
+
+
+def test_untrusted_native_initial_url_rejected_before_window_creation(tmp_path):
+    calls = []
+    with pytest.raises(RuntimeError, match='unexpected_native_bootstrap'):
+        create_guarded_window(lambda **kw: calls.append(kw), 'http://127.0.0.1:18765',
+                              tmp_path, url='https://example.invalid/')
+    assert not calls
+
+
+def test_bootstrap_cannot_be_reopened_after_first_foreign_attempt(tmp_path):
+    class Hook:
+        def __init__(self): self.callback = None
+        def __iadd__(self, callback):
+            self.callback = callback
+            return self
+
+    origin = 'http://127.0.0.1:18765'
+    trusted = origin + '/bootstrap#' + 'b' * 64
+    nav, before = Hook(), Hook()
+    fake = SimpleNamespace(events=SimpleNamespace(before_show=before),
+                           native=SimpleNamespace(browser=SimpleNamespace(
+                               webview=SimpleNamespace(NavigationStarting=nav))))
+    create_guarded_window(lambda **kwargs: fake, origin, tmp_path, url=trusted)
+    before.callback()
+    for uri in ('https://example.invalid/', trusted):
+        event = SimpleNamespace(Uri=uri, Cancel=False)
+        nav.callback(None, event)
+        assert event.Cancel
+
+
 def test_native_prototype_contains_pre_navigation_veto_and_owner_death_watch():
     text = (ROOT / 'tools/gui_feasibility/prototype_app.py').read_text(encoding='utf-8')
     assert 'NavigationStarting' in text and 'event.Cancel = True' in text
+    assert 'def before_show():' in text and 'valid_initial_bootstrap' in text
     assert "native_mode._open_window = guarded_open_window" in text
     assert "parent.join()" in text and "os._exit(75)" in text
 

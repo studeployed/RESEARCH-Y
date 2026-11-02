@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 from importlib.metadata import version
 import json
 import os
@@ -27,9 +28,11 @@ INJECTION = '<img src=x onerror="window.__researchy_injected=true"> & literal te
 
 
 def navigation_allowed(url: str, origin: str) -> bool:
-    """Allow only this prototype's HTTP origin (plus transient about:blank)."""
+    """Allow the exact local HTTP origin; never allow arbitrary URL fragments."""
     if url == 'about:blank':
         return True
+    if type(url) is not str or type(origin) is not str:
+        return False
     try:
         target, owner = urlsplit(url), urlsplit(origin)
     except (TypeError, ValueError):
@@ -38,12 +41,67 @@ def navigation_allowed(url: str, origin: str) -> bool:
             and target.username is None and target.password is None and not target.fragment)
 
 
-def guarded_open_window(*args, **kwargs):
-    """Spawn-target wrapper adding a Windows WebView2 navigation veto and owner-death exit.
+def valid_initial_bootstrap(url: str, origin: str) -> bool:
+    """Permit only a well-formed, one-use launch URL at the trusted local origin."""
+    if type(url) is not str or type(origin) is not str:
+        return False
+    try:
+        target, owner = urlsplit(url), urlsplit(origin)
+    except (TypeError, ValueError):
+        return False
+    return (target.scheme == owner.scheme == 'http' and target.netloc == owner.netloc
+            and target.username is None and target.password is None
+            and target.path == '/bootstrap' and not target.query
+            and re.fullmatch(r'[a-f0-9]{64}', target.fragment) is not None)
 
-    This runs inside NiceGUI's disposable native-window child. It intentionally uses
-    pywebview's Windows-native WebView2 object only for the feasibility experiment.
+
+def install_native_navigation_veto(window, allowed_origin: str, marker_dir: Path,
+                                   trusted_bootstrap: str) -> None:
+    """Attach the actual WebView2 pre-navigation gate; fail if it is unavailable."""
+    form = window.native
+    browser = getattr(form, 'browser', None)
+    control = getattr(browser, 'webview', None)
+    if control is None or not hasattr(control, 'NavigationStarting'):
+        raise RuntimeError('native_navigation_boundary_unavailable')
+    pending_bootstrap = True
+
+    def on_navigation_start(_, event):
+        nonlocal pending_bootstrap
+        uri = str(event.Uri)
+        if uri == 'about:blank':
+            return
+        if pending_bootstrap:
+            pending_bootstrap = False
+            if uri == trusted_bootstrap:
+                return
+        if not navigation_allowed(uri, allowed_origin):
+            event.Cancel = True
+            (marker_dir / 'navigation-blocked').write_text('blocked', encoding='ascii')
+
+    control.NavigationStarting += on_navigation_start
+
+
+def create_guarded_window(real_create_window, allowed_origin: str, marker_dir: Path,
+                          *window_args, **window_kwargs):
+    """Use pywebview's zero-argument before_show callback contract.
+
+    The initial authenticated bootstrap fragment is allowed exactly once, for
+    the exact known URL only. All later fragment/navigation attempts are gated.
     """
+    initial_url = window_kwargs.get('url')
+    if not valid_initial_bootstrap(initial_url, allowed_origin):
+        raise RuntimeError('unexpected_native_bootstrap')
+    window = real_create_window(*window_args, **window_kwargs)
+
+    def before_show():
+        install_native_navigation_veto(window, allowed_origin, marker_dir, initial_url)
+
+    window.events.before_show += before_show
+    return window
+
+
+def guarded_open_window(*args, **kwargs):
+    """Spawn-target wrapper adding the Windows WebView2 veto and owner-death exit."""
     import multiprocessing as mp
     import webview
     allowed_origin = os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN']
@@ -51,25 +109,8 @@ def guarded_open_window(*args, **kwargs):
     real_create_window = webview.create_window
 
     def create_window(*window_args, **window_kwargs):
-        window = real_create_window(*window_args, **window_kwargs)
-
-        def install_navigation_veto(current):
-            form = current.native
-            browser = getattr(form, 'browser', None)
-            control = getattr(browser, 'webview', None)
-            if control is None or not hasattr(control, 'NavigationStarting'):
-                raise RuntimeError('native_navigation_boundary_unavailable')
-
-            def on_navigation_start(_, event):
-                uri = str(event.Uri)
-                if not navigation_allowed(uri, allowed_origin):
-                    event.Cancel = True
-                    (marker_dir / 'navigation-blocked').write_text('blocked', encoding='ascii')
-
-            control.NavigationStarting += on_navigation_start
-
-        window.events.before_show += install_navigation_veto
-        return window
+        return create_guarded_window(real_create_window, allowed_origin, marker_dir,
+                                     *window_args, **window_kwargs)
 
     webview.create_window = create_window
 
@@ -122,6 +163,7 @@ def run(args):
         report['candidates'] = expected
         token = os.environ.pop('RESEARCHY_PROTOTYPE_LAUNCH')
         session = LaunchSession(args.port, token)
+        expected_bootstrap = session.origin + '/bootstrap#' + token
         del token
         os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN'] = session.origin
         os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'] = str(args.directory)
@@ -289,7 +331,7 @@ def run(args):
                 native_mode._open_window = guarded_open_window
                 # Fragment is never part of an HTTP request or evidence artifact.
                 launch = os.environ.pop('RESEARCHY_PROTOTYPE_NATIVE_URL')
-                if not launch.startswith(session.origin + '/bootstrap#'):
+                if launch != expected_bootstrap:
                     raise ValueError('invalid_native_bootstrap')
                 app.native.window_args.update(url=launch)
                 app.native.start_args.update(gui='edgechromium', private_mode=True, debug=False)

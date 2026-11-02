@@ -99,8 +99,16 @@ NiceGUI/pywebview files or claim a cross-platform navigation policy.
 The native scenarios deliberately attempt an HTTPS navigation to an external
 invalid domain. The WebView2 event must set `Cancel=True`, record a bounded marker,
 and the current URL must remain on the owner loopback origin before any worker
-result is accepted. This complements the existing HTTP/Socket.IO guard; it does
-not make arbitrary same-origin script execution safe.
+result is accepted. The initial `/bootstrap#<launch-token>` URL is exempted **once
+only**, using exact matching with the trusted launch URL and no other fragment
+exception. The initial PR #47 implementation failed on Windows because pywebview
+6.2.1 dispatches `before_show` with no arguments unless the callback parameter
+is named `window`, and because it rejected this required bootstrap fragment.
+The corrected callback takes zero arguments, closes over the created window, and
+registers the native veto before normal loading. Contract tests exercise that
+real callback signature, exact bootstrap rules and replay/foreign-navigation
+rejection. This complements the existing HTTP/Socket.IO guard; it does not make
+arbitrary same-origin script execution safe.
 
 A fourth Windows-native scenario starts slow synthetic work and then abruptly
 terminates **only the prototype host process**, not its process tree. Immediately
