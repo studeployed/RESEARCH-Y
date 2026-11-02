@@ -13,8 +13,10 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import time
 import traceback
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -22,6 +24,64 @@ sys.path.insert(0, str(ROOT / 'src'))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard
 
 INJECTION = '<img src=x onerror="window.__researchy_injected=true"> & literal text'
+
+
+def navigation_allowed(url: str, origin: str) -> bool:
+    """Allow only this prototype's HTTP origin (plus transient about:blank)."""
+    if url == 'about:blank':
+        return True
+    try:
+        target, owner = urlsplit(url), urlsplit(origin)
+    except (TypeError, ValueError):
+        return False
+    return (target.scheme == owner.scheme == 'http' and target.netloc == owner.netloc
+            and target.username is None and target.password is None and not target.fragment)
+
+
+def guarded_open_window(*args, **kwargs):
+    """Spawn-target wrapper adding a Windows WebView2 navigation veto and owner-death exit.
+
+    This runs inside NiceGUI's disposable native-window child. It intentionally uses
+    pywebview's Windows-native WebView2 object only for the feasibility experiment.
+    """
+    import multiprocessing as mp
+    import webview
+    allowed_origin = os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN']
+    marker_dir = Path(os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'])
+    real_create_window = webview.create_window
+
+    def create_window(*window_args, **window_kwargs):
+        window = real_create_window(*window_args, **window_kwargs)
+
+        def install_navigation_veto(current):
+            form = current.native
+            browser = getattr(form, 'browser', None)
+            control = getattr(browser, 'webview', None)
+            if control is None or not hasattr(control, 'NavigationStarting'):
+                raise RuntimeError('native_navigation_boundary_unavailable')
+
+            def on_navigation_start(_, event):
+                uri = str(event.Uri)
+                if not navigation_allowed(uri, allowed_origin):
+                    event.Cancel = True
+                    (marker_dir / 'navigation-blocked').write_text('blocked', encoding='ascii')
+
+            control.NavigationStarting += on_navigation_start
+
+        window.events.before_show += install_navigation_veto
+        return window
+
+    webview.create_window = create_window
+
+    def parent_watch():
+        parent = mp.parent_process()
+        if parent is not None:
+            parent.join()
+            os._exit(75)
+
+    threading.Thread(target=parent_watch, daemon=True, name='researchy-native-parent-watch').start()
+    from nicegui.native import native_mode
+    return native_mode._open_window(*args, **kwargs)
 
 
 def synthetic_work(command):
@@ -32,7 +92,7 @@ def synthetic_work(command):
     if command.project_name == 'synthetic-failure':
         time.sleep(.5)
         raise ApplicationCommandError('project_busy')
-    time.sleep(30 if command.project_name == 'synthetic-interrupt' else 3)
+    time.sleep(30 if command.project_name in ('synthetic-interrupt', 'synthetic-abrupt') else 3)
     return {'synthetic': True, 'search_complete': False, 'audited_export': False}
 
 
@@ -63,6 +123,8 @@ def run(args):
         token = os.environ.pop('RESEARCHY_PROTOTYPE_LAUNCH')
         session = LaunchSession(args.port, token)
         del token
+        os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN'] = session.origin
+        os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'] = str(args.directory)
         from nicegui import app, ui
         from research_y import application_worker as worker
         from research_y.application_commands import ApplicationCommand
@@ -149,6 +211,15 @@ def run(args):
                     report['native_checks']['literal_text_not_markup'] = True
                     report['native_checks']['launch_fragment_removed'] = True
                     report['native_checks']['cookie_httponly'] = True
+                    # Prove the Windows-native WebView2 NavigationStarting veto cancels
+                    # an attempted departure before the document leaves our origin.
+                    await js("location.href='https://example.invalid/research-y-probe'; true")
+                    await until(lambda: (args.directory / 'navigation-blocked').is_file(), timeout=8)
+                    await asyncio.sleep(.2)
+                    current_url = await asyncio.wait_for(app.native.main_window.get_current_url(), timeout=8)
+                    if not current_url.startswith(session.origin + '/'):
+                        raise RuntimeError('external_navigation_escape')
+                    report['native_checks']['external_navigation_blocked'] = True
                     # Real browser clicks through NiceGUI's Socket.IO event route.
                     await js("document.querySelector('[data-testid=start]').click(); "
                              "document.querySelector('[data-testid=start]').click(); true")
@@ -167,11 +238,15 @@ def run(args):
                             raise RuntimeError('native_responsiveness_not_observed')
                         report['native_checks']['rendered_heartbeat_during_worker'] = True
                         report['native_checks']['heartbeat_delta'] = after - before
-                    if args.scenario != 'interrupt':
+                    if args.scenario not in ('interrupt', 'abrupt'):
                         await until(lambda: refresh()['state'] != 'running')
                         expected_state = 'failed' if args.scenario == 'failure' else 'returned'
                         if stats['state'] != expected_state:
                             raise RuntimeError('unexpected_worker_outcome')
+                    if args.scenario == 'abrupt':
+                        (args.directory / 'abrupt-ready').write_text('ready', encoding='ascii')
+                        await asyncio.sleep(60)
+                        raise RuntimeError('abrupt_host_death_not_initiated')
                     report['state'] = 'native_experiment_observed'
                 except Exception as exc:
                     report['state'] = 'failed'
@@ -208,6 +283,10 @@ def run(args):
             app.on_startup(startup)
             app.on_shutdown(shutdown)
             if args.mode == 'native':
+                # Replace NiceGUI's native child target only inside this disposable
+                # process; production framework code and installed packages are untouched.
+                from nicegui.native import native_mode
+                native_mode._open_window = guarded_open_window
                 # Fragment is never part of an HTTP request or evidence artifact.
                 launch = os.environ.pop('RESEARCHY_PROTOTYPE_NATIVE_URL')
                 if not launch.startswith(session.origin + '/bootstrap#'):
@@ -233,7 +312,7 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode', choices=('transport', 'native'), required=True)
-    parser.add_argument('--scenario', choices=('complete', 'interrupt', 'failure'), required=True)
+    parser.add_argument('--scenario', choices=('complete', 'interrupt', 'failure', 'abrupt'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))

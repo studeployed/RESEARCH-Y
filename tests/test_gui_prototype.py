@@ -11,6 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard, BOOTSTRAP_HTML, SOCKET_PATH
+from tools.gui_feasibility.prototype_app import navigation_allowed
 from tools.gui_feasibility.run_prototype import validate_result, environment, ExperimentFailure
 
 TOKEN = 'a' * 64
@@ -231,6 +232,39 @@ def test_driver_does_not_inherit_source_secrets_or_python_injection(tmp_path, mo
     assert all(key not in env for key in ('RESEARCHY_WOS_STARTER_API_KEY', 'GITHUB_TOKEN', 'PYTHONSTARTUP'))
     assert env['RESEARCHY_PROTOTYPE_LAUNCH'] == TOKEN
     assert 'RESEARCHY_PROTOTYPE_NATIVE_URL' not in env
+
+
+@pytest.mark.parametrize('url', [
+    'http://127.0.0.1:18765/',
+    'http://127.0.0.1:18765/_nicegui/3.18.0/static/app.js',
+    'about:blank',
+])
+def test_native_navigation_policy_allows_only_owner_origin(url):
+    assert navigation_allowed(url, 'http://127.0.0.1:18765')
+
+
+@pytest.mark.parametrize('url', [
+    'https://example.invalid/', 'http://127.0.0.1:18766/', 'file:///C:/private',
+    'data:text/html,owned', 'javascript:alert(1)', 'http://user@127.0.0.1:18765/',
+    'http://127.0.0.1:18765/#fragment', '//example.invalid/path', '', None,
+])
+def test_native_navigation_policy_rejects_external_or_ambiguous_urls(url):
+    assert not navigation_allowed(url, 'http://127.0.0.1:18765')
+
+
+def test_native_prototype_contains_pre_navigation_veto_and_owner_death_watch():
+    text = (ROOT / 'tools/gui_feasibility/prototype_app.py').read_text(encoding='utf-8')
+    assert 'NavigationStarting' in text and 'event.Cancel = True' in text
+    assert "native_mode._open_window = guarded_open_window" in text
+    assert "parent.join()" in text and "os._exit(75)" in text
+
+
+def test_driver_abrupt_case_kills_only_host_before_verifying_descendant_exit():
+    text = (ROOT / 'tools/gui_feasibility/run_prototype.py').read_text(encoding='utf-8')
+    block = text[text.index('def run_abrupt_native_case'):text.index('def validate_result')]
+    assert "['taskkill', '/PID', str(process.pid), '/F']" in block
+    assert "['taskkill', '/PID', str(process.pid), '/T', '/F']" not in block
+    assert 'descendant_pids(process.pid)' in block and 'descendants_remaining=0' in block
 
 
 def test_experiment_does_not_adopt_packages_or_accept_browser_paths():

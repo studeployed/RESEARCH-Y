@@ -159,6 +159,28 @@ def transport_checks(port, token, scenario):
     return checks
 
 
+def windows_process_table():
+    if os.name != 'nt':
+        return {}
+    script = ("Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | "
+              "ConvertTo-Json -Compress")
+    raw = subprocess.check_output(['powershell', '-NoProfile', '-Command', script],
+                                  text=True, timeout=15)
+    value = json.loads(raw)
+    rows = value if isinstance(value, list) else [value]
+    return {int(row['ProcessId']): int(row['ParentProcessId']) for row in rows}
+
+
+def descendant_pids(root_pid):
+    table = windows_process_table()
+    found, frontier = set(), {int(root_pid)}
+    while frontier:
+        children = {pid for pid, parent in table.items() if parent in frontier and pid not in found}
+        found.update(children)
+        frontier = children
+    return found
+
+
 def stop_owned_process(process):
     if process.poll() is None:
         if os.name == 'nt':
@@ -168,6 +190,58 @@ def stop_owned_process(process):
             import signal
             os.killpg(process.pid, signal.SIGKILL)
         process.wait(timeout=10)
+
+
+def run_abrupt_native_case():
+    require(os.name == 'nt', 'abrupt_native_windows_required')
+    token, port = secrets.token_hex(32), free_port()
+    outcome = {'mode': 'native', 'scenario': 'abrupt', 'passed': False}
+    with tempfile.TemporaryDirectory(prefix='researchy-gui-abrupt-') as directory:
+        root = Path(directory)
+        app_dir = root / 'app'
+        marker = app_dir / 'abrupt-ready'
+        navigation_marker = app_dir / 'navigation-blocked'
+        with (root / 'private-process.log').open('wb') as log:
+            process = subprocess.Popen([sys.executable, str(APP), '--mode', 'native', '--scenario', 'abrupt',
+                        '--port', str(port), '--directory', str(app_dir)], cwd=root,
+                        env=environment(root, port, token, True), stdout=log, stderr=log)
+            captured = set()
+            try:
+                wait_until(marker.is_file, timeout=60)
+                require(navigation_marker.is_file(), 'native_navigation_veto_not_observed_before_abrupt')
+                captured = descendant_pids(process.pid)
+                require(len(captured) >= 2, 'owned_descendants_not_observed')
+                outcome['descendants_before'] = len(captured)
+                # Kill only the host process. Worker/native-window descendants must
+                # terminate through their own parent-death ownership boundaries.
+                subprocess.run(['taskkill', '/PID', str(process.pid), '/F'],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=10, check=False)
+                process.wait(timeout=10)
+                def remaining():
+                    table = windows_process_table()
+                    return sorted(pid for pid in captured if pid in table)
+                wait_until(lambda: not remaining(), timeout=15)
+                with socket.socket() as sock:
+                    sock.settimeout(2)
+                    require(sock.connect_ex(('127.0.0.1', port)) != 0, 'listener_survived_abrupt_host_death')
+                outcome.update(navigation_blocked=True, descendants_remaining=0,
+                               listener_closed=True, passed=True)
+            except Exception as exc:
+                outcome['error'] = str(exc) if isinstance(exc, ExperimentFailure) else type(exc).__name__
+                if captured:
+                    outcome['descendants_remaining'] = len([p for p in captured if p in windows_process_table()])
+            finally:
+                if process.poll() is None:
+                    stop_owned_process(process)
+                if captured:
+                    leftovers = [pid for pid in captured if pid in windows_process_table()]
+                    for pid in leftovers:
+                        subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                       timeout=10, check=False)
+    require(token not in json.dumps(outcome), 'launch_secret_in_evidence')
+    return outcome
 
 
 def validate_result(report, mode, scenario):
@@ -187,7 +261,8 @@ def validate_result(report, mode, scenario):
         require(shutdown.get('operation_error') == 'project_busy', 'failure_not_preserved')
     if mode == 'native':
         keys = ['loaded_authenticated_page', 'literal_text_not_markup', 'launch_fragment_removed',
-                'cookie_httponly', 'browser_clicks_received', 'active_clicks_coalesced']
+                'cookie_httponly', 'external_navigation_blocked',
+                'browser_clicks_received', 'active_clicks_coalesced']
         if scenario != 'failure':
             keys.append('rendered_heartbeat_during_worker')
         require(all(report.get('native_checks', {}).get(key) is True for key in keys), 'native_checks_missing')
@@ -236,13 +311,15 @@ def main(argv=None):
     require(not args.native or sys.platform == 'win32', 'native_windows_required')
     modes = ['transport'] + (['native'] if args.native else [])
     results = [run_case(mode, scenario) for mode in modes for scenario in ('complete', 'failure', 'interrupt')]
+    if args.native:
+        results.append(run_abrupt_native_case())
     evidence = {'format': 'research-y-gui-prototype-driver-v1', 'results': results,
         'created_at_utc': datetime.now(timezone.utc).isoformat(),
         'passed': all(item['passed'] for item in results), 'gui_acceptance': False,
         'production_adoption_approved': False,
         'limitations': ['Synthetic worker service, not a real project/export workflow.',
-            'Native navigation veto and abrupt host/native-window death remain separate tests.',
-            'Listener and supervised worker cleanup do not inventory every WebView2 helper process.',
+            'External navigation veto is Windows-native prototype evidence, not a cross-platform browser policy.',
+            'Abrupt-host cleanup inventories only descendants observed immediately before termination; PID reuse is bounded by the short check window.',
             'No 100,000-record, installer, complete dependency security or licence acceptance.']}
     args.directory.mkdir(parents=True, exist_ok=True)
     (args.directory / 'prototype-evidence.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n',
