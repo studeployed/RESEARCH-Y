@@ -50,7 +50,7 @@ class LaunchSession:
         self._closed = False
         # Only safe stage names, never tokens, cookies, paths or request data.
         self._startup_stages = {
-            'bootstrap_served': False, 'session_attempted': False,
+            'native_http_ready': False, 'bootstrap_served': False, 'session_attempted': False,
             'session_redeemed': False, 'page_accepted': False,
             'socket_allowed': False,
         }
@@ -132,7 +132,11 @@ class PrototypeGuard:
         if (socket or method not in ('GET', 'HEAD')) and headers.get(b'origin') != origin:
             return await self._reject(kind, send)
         if kind == 'http' and path == '/bootstrap' and method == 'GET':
-            self.session.note_startup_stage('bootstrap_served')
+            # Test-only native readiness uses the same unauthenticated page
+            # without consuming the launch secret or mimicking a browser load.
+            self.session.note_startup_stage(
+                'native_http_ready' if headers.get(b'x-researchy-native-readiness') == b'1'
+                else 'bootstrap_served')
             return await self._reply(send, 200, BOOTSTRAP_HTML, content_type=b'text/html; charset=utf-8')
         if kind == 'http' and path == '/session' and method == 'POST':
             self.session.note_startup_stage('session_attempted')
