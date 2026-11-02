@@ -103,15 +103,24 @@ class RecentProjects:
                 with closing(sqlite3.connect(str(self.path), timeout=5)) as db:
                     db.execute('PRAGMA busy_timeout=5000')
                     if not existing:
+                        # Multiple GUI hosts may race to create their private
+                        # catalog. BEGIN IMMEDIATE serialises first use; the
+                        # second creator re-reads the header after acquiring
+                        # the lock instead of trying to recreate the table.
                         db.execute('BEGIN IMMEDIATE')
-                        db.execute(f'PRAGMA application_id={APPLICATION_ID}')
-                        db.execute('''CREATE TABLE recent_projects (
-                            project_uuid TEXT PRIMARY KEY,
-                            project_name TEXT NOT NULL,
-                            project_root TEXT NOT NULL,
-                            visited_ns INTEGER NOT NULL CHECK(visited_ns > 0)
-                        )''')
-                        db.execute(f'PRAGMA user_version={FORMAT_VERSION}')
+                        app_id = db.execute('PRAGMA application_id').fetchone()[0]
+                        version = db.execute('PRAGMA user_version').fetchone()[0]
+                        if (app_id, version) == (0, 0):
+                            db.execute(f'PRAGMA application_id={APPLICATION_ID}')
+                            db.execute('''CREATE TABLE recent_projects (
+                                project_uuid TEXT PRIMARY KEY,
+                                project_name TEXT NOT NULL,
+                                project_root TEXT NOT NULL,
+                                visited_ns INTEGER NOT NULL CHECK(visited_ns > 0)
+                            )''')
+                            db.execute(f'PRAGMA user_version={FORMAT_VERSION}')
+                        elif (app_id, version) != (APPLICATION_ID, FORMAT_VERSION):
+                            raise RecentProjectsError()
                         db.commit()
                         if os.name != 'nt':
                             os.chmod(self.path, 0o600)
