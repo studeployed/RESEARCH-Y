@@ -160,15 +160,64 @@ def transport_checks(port, token, scenario):
 
 
 def windows_process_table():
+    """One native Toolhelp snapshot of process parent links.
+
+    Avoid spawning PowerShell and querying CIM every 50 ms while checking
+    abrupt-host cleanup. No extra runtime dependency, increased timeout,
+    excluded process type or softened descendant-exit requirement.
+    """
     if os.name != 'nt':
         return {}
-    script = ("Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | "
-              "ConvertTo-Json -Compress")
-    raw = subprocess.check_output(['powershell', '-NoProfile', '-Command', script],
-                                  text=True, timeout=15)
-    value = json.loads(raw)
-    rows = value if isinstance(value, list) else [value]
-    return {int(row['ProcessId']): int(row['ParentProcessId']) for row in rows}
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessEntry(ctypes.Structure):
+        _fields_ = [
+            ('dwSize', wintypes.DWORD),
+            ('cntUsage', wintypes.DWORD),
+            ('th32ProcessID', wintypes.DWORD),
+            ('th32DefaultHeapID', ctypes.c_size_t),
+            ('th32ModuleID', wintypes.DWORD),
+            ('cntThreads', wintypes.DWORD),
+            ('th32ParentProcessID', wintypes.DWORD),
+            ('pcPriClassBase', wintypes.LONG),
+            ('dwFlags', wintypes.DWORD),
+            ('szExeFile', wintypes.WCHAR * 260),
+        ]
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreateToolhelp32Snapshot
+    create.argtypes = (wintypes.DWORD, wintypes.DWORD)
+    create.restype = wintypes.HANDLE
+    first = kernel.Process32FirstW
+    first.argtypes = (wintypes.HANDLE, ctypes.POINTER(ProcessEntry))
+    first.restype = wintypes.BOOL
+    next_process = kernel.Process32NextW
+    next_process.argtypes = (wintypes.HANDLE, ctypes.POINTER(ProcessEntry))
+    next_process.restype = wintypes.BOOL
+    close = kernel.CloseHandle
+    close.argtypes = (wintypes.HANDLE,)
+    close.restype = wintypes.BOOL
+
+    handle = create(0x00000002, 0)  # TH32CS_SNAPPROCESS, machine-local processes
+    if handle is None or handle == ctypes.c_void_p(-1).value:
+        raise OSError('process_snapshot_unavailable')
+    try:
+        entry = ProcessEntry()
+        entry.dwSize = ctypes.sizeof(ProcessEntry)
+        if not first(handle, ctypes.byref(entry)):
+            raise OSError('process_snapshot_first_failed')
+        result = {}
+        while True:
+            result[int(entry.th32ProcessID)] = int(entry.th32ParentProcessID)
+            if not next_process(handle, ctypes.byref(entry)):
+                if ctypes.get_last_error() != 18:  # ERROR_NO_MORE_FILES
+                    raise OSError('process_snapshot_incomplete')
+                break
+        return result
+    finally:
+        if not close(handle):
+            raise OSError('process_snapshot_close_failed')
 
 
 def descendant_pids(root_pid):
@@ -206,22 +255,28 @@ def run_abrupt_native_case():
                         '--port', str(port), '--directory', str(app_dir)], cwd=root,
                         env=environment(root, port, token, True), stdout=log, stderr=log)
             captured = set()
+            stage = 'await_native_ready'
             try:
                 wait_until(marker.is_file, timeout=60)
                 require(navigation_marker.is_file(), 'native_navigation_veto_not_observed_before_abrupt')
+                stage = 'inventory_owned_descendants'
                 captured = descendant_pids(process.pid)
                 require(len(captured) >= 2, 'owned_descendants_not_observed')
                 outcome['descendants_before'] = len(captured)
                 # Kill only the host process. Worker/native-window descendants must
                 # terminate through their own parent-death ownership boundaries.
+                stage = 'kill_host_pid_only'
                 subprocess.run(['taskkill', '/PID', str(process.pid), '/F'],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                timeout=10, check=False)
+                stage = 'verify_host_exit'
                 process.wait(timeout=10)
                 def remaining():
                     table = windows_process_table()
                     return sorted(pid for pid in captured if pid in table)
+                stage = 'verify_owned_descendant_exit'
                 wait_until(lambda: not remaining(), timeout=15)
+                stage = 'verify_listener_exit'
                 with socket.socket() as sock:
                     sock.settimeout(2)
                     require(sock.connect_ex(('127.0.0.1', port)) != 0, 'listener_survived_abrupt_host_death')
@@ -229,6 +284,7 @@ def run_abrupt_native_case():
                                listener_closed=True, passed=True)
             except Exception as exc:
                 outcome['error'] = str(exc) if isinstance(exc, ExperimentFailure) else type(exc).__name__
+                outcome['failed_stage'] = stage
                 if captured:
                     outcome['descendants_remaining'] = len([p for p in captured if p in windows_process_table()])
             finally:
