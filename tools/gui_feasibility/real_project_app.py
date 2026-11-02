@@ -59,6 +59,8 @@ def run(args):
         finished = asyncio.Event()
         sequence = (('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
                     if args.scenario == 'publish' else
+                    ('open', 'select_run', 'prepare', 'cancel', 'observe')
+                    if args.scenario == 'cancel' else
                     ('open', 'select_run', 'select_export', 'observe'))
         action_lock = asyncio.Lock()
         select_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_RUN_ID')
@@ -80,6 +82,8 @@ def run(args):
                             return flow.prepare()
                         if name == 'resume':
                             return flow.resume()
+                        if name == 'cancel':
+                            return flow.cancel()
                         if name == 'observe':
                             return flow.observe()
                         raise ProjectFlowError('unsupported_action')
@@ -142,8 +146,21 @@ def run(args):
                              state['selected_run_id'] + '.xlsx')
                     ui.button('Prepare strategy workbook',
                               on_click=lambda: act('prepare')).props('data-testid=prepare')
+                if state['export_reconciliation_required']:
+                    ui.label('Preparation outcome unconfirmed. Retry uses the original pending request ID; do not start another export.').props('data-testid=recovery-required')
                 if state['selected_export_id'] is not None:
-                    ui.button('Resume publication', on_click=lambda: act('resume')).props('data-testid=resume')
+                    saved = next((item for item in state['exports']
+                                  if item['export_id'] == state['selected_export_id']), None)
+                    if saved is None:
+                        ui.label('Export inventory unavailable — reinspection required.').props('data-testid=export-missing')
+                    else:
+                        ui.label('Recorded export phase: ' + saved['recorded_state']).props('data-testid=export-phase')
+                        if saved['last_error'] is not None:
+                            ui.label('Recorded export error: ' + saved['last_error']).props('data-testid=export-error')
+                        if saved['recorded_state'] not in ('cancelled', 'published'):
+                            ui.button('Cancel pending export', on_click=lambda: act('cancel')).props('data-testid=cancel')
+                        if saved['recorded_state'] != 'cancelled':
+                            ui.button('Resume publication', on_click=lambda: act('resume')).props('data-testid=resume')
                     ui.button('Verify workbook', on_click=lambda: act('observe')).props('data-testid=observe')
                     ui.label('Export request ID: ' + state['selected_export_id']).props('data-testid=export-id')
                 retained = state['retained_export_report']
@@ -208,7 +225,8 @@ def run(args):
                 await until(lambda: session.redeemed and clients and clients[-1].has_socket_connection)
                 for index, action in enumerate(sequence):
                     name = {'open': 'open', 'select_run': 'select-run', 'select_export': 'select-export',
-                            'prepare': 'prepare', 'resume': 'resume', 'observe': 'observe'}[action]
+                            'prepare': 'prepare', 'resume': 'resume', 'cancel': 'cancel',
+                            'observe': 'observe'}[action]
                     await until(lambda: bool(clients) and not action_lock.locked())
                     await until_native_button(name, js)
                     await js("document.querySelector('[data-testid=" + name + "]').click(); true")
@@ -218,7 +236,11 @@ def run(args):
                         raise RuntimeError('native_action_failed')
                 await until(lambda: flow.state()['observation'] is not None)
                 current = flow.state()
-                if current['observation']['outcome'] != 'published_verified':
+                expected_outcome = ('recorded_cancelled' if args.scenario in
+                                    ('cancel', 'cancel_reopen') else 'published_verified')
+                if (current['observation']['outcome'] != expected_outcome or
+                        current['observation']['audited_success'] is not
+                        (expected_outcome == 'published_verified')):
                     raise RuntimeError('native_not_verified')
                 check = await js("JSON.stringify({incomplete: document.querySelector('[data-testid=incomplete]').textContent,"
                                  "query: document.querySelector('[data-testid=exact-query]').textContent,"
@@ -305,7 +327,7 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=('transport', 'native'), required=True)
-    parser.add_argument('--scenario', choices=('publish', 'reopen'), required=True)
+    parser.add_argument('--scenario', choices=('publish', 'reopen', 'cancel', 'cancel_reopen'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))
