@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard, BOOTSTRAP_HTML, SOCKET_PATH
 from tools.gui_feasibility.prototype_app import (navigation_allowed, valid_initial_bootstrap,
-    create_guarded_window, read_native_document)
+    create_guarded_window, read_native_document, wait_for_native_http_ready)
 from tools.gui_feasibility.run_prototype import (validate_result, environment,
     ExperimentFailure, windows_process_table)
 
@@ -257,6 +257,85 @@ def test_native_navigation_policy_allows_only_owner_origin(url):
 def test_native_navigation_policy_rejects_external_or_ambiguous_urls(url):
     assert not navigation_allowed(url, 'http://127.0.0.1:18765')
 
+
+
+def test_native_http_preflight_waits_for_real_bootstrap_without_spending_token(monkeypatch):
+    from tools.gui_feasibility import prototype_app as prototype
+    probes = []
+    class Response:
+        status = 200
+        def read(self, length):
+            assert length == 8192
+            return BOOTSTRAP_HTML
+    class Connection:
+        def __init__(self, host, port, timeout):
+            assert (host, port) == ('127.0.0.1', PORT)
+            assert 0 < timeout <= 1
+        def request(self, method, path, headers):
+            probes.append((method, path, headers))
+        def getresponse(self):
+            return Response()
+        def close(self):
+            probes.append(('closed',))
+    monkeypatch.setattr(prototype.http.client, 'HTTPConnection', Connection)
+    wait_for_native_http_ready(f'http://127.0.0.1:{PORT}', seconds=.2)
+    assert probes == [
+        ('GET', '/bootstrap', {'X-ResearchY-Native-Readiness': '1'}),
+        ('closed',),
+    ]
+    session = LaunchSession(PORT, TOKEN)
+    sent, reached = call(session=session, path='/bootstrap', headers=[
+        (b'x-researchy-native-readiness', b'1')])
+    assert sent[0]['status'] == 200 and not reached
+    assert session.startup_stages()['native_http_ready']
+    assert not session.startup_stages()['bootstrap_served']
+    assert not session.redeemed
+    assert session.redeem(TOKEN.encode('ascii')) is not None
+
+
+@pytest.mark.parametrize('origin', [
+    'https://127.0.0.1:18765', 'http://localhost:18765',
+    'http://127.0.0.1:80', 'http://127.0.0.1:0',
+    'http://user@127.0.0.1:18765',
+    'http://127.0.0.1:18765/other', 'http://127.0.0.1:18765/#token',
+])
+def test_native_http_preflight_refuses_untrusted_origins(origin):
+    with pytest.raises(ValueError, match='native_readiness_origin_invalid'):
+        wait_for_native_http_ready(origin, seconds=.01)
+
+
+def test_native_http_preflight_fails_closed_if_only_port_not_route_is_ready(monkeypatch):
+    from tools.gui_feasibility import prototype_app as prototype
+    class Response:
+        status = 404
+        def read(self, length):
+            return b''
+    class Connection:
+        def __init__(self, *args, **kwargs):
+            pass
+        def request(self, *args, **kwargs):
+            pass
+        def getresponse(self):
+            return Response()
+        def close(self):
+            pass
+    monkeypatch.setattr(prototype.http.client, 'HTTPConnection', Connection)
+    with pytest.raises(RuntimeError, match='native_http_bootstrap_unavailable'):
+        wait_for_native_http_ready(f'http://127.0.0.1:{PORT}', seconds=.02)
+
+
+def test_guard_bootstrap_progress_is_only_boolean_without_secrets():
+    session = LaunchSession(PORT, TOKEN)
+    assert all(value is False for value in session.startup_stages().values())
+    assert call(session=session, path='/bootstrap')[0][0]['status'] == 200
+    assert session.startup_stages()['bootstrap_served']
+    assert not session.startup_stages()['session_redeemed']
+    session.redeem(TOKEN.encode('ascii'))
+    # Stage snapshot never includes tokens, project data or cookie values.
+    status = json.dumps(session.startup_stages())
+    assert TOKEN not in status and all(type(v) is bool for v in session.startup_stages().values())
+    with pytest.raises(ValueError, match='unknown_startup_stage'):
+        session.note_startup_stage('unsafe_user_data')
 
 
 def test_initial_native_bootstrap_requires_exact_origin_route_and_token():
