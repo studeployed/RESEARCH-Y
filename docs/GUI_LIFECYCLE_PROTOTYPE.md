@@ -87,12 +87,54 @@ header rejection, evidence fail-closed rules and child-environment isolation.
 They do **not** import NiceGUI or prove native execution. Actual framework and
 Windows outcomes must be read from the new workflow, not inferred from unit tests.
 
+## P1-06e2d follow-on safety experiment
+
+After owner-merged PR #46, the approved prototype is extended without changing
+production dependencies or application services. On Windows the disposable
+NiceGUI native-window spawn target is wrapped so pywebview's underlying WebView2
+`NavigationStarting` event can cancel a navigation before it leaves the exact
+loopback origin. The wrapper is experiment-only: it does not modify installed
+NiceGUI/pywebview files or claim a cross-platform navigation policy.
+
+The native scenarios deliberately attempt an HTTPS navigation to an external
+invalid domain. The WebView2 event must set `Cancel=True`, record a bounded marker,
+and the current URL must remain on the owner loopback origin before any worker
+result is accepted. The initial `/bootstrap#<launch-token>` URL is exempted **once
+only**, using exact matching with the trusted launch URL and no other fragment
+exception. The initial PR #47 implementation failed on Windows because pywebview
+6.2.1 dispatches `before_show` with no arguments unless the callback parameter
+is named `window`, and because it rejected this required bootstrap fragment.
+The corrected callback takes zero arguments, closes over the created window, and
+registers the native veto before normal loading. Contract tests exercise that
+real callback signature, exact bootstrap rules and replay/foreign-navigation
+rejection. The following amended Windows run (#41423245865) passed all seven
+scenarios with Python 3.12 but passed six of seven with Python 3.13. Its sole
+failure was an intermittent `None` returned by pywebview's JS bridge during
+initial native document inspection, before the worker had begun. The experiment
+now retries **only that unavailable-bridge result** under the original eight-
+second readiness limit, and requires a fully validated document snapshot before
+any native success; malformed or unexpected responses fail immediately. Contract
+tests prove transient recovery and permanent/unexpected failures remain rejected.
+This complements the existing HTTP/Socket.IO guard; it does not make
+arbitrary same-origin script execution safe.
+
+A fourth Windows-native scenario starts slow synthetic work and then abruptly
+terminates **only the prototype host process**, not its process tree. Immediately
+before termination the driver inventories the host's current Windows descendants.
+The existing worker parent-death watcher and the experiment's native-window
+parent-death watcher must then make every captured descendant disappear without
+`taskkill /T`. The listener must also close. Tree-kill is retained only as failure
+cleanup after evidence collection, not as the pass mechanism. This observes the
+native window, worker and any currently owned WebView2 helpers that are descendants
+at the capture point; it is not a universal proof against later PID reuse or every
+future packaging topology.
+
 ## Still open after this increment
 
-- Native external-navigation veto, abrupt host/native-window death, full browser
-  session/reconnection adversarial cases, and a complete WebView2 descendant-process
-  inventory. A stopped listener/worker is not proof of every web-engine helper's
-  cleanup. No real project should be wired in until these boundaries are verified.
+- Full browser session/reconnection adversarial cases and production-grade
+  navigation ownership. The Windows WebView2 veto is prototype evidence, not yet
+  adopted production code. No real project should be wired in until the evidence
+  from this increment has passed review.
 - Real trusted new/open/path selection and the complete project/run/workbook flow,
   including retained-ID export recovery and real data/disk failure cases.
 - Source-build inputs (including proxy-tools), reproducible built wheels, complete
@@ -103,9 +145,9 @@ Windows outcomes must be read from the new workflow, not inferred from unit test
 - Offline installation, complete offline asset enumeration, packaged Windows
   prerequisites, accessibility and representative large-dataset responsiveness.
 
-Continue #43 rather than opening another placeholder issue. Next is the native
-navigation/abrupt-exit boundary and real project adapter once actual observations
-and dependency-review gaps allow it, within the granted prototype approval. New
+Continue #43 rather than opening another placeholder issue. After the
+navigation/abrupt-exit evidence is accepted, next is the trusted real-project
+adapter plus the unresolved dependency/licence review, within the granted prototype approval. New
 material dependencies, changed requirements, production adoption and merges remain
 gated. Never treat an automatically successful-looking review summary as definitive
 without its completion record, matching commit and individual receipt.

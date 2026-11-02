@@ -7,14 +7,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 from importlib.metadata import version
 import json
 import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import time
 import traceback
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -22,6 +25,137 @@ sys.path.insert(0, str(ROOT / 'src'))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard
 
 INJECTION = '<img src=x onerror="window.__researchy_injected=true"> & literal text'
+
+
+def navigation_allowed(url: str, origin: str) -> bool:
+    """Allow the exact local HTTP origin; never allow arbitrary URL fragments."""
+    if url == 'about:blank':
+        return True
+    if type(url) is not str or type(origin) is not str:
+        return False
+    try:
+        target, owner = urlsplit(url), urlsplit(origin)
+    except (TypeError, ValueError):
+        return False
+    return (target.scheme == owner.scheme == 'http' and target.netloc == owner.netloc
+            and target.username is None and target.password is None and not target.fragment)
+
+
+def valid_initial_bootstrap(url: str, origin: str) -> bool:
+    """Permit only a well-formed, one-use launch URL at the trusted local origin."""
+    if type(url) is not str or type(origin) is not str:
+        return False
+    try:
+        target, owner = urlsplit(url), urlsplit(origin)
+    except (TypeError, ValueError):
+        return False
+    return (target.scheme == owner.scheme == 'http' and target.netloc == owner.netloc
+            and target.username is None and target.password is None
+            and target.path == '/bootstrap' and not target.query
+            and re.fullmatch(r'[a-f0-9]{64}', target.fragment) is not None)
+
+
+def install_native_navigation_veto(window, allowed_origin: str, marker_dir: Path,
+                                   trusted_bootstrap: str) -> None:
+    """Attach the actual WebView2 pre-navigation gate; fail if it is unavailable."""
+    form = window.native
+    browser = getattr(form, 'browser', None)
+    control = getattr(browser, 'webview', None)
+    if control is None or not hasattr(control, 'NavigationStarting'):
+        raise RuntimeError('native_navigation_boundary_unavailable')
+    pending_bootstrap = True
+
+    def on_navigation_start(_, event):
+        nonlocal pending_bootstrap
+        uri = str(event.Uri)
+        if uri == 'about:blank':
+            return
+        if pending_bootstrap:
+            pending_bootstrap = False
+            if uri == trusted_bootstrap:
+                return
+        if not navigation_allowed(uri, allowed_origin):
+            event.Cancel = True
+            (marker_dir / 'navigation-blocked').write_text('blocked', encoding='ascii')
+
+    control.NavigationStarting += on_navigation_start
+
+
+def create_guarded_window(real_create_window, allowed_origin: str, marker_dir: Path,
+                          *window_args, **window_kwargs):
+    """Use pywebview's zero-argument before_show callback contract.
+
+    The initial authenticated bootstrap fragment is allowed exactly once, for
+    the exact known URL only. All later fragment/navigation attempts are gated.
+    """
+    initial_url = window_kwargs.get('url')
+    if not valid_initial_bootstrap(initial_url, allowed_origin):
+        raise RuntimeError('unexpected_native_bootstrap')
+    window = real_create_window(*window_args, **window_kwargs)
+
+    def before_show():
+        install_native_navigation_veto(window, allowed_origin, marker_dir, initial_url)
+
+    window.events.before_show += before_show
+    return window
+
+
+def guarded_open_window(*args, **kwargs):
+    """Spawn-target wrapper adding the Windows WebView2 veto and owner-death exit."""
+    import multiprocessing as mp
+    import webview
+    allowed_origin = os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN']
+    marker_dir = Path(os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'])
+    real_create_window = webview.create_window
+
+    def create_window(*window_args, **window_kwargs):
+        return create_guarded_window(real_create_window, allowed_origin, marker_dir,
+                                     *window_args, **window_kwargs)
+
+    webview.create_window = create_window
+
+    def parent_watch():
+        parent = mp.parent_process()
+        if parent is not None:
+            parent.join()
+            os._exit(75)
+
+    threading.Thread(target=parent_watch, daemon=True, name='researchy-native-parent-watch').start()
+    from nicegui.native import native_mode
+    return native_mode._open_window(*args, **kwargs)
+
+
+async def read_native_document(js, expression: str, *, seconds: float = 8.0):
+    """Require a real document snapshot; tolerate only a transient unavailable window.
+
+    The first Socket.IO client may connect before pywebview's native JS bridge
+    returns a value. A None response is not evidence of a loaded document. Retry
+    for a fixed finite window, then fail. Malformed/non-string responses fail
+    immediately rather than being treated as readiness.
+    """
+    deadline = time.monotonic() + seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('native_document_not_ready')
+        try:
+            value = await asyncio.wait_for(js(expression), timeout=remaining)
+        except asyncio.TimeoutError:
+            raise TimeoutError('native_document_not_ready') from None
+        if value is None:
+            await asyncio.sleep(min(0.1, max(0, deadline - time.monotonic())))
+            continue
+        if type(value) is not str:
+            raise RuntimeError('native_document_invalid_type')
+        try:
+            result = json.loads(value)
+        except (ValueError, TypeError):
+            raise RuntimeError('native_document_invalid_json') from None
+        if (type(result) is not dict or set(result) != {'text', 'injected', 'url', 'fragment', 'cookie'}
+                or type(result['text']) is not str or type(result['injected']) is not bool
+                or not all(type(result[key]) is str for key in ('url', 'fragment', 'cookie'))):
+            raise RuntimeError('native_document_invalid_shape')
+        return result
 
 
 def synthetic_work(command):
@@ -32,7 +166,7 @@ def synthetic_work(command):
     if command.project_name == 'synthetic-failure':
         time.sleep(.5)
         raise ApplicationCommandError('project_busy')
-    time.sleep(30 if command.project_name == 'synthetic-interrupt' else 3)
+    time.sleep(30 if command.project_name in ('synthetic-interrupt', 'synthetic-abrupt') else 3)
     return {'synthetic': True, 'search_complete': False, 'audited_export': False}
 
 
@@ -62,7 +196,10 @@ def run(args):
         report['candidates'] = expected
         token = os.environ.pop('RESEARCHY_PROTOTYPE_LAUNCH')
         session = LaunchSession(args.port, token)
+        expected_bootstrap = session.origin + '/bootstrap#' + token
         del token
+        os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN'] = session.origin
+        os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'] = str(args.directory)
         from nicegui import app, ui
         from research_y import application_worker as worker
         from research_y.application_commands import ApplicationCommand
@@ -136,11 +273,11 @@ def run(args):
             async def native_probe():
                 try:
                     await until(lambda: session.redeemed and clients and clients[-1].has_socket_connection)
-                    result = await js("JSON.stringify({text: document.querySelector('[data-testid=literal]').textContent, "
-                                      "injected: window.__researchy_injected === true, "
-                                      "url: location.pathname, fragment: location.hash, "
-                                      "cookie: document.cookie})")
-                    result = json.loads(result)
+                    result = await read_native_document(
+                        js, "JSON.stringify({text: document.querySelector('[data-testid=literal]').textContent, "
+                            "injected: window.__researchy_injected === true, "
+                            "url: location.pathname, fragment: location.hash, "
+                            "cookie: document.cookie})")
                     if result['text'] != INJECTION or result['injected'] or result['url'] != '/' or result['fragment']:
                         raise RuntimeError('native_literal_or_bootstrap_failed')
                     if session.cookie_name in result['cookie']:
@@ -149,6 +286,15 @@ def run(args):
                     report['native_checks']['literal_text_not_markup'] = True
                     report['native_checks']['launch_fragment_removed'] = True
                     report['native_checks']['cookie_httponly'] = True
+                    # Prove the Windows-native WebView2 NavigationStarting veto cancels
+                    # an attempted departure before the document leaves our origin.
+                    await js("location.href='https://example.invalid/research-y-probe'; true")
+                    await until(lambda: (args.directory / 'navigation-blocked').is_file(), timeout=8)
+                    await asyncio.sleep(.2)
+                    current_url = await asyncio.wait_for(app.native.main_window.get_current_url(), timeout=8)
+                    if not current_url.startswith(session.origin + '/'):
+                        raise RuntimeError('external_navigation_escape')
+                    report['native_checks']['external_navigation_blocked'] = True
                     # Real browser clicks through NiceGUI's Socket.IO event route.
                     await js("document.querySelector('[data-testid=start]').click(); "
                              "document.querySelector('[data-testid=start]').click(); true")
@@ -167,11 +313,15 @@ def run(args):
                             raise RuntimeError('native_responsiveness_not_observed')
                         report['native_checks']['rendered_heartbeat_during_worker'] = True
                         report['native_checks']['heartbeat_delta'] = after - before
-                    if args.scenario != 'interrupt':
+                    if args.scenario not in ('interrupt', 'abrupt'):
                         await until(lambda: refresh()['state'] != 'running')
                         expected_state = 'failed' if args.scenario == 'failure' else 'returned'
                         if stats['state'] != expected_state:
                             raise RuntimeError('unexpected_worker_outcome')
+                    if args.scenario == 'abrupt':
+                        (args.directory / 'abrupt-ready').write_text('ready', encoding='ascii')
+                        await asyncio.sleep(60)
+                        raise RuntimeError('abrupt_host_death_not_initiated')
                     report['state'] = 'native_experiment_observed'
                 except Exception as exc:
                     report['state'] = 'failed'
@@ -208,9 +358,13 @@ def run(args):
             app.on_startup(startup)
             app.on_shutdown(shutdown)
             if args.mode == 'native':
+                # Replace NiceGUI's native child target only inside this disposable
+                # process; production framework code and installed packages are untouched.
+                from nicegui.native import native_mode
+                native_mode._open_window = guarded_open_window
                 # Fragment is never part of an HTTP request or evidence artifact.
                 launch = os.environ.pop('RESEARCHY_PROTOTYPE_NATIVE_URL')
-                if not launch.startswith(session.origin + '/bootstrap#'):
+                if launch != expected_bootstrap:
                     raise ValueError('invalid_native_bootstrap')
                 app.native.window_args.update(url=launch)
                 app.native.start_args.update(gui='edgechromium', private_mode=True, debug=False)
@@ -233,7 +387,7 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode', choices=('transport', 'native'), required=True)
-    parser.add_argument('--scenario', choices=('complete', 'interrupt', 'failure'), required=True)
+    parser.add_argument('--scenario', choices=('complete', 'interrupt', 'failure', 'abrupt'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))
