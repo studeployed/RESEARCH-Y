@@ -86,3 +86,50 @@ code/security reviews remain mandatory. Existing tests/workflows are unchanged.
 
 This records a correction and test plan, not merge clearance or completed GUI
 acceptance. Check current-HEAD execution and review records before merge advice.
+
+## Follow-up: isolate the native handle-count measurement
+
+The preceding evidence describes the initial correction. On its amended HEAD
+`0dfed8a82eeea5566186f74b3949c7ad4aefb3fb`, run #41362272834 passed both Linux
+configurations and Windows/Python 3.13. Windows/Python 3.12 job #125014986924
+finished with **1,318 passed, two skipped and one failed**. Both original shutdown
+failures and all real-project worker integration cases passed. The remaining
+failure was the new handle-count assertion: **189 handles versus a baseline of
+186 plus an allowance of two**. All twelve child shutdowns had succeeded.
+
+`GetProcessHandleCount` measures the entire calling process, not worker ownership.
+The original measurement included pytest, its plugins and all earlier tests,
+and retained the final worker variable while comparing its count with an earlier
+baseline. The log does not identify which objects owned the three extra handles;
+this amendment does **not** attribute them to a particular plugin or declare a
+native leak absent merely because shutdown succeeded.
+
+The amended test runs in a fresh disposable Python host without starting pytest
+or its plugins. It warms both normal completion and bootstrap interruption, and
+initialises the native counter before taking the baseline. Each measured worker
+is scoped to a helper; weak references verify that the worker and supervisor
+objects are gone before sampling. Samples follow 4, 8 and 12 genuine child deaths
+before argument unpickling. **Every sample retains the original baseline + 2
+ceiling.** There is no extra tolerance, retry-until-pass loop or ignored failure.
+
+A second isolated native test deliberately restores the original standard pipe
+reducer only in its disposable host. It must detect at least one leaked parent
+writer per interrupted child and exceed the same two-handle ceiling. This is a
+positive leak-detection control using actual handles, not fabricated counts.
+Normal process exit then releases those deliberately leaked control handles.
+
+The file now contains 15 cases: the eleven unchanged portable cases, two new
+portable harness checks, and two native-Windows cases. One new portable check
+uses a real child and weak references; the other checks sample ordering and
+hook restoration with substituted helpers/counter. The focused local Linux run
+passed all 13 portable cases; both native cases were skipped, not counted as
+passes. Broader local combined runs were interrupted at execution limits and do
+not establish a complete local regression result. Fresh full-repository CI and
+matching code/security reviews must establish the amended commit's acceptance.
+
+Only this test file and this explanatory document change. Production worker
+code, existing completion/domain tests, shutdown deadlines, workflow timeouts,
+dependencies and the approved specification are unchanged.
+
+Counter reference:
+https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesshandlecount

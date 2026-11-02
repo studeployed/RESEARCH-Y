@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import gc
+import json
 import multiprocessing as mp
 from multiprocessing import connection, context
 import os
 from pathlib import Path
 import pickle
+import subprocess
+import sys
 import threading
 import time
+import weakref
 
 import pytest
 from research_y import application_worker as worker
@@ -237,26 +241,148 @@ def _windows_handle_count():
     return count.value
 
 
-@pytest.mark.skipif(os.name != 'nt', reason='Requires actual Windows spawn handles')
-def test_native_windows_death_before_argument_unpickle_does_not_leak_or_hang(tmp_path, monkeypatch):
-    monkeypatch.setattr(worker, 'execute_command', echo)
-    # Warm up one spawn before measuring persistent interpreter infrastructure.
-    with worker.ApplicationWorker() as warmup:
-        assert wait_for(warmup, warmup.submit(command(tmp_path))).state == 'returned'
-    gc.collect()
-    before = _windows_handle_count()
-    for attempt in range(12):
-        marker = tmp_path / f'bootstrap-{attempt}'
-        monkeypatch.setattr(worker, '_child_entry', BlockBeforeArguments(str(marker)))
-        pool = worker.ApplicationWorker()
+def _exercise_bootstrap_interruption(root, marker):
+    """Return weak references only; no test-owned worker survives a sample."""
+    original_entry = worker._child_entry
+    worker._child_entry = BlockBeforeArguments(str(marker))
+    pool = worker.ApplicationWorker()
+    try:
+        oid = pool.submit(command(root))
+        references = (weakref.ref(pool), weakref.ref(pool._thread))
+        wait_file(marker)
+        pool.close(grace_seconds=0, kill_seconds=1)
+        assert (pool.poll(oid).state, pool.poll(oid).error) == (
+            'interrupted', 'worker_interrupted')
+        assert pool._process is None and not pool._thread.is_alive()
+        return references
+    finally:
         try:
-            oid = pool.submit(command(tmp_path))
-            wait_file(marker)
             pool.close(grace_seconds=0, kill_seconds=1)
-            assert pool.poll(oid).state == 'interrupted'
-            assert pool._process is None and not pool._thread.is_alive()
         finally:
-            pool.close(grace_seconds=0, kill_seconds=1)
+            worker._child_entry = original_entry
+
+
+def _warmup_handle_probe(root):
+    # Scope both normal completion and interruption before the measured batch.
+    with worker.ApplicationWorker() as pool:
+        assert wait_for(pool, pool.submit(command(root))).state == 'returned'
+    references = _exercise_bootstrap_interruption(root, root / 'warmup-bootstrap')
     gc.collect()
-    # A one-per-spawn leaked duplicate would add 12, not <=2 handles.
-    assert _windows_handle_count() <= before + 2
+    assert all(reference() is None for reference in references)
+
+
+def _measure_handle_probe(root, *, legacy_transfer=False, counter=None):
+    """Run only in a disposable host: the legacy control intentionally leaks."""
+    if counter is None:
+        counter = _windows_handle_count
+    original_execute = worker.execute_command
+    original_transfer = worker._WindowsSpawnSender
+    worker.execute_command = echo
+    try:
+        _warmup_handle_probe(root)
+        counter()  # Load the counter's own native/runtime infrastructure first.
+        gc.collect()
+        before = counter()
+        if legacy_transfer:
+            # Restore the original standard PipeConnection reducer, not an
+            # invented counter increase. The child dies before stealing its copy.
+            worker._WindowsSpawnSender = lambda sender: sender
+        samples = []
+        for attempt in range(1, 13):
+            references = _exercise_bootstrap_interruption(root, root / f'bootstrap-{attempt}')
+            gc.collect()
+            assert all(reference() is None for reference in references)
+            if attempt % 4 == 0:
+                samples.append({'attempts': attempt, 'handles': counter()})
+        return {'pid': os.getpid(), 'baseline': before, 'samples': samples,
+                'legacy_transfer': legacy_transfer, 'interruptions': 12}
+    finally:
+        worker.execute_command = original_execute
+        worker._WindowsSpawnSender = original_transfer
+
+
+def _isolated_handle_probe(root, *, legacy_transfer=False):
+    # Import test helpers but do not start another pytest/plugin session. A
+    # process-wide handle count must not include the outer suite's activity.
+    code = """
+import json, sys
+from pathlib import Path
+from test_application_worker_shutdown import _measure_handle_probe
+if __name__ == '__main__':
+    result = _measure_handle_probe(Path(sys.argv[1]), legacy_transfer=sys.argv[2] == 'legacy')
+    print(json.dumps(result, sort_keys=True))
+"""
+    env = dict(os.environ)
+    env['PYTHONPATH'] = os.pathsep.join([
+        str(Path(__file__).parents[1] / 'src'), str(Path(__file__).parent),
+        env.get('PYTHONPATH', '')])
+    completed = subprocess.run(
+        [sys.executable, '-c', code, str(root), 'legacy' if legacy_transfer else 'current'],
+        env=env, capture_output=True, text=True, timeout=120, check=False)
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result['pid'] != os.getpid()
+    assert result['legacy_transfer'] is legacy_transfer
+    assert result['interruptions'] == 12
+    assert [sample['attempts'] for sample in result['samples']] == [4, 8, 12]
+    assert type(result['baseline']) is int and result['baseline'] > 0
+    assert all(type(sample['handles']) is int and sample['handles'] > 0
+               for sample in result['samples'])
+    return result
+
+
+def test_handle_probe_releases_worker_and_thread_before_sampling(tmp_path, monkeypatch):
+    monkeypatch.setattr(worker, 'execute_command', echo)
+    original_entry = worker._child_entry
+    references = _exercise_bootstrap_interruption(tmp_path, tmp_path / 'bootstrap')
+    gc.collect()
+    assert all(reference() is None for reference in references)
+    assert worker._child_entry is original_entry
+
+
+def test_handle_probe_samples_each_completed_batch_and_restores_hooks(tmp_path, monkeypatch):
+    # The preceding test uses a real child. This case checks sample ordering
+    # without paying for twelve more spawns on non-Windows test runners.
+    original_execute = worker.execute_command
+    original_transfer = worker._WindowsSpawnSender
+    events = []
+    monkeypatch.setattr(gc, 'collect', lambda: events.append('collect'))
+    monkeypatch.setattr(sys.modules[__name__], '_warmup_handle_probe',
+                        lambda root: events.append('warmup'))
+    def exercise(root, marker):
+        events.append(marker.name)
+        return ()
+    monkeypatch.setattr(sys.modules[__name__], '_exercise_bootstrap_interruption', exercise)
+    def counter():
+        events.append('sample')
+        return 100
+    result = _measure_handle_probe(tmp_path, counter=counter)
+    expected = ['warmup', 'sample', 'collect', 'sample']
+    for attempt in range(1, 13):
+        expected.extend([f'bootstrap-{attempt}', 'collect'])
+        if attempt % 4 == 0:
+            expected.append('sample')
+    assert events == expected
+    assert result['samples'] == [
+        {'attempts': 4, 'handles': 100}, {'attempts': 8, 'handles': 100},
+        {'attempts': 12, 'handles': 100}]
+    assert worker.execute_command is original_execute
+    assert worker._WindowsSpawnSender is original_transfer
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Requires actual Windows spawn handles')
+def test_native_windows_death_before_argument_unpickle_does_not_leak_or_hang(tmp_path):
+    result = _isolated_handle_probe(tmp_path)
+    # Keep the original allowance, now at every batch boundary, not only the end.
+    assert all(sample['handles'] <= result['baseline'] + 2
+               for sample in result['samples']), result
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Requires actual Windows spawn handles')
+def test_native_windows_handle_probe_detects_legacy_parent_duplicate_leak(tmp_path):
+    result = _isolated_handle_probe(tmp_path, legacy_transfer=True)
+    # Positive leak-detection control: the original transport must fail the same
+    # <=2 allowance and show at least one retained writer per interrupted spawn.
+    assert all(sample['handles'] >= result['baseline'] + sample['attempts']
+               for sample in result['samples']), result
+    assert result['samples'][-1]['handles'] > result['baseline'] + 2, result
