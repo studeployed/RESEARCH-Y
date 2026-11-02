@@ -59,6 +59,8 @@ def run(args):
         finished = asyncio.Event()
         sequence = (('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
                     if args.scenario == 'publish' else
+                    ('open', 'select_run', 'prepare', 'cancel', 'observe')
+                    if args.scenario == 'cancel' else
                     ('open', 'select_run', 'select_export', 'observe'))
         action_lock = asyncio.Lock()
         select_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_RUN_ID')
@@ -223,7 +225,8 @@ def run(args):
                 await until(lambda: session.redeemed and clients and clients[-1].has_socket_connection)
                 for index, action in enumerate(sequence):
                     name = {'open': 'open', 'select_run': 'select-run', 'select_export': 'select-export',
-                            'prepare': 'prepare', 'resume': 'resume', 'observe': 'observe'}[action]
+                            'prepare': 'prepare', 'resume': 'resume', 'cancel': 'cancel',
+                            'observe': 'observe'}[action]
                     await until(lambda: bool(clients) and not action_lock.locked())
                     await until_native_button(name, js)
                     await js("document.querySelector('[data-testid=" + name + "]').click(); true")
@@ -233,7 +236,11 @@ def run(args):
                         raise RuntimeError('native_action_failed')
                 await until(lambda: flow.state()['observation'] is not None)
                 current = flow.state()
-                if current['observation']['outcome'] != 'published_verified':
+                expected_outcome = ('recorded_cancelled' if args.scenario in
+                                    ('cancel', 'cancel_reopen') else 'published_verified')
+                if (current['observation']['outcome'] != expected_outcome or
+                        current['observation']['audited_success'] is not
+                        (expected_outcome == 'published_verified')):
                     raise RuntimeError('native_not_verified')
                 check = await js("JSON.stringify({incomplete: document.querySelector('[data-testid=incomplete]').textContent,"
                                  "query: document.querySelector('[data-testid=exact-query]').textContent,"
@@ -320,7 +327,7 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=('transport', 'native'), required=True)
-    parser.add_argument('--scenario', choices=('publish', 'reopen'), required=True)
+    parser.add_argument('--scenario', choices=('publish', 'reopen', 'cancel', 'cancel_reopen'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))
