@@ -62,7 +62,8 @@ def run(args):
                     ('open', 'select_run', 'prepare', 'cancel', 'observe')
                     if args.scenario == 'cancel' else
                     ('open', 'select_run', 'select_export', 'resume', 'observe')
-                    if args.scenario == 'receipt_recovered' else
+                    if args.scenario in ('receipt_recovered', 'render_recovered',
+                                         'stage_recovered') else
                     ('open', 'select_run', 'select_export', 'observe'))
         action_lock = asyncio.Lock()
         select_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_RUN_ID')
@@ -184,6 +185,12 @@ def run(args):
                                  'This is not verified. Resume the existing export '
                                  'request to reconcile its original file.').props(
                                      'data-testid=receipt-missing')
+                    if observed['outcome'] in ('not_yet_staged', 'retained_artifact_changed'):
+                        ui.label('RECOVERY REQUIRED — rendering or staging did not '
+                                 'produce a verified workbook. The original request '
+                                 'and retained evidence remain available. Repair the '
+                                 'failure and resume the same export; this observation '
+                                 'is not success.').props('data-testid=stage-recovery')
             if last_error['code']:
                 ui.label('Operation error: ' + last_error['code']).props('data-testid=operation-error')
 
@@ -247,6 +254,8 @@ def run(args):
                 expected_outcome = ('recorded_cancelled' if args.scenario in
                                     ('cancel', 'cancel_reopen') else
                                     'published_receipt_missing' if args.scenario == 'receipt_missing'
+                                    else 'not_yet_staged' if args.scenario == 'render_fault'
+                                    else 'retained_artifact_changed' if args.scenario == 'stage_fault'
                                     else 'published_verified')
                 if (current['observation']['outcome'] != expected_outcome or
                         current['observation']['audited_success'] is not
@@ -254,17 +263,28 @@ def run(args):
                     raise RuntimeError('native_not_verified')
                 if args.scenario == 'receipt_missing':
                     await until_native_button('receipt-missing', js)
+                if args.scenario in ('render_fault', 'stage_fault'):
+                    await until_native_button('stage-recovery', js)
+                    await until_native_button('export-error', js)
                 check = await js("JSON.stringify({incomplete: document.querySelector('[data-testid=incomplete]').textContent,"
                                  "query: document.querySelector('[data-testid=exact-query]').textContent,"
                                  "retained: document.querySelector('[data-testid=retained-query]').textContent,"
                                  "receipt: Boolean(document.querySelector('[data-testid=receipt-missing]')),"
+                                 "stage: Boolean(document.querySelector('[data-testid=stage-recovery]')),"
+                                 "error: document.querySelector('[data-testid=export-error]')?.textContent || '',"
                                  "injected: window.__researchy_injected === true})")
                 if check is None:
                     raise RuntimeError('native_document_unavailable')
                 data = json.loads(check)
                 if ('INCOMPLETE' not in data['incomplete'] or 'Exact query:' not in data['query']
                         or 'Retained exact query:' not in data['retained'] or data['injected']
-                        or data['receipt'] is not (args.scenario == 'receipt_missing')):
+                        or data['receipt'] is not (args.scenario == 'receipt_missing')
+                        or data['stage'] is not
+                            (args.scenario in ('render_fault', 'stage_fault'))
+                        or (args.scenario == 'render_fault'
+                            and 'render_failed' not in data['error'])
+                        or (args.scenario == 'stage_fault'
+                            and 'storage_failed' not in data['error'])):
                     raise RuntimeError('native_rendering_invalid')
                 report['native_rendering_verified'] = True
                 report['status'] = 'finished'
@@ -342,7 +362,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=('transport', 'native'), required=True)
     parser.add_argument('--scenario', choices=('publish', 'reopen', 'cancel', 'cancel_reopen',
-                                               'receipt_missing', 'receipt_recovered'), required=True)
+                                               'receipt_missing', 'receipt_recovered',
+                                               'render_fault', 'render_recovered',
+                                               'stage_fault', 'stage_recovered'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))
