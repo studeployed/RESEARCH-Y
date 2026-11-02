@@ -245,7 +245,8 @@ def transport_steps(port, token, scenario, run_id, export_id):
                 ('open', 'select_run', 'prepare', 'cancel', 'observe')
                 if scenario == 'cancel' else
                 ('open', 'select_run', 'select_export', 'resume', 'observe')
-                if scenario == 'receipt_recovered' else
+                if scenario in ('receipt_recovered', 'render_recovered',
+                                'stage_recovered') else
                 ('open', 'select_run', 'select_export', 'observe'))
     observed = []
     for action in expected:
@@ -273,6 +274,8 @@ def transport_steps(port, token, scenario, run_id, export_id):
         if action == 'observe':
             expected_outcome = ('recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
                                 else 'published_receipt_missing' if scenario == 'receipt_missing'
+                                else 'not_yet_staged' if scenario == 'render_fault'
+                                else 'retained_artifact_changed' if scenario == 'stage_fault'
                                 else 'published_verified')
             require(result['observation']['outcome'] == expected_outcome
                     and result['observation']['audited_success'] is
@@ -282,6 +285,15 @@ def transport_steps(port, token, scenario, run_id, export_id):
                 require(result['exports'][0]['recorded_state'] == 'publishing'
                         and result['selected_export_id'] == export_id,
                         'missing_receipt_request_replaced')
+            if scenario in ('render_fault', 'stage_fault'):
+                saved = result['exports'][0]
+                expected_state = 'prepared' if scenario == 'render_fault' else 'staging'
+                expected_error = 'render_failed' if scenario == 'render_fault' else 'storage_failed'
+                require(saved['recorded_state'] == expected_state
+                        and saved['last_error'] == expected_error
+                        and result['selected_export_id'] == export_id
+                        and len(result['exports']) == 1,
+                        'fault_outcome_not_durable')
     require(request(port, '/_probe/stop', method='POST', headers=auth)[0] == 200,
             'stop_request_failed')
     return observed
@@ -331,6 +343,8 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 result['observed_outcome'] = report.get('observed_outcome')
                 expected_outcome = ('recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
                                     else 'published_receipt_missing' if scenario == 'receipt_missing'
+                                    else 'not_yet_staged' if scenario == 'render_fault'
+                                    else 'retained_artifact_changed' if scenario == 'stage_fault'
                                     else 'published_verified')
                 require(report['status'] == 'finished' and report['real_services'] is True
                         and report['source_retrieval_verified'] is False
@@ -466,7 +480,73 @@ def run_scenario(mode):
                 'crash_recovery_journal_mismatch')
         recovered['same_file_retained'] = True
         recovered['same_export_identity'] = True
-        return [first, second, cancelled, cancelled_reopen, missing, recovered]
+        results = [first, second, cancelled, cancelled_reopen, missing, recovered]
+
+        # Permission/render errors and partial stage writes are injected ONLY in
+        # disposable subprocesses, never via a browser-controlled fault route.
+        # The real GUI inspects the durable failure, then a separately started
+        # instance retries exactly that export ID without overwriting evidence.
+        for kind in ('render', 'stage'):
+            fault_parent = root / (kind + '-fault-case')
+            fault_parent.mkdir()
+            fault_project, fault_run = fixture(fault_parent)
+            fault_id, partial = seed_failed_export(fault_project, fault_run, kind)
+            failure_snapshot = read_application_snapshot(
+                fault_project, selected_run_id=fault_run).as_dict()
+            partial_bytes = None if partial is None else partial.read_bytes()
+            fault = run_app(mode, kind + '_fault', fault_project, fault_parent,
+                            fault_run, fault_id)
+            results.append(fault)
+            if not fault['passed']:
+                return results
+            readback = read_application_snapshot(
+                fault_project, selected_run_id=fault_run).as_dict()
+            require(failure_snapshot['last_recorded_audit_event'] ==
+                    readback['last_recorded_audit_event'],
+                    'negative_observation_appended_audit')
+            require(len(readback['exports']) == 1
+                    and readback['exports'][0]['export_id'] == fault_id
+                    and not (fault_project.root / 'exports' /
+                             ('strategy-summary-' + fault_run + '.xlsx')).exists(),
+                    'fault_observation_created_workbook')
+            revived = run_app(mode, kind + '_recovered', fault_project, fault_parent,
+                              fault_run, fault_id)
+            results.append(revived)
+            if not revived['passed']:
+                return results
+            after = read_application_snapshot(
+                fault_project, selected_run_id=fault_run).as_dict()
+            published_path = fault_project.root / 'exports' / (
+                'strategy-summary-' + fault_run + '.xlsx')
+            with ZipFile(published_path) as workbook:
+                require(workbook.testzip() is None and
+                        'xl/workbook.xml' in workbook.namelist(),
+                        'recovered_workbook_invalid')
+            observed = observe_export_request(fault_project, fault_id)
+            require(len(after['exports']) == 1
+                    and after['exports'][0]['export_id'] == fault_id
+                    and after['exports'][0]['recorded_state'] == 'published'
+                    and after['exports'][0]['last_error'] is None
+                    and after['report']['status'] == 'incomplete'
+                    and not after['source_retrieval_verified']
+                    and observed.audited_success
+                    and sha256(published_path.read_bytes()).hexdigest() ==
+                        observed.request.artifact_sha256,
+                    'failed_export_recovery_not_verified')
+            if partial is not None:
+                require(partial.is_file() and partial.read_bytes() == partial_bytes
+                        and partial != published_path,
+                        'partial_retained_stage_was_replaced')
+            with closing(sqlite3.connect(fault_project.database_path)) as db:
+                total_events = db.execute(
+                    'SELECT COUNT(*) FROM audit_events WHERE event_type=?',
+                    (f'{workbook_exports.EVENT}:{fault_id}',)).fetchone()[0]
+            require(total_events == (6 if kind == 'render' else 7),
+                    'early_fault_recovery_event_count_changed')
+            revived['original_request_retained'] = True
+            revived['damaged_stage_retained'] = partial is not None
+
+        return results
 
 
 def main(argv=None):
