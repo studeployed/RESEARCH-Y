@@ -14,6 +14,9 @@ from pathlib import Path
 import signal
 import sqlite3
 from uuid import uuid4
+import threading
+import time
+from types import SimpleNamespace
 from zipfile import ZipFile
 
 import pytest
@@ -137,3 +140,56 @@ def test_test_only_worker_death_is_not_a_browser_fault_action():
         .terminate_marked_gui_worker)
     assert 'directory' not in inspect.signature(RealProjectFlow.resume).parameters
     assert 'marker' not in inspect.signature(RealProjectFlow.resume).parameters
+
+
+def test_empty_worker_pid_marker_is_retried_before_safe_termination(tmp_path, monkeypatch):
+    import tools.gui_feasibility.run_real_project as runner
+
+    marker = tmp_path / 'private-worker-stage-pid'
+    marker.touch()  # O_EXCL creation has happened; os.write has NOT happened.
+    encountered_empty = threading.Event()
+    stopped = threading.Event()
+    status = {'terminated': False, 'error': None}
+    original_sleep = time.sleep
+    killed = []
+
+    def observe_pending_marker(delay):
+        if marker.exists() and marker.stat().st_size == 0:
+            encountered_empty.set()
+        return original_sleep(delay)
+
+    monkeypatch.setattr(runner.time, 'sleep', observe_pending_marker)
+    monkeypatch.setattr(runner, '_worker_parent_is_gui',
+                        lambda pid, parent: (pid, parent) == (54321, 12345))
+    monkeypatch.setattr(runner.os, 'kill',
+                        lambda pid, sig: killed.append((pid, sig)))
+    fake_host = SimpleNamespace(pid=12345, poll=lambda: None)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        result = pool.submit(runner.terminate_marked_gui_worker,
+                             fake_host, marker, stopped, status)
+        try:
+            assert encountered_empty.wait(timeout=3), (
+                'monitor rejected O_EXCL marker before the PID was written')
+            assert not result.done()
+            marker.write_text('54321', encoding='ascii')
+            result.result(timeout=3)
+        finally:
+            stopped.set()
+    assert killed == [(54321, signal.SIGTERM)]
+    assert status == {'terminated': True, 'error': None}
+
+
+def test_unrelated_process_marker_is_rejected_without_killing(tmp_path, monkeypatch):
+    import tools.gui_feasibility.run_real_project as runner
+
+    marker = tmp_path / 'wrong-parent-pid'
+    marker.write_text('54321', encoding='ascii')
+    status = {'terminated': False, 'error': None}
+    stopped = threading.Event()
+    monkeypatch.setattr(runner, '_worker_parent_is_gui', lambda pid, parent: False)
+    def forbidden_kill(*_):
+        pytest.fail('test monitor attempted to kill a nonchild process')
+    monkeypatch.setattr(runner.os, 'kill', forbidden_kill)
+    runner.terminate_marked_gui_worker(
+        SimpleNamespace(pid=12345, poll=lambda: None), marker, stopped, status)
+    assert status == {'terminated': False, 'error': 'worker_parent_mismatch'}
