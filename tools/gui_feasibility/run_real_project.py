@@ -11,6 +11,8 @@ from hashlib import sha256
 import http.client
 import json
 import os
+import signal
+import threading
 from pathlib import Path
 import shutil
 import socket
@@ -26,13 +28,62 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'src'))
 from tools.gui_feasibility.run_prototype import (environment, free_port, request, require,
-                                                  wait_until, stop_owned_process, ExperimentFailure)
+                                                  wait_until, stop_owned_process, windows_process_table,
+                                                  ExperimentFailure)
 from research_y.projects import create_project, open_project
 from research_y.application_inspection import read_application_snapshot, observe_export_request
 from research_y import workbook_exports
 from research_y.storage import ApprovedTerm, StrategyGroup, approve_strategy, create_search_run, plan_source_query
 
 APP = ROOT / 'tools' / 'gui_feasibility' / 'real_project_app.py'
+
+
+def _worker_parent_is_gui(child_pid, gui_pid):
+    """Require direct, actual parentage before terminating an owned child."""
+    if child_pid <= 0 or gui_pid <= 0 or child_pid == gui_pid:
+        return False
+    if os.name == 'nt':
+        return windows_process_table().get(child_pid) == gui_pid
+    # The feasibility Linux matrix uses procfs; fail closed elsewhere.
+    if sys.platform.startswith('linux'):
+        stat_text = (Path('/proc') / str(child_pid) / 'stat').read_text(
+            encoding='ascii')
+        return int(stat_text.rsplit(')', 1)[1].split()[1]) == gui_pid
+    return False
+
+
+def terminate_marked_gui_worker(host, marker, stopping, result):
+    """Terminate only a confirmed direct child of the real GUI host.
+
+    This is a trusted parent-side test harness. It never searches for
+    arbitrary user processes or accepts PID/path arguments over HTTP.
+    """
+    deadline = time.monotonic() + NATIVE_SCENARIO_TIMEOUT
+    try:
+        while not stopping.is_set() and time.monotonic() < deadline:
+            if marker.is_file():
+                if marker.stat().st_size > 24:
+                    result['error'] = 'worker_marker_invalid'
+                    return
+                text = marker.read_text(encoding='ascii')
+                if not text.isdecimal():
+                    result['error'] = 'worker_marker_invalid'
+                    return
+                pid = int(text)
+                if not _worker_parent_is_gui(pid, host.pid):
+                    result['error'] = 'worker_parent_mismatch'
+                    return
+                os.kill(pid, signal.SIGTERM)
+                result['terminated'] = True
+                return
+            if host.poll() is not None:
+                result['error'] = 'gui_exited_before_worker_stage'
+                return
+            time.sleep(.05)
+        if not stopping.is_set():
+            result['error'] = 'worker_stage_marker_timeout'
+    except Exception:
+        result['error'] = 'worker_termination_failed'
 
 
 def fixture(parent):
@@ -246,7 +297,9 @@ def transport_steps(port, token, scenario, run_id, export_id):
                 if scenario == 'cancel' else
                 ('open', 'select_run', 'select_export', 'resume', 'observe')
                 if scenario in ('receipt_recovered', 'render_recovered',
-                                'stage_recovered') else
+                                'stage_recovered', 'worker_recovered') else
+                ('open', 'select_run', 'select_export', 'resume')
+                if scenario == 'worker_killed' else
                 ('open', 'select_run', 'select_export', 'observe'))
     observed = []
     for action in expected:
@@ -254,6 +307,20 @@ def transport_steps(port, token, scenario, run_id, export_id):
         require(status == 200, 'action_http_failed')
         state = json.loads(payload)
         code = state.get('error')
+        if scenario == 'worker_killed' and action == 'resume':
+            # A real child died during staging: failure is the required result.
+            require(code == 'worker_interrupted', 'worker_death_not_reported')
+            require(state['actions'] == ['open', 'select_run', 'select_export'],
+                    'worker_failure_recorded_as_success')
+            damaged = state['state']
+            require(damaged['selected_export_id'] == export_id
+                    and len(damaged['exports']) == 1
+                    and damaged['exports'][0]['recorded_state'] == 'staging'
+                    and damaged['observation'] is None
+                    and damaged['source_retrieval_verified'] is False,
+                    'worker_death_state_incorrect')
+            observed.append('resume_interrupted')
+            continue
         require(code is None, 'actual_action_failed_' + action + '_' +
                 (code if isinstance(code, str) and code.replace('_', '').isalnum()
                  and len(code) <= 64 else 'unknown'))
@@ -318,11 +385,23 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                    RESEARCHY_GUI_SELECTED_PARENT=str(parent),
                    RESEARCHY_GUI_EXPECTED_RUN_ID=run_id,
                    RESEARCHY_GUI_EXPECTED_EXPORT_ID=expected_export or '')
+        marker = root / 'private-worker-stage-pid'
+        if scenario == 'worker_killed':
+            env['RESEARCHY_GUI_TEST_STAGE_MARKER'] = str(marker)
+        stopping = threading.Event()
+        termination = {'terminated': False, 'error': None}
+        monitor = None
         with (root / 'private-process.log').open('wb') as log:
             process = subprocess.Popen([sys.executable, str(APP), '--mode', mode,
                  '--scenario', scenario, '--port', str(port), '--directory', str(app_dir)],
                  cwd=root, env=env, stdout=log, stderr=log, start_new_session=os.name != 'nt')
             try:
+                if scenario == 'worker_killed':
+                    monitor = threading.Thread(
+                        target=terminate_marked_gui_worker,
+                        args=(process, marker, stopping, termination),
+                        name='researchy-test-owned-worker-termination', daemon=True)
+                    monitor.start()
                 if mode == 'transport':
                     result['actions'] = transport_steps(port, token, scenario, run_id, expected_export)
                 process.wait(timeout=NATIVE_SCENARIO_TIMEOUT if mode == 'native' else 120)
@@ -341,11 +420,13 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 result['observed_worker_reaped'] = report.get('worker_reaped')
                 result['observed_supervisor_stopped'] = report.get('supervisor_stopped')
                 result['observed_outcome'] = report.get('observed_outcome')
-                expected_outcome = ('recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
+                expected_outcome = (None if scenario == 'worker_killed'
+                                    else 'recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
                                     else 'published_receipt_missing' if scenario == 'receipt_missing'
                                     else 'not_yet_staged' if scenario == 'render_fault'
                                     else 'retained_artifact_changed' if scenario == 'stage_fault'
                                     else 'published_verified')
+                expected_error = 'worker_interrupted' if scenario == 'worker_killed' else None
                 require(report['status'] == 'finished' and report['real_services'] is True
                         and report['source_retrieval_verified'] is False
                         and report['selected_run_matches'] is True
@@ -353,12 +434,18 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                         and report['observed_outcome'] == expected_outcome
                         and report['observation_audited'] is
                             (expected_outcome == 'published_verified')
+                        and report['error'] == expected_error
                         and report['session_revoked'] is True
                         and report['worker_reaped'] is True
                         and report['supervisor_stopped'] is True, 'real_gui_evidence_not_accepted')
                 require(report['project_id'] == str(project.identifier), 'project_identity_changed')
                 if expected_export:
                     require(report['export_id'] == expected_export, 'export_identity_changed')
+                if scenario == 'worker_killed':
+                    require(termination['terminated'] is True and termination['error'] is None,
+                            'gui_owned_worker_not_confirmed_terminated')
+                    require(report['actions'] == ['open', 'select_run', 'select_export'],
+                            'worker_interruption_accepted_as_success')
                 if mode == 'native':
                     require(report.get('native_rendering_verified') is True, 'native_rendering_not_verified')
                 result.update(passed=True, export_id=report['export_id'],
@@ -371,7 +458,10 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
             except Exception as exc:
                 result['error'] = str(exc) if isinstance(exc, ExperimentFailure) else type(exc).__name__
             finally:
+                stopping.set()
                 stop_owned_process(process)
+                if monitor is not None:
+                    monitor.join(timeout=2)
     require(token not in json.dumps(result), 'secret_in_evidence')
     return result
 
