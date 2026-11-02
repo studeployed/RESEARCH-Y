@@ -2,7 +2,7 @@
 
 Date: 2 November 2026. Continues #43 / #41 / #9 on the authoritative
 repository RESEARCH-Y_SPEC.md and the owner-merged PR #50 baseline,
-commit \`65c38049f68112e936450a87583d877937e91488\`.
+commit `65c38049f68112e936450a87583d877937e91488`.
 
 This remains within the previously approved **isolated NiceGUI 3.18.0 /
 pywebview 6.2.1 feasibility experiment**. It is not an approval to adopt
@@ -13,7 +13,7 @@ introduced.
 
 ## Why this increment matters
 
-The original report is frozen when the \`prepared\` audit event commits. Later
+The original report is frozen when the `prepared` audit event commits. Later
 renderer or staging-write errors must neither destroy that snapshot nor
 create a new export request. No output may be called "verified" merely because
 some bytes or an audit record exist.
@@ -36,16 +36,16 @@ runner's physical drive was exhausted, Windows access-control lists were
 modified or an actual GUI-owned worker was killed.
 
 1. **Renderer access denied.** A renderer callback raises a Python
-   \`PermissionError\` with an injected \`EACCES\` condition. The existing
-   publication service records \`render_failed\` and retains the original
-   \`prepared\` receipt. No staging file or final workbook should exist.
-   Independent file observation is \`not_yet_staged\`, not verified.
+   `PermissionError` with an injected `EACCES` condition. The existing
+   publication service records `render_failed` and retains the original
+   `prepared` receipt. No staging file or final workbook should exist.
+   Independent file observation is `not_yet_staged`, not verified.
 2. **Partial staging write / injected disk full.** A guarded
-   \`Directory.write_new\` call writes an owned, intentionally incomplete
+   `Directory.write_new` call writes an owned, intentionally incomplete
    retained-stage file using the real exclusive-create and flush behavior,
-   then raises \`OSError(ENOSPC)\`. The service records \`storage_failed\`
-   while retaining its \`staging\` journal event. Independent observation
-   must report \`retained_artifact_changed\`. The partial file must remain
+   then raises `OSError(ENOSPC)`. The service records `storage_failed`
+   while retaining its `staging` journal event. Independent observation
+   must report `retained_artifact_changed`. The partial file must remain
    unmodified even after a successful retry.
 
 The subprocess uses an allowlisted environment. It cannot receive research
@@ -63,9 +63,9 @@ paths, corpus material or log files in uploaded artifacts.
   request. **Resume publication** invokes the existing supervised worker
   without client-supplied filesystem paths. It renders from the retained
   report and publishes a real formatted Excel workbook with a committed
-  \`published\` receipt.
+  `published` receipt.
 - A separate **Verify workbook** observation must report
-  \`published_verified\` with \`audited_success=True\`. The independent
+  `published_verified` with `audited_success=True`. The independent
   research search remains INCOMPLETE, with no invented provider counts.
 - The initial error and negative observation are not overwritten to pretend
   success before recovery. The abandoned partial stage remains untouched,
