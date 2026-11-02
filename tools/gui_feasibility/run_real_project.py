@@ -114,6 +114,95 @@ def seed_unreceipted_workbook(project, run_id):
     return export_id, workbook
 
 
+# The test harness injects errors ONLY in a disposable subprocess after a
+# normally committed preparation. Neither GUI request handlers nor production
+# worker code accept a fault selector, model or filesystem path from the browser.
+_INJECT_EARLY_EXPORT_FAILURE = r'''
+import errno
+import sys
+from research_y import workbook_exports as exports
+from research_y.export_files import Directory
+from research_y.projects import open_project
+
+project = open_project(sys.argv[1])
+export_id, kind = sys.argv[2:]
+if kind == 'render':
+    renderer_original = exports._renderer
+    def permission_denied_renderer():
+        method, _ = renderer_original()
+        def denied(_):
+            raise PermissionError(errno.EACCES, 'injected renderer access denied')
+        return method, denied
+    exports._renderer = permission_denied_renderer
+elif kind == 'stage':
+    write_original = Directory.write_new
+    def disk_full_write(self, name, data):
+        if name.startswith('retained-') and name.endswith('.xlsx'):
+            write_original(self, name, b'PARTIAL-OWNED-STAGE')
+            raise OSError(errno.ENOSPC, 'injected stage disk full')
+        return write_original(self, name, data)
+    Directory.write_new = disk_full_write
+else:
+    raise SystemExit(90)
+
+try:
+    exports.resume_workbook_export(project, export_id)
+except exports.WorkbookExportError as exc:
+    if exc.code == {'render': 'render_failed', 'stage': 'storage_failed'}[kind]:
+        raise SystemExit(0)
+raise SystemExit(91)
+'''
+
+
+def seed_failed_export(project, run_id, kind):
+    """Create real durable failure evidence using an isolated faulted subprocess.
+
+    Permission/disk-full are deterministic *injected* errors, not claims that
+    the runner's host disk was actually exhausted or ACLs actually changed.
+    """
+    require(kind in ('render', 'stage'), 'unsupported_fault_fixture')
+    export_id = str(uuid4())
+    output_name = 'strategy-summary-' + run_id + '.xlsx'
+    workbook_exports.prepare_workbook_export(project, run_id, output_name, export_id=export_id)
+    allowed = {'PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
+               'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMFILES',
+               'PROGRAMFILES(X86)', 'PROGRAMDATA', 'SYSTEMDRIVE', 'LANG'}
+    env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
+    env['PYTHONPATH'] = os.pathsep.join([str(ROOT), str(ROOT / 'src')])
+    attempt = subprocess.run(
+        [sys.executable, '-c', _INJECT_EARLY_EXPORT_FAILURE,
+         str(project.root), export_id, kind],
+        cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=45, check=False)
+    require(attempt.returncode == 0, 'early_export_fault_fixture_not_triggered')
+    expected_state = 'staging' if kind == 'stage' else 'prepared'
+    expected_error = 'storage_failed' if kind == 'stage' else 'render_failed'
+    expected_outcome = ('retained_artifact_changed' if kind == 'stage'
+                        else 'not_yet_staged')
+    snapshot = read_application_snapshot(project, selected_run_id=run_id).as_dict()
+    observation = observe_export_request(project, export_id)
+    require(len(snapshot['exports']) == 1
+            and snapshot['exports'][0]['export_id'] == export_id
+            and snapshot['exports'][0]['recorded_state'] == expected_state
+            and snapshot['exports'][0]['last_error'] == expected_error
+            and snapshot['report']['status'] == 'incomplete'
+            and not snapshot['source_retrieval_verified']
+            and observation.outcome == expected_outcome
+            and not observation.audited_success,
+            'early_export_failure_not_retained')
+    partial = None
+    if kind == 'stage':
+        with workbook_exports._transaction(project, write=False) as db:
+            state = workbook_exports._required(db, project, export_id)
+        partial = (project.root / 'exports' / workbook_exports.STORE /
+                   state['stage']['name'])
+        require(partial.is_file() and partial.read_bytes() == b'PARTIAL-OWNED-STAGE',
+                'failed_stage_not_preserved')
+    require(not (project.root / 'exports' / output_name).exists(),
+            'failed_export_has_final_workbook')
+    return export_id, partial
+
+
 # A prepare action can perform three independently supervised commands, each
 # with a 35-second bound. The normal 3-second probing timeout is appropriate
 # for health checks, but not for a complete approved export operation.
@@ -156,7 +245,8 @@ def transport_steps(port, token, scenario, run_id, export_id):
                 ('open', 'select_run', 'prepare', 'cancel', 'observe')
                 if scenario == 'cancel' else
                 ('open', 'select_run', 'select_export', 'resume', 'observe')
-                if scenario == 'receipt_recovered' else
+                if scenario in ('receipt_recovered', 'render_recovered',
+                                'stage_recovered') else
                 ('open', 'select_run', 'select_export', 'observe'))
     observed = []
     for action in expected:
@@ -184,6 +274,8 @@ def transport_steps(port, token, scenario, run_id, export_id):
         if action == 'observe':
             expected_outcome = ('recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
                                 else 'published_receipt_missing' if scenario == 'receipt_missing'
+                                else 'not_yet_staged' if scenario == 'render_fault'
+                                else 'retained_artifact_changed' if scenario == 'stage_fault'
                                 else 'published_verified')
             require(result['observation']['outcome'] == expected_outcome
                     and result['observation']['audited_success'] is
@@ -193,6 +285,15 @@ def transport_steps(port, token, scenario, run_id, export_id):
                 require(result['exports'][0]['recorded_state'] == 'publishing'
                         and result['selected_export_id'] == export_id,
                         'missing_receipt_request_replaced')
+            if scenario in ('render_fault', 'stage_fault'):
+                saved = result['exports'][0]
+                expected_state = 'prepared' if scenario == 'render_fault' else 'staging'
+                expected_error = 'render_failed' if scenario == 'render_fault' else 'storage_failed'
+                require(saved['recorded_state'] == expected_state
+                        and saved['last_error'] == expected_error
+                        and result['selected_export_id'] == export_id
+                        and len(result['exports']) == 1,
+                        'fault_outcome_not_durable')
     require(request(port, '/_probe/stop', method='POST', headers=auth)[0] == 200,
             'stop_request_failed')
     return observed
@@ -242,6 +343,8 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 result['observed_outcome'] = report.get('observed_outcome')
                 expected_outcome = ('recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
                                     else 'published_receipt_missing' if scenario == 'receipt_missing'
+                                    else 'not_yet_staged' if scenario == 'render_fault'
+                                    else 'retained_artifact_changed' if scenario == 'stage_fault'
                                     else 'published_verified')
                 require(report['status'] == 'finished' and report['real_services'] is True
                         and report['source_retrieval_verified'] is False
@@ -377,7 +480,73 @@ def run_scenario(mode):
                 'crash_recovery_journal_mismatch')
         recovered['same_file_retained'] = True
         recovered['same_export_identity'] = True
-        return [first, second, cancelled, cancelled_reopen, missing, recovered]
+        results = [first, second, cancelled, cancelled_reopen, missing, recovered]
+
+        # Permission/render errors and partial stage writes are injected ONLY in
+        # disposable subprocesses, never via a browser-controlled fault route.
+        # The real GUI inspects the durable failure, then a separately started
+        # instance retries exactly that export ID without overwriting evidence.
+        for kind in ('render', 'stage'):
+            fault_parent = root / (kind + '-fault-case')
+            fault_parent.mkdir()
+            fault_project, fault_run = fixture(fault_parent)
+            fault_id, partial = seed_failed_export(fault_project, fault_run, kind)
+            failure_snapshot = read_application_snapshot(
+                fault_project, selected_run_id=fault_run).as_dict()
+            partial_bytes = None if partial is None else partial.read_bytes()
+            fault = run_app(mode, kind + '_fault', fault_project, fault_parent,
+                            fault_run, fault_id)
+            results.append(fault)
+            if not fault['passed']:
+                return results
+            readback = read_application_snapshot(
+                fault_project, selected_run_id=fault_run).as_dict()
+            require(failure_snapshot['last_recorded_audit_event'] ==
+                    readback['last_recorded_audit_event'],
+                    'negative_observation_appended_audit')
+            require(len(readback['exports']) == 1
+                    and readback['exports'][0]['export_id'] == fault_id
+                    and not (fault_project.root / 'exports' /
+                             ('strategy-summary-' + fault_run + '.xlsx')).exists(),
+                    'fault_observation_created_workbook')
+            revived = run_app(mode, kind + '_recovered', fault_project, fault_parent,
+                              fault_run, fault_id)
+            results.append(revived)
+            if not revived['passed']:
+                return results
+            after = read_application_snapshot(
+                fault_project, selected_run_id=fault_run).as_dict()
+            published_path = fault_project.root / 'exports' / (
+                'strategy-summary-' + fault_run + '.xlsx')
+            with ZipFile(published_path) as workbook:
+                require(workbook.testzip() is None and
+                        'xl/workbook.xml' in workbook.namelist(),
+                        'recovered_workbook_invalid')
+            observed = observe_export_request(fault_project, fault_id)
+            require(len(after['exports']) == 1
+                    and after['exports'][0]['export_id'] == fault_id
+                    and after['exports'][0]['recorded_state'] == 'published'
+                    and after['exports'][0]['last_error'] is None
+                    and after['report']['status'] == 'incomplete'
+                    and not after['source_retrieval_verified']
+                    and observed.audited_success
+                    and sha256(published_path.read_bytes()).hexdigest() ==
+                        observed.request.artifact_sha256,
+                    'failed_export_recovery_not_verified')
+            if partial is not None:
+                require(partial.is_file() and partial.read_bytes() == partial_bytes
+                        and partial != published_path,
+                        'partial_retained_stage_was_replaced')
+            with closing(sqlite3.connect(fault_project.database_path)) as db:
+                total_events = db.execute(
+                    'SELECT COUNT(*) FROM audit_events WHERE event_type=?',
+                    (f'{workbook_exports.EVENT}:{fault_id}',)).fetchone()[0]
+            require(total_events == (6 if kind == 'render' else 7),
+                    'early_fault_recovery_event_count_changed')
+            revived['original_request_retained'] = True
+            revived['damaged_stage_retained'] = partial is not None
+
+        return results
 
 
 def main(argv=None):
