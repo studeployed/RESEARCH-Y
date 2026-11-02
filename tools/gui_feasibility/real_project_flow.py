@@ -103,11 +103,21 @@ class RealProjectFlow:
 
     def open_selected(self):
         """The existing launcher selected this location, not a browser request."""
-        return self.open_native_folder(self._root)
+        try:
+            return self.open_native_folder(self._root)
+        except ProjectFlowError as exc:
+            if str(exc) in ('native_selection_invalid', 'native_selection_unsafe'):
+                raise ProjectFlowError('invalid_project') from None
+            raise
 
     def create_selected(self, name: str):
         """Create in the current host-selected parent; name alone is browser text."""
-        return self.create_native_parent(self._parent, name)
+        try:
+            return self.create_native_parent(self._parent, name)
+        except ProjectFlowError as exc:
+            if str(exc) in ('native_selection_invalid', 'native_selection_unsafe'):
+                raise ProjectFlowError('project_creation_failed') from None
+            raise
 
     @staticmethod
     def _validated_host_directory(selected: Path) -> Path:
