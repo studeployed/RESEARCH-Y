@@ -12,6 +12,7 @@ on:
       - 'tests/test_gui_prototype.py'
       - 'tests/test_gui_real_project.py'
       - 'tests/test_gui_receipt_recovery.py'
+      - 'tests/test_gui_staging_fault_recovery.py'
   workflow_dispatch:
 
 permissions:
