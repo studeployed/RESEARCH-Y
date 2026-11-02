@@ -62,7 +62,14 @@ def terminate_marked_gui_worker(host, marker, stopping, result):
     try:
         while not stopping.is_set() and time.monotonic() < deadline:
             if marker.is_file():
-                if marker.stat().st_size > 24:
+                size = marker.stat().st_size
+                if size == 0:
+                    # O_EXCL creation can precede the worker's PID write.
+                    # This is an incomplete marker, not a bad PID: retry
+                    # without expanding the original bounded deadline.
+                    time.sleep(.05)
+                    continue
+                if size > 24:
                     result['error'] = 'worker_marker_invalid'
                     return
                 text = marker.read_text(encoding='ascii')
