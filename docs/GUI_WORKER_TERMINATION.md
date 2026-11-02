@@ -38,11 +38,17 @@ or RESEARCH-Y specification revisions are introduced.
    exclusive-write and flush method to write a prefix of the **actual rendered
    workbook**. It writes its own PID to an exclusive, private runner marker
    and blocks before the stage write would otherwise complete.
-4. An independent, trusted parent-side monitor reads the private marker,
-   verifies the indicated process is a **direct child of this GUI host**
-   (Windows Toolhelp or Linux procfs), and terminates only that validated
-   child. Unexpected PID, process exit, missing marker or an unsuccessful
-   termination fails the test. The GUI server remains alive.
+4. The GUI host writes an **independent private owner marker** containing
+   its actual Python interpreter PID before it launches the worker. An
+   independent parent-side monitor reads both markers and requires that the
+   target worker is a **direct child of that actual GUI interpreter** (using
+   Windows Toolhelp or Linux procfs). It separately verifies the GUI owner
+   against the exact process the runner started: either the same PID, or on
+   Windows a direct child of the launched virtual-environment Python
+   redirector. Arbitrary descendants, unrelated processes and unverified
+   process identities remain forbidden. Only then does it terminate the
+   validated worker. Invalid/missing markers, failed parentage checks or
+   unsuccessful termination fail the test. The GUI server remains alive.
 5. The real worker supervisor recognises interrupted child execution.
    The on-screen request reports `worker_interrupted` and **RECOVERY
    REQUIRED**. Only the original `prepared` and `staging` receipts
@@ -61,6 +67,33 @@ The only killable target is the supervisor's owned child; the test runner
 never kills arbitrary user processes. Private process markers, filesystem
 paths, credentials and raw project content are not included in uploaded
 diagnostic artifacts.
+
+## Windows process-identity follow-up (PR #52)
+
+The first exact-HEAD Windows graphical lifecycle run
+[#41496704660](https://github.com/studeployed/RESEARCH-Y/actions/runs/41496704660)
+failed 2/2 Windows native jobs (20/22 real-project scenarios in each), while
+the 4/4 core regression and dependency jobs passed. A bounded diagnostic
+commit produced the same failures in both Windows versions: the worker
+PID marker **was present**, but the monitor stopped at
+`worker_parent_mismatch` before delivering a termination signal. The host
+therefore reported `worker_timeout`. This rules out an absent stage marker
+or failed rendering as the immediate failure.
+
+The likely cause is the Windows virtual-environment `python.exe` redirector:
+the runner's `Popen.pid` can identify the launcher, while the actual Python
+GUI interpreter (which directly owns the worker) has a separate PID.
+The correction records the actual GUI owner in a second exclusive private
+marker and **verifies both links through operating-system process ancestry**.
+It does not treat an arbitrary grandchild of the launcher as a directly owned
+worker. Neither marker's raw path or PID is uploaded as test evidence.
+Status labels are fixed, non-sensitive diagnostics.
+
+The first diagnostic commit also exposed two pre-existing unit tests that
+asserted an exact two-field result dictionary. Updated tests assert the
+expected diagnostic phase *in addition* to their original no-unrelated-kill
+and valid termination results. Actual Windows validation is required before
+claiming the parentage correction has succeeded.
 
 ## Acceptance evidence
 
