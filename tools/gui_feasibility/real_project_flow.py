@@ -61,7 +61,11 @@ class RealProjectFlow:
 
     def _operation(self, name, **kwargs):
         self._require_open()
-        command = ApplicationCommand.for_project(self.project, name, **kwargs)
+        return self._operation_for_project(self.project, name, **kwargs)
+
+    def _operation_for_project(self, project, name, **kwargs):
+        """Run a worker against an explicit candidate without switching state."""
+        command = ApplicationCommand.for_project(project, name, **kwargs)
         try:
             operation_id = self._worker.submit(command)
             deadline = time.monotonic() + 35
@@ -91,14 +95,23 @@ class RealProjectFlow:
             raise ProjectFlowError('worker_unavailable') from None
 
     def _set_project(self, project):
+        # The candidate is not active until its actual read model passes the
+        # supervised inspection. Otherwise a failed switch leaves the host
+        # pointed at project B while the displayed snapshot still describes A.
+        # This also protects freshly created projects: never erase the new
+        # folder merely because opening its initial inspection failed.
+        inspected = self._operation_for_project(project, 'inspect')
+        snapshot = inspected.get('snapshot')
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get('runs'), list) or not isinstance(snapshot.get('exports'), list):
+            raise ProjectFlowError('invalid_worker_result')
         self.project = project
         self.selected_run_id = None
         self.selected_export_id = None
         self._pending_export_id = None
         self.observation = None
         self.retained_export_report = None
-        self.last_result = None
-        self.snapshot = self._operation('inspect')['snapshot']
+        self.last_result = inspected
+        self.snapshot = snapshot
         return self._publish()
 
     def open_selected(self):
