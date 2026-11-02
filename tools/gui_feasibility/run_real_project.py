@@ -51,6 +51,25 @@ def fixture(parent):
     return p, run.run_id
 
 
+# A prepare action can perform three independently supervised commands, each
+# with a 35-second bound. The normal 3-second probing timeout is appropriate
+# for health checks, but not for a complete approved export operation.
+ACTION_RESPONSE_TIMEOUT = 115
+
+
+def request_action(port, headers):
+    """Only this fixed localhost action may wait for a bounded full worker call."""
+    conn = http.client.HTTPConnection('127.0.0.1', port, timeout=ACTION_RESPONSE_TIMEOUT)
+    try:
+        conn.request('POST', '/_probe/start', headers=headers)
+        response = conn.getresponse()
+        payload = response.read(1024 * 1024 + 1)
+        require(len(payload) <= 1024 * 1024, 'action_response_too_large')
+        return response.status, dict(response.getheaders()), payload
+    finally:
+        conn.close()
+
+
 def transport_steps(port, token, scenario, run_id, export_id):
     origin = f'http://127.0.0.1:{port}'
     wait_until(lambda: reachable(port), timeout=40)
@@ -69,7 +88,7 @@ def transport_steps(port, token, scenario, run_id, export_id):
                 ('open', 'select_run', 'select_export', 'observe'))
     observed = []
     for action in expected:
-        status, _, payload = request(port, '/_probe/start', method='POST', headers=auth)
+        status, _, payload = request_action(port, auth)
         require(status == 200, 'action_http_failed')
         state = json.loads(payload)
         code = state.get('error')

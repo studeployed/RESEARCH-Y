@@ -108,6 +108,18 @@ become browser errors. The contract tests exercise missing/invalid projects,
 empty new projects, no implicit run selection, genuine workbook structure,
 rerun/reopen/relocation, exact identity and retained request IDs.
 
+## Bounded action-response behaviour
+
+The read-only health probes retain their short three-second HTTP timeout. The
+experimental `/_probe/start` route, however, awaits actual completed workbook
+commands: preparation may run up to three supervised operations of 35 seconds
+each. Its **fixed-loopback, fixed-path-only** driver uses a 115-second bounded
+HTTP response timeout, with the original one-megabyte response limit. This does
+not alter worker deadlines, NiceGUI controls, security permissions or protocol
+paths. The GUI button itself runs the work off the event loop. Regression tests
+verify the longer bound only applies to this action, and that oversized output
+still fails explicitly.
+
 ## Gates still open
 
 - Genuine native folder selection and recent-project index; user-visible

@@ -19,6 +19,53 @@ from research_y.projects import create_project, open_project
 from research_y.storage import ApprovedTerm, StrategyGroup, approve_strategy, create_search_run, plan_source_query
 from research_y.application_inspection import observe_export_request
 from tools.gui_feasibility.real_project_flow import ProjectFlowError, RealProjectFlow
+from tools.gui_feasibility.run_real_project import (ACTION_RESPONSE_TIMEOUT, request_action,
+                                                   ExperimentFailure)
+
+
+def test_real_project_action_timeout_covers_bounded_supervisor_work(monkeypatch):
+    seen = {}
+    class Response:
+        status = 200
+        def read(self, n):
+            seen['read_limit'] = n
+            return b'{"completed":true}'
+        def getheaders(self):
+            return [('content-type', 'application/json')]
+    class Connection:
+        def __init__(self, host, port, *, timeout):
+            seen.update(host=host, port=port, timeout=timeout)
+        def request(self, method, path, *, headers):
+            seen.update(method=method, path=path, headers=headers)
+        def getresponse(self):
+            return Response()
+        def close(self):
+            seen['closed'] = True
+    import tools.gui_feasibility.run_real_project as driver
+    monkeypatch.setattr(driver.http.client, 'HTTPConnection', Connection)
+    status, headers, body = request_action(18765, {'Origin':'http://127.0.0.1:18765'})
+    assert status == 200 and body == b'{"completed":true}'
+    assert seen['host'] == '127.0.0.1' and seen['path'] == '/_probe/start'
+    assert seen['method'] == 'POST' and seen['closed']
+    assert 35 * 3 < ACTION_RESPONSE_TIMEOUT < 120
+    assert seen['timeout'] == ACTION_RESPONSE_TIMEOUT
+    assert seen['read_limit'] == 1024 * 1024 + 1
+
+
+def test_real_project_action_response_bound_still_fails_closed(monkeypatch):
+    class Response:
+        status = 200
+        def read(self, n): return b'x' * n
+        def getheaders(self): return []
+    class Connection:
+        def __init__(self, *args, **kwargs): pass
+        def request(self, *args, **kwargs): pass
+        def getresponse(self): return Response()
+        def close(self): pass
+    import tools.gui_feasibility.run_real_project as driver
+    monkeypatch.setattr(driver.http.client, 'HTTPConnection', Connection)
+    with pytest.raises(ExperimentFailure, match='action_response_too_large'):
+        request_action(18765, {})
 
 
 def sample(tmp_path):
