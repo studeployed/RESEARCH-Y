@@ -24,6 +24,10 @@ from tools.gui_feasibility.real_project_flow import ProjectFlowError, RealProjec
 
 LITERAL_NAME = '<img src=x onerror="window.__researchy_injected=true">'
 
+# One UI action may execute three bounded, sequential 35-second worker calls.
+# Keep short readiness checks separate from the longer action-completion wait.
+NATIVE_ACTION_COMPLETION_TIMEOUT = 115
+
 
 def write_report(path, report):
     path.write_text(json.dumps(report, sort_keys=True, indent=2, allow_nan=False) + '\n', encoding='utf-8')
@@ -208,7 +212,8 @@ def run(args):
                     await until(lambda: bool(clients) and not action_lock.locked())
                     await until_native_button(name, js)
                     await js("document.querySelector('[data-testid=" + name + "]').click(); true")
-                    await until(lambda: len(events) > index or last_error['code'] is not None)
+                    await until(lambda: len(events) > index or last_error['code'] is not None,
+                                deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
                     if last_error['code'] is not None or events[index] != action:
                         raise RuntimeError('native_action_failed')
                 await until(lambda: flow.state()['observation'] is not None)
