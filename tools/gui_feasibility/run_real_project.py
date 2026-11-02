@@ -345,6 +345,8 @@ def transport_steps(port, token, scenario, run_id, export_id):
     require(request(port, '/', headers=auth)[0] == 200, 'nicegui_page_missing')
     expected = (('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
                 if scenario == 'publish' else
+                ('recent_open', 'select_run', 'select_export', 'observe')
+                if scenario == 'recent_open' else
                 ('open', 'select_run', 'prepare', 'cancel', 'observe')
                 if scenario == 'cancel' else
                 ('open', 'select_run', 'select_export', 'resume', 'observe')
@@ -386,8 +388,16 @@ def transport_steps(port, token, scenario, run_id, export_id):
         observed.append(action)
         result = state['state']
         require(result['source_retrieval_verified'] is False, 'false_source_completeness')
-        if action == 'open':
-            require(result['selected_run_id'] is None, 'implicit_run_selected')
+        if action in ('open', 'recent_open'):
+            require(result['selected_run_id'] is None
+                    and result['selected_export_id'] is None,
+                    'implicit_run_or_export_selected')
+        if action == 'recent_open':
+            require(len(result['recent_projects']) == 1 and
+                    result['recent_projects'][0]['project_id'] ==
+                        result['project']['project_id'] and
+                    result['recent_history_error'] is None,
+                    'recent_identity_not_revalidated')
         if action == 'select_run':
             require(result['selected_run_id'] == run_id, 'wrong_run_selected')
             require(result['report']['queries'][0]['reported_matches'] is None, 'unknown_changed')
@@ -439,8 +449,11 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
         root = Path(directory)
         app_dir = root / 'app'
         env = environment(root, port, token, mode == 'native')
-        env.update(RESEARCHY_GUI_SELECTED_ROOT=str(project.root),
+        env.update(RESEARCHY_GUI_SELECTED_ROOT=str(
+                       parent / 'not-an-open-project' if scenario == 'recent_open' else project.root),
                    RESEARCHY_GUI_SELECTED_PARENT=str(parent),
+                   RESEARCHY_GUI_RECENTS_PARENT=str(parent / '.private-launcher-state'),
+                   RESEARCHY_GUI_EXPECTED_PROJECT_ID=str(project.identifier),
                    RESEARCHY_GUI_EXPECTED_RUN_ID=run_id,
                    RESEARCHY_GUI_EXPECTED_EXPORT_ID=expected_export or '')
         marker = root / 'private-worker-stage-pid'
@@ -473,7 +486,8 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 # publish child paths, project/source labels, secrets or raw reports.
                 result['observed_status'] = report.get('status')
                 result['observed_actions'] = [x for x in report.get('actions', [])
-                    if x in ('open', 'select_run', 'select_export', 'prepare', 'resume', 'cancel', 'observe')]
+                    if x in ('open', 'recent_open', 'select_run', 'select_export',
+                             'prepare', 'resume', 'cancel', 'observe')]
                 code = report.get('error')
                 result['observed_error'] = (code if isinstance(code, str) and
                      code.replace('_', '').isalnum() and len(code) <= 64 else None)
@@ -790,6 +804,26 @@ def run_scenario(mode):
         revived['original_request_retained'] = True
         revived['damaged_stage_retained'] = True
         revived['gui_worker_termination_confirmed'] = True
+
+        # The same private launcher history survives separate GUI processes.
+        # A folder was relocated after publication; the trusted reopen has
+        # updated its UUID entry to the *new* path. The new GUI's initial
+        # launcher root is deliberately invalid; only an explicit recent-list
+        # click can find, verify and reopen the original real project.
+        recent = run_app(mode, 'recent_open', reopened, root, run_id, first['export_id'])
+        results.append(recent)
+        if not recent['passed']:
+            return results
+        with closing(sqlite3.connect(reopened.database_path)) as db:
+            recent_events = db.execute(
+                "SELECT COUNT(*) FROM audit_events WHERE event_type LIKE 'workbook_export_v1:%'"
+            ).fetchone()[0]
+        require(recent_events == second_events
+                and observe_export_request(reopened, first['export_id']).audited_success,
+                'recent_reopen_changed_export_audit')
+        recent['same_uuid_after_relocation'] = True
+        recent['no_implicit_run_selection'] = True
+        recent['no_new_export_receipt'] = True
         return results
 
 
