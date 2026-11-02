@@ -13,8 +13,8 @@ from uuid import uuid4
 
 from research_y.application_commands import ApplicationCommand
 from research_y.application_worker import ApplicationWorker
-from research_y.projects import (ProjectFormatError, ProjectVersionError,
-                                  create_project, open_project)
+from research_y.projects import (MANIFEST_FILENAME, ProjectFormatError, ProjectVersionError,
+                                  _parse_manifest, create_project, open_project)
 from research_y.export_files import Directory
 from tools.gui_feasibility.native_folder_selection import (
     NativeFolderError, checked_folder)
@@ -103,8 +103,22 @@ class RealProjectFlow:
             try:
                 folder = self._validated_host_directory(Path(entry['location']))
                 with Directory(folder):
+                    manifest_path = folder / MANIFEST_FILENAME
+                    if manifest_path.is_symlink():
+                        raise ProjectFlowError('recent_project_unavailable')
+                    # Critical: open_project may migrate an older supported
+                    # database. Compare its canonical manifest UUID first,
+                    # so a stale/tampered recent entry cannot mutate a
+                    # different project's database or create migration backup.
+                    manifest_id, _, _ = _parse_manifest(manifest_path)
+                    if str(manifest_id) != entry['project_id']:
+                        raise ProjectFlowError('recent_project_identity_mismatch')
+                    # Core project validation compares the manifest with the
+                    # SQLite identity before it performs any migrations.
                     project = open_project(folder)
-            except ProjectFlowError:
+            except ProjectFlowError as exc:
+                if str(exc) == 'recent_project_identity_mismatch':
+                    raise
                 raise ProjectFlowError('recent_project_unavailable') from None
             except ProjectVersionError:
                 raise ProjectFlowError('unsupported_project_version') from None
