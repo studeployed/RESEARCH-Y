@@ -80,6 +80,8 @@ def run(args):
                             return flow.prepare()
                         if name == 'resume':
                             return flow.resume()
+                        if name == 'cancel':
+                            return flow.cancel()
                         if name == 'observe':
                             return flow.observe()
                         raise ProjectFlowError('unsupported_action')
@@ -142,8 +144,21 @@ def run(args):
                              state['selected_run_id'] + '.xlsx')
                     ui.button('Prepare strategy workbook',
                               on_click=lambda: act('prepare')).props('data-testid=prepare')
+                if state['export_reconciliation_required']:
+                    ui.label('Preparation outcome unconfirmed. Retry uses the original pending request ID; do not start another export.').props('data-testid=recovery-required')
                 if state['selected_export_id'] is not None:
-                    ui.button('Resume publication', on_click=lambda: act('resume')).props('data-testid=resume')
+                    saved = next((item for item in state['exports']
+                                  if item['export_id'] == state['selected_export_id']), None)
+                    if saved is None:
+                        ui.label('Export inventory unavailable — reinspection required.').props('data-testid=export-missing')
+                    else:
+                        ui.label('Recorded export phase: ' + saved['recorded_state']).props('data-testid=export-phase')
+                        if saved['last_error'] is not None:
+                            ui.label('Recorded export error: ' + saved['last_error']).props('data-testid=export-error')
+                        if saved['recorded_state'] not in ('cancelled', 'published'):
+                            ui.button('Cancel pending export', on_click=lambda: act('cancel')).props('data-testid=cancel')
+                        if saved['recorded_state'] != 'cancelled':
+                            ui.button('Resume publication', on_click=lambda: act('resume')).props('data-testid=resume')
                     ui.button('Verify workbook', on_click=lambda: act('observe')).props('data-testid=observe')
                     ui.label('Export request ID: ' + state['selected_export_id']).props('data-testid=export-id')
                 retained = state['retained_export_report']
