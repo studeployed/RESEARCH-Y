@@ -48,6 +48,23 @@ class LaunchSession:
         self._lock = threading.Lock()
         self._used = False
         self._closed = False
+        # Only safe stage names, never tokens, cookies, paths or request data.
+        self._startup_stages = {
+            'bootstrap_served': False, 'session_attempted': False,
+            'session_redeemed': False, 'page_accepted': False,
+            'socket_allowed': False,
+        }
+
+    def note_startup_stage(self, stage: str) -> None:
+        """Trusted guard records bounded session handshake progress only."""
+        with self._lock:
+            if stage not in self._startup_stages:
+                raise ValueError('unknown_startup_stage')
+            self._startup_stages[stage] = True
+
+    def startup_stages(self) -> dict[str, bool]:
+        with self._lock:
+            return dict(self._startup_stages)
 
     @property
     def redeemed(self):
@@ -115,8 +132,10 @@ class PrototypeGuard:
         if (socket or method not in ('GET', 'HEAD')) and headers.get(b'origin') != origin:
             return await self._reject(kind, send)
         if kind == 'http' and path == '/bootstrap' and method == 'GET':
+            self.session.note_startup_stage('bootstrap_served')
             return await self._reply(send, 200, BOOTSTRAP_HTML, content_type=b'text/html; charset=utf-8')
         if kind == 'http' and path == '/session' and method == 'POST':
+            self.session.note_startup_stage('session_attempted')
             # A fixed empty request, not a general JSON/path endpoint.
             if headers.get(b'content-length', b'0') != b'0' or b'transfer-encoding' in headers:
                 return await self._reject(kind, send)
@@ -130,6 +149,7 @@ class PrototypeGuard:
             cookie = self.session.redeem(headers.get(b'x-researchy-bootstrap', b''))
             if cookie is None:
                 return await self._reject(kind, send)
+            self.session.note_startup_stage('session_redeemed')
             return await self._reply(send, 204, b'', extra=[(b'set-cookie', cookie)])
         if not self.session.authorized(headers.get(b'cookie', b'')):
             return await self._reject(kind, send)
@@ -141,6 +161,10 @@ class PrototypeGuard:
         )
         if not allowed:
             return await self._reject(kind, send)
+        if socket and path == SOCKET_PATH:
+            self.session.note_startup_stage('socket_allowed')
+        if kind == 'http' and path == '/' and method in ('GET', 'HEAD'):
+            self.session.note_startup_stage('page_accepted')
         if path in ('/_probe/start', '/_probe/stop'):
             if headers.get(b'content-length', b'0') != b'0' or b'transfer-encoding' in headers:
                 return await self._reject(kind, send)
