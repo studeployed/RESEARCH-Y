@@ -53,6 +53,18 @@ report and verifies exact `openpyxl==3.1.5` and `et-xmlfile==2.0.0` versions
 and `pip check`. This does not add a new graphical dependency or claim a
 complete licence/vulnerability audit for the combined environment.
 
+The following amended matrix exposed a separate problem **before** the real
+project scenario on Windows/Python 3.12: the prior synthetic abrupt-host-death
+probe passed its six ordinary cases but intermittently raised `TimeoutExpired`
+during the process-tree check. Its original implementation launched a new
+PowerShell/CIM query on every 50 ms poll, an unnecessarily heavy global
+process-enumeration dependency. The next amendment uses a native Windows
+Toolhelp process snapshot instead. The same exact descendants, host-only
+termination, 15-second descendant-exit deadline and failure-on-missing-cleanup
+requirements remain unchanged; no failure is skipped or timeout extended.
+A native child/parent enumeration assertion and a no-CIM regression protect
+the replacement. No production code changes.
+
 The dedicated runner seeds a **real disk-backed project** with a frozen, approved
 one-group OR strategy and a planned but unexecuted PubMed query. This is a
 synthetic *source fixture* deliberately producing `unknown` reported hits and

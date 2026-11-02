@@ -3,6 +3,8 @@ import asyncio
 import importlib.util
 import json
 import inspect
+import os
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -15,7 +17,8 @@ sys.path.insert(0, str(ROOT))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard, BOOTSTRAP_HTML, SOCKET_PATH
 from tools.gui_feasibility.prototype_app import (navigation_allowed, valid_initial_bootstrap,
     create_guarded_window, read_native_document)
-from tools.gui_feasibility.run_prototype import validate_result, environment, ExperimentFailure
+from tools.gui_feasibility.run_prototype import (validate_result, environment,
+    ExperimentFailure, windows_process_table)
 
 TOKEN = 'a' * 64
 PORT = 18765
@@ -397,6 +400,27 @@ def test_experiment_does_not_adopt_packages_or_accept_browser_paths():
     assert 'proxy_headers=False' in text and 'access_log=False' in text
     assert 'worker.execute_command = synthetic_work' in text
     assert 'TemporaryDirectory' in text and 'create_file_dialog' not in text
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='requires Windows Toolhelp')
+def test_native_toolhelp_process_snapshot_reports_actual_child():
+    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(10)'])
+    try:
+        table = windows_process_table()
+        assert os.getpid() in table
+        assert table.get(child.pid) == os.getpid()
+    finally:
+        child.kill()
+        child.wait(timeout=10)
+
+
+def test_abrupt_process_probe_does_not_launch_repeated_powershell_cim_queries():
+    text = (ROOT / 'tools/gui_feasibility/run_prototype.py').read_text(encoding='utf-8')
+    block = text[text.index('def windows_process_table'):text.index('def descendant_pids')]
+    assert 'CreateToolhelp32Snapshot' in block and 'Process32FirstW' in block
+    assert 'Get-CimInstance' not in block and 'powershell' not in block.lower()
+    assert "wait_until(lambda: not remaining(), timeout=15)" in text
+    assert "['taskkill', '/PID', str(process.pid), '/F']" in text
 
 
 def test_workflow_keeps_native_execution_explicit_and_failure_visible():
