@@ -1,0 +1,79 @@
+name: Graphical lifecycle feasibility
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/gui-lifecycle-probe.yml'
+      - 'tools/gui_feasibility/**'
+      - 'scripts/gui_dependency_probe.py'
+      - 'src/research_y/application_worker.py'
+      - 'src/research_y/application_commands.py'
+      - 'tests/test_gui_prototype.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gui-lifecycle-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prototype:
+    name: GUI lifecycle ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Create disposable prototype environment
+        shell: python
+        run: |
+          import os, pathlib, venv
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'research-y-gui-lifecycle'
+          venv.EnvBuilder(with_pip=True, system_site_packages=False).create(root)
+          executable_dir = root / ('Scripts' if os.name == 'nt' else 'bin')
+          with open(os.environ['GITHUB_PATH'], 'a', encoding='utf-8') as stream:
+              stream.write(str(executable_dir) + '\n')
+          pathlib.Path('.gui-lifecycle').mkdir()
+      - name: Resolve approved graphical candidates
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --dry-run --ignore-installed --report .gui-lifecycle/resolution.json -r tools/gui_feasibility/requirements.txt
+      - name: Check runtime archives and current release-feed evidence
+        run: python scripts/gui_dependency_probe.py prepare --directory .gui-lifecycle
+      - name: Install hash-bound observed runtime artifacts
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --require-hashes --report .gui-lifecycle/installation.json -r .gui-lifecycle/candidate-lock.txt
+      - name: Check isolated dependencies
+        run: python -m pip check
+      - name: Verify installed candidates
+        run: python scripts/gui_dependency_probe.py verify --directory .gui-lifecycle
+      - name: Exercise real loopback requests and synthetic worker lifecycle
+        if: runner.os == 'Linux'
+        run: python tools/gui_feasibility/run_prototype.py --directory .gui-lifecycle
+      - name: Exercise real requests and native Windows window lifecycle
+        if: runner.os == 'Windows'
+        run: python tools/gui_feasibility/run_prototype.py --directory .gui-lifecycle --native
+      - name: Preserve bounded evidence without private process logs or binaries
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: gui-lifecycle-evidence-${{ matrix.os }}-${{ matrix.python-version }}
+          path: |
+            .gui-lifecycle/prototype-evidence.json
+            .gui-lifecycle/dependency-evidence.json
+            .gui-lifecycle/candidate-lock.txt
+            .gui-lifecycle/probe-error.json
+            .gui-lifecycle/resolution.json
+            .gui-lifecycle/installation.json
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true
