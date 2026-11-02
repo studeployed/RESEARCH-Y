@@ -19,7 +19,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from uuid import UUID
+from uuid import UUID, uuid4
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +29,7 @@ from tools.gui_feasibility.run_prototype import (environment, free_port, request
                                                   wait_until, stop_owned_process, ExperimentFailure)
 from research_y.projects import create_project, open_project
 from research_y.application_inspection import read_application_snapshot, observe_export_request
+from research_y import workbook_exports
 from research_y.storage import ApprovedTerm, StrategyGroup, approve_strategy, create_search_run, plan_source_query
 
 APP = ROOT / 'tools' / 'gui_feasibility' / 'real_project_app.py'
@@ -49,6 +50,68 @@ def fixture(parent):
             snapshot['report']['counts']['totals']['global_unique_publications'] is None,
             'fixture_not_incomplete')
     return p, run.run_id
+
+
+# A subprocess exits after the final hard link becomes visible and after the
+# uncommitted 'published' audit INSERT. Process exit rolls that transaction
+# back, retaining only the earlier, durable 'publishing' receipt.
+_CRASH_BEFORE_FINAL_RECEIPT = """
+import os, sys
+from research_y import workbook_exports as exports
+from research_y.projects import open_project
+
+project = open_project(sys.argv[1])
+export_id = sys.argv[2]
+append_original = exports._append
+
+def crash_after_publication(db, candidate, previous, action, data):
+    append_original(db, candidate, previous, action, data)
+    if action == 'published' and candidate == export_id:
+        os._exit(73)
+
+exports._append = crash_after_publication
+exports.resume_workbook_export(project, export_id)
+raise SystemExit(72)
+"""
+
+
+def seed_unreceipted_workbook(project, run_id):
+    """Real process death between a visible workbook and its final journal commit.
+
+    The crash is confined to a disposable, subprocess-owned fixture; no
+    production services are patched in the surviving GUI process.
+    """
+    export_id = str(uuid4())
+    filename = 'strategy-summary-' + run_id + '.xlsx'
+    workbook_exports.prepare_workbook_export(project, run_id, filename, export_id=export_id)
+    allowed = {'PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
+               'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PROGRAMFILES',
+               'PROGRAMFILES(X86)', 'PROGRAMDATA', 'SYSTEMDRIVE', 'LANG'}
+    env = {k: v for k, v in os.environ.items() if k.upper() in allowed}
+    env['PYTHONPATH'] = os.pathsep.join([str(ROOT), str(ROOT / 'src')])
+    attempt = subprocess.run(
+        [sys.executable, '-c', _CRASH_BEFORE_FINAL_RECEIPT,
+         str(project.root), export_id],
+        cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        timeout=45, check=False)
+    require(attempt.returncode == 73, 'final_receipt_crash_fixture_failed')
+    workbook = project.root / 'exports' / filename
+    require(workbook.is_file(), 'unreceipted_workbook_not_visible')
+    with ZipFile(workbook) as archive:
+        require(archive.testzip() is None and 'xl/workbook.xml' in archive.namelist(),
+                'unreceipted_workbook_not_valid_xlsx')
+    observed = observe_export_request(project, export_id)
+    require(observed.outcome == 'published_receipt_missing'
+            and observed.request.recorded_state == 'publishing'
+            and not observed.audited_success and not observed.source_retrieval_verified,
+            'missing_receipt_falsely_verified')
+    require(sha256(workbook.read_bytes()).hexdigest() ==
+            observed.request.artifact_sha256, 'unreceipted_workbook_digest_mismatch')
+    with closing(sqlite3.connect(project.database_path)) as db:
+        count = db.execute('SELECT COUNT(*) FROM audit_events WHERE event_type=?',
+                           (f'{workbook_exports.EVENT}:{export_id}',)).fetchone()[0]
+    require(count == 4, 'unexpected_crash_journal_count')
+    return export_id, workbook
 
 
 # A prepare action can perform three independently supervised commands, each
@@ -92,6 +155,8 @@ def transport_steps(port, token, scenario, run_id, export_id):
                 if scenario == 'publish' else
                 ('open', 'select_run', 'prepare', 'cancel', 'observe')
                 if scenario == 'cancel' else
+                ('open', 'select_run', 'select_export', 'resume', 'observe')
+                if scenario == 'receipt_recovered' else
                 ('open', 'select_run', 'select_export', 'observe'))
     observed = []
     for action in expected:
@@ -117,11 +182,17 @@ def transport_steps(port, token, scenario, run_id, export_id):
             require(result['exports'][0]['recorded_state'] == 'cancelled'
                     and result['observation'] is None, 'cancellation_not_durable')
         if action == 'observe':
-            cancelled = scenario in ('cancel', 'cancel_reopen')
-            require(result['observation']['outcome'] ==
-                    ('recorded_cancelled' if cancelled else 'published_verified')
-                    and result['observation']['audited_success'] is (not cancelled),
-                    'output_not_verified')
+            expected_outcome = ('recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
+                                else 'published_receipt_missing' if scenario == 'receipt_missing'
+                                else 'published_verified')
+            require(result['observation']['outcome'] == expected_outcome
+                    and result['observation']['audited_success'] is
+                        (expected_outcome == 'published_verified'),
+                    'output_status_incorrect')
+            if scenario == 'receipt_missing':
+                require(result['exports'][0]['recorded_state'] == 'publishing'
+                        and result['selected_export_id'] == export_id,
+                        'missing_receipt_request_replaced')
     require(request(port, '/_probe/stop', method='POST', headers=auth)[0] == 200,
             'stop_request_failed')
     return observed
@@ -169,14 +240,16 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 result['observed_worker_reaped'] = report.get('worker_reaped')
                 result['observed_supervisor_stopped'] = report.get('supervisor_stopped')
                 result['observed_outcome'] = report.get('observed_outcome')
-                cancelled = scenario in ('cancel', 'cancel_reopen')
+                expected_outcome = ('recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
+                                    else 'published_receipt_missing' if scenario == 'receipt_missing'
+                                    else 'published_verified')
                 require(report['status'] == 'finished' and report['real_services'] is True
                         and report['source_retrieval_verified'] is False
                         and report['selected_run_matches'] is True
                         and report['selected_export_matches'] is True
-                        and report['observed_outcome'] ==
-                            ('recorded_cancelled' if cancelled else 'published_verified')
-                        and report['observation_audited'] is (not cancelled)
+                        and report['observed_outcome'] == expected_outcome
+                        and report['observation_audited'] is
+                            (expected_outcome == 'published_verified')
                         and report['session_revoked'] is True
                         and report['worker_reaped'] is True
                         and report['supervisor_stopped'] is True, 'real_gui_evidence_not_accepted')
@@ -187,7 +260,8 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                     require(report.get('native_rendering_verified') is True, 'native_rendering_not_verified')
                 result.update(passed=True, export_id=report['export_id'],
                               project_identity_retained=True,
-                              workbook_file_verified=not cancelled, native_rendering_verified=bool(
+                              workbook_file_verified=expected_outcome == 'published_verified',
+                              native_rendering_verified=bool(
                                   report.get('native_rendering_verified', False)))
                 with socket.socket() as sock:
                     require(sock.connect_ex(('127.0.0.1', port)) != 0, 'listener_not_closed')
@@ -251,7 +325,59 @@ def run_scenario(mode):
         cancelled_reopen['journal_unchanged_on_reopen'] = original_events == later_events
         require(cancelled_reopen['journal_unchanged_on_reopen'], 'cancel_reopen_appended_receipt')
         require(not cancel_workbook.exists(), 'cancel_reopen_wrote_workbook')
-        return [first, second, cancelled, cancelled_reopen]
+        if not cancelled_reopen['passed']:
+            return [first, second, cancelled, cancelled_reopen]
+
+        # A real process dies after linking a valid XLSX but before its
+        # 'published' receipt can commit. The first GUI visit must show
+        # recovery-required, not success; the next GUI may reconcile the
+        # exact original inode/digest and journal ID without a new export.
+        receipt_parent = root / 'missing-receipt-case'
+        receipt_parent.mkdir()
+        receipt_project, receipt_run = fixture(receipt_parent)
+        receipt_id, interrupted_file = seed_unreceipted_workbook(receipt_project, receipt_run)
+        original_bytes_digest = sha256(interrupted_file.read_bytes()).hexdigest()
+        original_identity = (interrupted_file.stat().st_dev, interrupted_file.stat().st_ino)
+        before = read_application_snapshot(receipt_project, selected_run_id=receipt_run).as_dict()
+        require(len(before['exports']) == 1
+                and before['exports'][0]['export_id'] == receipt_id
+                and before['exports'][0]['recorded_state'] == 'publishing'
+                and before['report']['status'] == 'incomplete',
+                'crash_inventory_inconsistent')
+        missing = run_app(mode, 'receipt_missing', receipt_project, receipt_parent,
+                          receipt_run, receipt_id)
+        if not missing['passed']:
+            return [first, second, cancelled, cancelled_reopen, missing]
+        after = read_application_snapshot(receipt_project, selected_run_id=receipt_run).as_dict()
+        require(len(after['exports']) == 1 and
+                after['exports'][0]['recorded_state'] == 'publishing' and
+                after['last_recorded_audit_event'] == before['last_recorded_audit_event'],
+                'observation_changed_crash_evidence')
+        require(sha256(interrupted_file.read_bytes()).hexdigest() == original_bytes_digest,
+                'observation_modified_unreceipted_file')
+        recovered = run_app(mode, 'receipt_recovered', receipt_project, receipt_parent,
+                            receipt_run, receipt_id)
+        if not recovered['passed']:
+            return [first, second, cancelled, cancelled_reopen, missing, recovered]
+        final = read_application_snapshot(receipt_project, selected_run_id=receipt_run).as_dict()
+        current_file = receipt_project.root / 'exports' / interrupted_file.name
+        require(len(final['exports']) == 1
+                and final['exports'][0]['export_id'] == receipt_id
+                and final['exports'][0]['recorded_state'] == 'published'
+                and not final['source_retrieval_verified'],
+                'crash_recovery_not_audited')
+        require(sha256(current_file.read_bytes()).hexdigest() == original_bytes_digest
+                and (current_file.stat().st_dev, current_file.stat().st_ino) == original_identity,
+                'crash_recovery_overwrote_workbook')
+        with closing(sqlite3.connect(receipt_project.database_path)) as db:
+            event_count = db.execute('SELECT COUNT(*) FROM audit_events WHERE event_type=?',
+                                     (f'{workbook_exports.EVENT}:{receipt_id}',)).fetchone()[0]
+        require(event_count == 5 and
+                observe_export_request(receipt_project, receipt_id).audited_success,
+                'crash_recovery_journal_mismatch')
+        recovered['same_file_retained'] = True
+        recovered['same_export_identity'] = True
+        return [first, second, cancelled, cancelled_reopen, missing, recovered]
 
 
 def main(argv=None):
