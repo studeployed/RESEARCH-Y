@@ -102,15 +102,23 @@ class RecentProjects:
                     return
                 with closing(sqlite3.connect(str(self.path), timeout=5)) as db:
                     db.execute('PRAGMA busy_timeout=5000')
-                    if not existing:
-                        # Multiple GUI hosts may race to create their private
-                        # catalog. BEGIN IMMEDIATE serialises first use; the
-                        # second creator re-reads the header after acquiring
-                        # the lock instead of trying to recreate the table.
-                        db.execute('BEGIN IMMEDIATE')
+                    # Both existing-file header validation and first creation
+                    # must follow the SAME BEGIN IMMEDIATE lock. Otherwise a
+                    # concurrent reader sees an uncommitted zero-version header
+                    # and incorrectly rejects a healthy initializing catalog.
+                    db.execute('BEGIN IMMEDIATE')
+                    created = False
+                    try:
                         app_id = db.execute('PRAGMA application_id').fetchone()[0]
                         version = db.execute('PRAGMA user_version').fetchone()[0]
                         if (app_id, version) == (0, 0):
+                            # A zero-byte file can legitimately be a freshly
+                            # reserved SQLite database awaiting first schema
+                            # creation by a different launcher. It contains no
+                            # prior metadata to discard. Nonempty invalid
+                            # files are NEVER silently reinitialized.
+                            if not create or (existing and self.path.stat().st_size != 0):
+                                raise RecentProjectsError()
                             db.execute(f'PRAGMA application_id={APPLICATION_ID}')
                             db.execute('''CREATE TABLE recent_projects (
                                 project_uuid TEXT PRIMARY KEY,
@@ -119,20 +127,19 @@ class RecentProjects:
                                 visited_ns INTEGER NOT NULL CHECK(visited_ns > 0)
                             )''')
                             db.execute(f'PRAGMA user_version={FORMAT_VERSION}')
+                            created = True
                         elif (app_id, version) != (APPLICATION_ID, FORMAT_VERSION):
                             raise RecentProjectsError()
+                        fields = db.execute('PRAGMA table_info(recent_projects)').fetchall()
+                        if [r[1] for r in fields] != [
+                                'project_uuid', 'project_name', 'project_root', 'visited_ns']:
+                            raise RecentProjectsError()
                         db.commit()
-                        if os.name != 'nt':
-                            os.chmod(self.path, 0o600)
-                    elif (db.execute('PRAGMA application_id').fetchone()[0] != APPLICATION_ID
-                          or db.execute('PRAGMA user_version').fetchone()[0] != FORMAT_VERSION):
-                        raise RecentProjectsError()
-                    # Check before returning a connection so corruption, wrong
-                    # schema and unsafe aliases cannot silently become an empty list.
-                    fields = db.execute('PRAGMA table_info(recent_projects)').fetchall()
-                    if [r[1] for r in fields] != [
-                            'project_uuid', 'project_name', 'project_root', 'visited_ns']:
-                        raise RecentProjectsError()
+                    except BaseException:
+                        db.rollback()
+                        raise
+                    if created and os.name != 'nt':
+                        os.chmod(self.path, 0o600)
                     yield db
         except RecentProjectsError:
             raise
