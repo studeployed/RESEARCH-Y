@@ -418,7 +418,9 @@ def test_abrupt_process_probe_does_not_launch_repeated_powershell_cim_queries():
     text = (ROOT / 'tools/gui_feasibility/run_prototype.py').read_text(encoding='utf-8')
     block = text[text.index('def windows_process_table'):text.index('def descendant_pids')]
     assert 'CreateToolhelp32Snapshot' in block and 'Process32FirstW' in block
-    assert 'Get-CimInstance' not in block and 'powershell' not in block.lower()
+    # Match executable process launches, not explanatory docstring wording.
+    assert 'Get-CimInstance' not in block and 'subprocess.check_output' not in block
+    assert "['powershell'" not in block.lower()
     assert "wait_until(lambda: not remaining(), timeout=15)" in text
     assert "['taskkill', '/PID', str(process.pid), '/F']" in text
 
