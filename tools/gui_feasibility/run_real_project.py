@@ -56,6 +56,11 @@ def fixture(parent):
 # for health checks, but not for a complete approved export operation.
 ACTION_RESPONSE_TIMEOUT = 115
 
+# Native publication drives 11 sequential, 35-second-bounded worker calls,
+# plus bootstrap, button readiness, and shutdown. Cap the complete scenario
+# above that envelope; keep the shorter transport shutdown bound unchanged.
+NATIVE_SCENARIO_TIMEOUT = 540
+
 
 def request_action(port, headers):
     """Only this fixed localhost action may wait for a bounded full worker call."""
@@ -140,7 +145,7 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
             try:
                 if mode == 'transport':
                     result['actions'] = transport_steps(port, token, scenario, run_id, expected_export)
-                process.wait(timeout=120)
+                process.wait(timeout=NATIVE_SCENARIO_TIMEOUT if mode == 'native' else 120)
                 require(process.returncode == 0, 'real_gui_child_failed')
                 report_path = app_dir / 'app-result.json'
                 require(report_path.is_file(), 'missing_real_gui_report')
