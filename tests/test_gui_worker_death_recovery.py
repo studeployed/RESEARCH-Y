@@ -28,7 +28,8 @@ from tools.gui_feasibility.real_project_flow import ProjectFlowError, RealProjec
 from tools.gui_feasibility.run_prototype import wait_until
 from tools.gui_feasibility.run_real_project import fixture, run_app, transport_steps
 from tools.gui_feasibility.real_project_app import run
-from tools.gui_feasibility.worker_death_fixture import pause_during_retained_stage
+from tools.gui_feasibility.worker_death_fixture import (
+    pause_during_retained_stage, publish_gui_owner_marker)
 
 
 def _marker_matches_live_worker(marker, child):
@@ -153,6 +154,8 @@ def test_empty_worker_pid_marker_is_retried_before_safe_termination(tmp_path, mo
     import tools.gui_feasibility.run_real_project as runner
 
     marker = tmp_path / 'private-worker-stage-pid'
+    owner_marker = tmp_path / 'private-gui-owner-pid'
+    owner_marker.write_text('12345', encoding='ascii')
     marker.touch()  # O_EXCL creation has happened; os.write has NOT happened.
     encountered_empty = threading.Event()
     stopped = threading.Event()
@@ -173,7 +176,7 @@ def test_empty_worker_pid_marker_is_retried_before_safe_termination(tmp_path, mo
     fake_host = SimpleNamespace(pid=12345, poll=lambda: None)
     with ThreadPoolExecutor(max_workers=1) as pool:
         result = pool.submit(runner.terminate_marked_gui_worker,
-                             fake_host, marker, stopped, status)
+                             fake_host, marker, owner_marker, stopped, status)
         try:
             assert encountered_empty.wait(timeout=3), (
                 'monitor rejected O_EXCL marker before the PID was written')
@@ -183,7 +186,8 @@ def test_empty_worker_pid_marker_is_retried_before_safe_termination(tmp_path, mo
         finally:
             stopped.set()
     assert killed == [(54321, signal.SIGTERM)]
-    assert status == {'terminated': True, 'error': None}
+    assert status == {'terminated': True, 'error': None,
+                      'phase': 'signal_sent', 'gui_owner_relation': 'direct'}
 
 
 def test_unrelated_process_marker_is_rejected_without_killing(tmp_path, monkeypatch):
@@ -191,6 +195,8 @@ def test_unrelated_process_marker_is_rejected_without_killing(tmp_path, monkeypa
 
     marker = tmp_path / 'wrong-parent-pid'
     marker.write_text('54321', encoding='ascii')
+    owner_marker = tmp_path / 'private-gui-owner-pid'
+    owner_marker.write_text('12345', encoding='ascii')
     status = {'terminated': False, 'error': None}
     stopped = threading.Event()
     monkeypatch.setattr(runner, '_worker_parent_is_gui', lambda pid, parent: False)
@@ -198,8 +204,57 @@ def test_unrelated_process_marker_is_rejected_without_killing(tmp_path, monkeypa
         pytest.fail('test monitor attempted to kill a nonchild process')
     monkeypatch.setattr(runner.os, 'kill', forbidden_kill)
     runner.terminate_marked_gui_worker(
-        SimpleNamespace(pid=12345, poll=lambda: None), marker, stopped, status)
-    assert status == {'terminated': False, 'error': 'worker_parent_mismatch'}
+        SimpleNamespace(pid=12345, poll=lambda: None),
+        marker, owner_marker, stopped, status)
+    assert status == {'terminated': False, 'error': 'worker_parent_mismatch',
+                      'phase': 'parentage_check', 'gui_owner_relation': 'direct'}
+
+
+def test_gui_owner_marker_is_exclusive_and_identifies_real_python_process(tmp_path):
+    marker = tmp_path / 'private-gui-owner-pid'
+    publish_gui_owner_marker(marker)
+    assert marker.read_text(encoding='ascii') == str(os.getpid())
+    with pytest.raises(FileExistsError):
+        publish_gui_owner_marker(marker)
+    assert marker.read_text(encoding='ascii') == str(os.getpid())
+
+
+def test_unrelated_gui_owner_cannot_authorise_termination(tmp_path, monkeypatch):
+    import tools.gui_feasibility.run_real_project as runner
+
+    marker = tmp_path / 'private-worker-stage-pid'
+    owner_marker = tmp_path / 'private-gui-owner-pid'
+    marker.write_text('54321', encoding='ascii')
+    owner_marker.write_text('65432', encoding='ascii')
+    stopped = threading.Event()
+    status = {'terminated': False, 'error': None}
+    monkeypatch.setattr(runner, '_gui_owner_matches_launcher',
+                        lambda owner, launcher: False)
+    def forbidden_parentage(*_):
+        pytest.fail('worker parentage checked for unauthorised GUI host')
+    monkeypatch.setattr(runner, '_worker_parent_is_gui', forbidden_parentage)
+    monkeypatch.setattr(runner.os, 'kill',
+                        lambda *_: pytest.fail('nonowned worker would have been killed'))
+    runner.terminate_marked_gui_worker(
+        SimpleNamespace(pid=12345, poll=lambda: None),
+        marker, owner_marker, stopped, status)
+    assert status == {'terminated': False, 'error': 'gui_owner_mismatch',
+                      'phase': 'gui_owner_check'}
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows venv Python redirector only')
+def test_windows_verified_launcher_child_owner_not_arbitrary_descendant(monkeypatch):
+    import tools.gui_feasibility.run_real_project as runner
+    # On Windows, Python's venv launcher can start a base interpreter as its
+    # immediate child. Require that exact one-hop relationship, not a grandchild
+    # or any unrelated process. Direct launch must remain valid too.
+    monkeypatch.setattr(runner, 'windows_process_table',
+                        lambda: {220: 110, 330: 220, 440: 999})
+    assert runner._gui_owner_matches_launcher(110, 110)
+    assert runner._gui_owner_matches_launcher(220, 110)
+    assert not runner._gui_owner_matches_launcher(330, 110)
+    assert not runner._gui_owner_matches_launcher(440, 110)
+    assert not runner._gui_owner_matches_launcher(-1, 110)
 
 
 def test_integration_marker_must_match_live_child_before_consumption(tmp_path):
