@@ -57,8 +57,13 @@ def run(args):
             # callable; the browser cannot select a fault or filesystem path.
             if not os.environ.get('RESEARCHY_GUI_TEST_STAGE_MARKER'):
                 raise RuntimeError('trusted_worker_fault_marker_required')
+            owner_marker = os.environ.pop('RESEARCHY_GUI_TEST_OWNER_MARKER', '')
+            if not owner_marker:
+                raise RuntimeError('trusted_gui_owner_marker_required')
             from research_y import application_worker
-            from tools.gui_feasibility.worker_death_fixture import pause_during_retained_stage
+            from tools.gui_feasibility.worker_death_fixture import (
+                pause_during_retained_stage, publish_gui_owner_marker)
+            publish_gui_owner_marker(Path(owner_marker))
             application_worker.execute_command = pause_during_retained_stage
         flow = RealProjectFlow(selected_root=root, selected_parent=parent)
         os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN'] = session.origin
