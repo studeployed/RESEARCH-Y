@@ -11,6 +11,7 @@ on:
       - 'src/research_y/application_commands.py'
       - 'tests/test_gui_prototype.py'
       - 'tests/test_gui_real_project.py'
+      - 'tests/test_gui_receipt_recovery.py'
   workflow_dispatch:
 
 permissions:
