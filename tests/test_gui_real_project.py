@@ -19,8 +19,10 @@ from research_y.projects import create_project, open_project
 from research_y.storage import ApprovedTerm, StrategyGroup, approve_strategy, create_search_run, plan_source_query
 from research_y.application_inspection import observe_export_request
 from tools.gui_feasibility.real_project_flow import ProjectFlowError, RealProjectFlow
-from tools.gui_feasibility.run_real_project import (ACTION_RESPONSE_TIMEOUT, request_action,
-                                                   ExperimentFailure)
+from tools.gui_feasibility.run_real_project import (ACTION_RESPONSE_TIMEOUT,
+                                                   NATIVE_SCENARIO_TIMEOUT, request_action,
+                                                   run_app, ExperimentFailure)
+from tools.gui_feasibility.real_project_app import NATIVE_ACTION_COMPLETION_TIMEOUT, run
 
 
 def test_real_project_action_timeout_covers_bounded_supervisor_work(monkeypatch):
@@ -50,6 +52,21 @@ def test_real_project_action_timeout_covers_bounded_supervisor_work(monkeypatch)
     assert 35 * 3 < ACTION_RESPONSE_TIMEOUT < 120
     assert seen['timeout'] == ACTION_RESPONSE_TIMEOUT
     assert seen['read_limit'] == 1024 * 1024 + 1
+
+
+
+def test_native_action_and_scenario_waits_cover_actual_worker_bounds():
+    # The publish sequence has 11 worker commands: 1 open, 1 select,
+    # 3 + 3 prepare, 2 resume, and 1 observe. Each permits 35 seconds.
+    assert ACTION_RESPONSE_TIMEOUT == NATIVE_ACTION_COMPLETION_TIMEOUT
+    assert 3 * 35 < NATIVE_ACTION_COMPLETION_TIMEOUT < 120
+    assert 11 * 35 + 30 + 6 * 15 < NATIVE_SCENARIO_TIMEOUT < 600
+    app_source = inspect.getsource(run)
+    assert "await until(lambda: len(events) > index or last_error['code'] is not None," in app_source
+    assert 'deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)' in app_source
+    # Initial socket readiness remains subject to the shorter default bound.
+    assert 'async def until(condition, deadline=30):' in app_source
+    assert "process.wait(timeout=NATIVE_SCENARIO_TIMEOUT if mode == 'native' else 120)" in inspect.getsource(run_app)
 
 
 def test_real_project_action_response_bound_still_fails_closed(monkeypatch):
