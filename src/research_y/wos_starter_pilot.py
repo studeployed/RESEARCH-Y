@@ -328,6 +328,42 @@ def _outcome(page, expected_query, client):
     )
 
 
+def _provider_observations(client, *, exceptional_delay=None):
+    """Capture safe provider instructions irrespective of count validity.
+
+    Starter publishes daily quota headers even for unsuccessful responses;
+    its transport may observe Retry-After on HTTP 200 or before detecting
+    malformed JSON. Never lose those restrictions on a failed/stale count.
+    """
+    quota = client.quota
+    observed_quota = (type(quota) is WoSQuota and (
+        quota.daily_limit is not None or
+        quota.daily_remaining is not None or
+        quota.per_second_limit is not None or
+        quota.valid is False))
+    quota_data = asdict(quota) if observed_quota else None
+    # The client's existing monotonic deadline also covers HTTP 200 with a
+    # Retry-After response header, unlike exception-only delay parsing.
+    delays = (exceptional_delay, client.retry_after_remaining)
+    unrepresentable = False
+    valid_delays = []
+    for delay in delays:
+        if delay is None or delay == 0:
+            continue
+        if (type(delay) not in (int, float) or not isfinite(delay)
+                or not 0 < delay <= 365 * 86400):
+            unrepresentable = True
+        else:
+            valid_delays.append(delay)
+    return dict(
+        quota=quota_data,
+        quota_status=(quota.entitlement_status
+                      if observed_quota else "not_observed"),
+        retry_after_seconds=max(valid_delays) if valid_delays else None,
+        retry_after_unverifiable=unrepresentable,
+    )
+
+
 def probe_wos_starter_once(
     project, *, pilot_id, run_id, query_id, expected_plan_sha256,
     confirmed: bool, client: WoSStarterClient, revalidate_quota=False,
@@ -373,37 +409,23 @@ def probe_wos_starter_once(
             raise
         except (sqlite3.Error, OSError, ValueError, TypeError):
             raise WoSPilotError("pilot_storage_failed") from None
+        exceptional_delay = None
         try:
             page = client.fetch_page(
                 exact_query, database=DATABASE, page=1, limit=1)
             data = _outcome(page, exact_query, client)
         except WoSStarterError as exc:
             code = exc.code if exc.code in PROVIDER_CODES else "source_invalid"
-            delay = exc.retry_after_seconds
-            # Preserve the observed safe quota independently of whether an
-            # HTTP 429/403 or malformed page produced a usable count.
-            quota = client.quota
-            observed_quota = (type(quota) is WoSQuota and (
-                quota.daily_limit is not None or
-                quota.daily_remaining is not None or
-                quota.per_second_limit is not None or
-                quota.valid is False))
-            quota_data = asdict(quota) if observed_quota else None
-            delay_valid = (type(delay) in (int, float) and isfinite(delay)
-                           and 0 <= delay <= 365*86400)
-            data = dict(
-                status="probe_failed", reported_matches=None,
-                error_code=code, quota=quota_data,
-                quota_status=(quota.entitlement_status
-                              if observed_quota else "not_observed"),
-                retry_after_seconds=(delay if delay_valid else None),
-                # An unrepresentable server-directed delay may not simply
-                # be dropped or shortened; future attempts fail closed.
-                retry_after_unverifiable=(delay is not None and not delay_valid),
-            )
+            exceptional_delay = exc.retry_after_seconds
+            data = dict(status="probe_failed", reported_matches=None,
+                        error_code=code)
         except Exception:
             data = dict(status="probe_failed", reported_matches=None,
-                        error_code="source_invalid", retry_after_seconds=None)
+                        error_code="source_invalid")
+        # Unconditional evidence collection protects quota/retry observations
+        # even if the source count was malformed or the run later turns stale.
+        data.update(_provider_observations(
+            client, exceptional_delay=exceptional_delay))
         try:
             with _validated_project_connection(project) as db:
                 db.execute("BEGIN IMMEDIATE")
@@ -417,8 +439,19 @@ def probe_wos_starter_once(
                     if _query(db, run_id, query_id, plan_sha) != exact_query:
                         raise WoSPilotError("pilot_plan_invalid")
                 except WoSPilotError:
-                    data = dict(status="stale_plan", reported_matches=None,
-                                error_code=None, retry_after_seconds=None)
+                    # Discard the untrusted/stale *count*, not independently
+                    # observed provider restrictions. Otherwise an updated run
+                    # would let other pilot/checkpoint workers bypass quota
+                    # exhaustion or server Retry-After.
+                    data = dict(
+                        status="stale_plan", reported_matches=None,
+                        error_code=data.get("error_code"),
+                        quota=data.get("quota"),
+                        quota_status=data.get("quota_status", "not_observed"),
+                        retry_after_seconds=data.get("retry_after_seconds"),
+                        retry_after_unverifiable=data.get(
+                            "retry_after_unverifiable", False),
+                    )
                 complete = dict(base, exact_query=exact_query, **data)
                 stamp = datetime.now(timezone.utc).isoformat(
                     timespec="microseconds")
