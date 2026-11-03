@@ -396,6 +396,15 @@ def run(args):
                                  '(no pilot counts obtained).').props('data-testid=preflight-unknown')
                         ui.label('Automated compiler checks are not independent PRESS peer review. '
                                  'Known-relevant records and PubMed translation have NOT been checked.')
+                        for group in preview['groups']:
+                            ui.label('Approved concept group: ' + group['label']).props(
+                                'data-testid=preflight-group')
+                            for term in group['terms']:
+                                ui.label('Atomic term: ' + term['text'] + ' | origin: ' +
+                                         term['origin'] + ' | ' +
+                                         ('active' if term['enabled'] else 'disabled') +
+                                         ' | rationale: ' + term['rationale']).props(
+                                             'data-testid=preflight-term')
                         for source in preview['sources']:
                             ui.label('Source coverage: ' + source['source_name'] +
                                      ' — ' + source['source_coverage']).props(
@@ -411,7 +420,8 @@ def run(args):
                         previous = preview['last_review']
                         if previous is not None:
                             ui.label('Last recorded PRESS checklist: ' +
-                                     previous['occurred_at_utc'] + ' (' +
+                                     previous['occurred_at_utc'] + ' — ' +
+                                     previous['reviewer_name'] + ' (' +
                                      previous['reviewer_role'] + ', self-reported).').props(
                                          'data-testid=preflight-last-review')
                             ui.label('No independent review has been verified, '
