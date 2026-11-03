@@ -56,6 +56,12 @@ def services(monkeypatch, tmp_path):
     preflight.PRESS_ITEMS=PRESS_ITEMS
     preflight.read_preflight=service('preflight_read',{})
     preflight.record_preflight_review=service('preflight_record',{})
+    from research_y.pubmed_pilot import PubMedPilotError
+    pilot=types.ModuleType('research_y.pubmed_pilot')
+    pilot.PubMedPilotError=PubMedPilotError
+    pilot.read_pubmed_pilot=service('pubmed_pilot_read',None)
+    pilot.probe_pubmed_count_once=service('pubmed_pilot_count',{
+        'status':'requested_indeterminate','source_retrieval_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -63,7 +69,8 @@ def services(monkeypatch, tmp_path):
     files.filename=filename
     for name,module in [('projects',projects),('application_inspection',inspection),
                         ('workbook_exports',exports),('strategy_admission',admission),
-                        ('preflight_review',preflight),('export_files',files)]:
+                        ('preflight_review',preflight),('pubmed_pilot',pilot),
+                        ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
     project=Project(tmp_path,uuid4(),'Synthetic','2026-11-01T00:00:00+00:00')
@@ -82,6 +89,13 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
                   admission_groups=(StrategyGroup('rv', 'RV',
                       (ApprovedTerm('right ventricle','researcher',True),)),),
                   approval_confirmed=True)
+    elif operation=='pubmed_pilot_read':
+        kw.update(pilot_id=str(uuid4()))
+    elif operation=='pubmed_pilot_count':
+        kw.update(run_id=str(uuid4()),pilot_id=str(uuid4()),
+                  pilot_query_id=str(uuid4()),pilot_plan_sha256='a'*64,
+                  pilot_contact_email='synthetic@example.org',
+                  pilot_api_key='fixture-private-key-123',pilot_confirmed=True)
     elif operation in ('preflight_read','preflight_record'):
         kw.update(run_id=str(uuid4()))
         if operation=='preflight_record':
@@ -112,6 +126,18 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert result['snapshot']['reported'] is None and result['snapshot']['retrieved']==0
     if operation=='preflight_read':
         assert calls[0][1][1] == kw['run_id']
+    if operation=='pubmed_pilot_read':
+        assert calls[0][1][1] == kw['pilot_id']
+        assert result['pilot'] is None
+    if operation=='pubmed_pilot_count':
+        assert calls[0][2]['pilot_id'] == kw['pilot_id']
+        assert calls[0][2]['expected_plan_sha256'] == kw['pilot_plan_sha256']
+        assert calls[0][2]['query_id'] == kw['pilot_query_id']
+        assert calls[0][2]['confirmed'] is True
+        assert calls[0][2]['client']._email == kw['pilot_contact_email']
+        assert calls[0][2]['client']._api_key == kw['pilot_api_key']
+        assert kw['pilot_api_key'] not in repr(cmd)
+        assert kw['pilot_contact_email'] not in repr(cmd)
     if operation=='preflight_record':
         assert calls[0][2]['review_id'] == kw['review_id']
         assert calls[0][2]['run_id'] == kw['run_id']
@@ -342,3 +368,57 @@ def test_preflight_read_can_target_exact_review_uuid_without_other_review_fields
     with pytest.raises(commands.ApplicationCommandError, match='invalid_command'):
         commands.ApplicationCommand.for_project(
             project,'inspect',run_id=str(uuid4()),review_note='secret')
+
+
+def _pilot_args():
+    return dict(run_id=str(uuid4()),pilot_id=str(uuid4()),
+                pilot_query_id=str(uuid4()),pilot_plan_sha256='a'*64,
+                pilot_contact_email='synthetic@example.org',
+                pilot_api_key='fixture-private-key-123',pilot_confirmed=True)
+
+
+@pytest.mark.parametrize('edit', [
+    {'pilot_id':'not-uuid'}, {'run_id':None}, {'pilot_query_id':None},
+    {'pilot_plan_sha256':'A'*64}, {'pilot_plan_sha256':None},
+    {'pilot_contact_email':None}, {'pilot_contact_email':'invalid'},
+    {'pilot_contact_email':'x@domain.test'+chr(0)},
+    {'pilot_api_key':'private'+chr(10)+'secret'},
+    {'pilot_api_key':123}, {'pilot_confirmed':False},
+    {'pilot_confirmed':1}, {'export_id':'unexpected'},
+    {'directory':'/not/allowed'}, {'output_name':'secret.xlsx'},
+    {'review_id':str(uuid4())}, {'admission_request_id':str(uuid4())},
+])
+def test_pilot_command_rejects_unconfirmed_or_malformed_payload(services, edit):
+    project,calls,*_ = services
+    args=_pilot_args()
+    args.update(edit)
+    with pytest.raises(commands.ApplicationCommandError,match='^invalid_command$'):
+        commands.ApplicationCommand.for_project(project,'pubmed_pilot_count',**args)
+    assert calls==[]
+
+
+@pytest.mark.parametrize('edit', [
+    {'pilot_id':'not-uuid'}, {'run_id':str(uuid4())},
+    {'pilot_api_key':'private'}, {'pilot_confirmed':True},
+    {'pilot_query_id':str(uuid4())}, {'pilot_contact_email':'example@example.org'},
+])
+def test_observing_pilot_by_id_rejects_network_fields(services,edit):
+    project,calls,*_ = services
+    args={'pilot_id':str(uuid4())}
+    args.update(edit)
+    with pytest.raises(commands.ApplicationCommandError,match='^invalid_command$'):
+        commands.ApplicationCommand.for_project(project,'pubmed_pilot_read',**args)
+    assert calls==[]
+
+
+def test_non_pilot_commands_reject_pilot_credentials_and_no_repr_echo(services):
+    project,calls,*_=services
+    key='SECRET-private-api-key-333'
+    with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+        commands.ApplicationCommand.for_project(project,'inspect',
+            pilot_api_key=key)
+    valid=commands.ApplicationCommand.for_project(project,'pubmed_pilot_count',
+                                                  **_pilot_args())
+    assert 'synthetic@example.org' not in repr(valid)
+    assert 'fixture-private-key' not in repr(valid)
+    assert calls==[]
