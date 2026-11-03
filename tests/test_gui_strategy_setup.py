@@ -263,8 +263,30 @@ def test_host_draft_without_optional_gui_dependency_and_no_browser_file_path():
     assert "name == 'setup_approve'" in source
     assert "flow.approve_setup()" in source
     assert "'data-testid=setup-approve'" in source
+    assert "if draft['preview'] is None:" in source
+    assert "'data-testid=setup-preview-locked'" in source
+    assert "'data-testid=setup-revise'" in source
     assert "'data-testid=setup-exact-query'" in source
     assert "ui.label('Group '" in source
     assert 'ui.html(' not in source
     assert "ui.run(host='127.0.0.1'" in source
     assert '/_probe/strategy' not in source
+
+
+def test_revise_preview_must_return_to_edit_mode_without_prior_approval(tmp_path):
+    project, flow = _flow(tmp_path)
+    try:
+        _seed(flow)
+        preview = flow.preview_setup()
+        assert preview['strategy_draft']['preview'] is not None
+        assert _counts(project)[0] == 0
+        revised = flow.edit_setup('revise_preview', {})
+        assert revised['strategy_draft']['preview'] is None
+        with pytest.raises(ProjectFlowError, match='^strategy_preview_required$'):
+            flow.approve_setup()
+        assert len(flow.state()['strategy_draft']['groups']) == 2
+        assert _counts(project)[0] == 0
+        flow.preview_setup()
+        assert flow.approve_setup()['last_strategy_admission']['query_count'] == 4
+    finally:
+        flow.close()
