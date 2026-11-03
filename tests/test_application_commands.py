@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 import research_y
 from research_y import application_commands as commands
+from research_y.storage import ApprovedTerm, StrategyGroup
 
 
 @pytest.fixture
@@ -45,12 +46,17 @@ def services(monkeypatch, tmp_path):
     exports.prepare_workbook_export=service('prepare_export',Result())
     exports.resume_workbook_export=service('resume_export',Result())
     exports.cancel_workbook_export=service('cancel_export',Result(state='cancelled'))
+    admission=types.ModuleType('research_y.strategy_admission')
+    admission.StrategyAdmissionError=Failure
+    admission.commit_approved_strategy=service('admit_strategy',Result())
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
         return value
     files.filename=filename
-    for name,module in [('projects',projects),('application_inspection',inspection),('workbook_exports',exports),('export_files',files)]:
+    for name,module in [('projects',projects),('application_inspection',inspection),
+                        ('workbook_exports',exports),('strategy_admission',admission),
+                        ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
     project=Project(tmp_path,uuid4(),'Synthetic','2026-11-01T00:00:00+00:00')
@@ -61,8 +67,16 @@ def services(monkeypatch, tmp_path):
 def test_only_named_service_called_identity_arguments_unchanged(services,operation,tmp_path):
     project,calls,_,_,_=services
     kw={}
-    if operation=='inspect': kw['run_id']=str(uuid4())
-    else: kw['export_id']=str(uuid4())
+    if operation=='inspect':
+        kw['run_id']=str(uuid4())
+    elif operation=='admit_strategy':
+        kw.update(admission_request_id=str(uuid4()), admission_theme='Right ventricle',
+                  admission_approved_by='Researcher',
+                  admission_groups=(StrategyGroup('rv', 'RV',
+                      (ApprovedTerm('right ventricle','researcher',True),)),),
+                  approval_confirmed=True)
+    else:
+        kw['export_id']=str(uuid4())
     if operation=='prepare_export': kw.update(run_id=str(uuid4()),output_name='report.xlsx')
     if operation in ('prepare_export','resume_export','cancel_export','observe_export'):
         kw['directory']=str(tmp_path/'chosen')
@@ -205,3 +219,66 @@ def test_mutated_command_identity_is_revalidated_at_worker_boundary(services, tm
     with pytest.raises(commands.ApplicationCommandError, match='^invalid_command$'):
         commands.execute_command(cmd)
     assert not calls
+
+
+def test_strategy_admission_mandatory_explicit_approval_worker_routing(services):
+    project, calls, *_ = services
+    groups = (StrategyGroup('rv', 'RV', (ApprovedTerm('right ventricle', 'researcher', True),)),)
+    payload = dict(admission_request_id=str(uuid4()), admission_theme='RV',
+                   admission_approved_by='Reviewer', admission_groups=groups,
+                   approval_confirmed=True)
+    cmd = commands.ApplicationCommand.for_project(project, 'admit_strategy', **payload)
+    assert 'RV' not in repr(cmd) and 'right ventricle' not in repr(cmd)
+    commands.execute_command(cmd)
+    assert len(calls) == 1 and calls[0][0] == 'admit_strategy'
+    assert calls[0][2] == dict(request_id=payload['admission_request_id'],
+                               theme='RV', approved_by='Reviewer',
+                               groups=groups, approval_confirmed=True)
+    assert calls[0][1][0] == project
+
+
+@pytest.mark.parametrize('change', [
+    {'approval_confirmed': False}, {'approval_confirmed': 1},
+    {'admission_request_id': 'fake'}, {'admission_request_id': 123},
+    {'admission_theme': ' '}, {'admission_groups': ()},
+    {'admission_groups': []}, {'admission_approved_by': None},
+    {'directory': '/private/outside'}, {'run_id': '123'},
+    {'export_id': '123'}, {'output_name': 'report.xlsx'},
+    {'admission_groups': (StrategyGroup('g', 'Group',
+        (ApprovedTerm('unsafe \\"quote\\"', 'researcher', True),)),)},
+])
+def test_strategy_admission_rejects_invalid_or_irrelevant_worker_inputs(services, change):
+    project, calls, *_ = services
+    payload = dict(admission_request_id=str(uuid4()), admission_theme='Theme',
+                   admission_approved_by='Researcher',
+                   admission_groups=(StrategyGroup('g', 'Group',
+                       (ApprovedTerm('one term', 'researcher', True),)),),
+                   approval_confirmed=True)
+    payload.update(change)
+    with pytest.raises(commands.ApplicationCommandError, match='^invalid_command$'):
+        commands.ApplicationCommand.for_project(project, 'admit_strategy', **payload)
+    assert not calls
+
+
+def test_admission_parameters_not_valid_for_non_admission_operations(services):
+    project, calls, *_ = services
+    with pytest.raises(commands.ApplicationCommandError, match='invalid_command'):
+        commands.ApplicationCommand.for_project(project, 'inspect',
+            admission_request_id=str(uuid4()))
+    assert not calls
+
+
+def test_strategy_admission_error_code_is_not_silent_success_or_private_text(services, monkeypatch):
+    project, calls, _, _, Failure = services
+    import research_y.strategy_admission as admission
+    def failed(*args, **kwargs):
+        raise Failure('admission_conflict')
+    monkeypatch.setattr(admission, 'commit_approved_strategy', failed)
+    command = commands.ApplicationCommand.for_project(project, 'admit_strategy',
+        admission_request_id=str(uuid4()), admission_theme='Theme',
+        admission_approved_by='Reviewer',
+        admission_groups=(StrategyGroup('g','Group',
+            (ApprovedTerm('one term','researcher',True),)),),
+        approval_confirmed=True)
+    with pytest.raises(commands.ApplicationCommandError, match='^admission_conflict$'):
+        commands.execute_command(command)
