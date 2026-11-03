@@ -72,6 +72,9 @@ class RealProjectFlow:
             raise ProjectFlowError('export_reconciliation_required')
 
     def _clear_external(self):
+        # A file observation is tied to a specific confirmed directory at an
+        # instant in time. Never carry success across a destination change.
+        self.observation = None
         self._external_candidate = None
         self._external_candidate_identity = None
         self._external_confirmed = None
@@ -371,6 +374,7 @@ class RealProjectFlow:
                 raise ProjectFlowError('external_destination_invalid')
             if self._checked_external_identity(path) != self._external_candidate_identity:
                 raise ProjectFlowError('external_destination_changed')
+            self.observation = None
             self._external_confirmed = path
             self._external_confirmed_identity = self._external_candidate_identity
             self._external_candidate = None
