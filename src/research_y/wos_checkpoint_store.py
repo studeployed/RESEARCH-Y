@@ -366,6 +366,24 @@ def _pilot_provider_evidence(db):
     from math import isfinite
     observations = []
     retry_deadline = None
+    # The existing client enforces this spacing *within one client*. Pilot
+    # and checkpoint workers use fresh clients, so bind the last pilot
+    # reservation time into the same durable, cross-worker provider guard.
+    from research_y.wos_starter_client import MIN_REQUEST_INTERVAL
+    latest = db.execute(
+        "SELECT occurred_at_utc FROM audit_events "
+        "WHERE event_type='wos_starter_pilot_requested_v1' "
+        "ORDER BY event_id DESC LIMIT 1"
+    ).fetchone()
+    if latest is not None:
+        try:
+            seen = datetime.fromisoformat(latest[0])
+            if _stamp(seen) != latest[0]:
+                raise ValueError
+            retry_deadline = _stamp(
+                seen + timedelta(seconds=MIN_REQUEST_INTERVAL))
+        except (ValueError, TypeError, OverflowError):
+            raise WoSCheckpointError("invalid_provider_pilot_evidence") from None
     for raw, stamp in db.execute(
         "SELECT details_json,occurred_at_utc FROM audit_events "
         "WHERE event_type='wos_starter_pilot_outcome_v1' ORDER BY event_id"
