@@ -690,7 +690,11 @@ def test_inflight_pilot_blocks_checkpoint_even_after_pacing_window(tmp_path):
         finally:
             release.set()
         result=pilot.result(timeout=10)
-    assert result['status']=='probe_failed'
+    # _claim conservatively pauses the same query when the provider is
+    # busy. That invalidates this pilot's originally pending plan, but
+    # quota/Retry-After evidence from the HTTP 429 must still survive.
+    assert result['status']=='stale_plan'
+    assert result['reported_matches'] is None
     assert result['retry_after_seconds']==30
     assert _hold(project)[0]=='provider_cooldown'
     assert len(trace)==1
