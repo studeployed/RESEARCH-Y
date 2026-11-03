@@ -419,8 +419,13 @@ class RealProjectFlow:
                     raise ProjectFlowError('invalid_admission_receipt')
                 # Inspection is authoritative; a successful-looking worker
                 # response alone does not clear an uncertain mutation.
-                inspected = self._operation('inspect')['snapshot']
+                inspected = self._operation(
+                    'inspect', run_id=self.selected_run_id)['snapshot']
+                # A new approval may be created while viewing an older run.
+                # Keep that old selection/report/export coherent; the new run
+                # is available separately, never automatically selected.
                 if (not isinstance(inspected, dict)
+                        or inspected.get('selected_run_id') != self.selected_run_id
                         or not any(row['run_id'] == result['run_id']
                                    and row['strategy_version_id'] ==
                                        result['strategy_version_id']
