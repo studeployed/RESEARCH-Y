@@ -215,3 +215,33 @@ def test_changed_external_directory_between_selection_and_confirmation_fails_clo
         assert flow.state()['exports'] == [] and flow.selected_export_id is None
     finally:
         flow.close()
+
+
+def test_verified_success_is_invalidated_on_every_external_destination_change(tmp_path):
+    project, run_id = fixture(tmp_path)
+    correct = tmp_path / 'verified-output'
+    alternate = tmp_path / 'alternate-output'
+    correct.mkdir(); alternate.mkdir()
+    flow = _flow(tmp_path, project)
+    try:
+        flow.open_selected(); flow.select_run(run_id)
+        flow.offer_external_directory(correct)
+        flow.confirm_external_directory()
+        flow.prepare(); flow.resume()
+        assert flow.observe()['observation']['audited_success'] is True
+        offered = flow.offer_external_directory(alternate)
+        assert offered['observation'] is None
+        assert offered['external_destination_confirmed'] is False
+        assert flow.confirm_external_directory()['observation'] is None
+        # The saved journal still points to the original filesystem identity.
+        observed = flow.observe()['observation']
+        assert observed['audited_success'] is False
+        assert observed['outcome'] != 'published_verified'
+        assert flow.clear_external_directory()['observation'] is None
+        flow.offer_external_directory(correct)
+        flow.confirm_external_directory()
+        assert flow.state()['observation'] is None
+        assert flow.observe()['observation']['outcome'] == 'published_verified'
+        assert flow.clear_external_directory()['observation'] is None
+    finally:
+        flow.close()
