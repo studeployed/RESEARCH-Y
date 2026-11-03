@@ -537,3 +537,96 @@ def test_completed_attempt_replay_is_allowed_even_with_same_used_client(tmp_path
     replay=submit(project,rid,sha,q,existing_client,pilot_id=pid)
     assert replay==first
     assert len(audit(project,pid))==2
+
+
+def test_successful_http_200_retry_after_is_not_lost_on_a_count(tmp_path,monkeypatch):
+    from research_y import wos_starter_pilot as module
+    project,rid,sha,q=fixture(tmp_path)
+    headers={**HEADERS,'Retry-After':'30'}
+    result=submit(project,rid,sha,q,client(headers=headers))
+    assert result['status']=='count_reported_sample_not_retained'
+    assert result['reported_matches']==123
+    assert result['retry_after_seconds']==30
+    assert _hold(project)[0]=='provider_cooldown'
+    monkeypatch.setattr(module,'MIN_REQUEST_INTERVAL',0.0)
+    trace=[]
+    with pytest.raises(WoSPilotError,match='^provider_cooldown$'):
+        submit(project,rid,sha,q,client(trace=trace),revalidate_quota=True)
+    assert trace==[]
+
+
+def test_invalid_http_200_body_still_retains_its_quota_and_retry_after(tmp_path):
+    project,rid,sha,q=fixture(tmp_path)
+    headers={
+        'X-RateLimit-Limit-Day':'5000',
+        'X-RateLimit-Remaining-Day':'0',
+        'Retry-After':'30',
+    }
+    malformed={'error':'source rejected this request'}
+    result=submit(project,rid,sha,q,
+                  client(headers=headers,response_override=malformed))
+    assert result['status']=='probe_failed'
+    assert result['reported_matches'] is None
+    assert result['error_code']=='source_error_or_warning'
+    assert result['quota']['daily_remaining']==0
+    assert result['retry_after_seconds']==30
+    assert _hold(project)[0]=='provider_cooldown'
+
+
+def test_stale_run_discards_count_but_keeps_provider_failure_limits(tmp_path):
+    project,rid,sha,q=fixture(tmp_path)
+    headers={
+        'X-RateLimit-Limit-Day':'5000',
+        'X-RateLimit-Remaining-Day':'0',
+        'Retry-After':'30',
+    }
+    def transport(request,timeout):
+        with closing(sqlite3.connect(project.database_path)) as db, db:
+            db.execute("UPDATE search_runs SET status='paused' WHERE run_id=?",
+                       (rid,))
+        return WoSHTTPResponse(429,headers,b'')
+    c=WoSStarterClient(api_key=KEY,transport=transport,request_budget=1)
+    result=submit(project,rid,sha,q,c)
+    assert result['status']=='stale_plan'
+    assert result['reported_matches'] is None
+    assert result['quota']['daily_remaining']==0
+    assert result['retry_after_seconds']==30
+    assert result['error_code']=='quota_or_rate_limited'
+    assert _hold(project)[0]=='provider_cooldown'
+    restored=read_wos_pilot(open_project(project.root),result['pilot_id'])
+    assert restored==result
+    assert all(row[2] is None for row in ordinary_queries(project,rid))
+
+
+def test_stale_successful_count_still_preserves_observed_exhaustion(tmp_path):
+    project,rid,sha,q=fixture(tmp_path)
+    exhausted={'X-RateLimit-Limit-Day':'5000',
+               'X-RateLimit-Remaining-Day':'0'}
+    def transport(request,timeout):
+        with closing(sqlite3.connect(project.database_path)) as db, db:
+            db.execute("UPDATE search_runs SET status='paused' WHERE run_id=?",
+                       (rid,))
+        return WoSHTTPResponse(200,exhausted,json.dumps({
+            'metadata':{'total':99,'page':1,'limit':1},
+            'hits':[{'uid':LICENSED_UID,'title':LICENSED_TITLE}]
+        }).encode('utf-8'))
+    result=submit(project,rid,sha,q,
+                  WoSStarterClient(api_key=KEY,transport=transport,
+                                   request_budget=1))
+    assert result['status']=='stale_plan'
+    assert result['reported_matches'] is None
+    assert result['quota']['daily_remaining']==0
+    assert _hold(project)[0]=='provider_quota_revalidation_required'
+    assert LICENSED_UID not in json.dumps(audit(project))
+
+
+def test_unrepresentable_retry_after_fails_closed_without_discarding_count(tmp_path):
+    from research_y.wos_checkpoint_store import WoSCheckpointError
+    project,rid,sha,q=fixture(tmp_path)
+    headers={**HEADERS,'Retry-After':str(366*86400)}
+    result=submit(project,rid,sha,q,client(headers=headers))
+    assert result['reported_matches']==123
+    assert result['retry_after_seconds'] is None
+    assert result['retry_after_unverifiable'] is True
+    with pytest.raises(WoSCheckpointError,match='provider_retry_after_unverifiable'):
+        _hold(project,revalidate=True)
