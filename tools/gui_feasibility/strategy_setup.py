@@ -55,8 +55,9 @@ class StrategyDraft:
         raise DraftError('unknown_draft_term')
 
     def update_heading(self, theme, approved_by):
-        self.theme = _text(theme)
-        self.approved_by = _text(approved_by)
+        # Validate both fields before any visible draft mutation.
+        heading, reviewer = _text(theme), _text(approved_by)
+        self.theme, self.approved_by = heading, reviewer
         self._invalidate()
 
     def add_group(self, label):
@@ -77,7 +78,7 @@ class StrategyDraft:
 
     @staticmethod
     def _move(items, key, value, direction, error):
-        if direction not in (-1, 1) or type(value) is not str:
+        if type(direction) is not int or direction not in (-1, 1) or type(value) is not str:
             raise DraftError(error)
         index = next((i for i, item in enumerate(items) if item[key] == value), None)
         if index is None:
