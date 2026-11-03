@@ -66,7 +66,20 @@ def run(args):
                 pause_during_retained_stage, publish_gui_owner_marker)
             publish_gui_owner_marker(Path(owner_marker))
             application_worker.execute_command = pause_during_retained_stage
-        flow = RealProjectFlow(selected_root=root, selected_parent=parent)
+        # In the ordinary experimental launcher this is private per-user
+        # local state. The disposable CI driver overrides it with a temporary
+        # trusted directory shared only between its restarted GUI processes.
+        history_root = os.environ.pop('RESEARCHY_GUI_RECENTS_PARENT', '')
+        if history_root:
+            recents_parent = Path(history_root)
+        elif os.name == 'nt':
+            recents_parent = Path(os.environ.get(
+                'LOCALAPPDATA') or str(Path.home() / 'AppData' / 'Local')) / 'RESEARCH-Y' / 'gui-feasibility'
+        else:
+            recents_parent = Path(os.environ.get(
+                'XDG_STATE_HOME') or str(Path.home() / '.local' / 'state')) / 'research-y' / 'gui-feasibility'
+        flow = RealProjectFlow(selected_root=root, selected_parent=parent,
+                               recent_parent=recents_parent)
         os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN'] = session.origin
         os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'] = str(args.directory)
         events, clients, tasks = [], [], []
@@ -74,6 +87,8 @@ def run(args):
         finished = asyncio.Event()
         sequence = (('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
                     if args.scenario == 'publish' else
+                    ('recent_open', 'select_run', 'select_export', 'observe')
+                    if args.scenario == 'recent_open' else
                     ('open', 'select_run', 'prepare', 'cancel', 'observe')
                     if args.scenario == 'cancel' else
                     ('open', 'select_run', 'select_export', 'resume', 'observe')
@@ -84,6 +99,7 @@ def run(args):
                     ('open', 'select_run', 'select_export', 'observe'))
         action_lock = asyncio.Lock()
         select_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_RUN_ID')
+        expected_project_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_PROJECT_ID', '')
         expected_export = os.environ.pop('RESEARCHY_GUI_EXPECTED_EXPORT_ID', '')
 
         async def act(name, value=None):
@@ -92,6 +108,10 @@ def run(args):
                     def perform():
                         if name == 'open':
                             return flow.open_selected()
+                        if name == 'recent_open':
+                            return flow.open_recent(value)
+                        if name == 'recent_refresh':
+                            return flow.refresh_recents()
                         if name == 'create':
                             return flow.create_selected(value)
                         if name == 'select_run':
@@ -143,6 +163,22 @@ def run(args):
             state = flow.state()
             project = state['project']
             ui.label('INCOMPLETE — no source retrieval is verified.').props('data-testid=incomplete')
+            ui.label('Recent Projects (explicit selection; locations verified on open).').props(
+                'data-testid=recent-heading')
+            if state['recent_history_error']:
+                ui.label('Recent project history is unavailable; select a folder to open.').props(
+                    'data-testid=recent-history-error')
+            elif not state['recent_projects']:
+                ui.label('No recent projects recorded.').props('data-testid=recent-empty')
+            else:
+                for entry in state['recent_projects']:
+                    project_id = entry['project_id']
+                    ui.button('Open recent: ' + entry['name'] + ' — ' + entry['location'],
+                              on_click=lambda project_id=project_id: act(
+                                  'recent_open', project_id)).props('data-testid=open-recent')
+            ui.button('Refresh recent projects',
+                      on_click=lambda: act('recent_refresh')).props(
+                          'data-testid=refresh-recents')
             if project is None:
                 ui.label('No project open. A host-selected location is required.')
             else:
@@ -263,6 +299,8 @@ def run(args):
             if index >= len(sequence):
                 return {'error': 'no_more_steps'}
             action = sequence[index]
+            if action == 'recent_open':
+                return await act(action, expected_project_id)
             if action == 'select_run':
                 return await act(action, select_id)
             if action == 'select_export':
@@ -288,7 +326,8 @@ def run(args):
             try:
                 await until(lambda: session.redeemed and clients and clients[-1].has_socket_connection)
                 for index, action in enumerate(sequence):
-                    name = {'open': 'open', 'select_run': 'select-run', 'select_export': 'select-export',
+                    name = {'open': 'open', 'recent_open': 'open-recent',
+                            'select_run': 'select-run', 'select_export': 'select-export',
                             'prepare': 'prepare', 'resume': 'resume', 'cancel': 'cancel',
                             'observe': 'observe'}[action]
                     await until(lambda: bool(clients) and not action_lock.locked())
@@ -296,6 +335,14 @@ def run(args):
                     await js("document.querySelector('[data-testid=" + name + "]').click(); true")
                     await until(lambda: len(events) > index or last_error['code'] is not None,
                                 deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
+                    if action == 'recent_open':
+                        candidate = flow.state()
+                        if (candidate['project'] is None or
+                                candidate['project']['project_id'] != expected_project_id or
+                                candidate['selected_run_id'] is not None or
+                                candidate['selected_export_id'] is not None or
+                                candidate['source_retrieval_verified']):
+                            raise RuntimeError('native_recent_implicit_selection_or_wrong_identity')
                     if args.scenario == 'worker_killed' and action == 'resume':
                         if last_error['code'] != 'worker_interrupted' or len(events) != index:
                             raise RuntimeError('native_worker_death_not_observed')
@@ -447,7 +494,8 @@ if __name__ == '__main__':
                                                'receipt_missing', 'receipt_recovered',
                                                'render_fault', 'render_recovered',
                                                'stage_fault', 'stage_recovered',
-                                               'worker_killed', 'worker_recovered'), required=True)
+                                               'worker_killed', 'worker_recovered',
+                                               'recent_open'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))
