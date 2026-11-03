@@ -112,7 +112,11 @@ class ApplicationCommand:
                      self.expected_directory_identity))):
                     raise ValueError
                 if self.operation == 'preflight_read':
-                    if any(v is not None for v in review_fields):
+                    # The host may request one immutable receipt by UUID to
+                    # reconcile it after another review has been appended.
+                    if self.review_id is not None:
+                        _uuid(self.review_id)
+                    if any(v is not None for v in review_fields[1:]):
                         raise ValueError
                 else:
                     from research_y.preflight_review import _review_payload
@@ -205,7 +209,9 @@ def execute_command(command: ApplicationCommand) -> dict:
             from research_y import preflight_review as preflight
             try:
                 if command.operation == 'preflight_read':
-                    return preflight.read_preflight(project, command.run_id)
+                    lookup = ({} if command.review_id is None else
+                              {'review_id': command.review_id})
+                    return preflight.read_preflight(project, command.run_id, **lookup)
                 return preflight.record_preflight_review(
                     project, run_id=command.run_id,
                     review_id=command.review_id,
