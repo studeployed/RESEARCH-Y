@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard
 from tools.gui_feasibility.prototype_app import guarded_open_window
 from tools.gui_feasibility.real_project_flow import ProjectFlowError, RealProjectFlow
+from tools.gui_feasibility.pubmed_host_profile import PubMedHostProfile
 from tools.gui_feasibility.native_folder_selection import NativeFolderError, select_from_native_window
 
 LITERAL_NAME = '<img src=x onerror="window.__researchy_injected=true">'
@@ -78,8 +79,13 @@ def run(args):
         else:
             recents_parent = Path(os.environ.get(
                 'XDG_STATE_HOME') or str(Path.home() / '.local' / 'state')) / 'research-y' / 'gui-feasibility'
+        # The host removes the optional prototype-only contact/key settings
+        # from the environment before constructing any browser session.
+        # No browser control or HTTP route can supply credentials.
+        pubmed_profile = PubMedHostProfile.from_prototype_environment()
         flow = RealProjectFlow(selected_root=root, selected_parent=parent,
-                               recent_parent=recents_parent)
+                               recent_parent=recents_parent,
+                               pubmed_profile=pubmed_profile)
         os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN'] = session.origin
         os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'] = str(args.directory)
         events, clients, tasks = [], [], []
@@ -137,6 +143,17 @@ def run(args):
                             return flow.revise_preflight_review()
                         if name == 'preflight_record':
                             return flow.record_preflight_review()
+                        if name == 'pubmed_pilot_offer':
+                            return flow.offer_pubmed_pilot(value)
+                        if name == 'pubmed_pilot_revise':
+                            return flow.revise_pubmed_pilot()
+                        if name == 'pubmed_pilot_confirm':
+                            # This is the *only* action that may send a count
+                            # request. A separate frozen-query offer is required.
+                            return flow.confirm_pubmed_pilot()
+                        if name == 'pubmed_pilot_reconcile':
+                            # Read-only journal inspection; NEVER resend.
+                            return flow.reconcile_pubmed_pilot()
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -490,6 +507,92 @@ def run(args):
                             ui.button('Confirm and record pre-run checklist',
                                       on_click=lambda: act('preflight_record')).props(
                                           'data-testid=preflight-record')
+                if (state['selected_run_id'] is not None and
+                        state['preflight_report'] is not None):
+                    ui.separator()
+                    ui.label('PubMed pilot counts — optional single-query '
+                             'ESearch requests; NOT a literature retrieval.').props(
+                                 'data-testid=pubmed-pilot-heading')
+                    ui.label('All source-run counts remain UNKNOWN until the '
+                             'real retrieval pipeline verifies them. A pilot '
+                             'count is not a final count and is never added '
+                             'across overlapping concept groups.')
+                    if not state['pubmed_profile_configured']:
+                        ui.label('Pilot unavailable: no host-configured NCBI '
+                                 'contact email. The API key/contact cannot '
+                                 'be supplied by browser controls.').props(
+                                     'data-testid=pubmed-profile-unavailable')
+                    elif state['pubmed_pilot_reconciliation_required']:
+                        ui.label('Pilot outcome uncertain — read original '
+                                 'audit attempt. NEVER repeat the provider '
+                                 'request automatically.').props(
+                                     'data-testid=pubmed-pilot-uncertain')
+                        ui.button('Inspect original pilot receipt (no network)',
+                                  on_click=lambda: act('pubmed_pilot_reconcile')).props(
+                                      'data-testid=pubmed-pilot-reconcile')
+                    elif state['pubmed_pilot_candidate'] is not None:
+                        candidate = state['pubmed_pilot_candidate']
+                        ui.label('Unsent, locked pilot candidate for group ' +
+                                 candidate['group_id']).props(
+                                     'data-testid=pubmed-pilot-candidate')
+                        ui.label('Exact query: ' + candidate['exact_query']).props(
+                            'data-testid=pubmed-pilot-query')
+                        ui.label('This confirmation will make ONE count-only '
+                                 'HTTPS request to the official PubMed ESearch '
+                                 'service. No identifiers/metadata will be retrieved. '
+                                 'Provider rate limits apply.')
+                        ui.button('Cancel without sending a request',
+                                  on_click=lambda: act('pubmed_pilot_revise')).props(
+                                      'data-testid=pubmed-pilot-cancel')
+                        ui.button('Confirm one PubMed count-only request',
+                                  on_click=lambda: act('pubmed_pilot_confirm')).props(
+                                      'data-testid=pubmed-pilot-confirm')
+                    else:
+                        ui.label('Select one approved PubMed group query. '
+                                 'Selecting only previews; a separate click '
+                                 'must authorise the network request.')
+                        for source in state['preflight_report']['sources']:
+                            if source['source_name'] != 'pubmed':
+                                continue
+                            for query in source['queries']:
+                                qid = query['query_id']
+                                ui.label('PubMed ' + query['group_id'] +
+                                         ': ' + query['exact_query']).props(
+                                             'data-testid=pubmed-pilot-saved-query')
+                                ui.button('Preview pilot for group ' +
+                                          query['group_id'],
+                                          on_click=lambda qid=qid: act(
+                                              'pubmed_pilot_offer', qid)).props(
+                                                  'data-testid=pubmed-pilot-offer')
+                    prior = state['last_pubmed_pilot']
+                    if prior is not None:
+                        ui.label('Last audited pilot attempt: ' +
+                                 prior['status']).props(
+                                     'data-testid=pubmed-pilot-status')
+                        count = prior['reported_matches']
+                        ui.label('Provider-reported PILOT matches: ' +
+                                 ('UNKNOWN' if count is None else str(count)) +
+                                 '. No records retrieved or search completed.').props(
+                                     'data-testid=pubmed-pilot-count')
+                        if prior.get('accepted_translation'):
+                            ui.label('Accepted PubMed translation: ' +
+                                     prior['accepted_translation']).props(
+                                         'data-testid=pubmed-pilot-translation')
+                        for warning in prior.get('warnings', []):
+                            ui.label('PubMed provider warning: ' + warning)
+                        for reason in prior.get('review_reasons', []):
+                            ui.label('Translation review required: ' + reason)
+                        if prior['status'] in ('requested_indeterminate',
+                                               'not_recorded'):
+                            ui.label('Do not automatically retry this UUID. '
+                                     'A NEW pilot requires a fresh two-step '
+                                     'selection and confirmation.').props(
+                                         'data-testid=pubmed-pilot-no-auto-retry')
+                        if prior.get('error_code') is not None:
+                            ui.label('Pilot failure code: ' + prior['error_code'])
+                        ui.label('Pilot results never establish final '
+                                 'retrieval or PRESS peer review.').props(
+                                     'data-testid=pubmed-pilot-incomplete')
                 for item in state['exports']:
                     # Only offer requests belonging to the explicitly selected run.
                     if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:
