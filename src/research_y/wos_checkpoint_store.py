@@ -398,6 +398,11 @@ def _pilot_provider_evidence(db):
                                           quota.daily_remaining,
                                           quota.per_second_limit))):
                     raise ValueError
+            if details.get("retry_after_unverifiable", False) is True:
+                # An unbounded or unparsable server directive is never
+                # silently shortened. Require an explicit design-level
+                # recovery, rather than using a fresh client to bypass it.
+                raise WoSCheckpointError("provider_retry_after_unverifiable")
             delay = details.get("retry_after_seconds")
             if delay is not None:
                 if (type(delay) not in (float, int) or
@@ -411,6 +416,8 @@ def _pilot_provider_evidence(db):
                     "count_reported_sample_not_retained",
                     "quota_exhausted_after_probe", "entitlement_unverified")
                 observations.append((stamp, verified_result, quota))
+        except WoSCheckpointError:
+            raise
         except (ValueError, TypeError, OverflowError, KeyError, AttributeError):
             # Malformed audit/quota history cannot authorise a new request.
             raise WoSCheckpointError("invalid_provider_pilot_evidence") from None
