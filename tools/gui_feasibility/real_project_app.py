@@ -251,7 +251,9 @@ def run(args):
                     ui.button('Prepare strategy workbook',
                               on_click=lambda: act('prepare')).props('data-testid=prepare')
                 if state['export_reconciliation_required']:
-                    ui.label('Preparation outcome unconfirmed. Retry uses the original pending request ID; do not start another export.').props('data-testid=recovery-required')
+                    ui.label('Export journal or inventory needs reconciliation. Retry Prepare '
+                             'with the original request ID; do not start another export.').props(
+                                 'data-testid=recovery-required')
                 if state['selected_export_id'] is not None:
                     saved = next((item for item in state['exports']
                                   if item['export_id'] == state['selected_export_id']), None)
