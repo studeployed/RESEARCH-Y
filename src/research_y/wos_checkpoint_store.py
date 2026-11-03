@@ -370,20 +370,44 @@ def _pilot_provider_evidence(db):
     # The existing client enforces this spacing *within one client*. Pilot
     # and checkpoint workers use fresh clients, so bind the last pilot
     # reservation time into the same durable, cross-worker provider guard.
-    latest = db.execute(
-        "SELECT occurred_at_utc FROM audit_events "
-        "WHERE event_type='wos_starter_pilot_requested_v1' "
-        "ORDER BY event_id DESC LIMIT 1"
-    ).fetchone()
+    # A request journalled without a matching outcome may STILL be in
+    # flight after the 1.05-second pacing floor. An indeterminate crashed
+    # request also cannot be assumed finished from elapsed time alone.
+    # All checkpoint and pilot claims must fail closed until explicit
+    # durable outcome/recovery evidence exists.
+    reservations = {}
+    for raw, seen_at in db.execute(
+        "SELECT details_json,occurred_at_utc FROM audit_events "
+        "WHERE event_type='wos_starter_pilot_requested_v1'"
+    ):
+        try:
+            details = json.loads(raw)
+            pilot_id = details.get("pilot_id")
+            from uuid import UUID
+            if (type(pilot_id) is not str or str(UUID(pilot_id)) != pilot_id
+                    or pilot_id in reservations or
+                    details.get("method") != "wos-starter-minimal-page-pilot/1"
+                    or details.get("source") != "wos"
+                    or details.get("database") != "WOS"
+                    or details.get("status") != "requested_indeterminate"):
+                raise ValueError
+            seen = datetime.fromisoformat(seen_at)
+            if _stamp(seen) != seen_at:
+                raise ValueError
+            reservations[pilot_id] = seen_at
+        except (ValueError, TypeError, OverflowError, AttributeError):
+            raise WoSCheckpointError("invalid_provider_pilot_evidence") from None
+    latest = max(reservations.values(), default=None)
     if latest is not None:
         try:
-            seen = datetime.fromisoformat(latest[0])
-            if _stamp(seen) != latest[0]:
+            seen = datetime.fromisoformat(latest)
+            if _stamp(seen) != latest:
                 raise ValueError
             retry_deadline = _stamp(
                 seen + timedelta(seconds=MIN_REQUEST_INTERVAL))
         except (ValueError, TypeError, OverflowError):
             raise WoSCheckpointError("invalid_provider_pilot_evidence") from None
+    outstanding = set(reservations)
     for raw, stamp in db.execute(
         "SELECT details_json,occurred_at_utc FROM audit_events "
         "WHERE event_type='wos_starter_pilot_outcome_v1' ORDER BY event_id"
@@ -400,6 +424,10 @@ def _pilot_provider_evidence(db):
             instant = datetime.fromisoformat(stamp)
             if _stamp(instant) != stamp:
                 raise ValueError
+            pilot_id = details.get("pilot_id")
+            if pilot_id not in outstanding or stamp < reservations[pilot_id]:
+                raise ValueError
+            outstanding.remove(pilot_id)
             quota_value = details.get("quota")
             quota = None
             if quota_value is not None:
@@ -439,7 +467,7 @@ def _pilot_provider_evidence(db):
         except (ValueError, TypeError, OverflowError, KeyError, AttributeError):
             # Malformed audit/quota history cannot authorise a new request.
             raise WoSCheckpointError("invalid_provider_pilot_evidence") from None
-    return observations, retry_deadline
+    return observations, retry_deadline, bool(outstanding)
 
 
 def _provider_hold(db, stamp: str, *, revalidate_quota: bool) -> tuple[str | None, str | None]:
@@ -451,7 +479,7 @@ def _provider_hold(db, stamp: str, *, revalidate_quota: bool) -> tuple[str | Non
     saved = db.execute(
         "SELECT MAX(not_before_utc) FROM wos_checkpoint_jobs"
     ).fetchone()[0]
-    observations, pilot_deadline = _pilot_provider_evidence(db)
+    observations, pilot_deadline, unfinished_pilot = _pilot_provider_evidence(db)
     deadline = max((value for value in (saved, pilot_deadline)
                     if value is not None), default=None)
     if deadline is not None:
@@ -462,6 +490,10 @@ def _provider_hold(db, stamp: str, *, revalidate_quota: bool) -> tuple[str | Non
             raise WoSCheckpointError("invalid_provider_clock") from None
         if stamp < deadline:
             return "provider_cooldown", deadline
+    if unfinished_pilot:
+        # An in-flight pilot can complete after its pacing reservation.
+        # Even revalidate_quota=True cannot authorise concurrent transport.
+        return "provider_pilot_outcome_unknown", deadline
     if not revalidate_quota:
         for row in db.execute(
             "SELECT outcome,quota_json,started_at_utc,finished_at_utc "
