@@ -356,31 +356,109 @@ def recover_wos_worker(project: Project, query_id: str, *, previous_worker_stopp
         _audit_job(db, job, "worker_recovered", stamp)
 
 
-def _provider_hold(db, stamp: str, *, revalidate_quota: bool) -> tuple[str | None, str | None]:
-    """Project-wide Starter restrictions, derived from the existing durable ledger.
+def _pilot_provider_evidence(db):
+    """Safe quota/deadline facts from count-pilot audit, not licensed records.
 
-    Credentials are not persisted or used to partition this guard: conservatively
-    share the longest deadline across every Starter job, including cancelled and
-    completed ones. A new query or client must not bypass provider restrictions.
+    No dependency on wos_starter_pilot is introduced here: that service
+    already imports this checkpoint module. Both source flows consequently
+    use the same *project-scoped* provider hold.
     """
-    deadline = db.execute("SELECT MAX(not_before_utc) FROM wos_checkpoint_jobs").fetchone()[0]
+    from math import isfinite
+    observations = []
+    retry_deadline = None
+    for raw, stamp in db.execute(
+        "SELECT details_json,occurred_at_utc FROM audit_events "
+        "WHERE event_type='wos_starter_pilot_outcome_v1' ORDER BY event_id"
+    ):
+        try:
+            details = json.loads(raw)
+            if (type(details) is not dict or
+                    details.get("method") != "wos-starter-minimal-page-pilot/1" or
+                    details.get("source") != "wos" or
+                    details.get("database") != "WOS" or
+                    details.get("source_retrieval_verified") is not False or
+                    details.get("execution_authorized") is not False):
+                raise ValueError
+            instant = datetime.fromisoformat(stamp)
+            if _stamp(instant) != stamp:
+                raise ValueError
+            quota_value = details.get("quota")
+            quota = None
+            if quota_value is not None:
+                if (type(quota_value) is not dict or
+                        set(quota_value) != {
+                            "daily_limit", "daily_remaining",
+                            "per_second_limit", "valid"}):
+                    raise ValueError
+                quota = WoSQuota(**quota_value)
+                if (type(quota.valid) is not bool or
+                        any(value is not None and (
+                            type(value) is not int or value < 0)
+                            for value in (quota.daily_limit,
+                                          quota.daily_remaining,
+                                          quota.per_second_limit))):
+                    raise ValueError
+            delay = details.get("retry_after_seconds")
+            if delay is not None:
+                if (type(delay) not in (float, int) or
+                        not isfinite(delay) or delay < 0):
+                    raise ValueError
+                deadline = _stamp(instant + timedelta(seconds=delay))
+                if retry_deadline is None or deadline > retry_deadline:
+                    retry_deadline = deadline
+            if quota is not None:
+                verified_result = details.get("status") in (
+                    "count_reported_sample_not_retained",
+                    "quota_exhausted_after_probe", "entitlement_unverified")
+                observations.append((stamp, verified_result, quota))
+        except (ValueError, TypeError, OverflowError, KeyError, AttributeError):
+            # Malformed audit/quota history cannot authorise a new request.
+            raise WoSCheckpointError("invalid_provider_pilot_evidence") from None
+    return observations, retry_deadline
+
+
+def _provider_hold(db, stamp: str, *, revalidate_quota: bool) -> tuple[str | None, str | None]:
+    """Project-scoped Starter quota/cooldowns shared by checkpoint and pilot.
+
+    A new client, new group, or fresh pilot UUID cannot bypass either source's
+    observed provider hold. No automatic midnight/reset assumption is made.
+    """
+    saved = db.execute(
+        "SELECT MAX(not_before_utc) FROM wos_checkpoint_jobs"
+    ).fetchone()[0]
+    observations, pilot_deadline = _pilot_provider_evidence(db)
+    deadline = max((value for value in (saved, pilot_deadline)
+                    if value is not None), default=None)
     if deadline is not None:
-        if _stamp(datetime.fromisoformat(deadline)) != deadline:
-            raise WoSCheckpointError("invalid_provider_clock")
+        try:
+            if _stamp(datetime.fromisoformat(deadline)) != deadline:
+                raise ValueError
+        except (ValueError, TypeError, OverflowError):
+            raise WoSCheckpointError("invalid_provider_clock") from None
         if stamp < deadline:
             return "provider_cooldown", deadline
     if not revalidate_quota:
-        # A failed/unknown observation does not prove an exhausted quota reset.
-        # Only a later successful page with observed usable quota clears it.
-        for row in db.execute("SELECT outcome,quota_json FROM wos_checkpoint_attempts "
-                              "WHERE sent=1 ORDER BY started_at_utc DESC,rowid DESC"):
-            quota = WoSQuota(**json.loads(row["quota_json"]))
+        for row in db.execute(
+            "SELECT outcome,quota_json,started_at_utc,finished_at_utc "
+            "FROM wos_checkpoint_attempts WHERE sent=1"
+        ):
+            try:
+                quota = WoSQuota(**json.loads(row["quota_json"]))
+                when = row["finished_at_utc"] or row["started_at_utc"]
+                if _stamp(datetime.fromisoformat(when)) != when:
+                    raise ValueError
+            except (ValueError, TypeError, OverflowError, KeyError):
+                raise WoSCheckpointError("invalid_provider_quota_evidence") from None
+            observations.append((when, row["outcome"] == "success", quota))
+        observations.sort(key=lambda x: x[0], reverse=True)
+        # A later *verified* positive allowance can clear an earlier
+        # exhausted daily observation. Unknown quota never clears it.
+        for _, success, quota in observations:
             if quota.daily_remaining == 0:
                 return "provider_quota_revalidation_required", deadline
-            if row["outcome"] == "success" and quota.can_continue:
+            if success and quota.can_continue:
                 break
     return None, deadline
-
 
 def _claim(project: Project, query_id: str, stamp: str, *, revalidate_quota: bool) -> str | None:
     with _db(project, write=True) as db:
