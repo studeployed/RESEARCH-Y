@@ -444,7 +444,7 @@ def test_pending_export_reconciles_before_stale_external_folder_is_checked(tmp_p
             events = db.execute(
                 'SELECT COUNT(*) FROM audit_events WHERE event_type=?',
                 ('workbook_export_v1:' + export_id,)).fetchone()[0]
-        assert events == 6
+        assert events == 5  # prepared, staging, staged, publishing, published
         assert len(flow.state()['exports']) == 1
     finally:
         flow.close()
