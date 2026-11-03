@@ -15,7 +15,7 @@ from research_y.application_commands import ApplicationCommand
 from research_y.application_worker import ApplicationWorker
 from research_y.projects import (MANIFEST_FILENAME, ProjectFormatError, ProjectVersionError,
                                   _parse_manifest, create_project, open_project)
-from research_y.export_files import Directory
+from research_y.export_files import Directory, ExportFileError
 from tools.gui_feasibility.native_folder_selection import (
     NativeFolderError, checked_folder)
 from tools.gui_feasibility.recent_projects import RecentProjects, RecentProjectsError
@@ -50,7 +50,9 @@ class RealProjectFlow:
         # External folders are transient, host-selected, explicitly confirmed.
         # The audit journal stores directory identity, not the path.
         self._external_candidate = None
+        self._external_candidate_identity = None
         self._external_confirmed = None
+        self._external_confirmed_identity = None
         self._recent_index = None
         self._recent_items = []
         self._recent_error = None
@@ -71,7 +73,17 @@ class RealProjectFlow:
 
     def _clear_external(self):
         self._external_candidate = None
+        self._external_candidate_identity = None
         self._external_confirmed = None
+        self._external_confirmed_identity = None
+
+    @staticmethod
+    def _checked_external_identity(path: Path):
+        try:
+            with Directory(path) as target:
+                return target.identity
+        except (ExportFileError, OSError, ValueError, TypeError):
+            raise ProjectFlowError('external_destination_changed') from None
 
     def _remember_project(self, project):
         if self._recent_index is None:
@@ -341,8 +353,10 @@ class RealProjectFlow:
             path = self._validated_host_directory(selected)
             if path == self.project.root or path.is_relative_to(self.project.root):
                 raise ProjectFlowError('external_destination_invalid')
-            self._external_confirmed = None
+            identity = self._checked_external_identity(path)
+            self._clear_external()
             self._external_candidate = path
+            self._external_candidate_identity = identity
             return self._publish()
 
     def confirm_external_directory(self):
@@ -355,8 +369,12 @@ class RealProjectFlow:
             path = self._validated_host_directory(self._external_candidate)
             if path == self.project.root or path.is_relative_to(self.project.root):
                 raise ProjectFlowError('external_destination_invalid')
+            if self._checked_external_identity(path) != self._external_candidate_identity:
+                raise ProjectFlowError('external_destination_changed')
             self._external_confirmed = path
+            self._external_confirmed_identity = self._external_candidate_identity
             self._external_candidate = None
+            self._external_candidate_identity = None
             return self._publish()
 
     def clear_external_directory(self):
@@ -386,6 +404,10 @@ class RealProjectFlow:
                 raise ProjectFlowError('invalid_export_destination')
             if self._external_confirmed is None and required:
                 raise ProjectFlowError('external_destination_confirmation_required')
+        if self._external_confirmed is not None:
+            if (self._checked_external_identity(self._external_confirmed)
+                    != self._external_confirmed_identity):
+                raise ProjectFlowError('external_destination_changed')
         return None if self._external_confirmed is None else str(self._external_confirmed)
 
     def prepare(self, filename=None):
