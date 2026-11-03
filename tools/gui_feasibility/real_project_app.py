@@ -127,6 +127,16 @@ def run(args):
                             return flow.approve_setup()
                         if name == 'select_run':
                             return flow.select_run(value)
+                        if name == 'preflight_inspect':
+                            return flow.inspect_preflight()
+                        if name == 'preflight_offer':
+                            if type(value) is not dict:
+                                raise ProjectFlowError('preflight_review_invalid')
+                            return flow.offer_preflight_review(**value)
+                        if name == 'preflight_revise':
+                            return flow.revise_preflight_review()
+                        if name == 'preflight_record':
+                            return flow.record_preflight_review()
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -361,6 +371,125 @@ def run(args):
                             ui.label('Exact query: ' + item['exact_query']).props('data-testid=exact-query')
                             ui.label('Reported matches: ' +
                                      ('unknown' if count is None else str(count))).props('data-testid=query-count')
+                if state['selected_run_id'] is not None:
+                    ui.separator()
+                    ui.label('Pre-run verification — no source searches are executed.').props(
+                        'data-testid=preflight-heading')
+                    if not state['preflight_review_reconciliation_required']:
+                        ui.button('Verify saved exact source plan',
+                                  on_click=lambda: act('preflight_inspect')).props(
+                                      'data-testid=preflight-inspect')
+                    preview = state['preflight_report']
+                    if preview is None:
+                        ui.label('The approved source plan has not yet been verified '
+                                 'in this session. No PRESS review is recorded here.')
+                    else:
+                        ui.label('Validated frozen plan SHA-256: ' +
+                                 preview['plan_sha256']).props('data-testid=preflight-hash')
+                        ui.label('Strategy version: ' + str(preview['version_number']) +
+                                 '; concept groups: ' + str(preview['group_count']) +
+                                 '; active terms: ' + str(preview['active_term_count']))
+                        ui.label('Boolean logic: OR across terms and groups; '
+                                 'no automatic exclusions.')
+                        ui.label('Recorded limits: ' + preview['limitations'])
+                        ui.label('Provider counts: UNKNOWN; workload estimate: UNKNOWN '
+                                 '(no pilot counts obtained).').props('data-testid=preflight-unknown')
+                        ui.label('Automated compiler checks are not independent PRESS peer review. '
+                                 'Known-relevant records and PubMed translation have NOT been checked.')
+                        for group in preview['groups']:
+                            ui.label('Approved concept group: ' + group['label']).props(
+                                'data-testid=preflight-group')
+                            for term in group['terms']:
+                                ui.label('Atomic term: ' + term['text'] + ' | origin: ' +
+                                         term['origin'] + ' | ' +
+                                         ('active' if term['enabled'] else 'disabled') +
+                                         ' | rationale: ' + term['rationale']).props(
+                                             'data-testid=preflight-term')
+                        for source in preview['sources']:
+                            ui.label('Source coverage: ' + source['source_name'] +
+                                     ' — ' + source['source_coverage']).props(
+                                         'data-testid=preflight-coverage')
+                            for query in source['queries']:
+                                ui.label('Exact stored query (' + query['group_id'] + '): ' +
+                                         query['exact_query']).props(
+                                             'data-testid=preflight-query')
+                            for warning in source['warnings']:
+                                ui.label('Compiler warning: ' + warning)
+                        for warning in preview['warnings']:
+                            ui.label('Pre-run warning: ' + warning)
+                        previous = preview['last_review']
+                        if previous is not None:
+                            ui.label('Last recorded PRESS checklist: ' +
+                                     previous['occurred_at_utc'] + ' — ' +
+                                     previous['reviewer_name'] + ' (' +
+                                     previous['reviewer_role'] + ', self-reported).').props(
+                                         'data-testid=preflight-last-review')
+                            ui.label('No independent review has been verified, '
+                                     'and no search execution is authorised by this receipt.')
+                            for item, result in previous['press_items'].items():
+                                ui.label('PRESS ' + item + ': ' + result)
+                            if previous['known_relevant']:
+                                ui.label('Known-relevant items: provided, NOT tested '
+                                         'against a search provider.')
+                        candidate = state['preflight_candidate']
+                        if state['preflight_review_reconciliation_required']:
+                            ui.label('Review outcome uncertain: retry the exact same '
+                                     'review request to reconcile the audit journal.').props(
+                                         'data-testid=preflight-retry-required')
+                            ui.button('Retry original pre-run review',
+                                      on_click=lambda: act('preflight_record')).props(
+                                          'data-testid=preflight-retry')
+                        elif candidate is None:
+                            ui.label('PRESS checklist — researcher observations. '
+                                     'Not reviewed / Needs revision do not imply a pass.')
+                            reviewer = ui.input('Reviewing researcher', value='').props(
+                                'data-testid=preflight-reviewer')
+                            reviewer_role = ui.select({
+                                'researcher_self_check': 'Researcher self-check',
+                                'independent_peer_reported':
+                                    'External peer review (user-reported, not verified)'},
+                                value='researcher_self_check', label='Review role')
+                            press = {}
+                            for item in preview['press_items']:
+                                press[item] = ui.select({
+                                    'not_reviewed': 'Not reviewed',
+                                    'reviewed': 'Reviewed by named person',
+                                    'needs_revision': 'Needs revision'},
+                                    value='not_reviewed', label='PRESS: ' + item).props(
+                                        'data-testid=preflight-press-item')
+                            note = ui.textarea('Review notes, concerns, or limitations')
+                            known = ui.textarea(
+                                'Known-relevant record identifiers (one per line; '
+                                'will NOT be checked against provider records)')
+                            ui.button('Review and lock these checklist answers',
+                                      on_click=lambda: act('preflight_offer', dict(
+                                          reviewer_name=reviewer.value,
+                                          reviewer_role=reviewer_role.value,
+                                          press_items={key:box.value
+                                                       for key, box in press.items()},
+                                          review_note=note.value or '',
+                                          known_relevant=tuple(
+                                              line.strip() for line in (known.value or '').splitlines()
+                                              if line.strip())))).props(
+                                                  'data-testid=preflight-offer')
+                        else:
+                            ui.label('Review answers locked — check before recording.').props(
+                                'data-testid=preflight-confirmation')
+                            ui.label('Reviewer: ' + candidate['reviewer_name'] +
+                                     '; role: ' + candidate['reviewer_role'])
+                            for item, value in candidate['press_items'].items():
+                                ui.label('PRESS ' + item + ': ' + value)
+                            ui.label('Note: ' + candidate['review_note'])
+                            if candidate['known_relevant']:
+                                ui.label('Known-relevant items: ' +
+                                         str(len(candidate['known_relevant'])) +
+                                         ', not tested against provider.')
+                            ui.button('Revise checklist before recording',
+                                      on_click=lambda: act('preflight_revise')).props(
+                                          'data-testid=preflight-revise')
+                            ui.button('Confirm and record pre-run checklist',
+                                      on_click=lambda: act('preflight_record')).props(
+                                          'data-testid=preflight-record')
                 for item in state['exports']:
                     # Only offer requests belonging to the explicitly selected run.
                     if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:

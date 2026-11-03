@@ -49,6 +49,13 @@ def services(monkeypatch, tmp_path):
     admission=types.ModuleType('research_y.strategy_admission')
     admission.StrategyAdmissionError=Failure
     admission.commit_approved_strategy=service('admit_strategy',Result())
+    from research_y.preflight_review import _review_payload, PRESS_ITEMS
+    preflight=types.ModuleType('research_y.preflight_review')
+    preflight.PreflightError=Failure
+    preflight._review_payload=_review_payload
+    preflight.PRESS_ITEMS=PRESS_ITEMS
+    preflight.read_preflight=service('preflight_read',{})
+    preflight.record_preflight_review=service('preflight_record',{})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -56,7 +63,7 @@ def services(monkeypatch, tmp_path):
     files.filename=filename
     for name,module in [('projects',projects),('application_inspection',inspection),
                         ('workbook_exports',exports),('strategy_admission',admission),
-                        ('export_files',files)]:
+                        ('preflight_review',preflight),('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
     project=Project(tmp_path,uuid4(),'Synthetic','2026-11-01T00:00:00+00:00')
@@ -75,6 +82,15 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
                   admission_groups=(StrategyGroup('rv', 'RV',
                       (ApprovedTerm('right ventricle','researcher',True),)),),
                   approval_confirmed=True)
+    elif operation in ('preflight_read','preflight_record'):
+        kw.update(run_id=str(uuid4()))
+        if operation=='preflight_record':
+            from research_y.preflight_review import PRESS_ITEMS
+            kw.update(review_id=str(uuid4()),review_plan_sha256='a'*64,
+                review_reviewer_name='Reviewer',
+                review_reviewer_role='researcher_self_check',
+                review_items={k:'not_reviewed' for k in PRESS_ITEMS},
+                review_note='', review_known_relevant=())
     else:
         kw['export_id']=str(uuid4())
     if operation=='prepare_export': kw.update(run_id=str(uuid4()),output_name='report.xlsx')
@@ -94,6 +110,12 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     if operation=='inspect':
         assert calls[0][2]['selected_run_id']==kw['run_id']
         assert result['snapshot']['reported'] is None and result['snapshot']['retrieved']==0
+    if operation=='preflight_read':
+        assert calls[0][1][1] == kw['run_id']
+    if operation=='preflight_record':
+        assert calls[0][2]['review_id'] == kw['review_id']
+        assert calls[0][2]['run_id'] == kw['run_id']
+        assert calls[0][2]['press_items'] == kw['review_items']
 
 
 def test_no_implicit_run_selection_or_progress(services):
@@ -282,3 +304,41 @@ def test_strategy_admission_error_code_is_not_silent_success_or_private_text(ser
         approval_confirmed=True)
     with pytest.raises(commands.ApplicationCommandError, match='^admission_conflict$'):
         commands.execute_command(command)
+
+
+@pytest.mark.parametrize('change', [
+    {'review_id':'not-a-uuid'}, {'review_plan_sha256':'short'},
+    {'review_reviewer_name':chr(0) + 'bad'}, {'review_reviewer_role':'fake'},
+    {'review_items':{}}, {'review_note':'bad' + chr(0) + 'data'},
+    {'review_known_relevant':['PMID123']},
+    {'directory':'/private/folder'}, {'export_id':'x'},
+])
+def test_preflight_review_command_strict_input_validation(services, change):
+    project, calls, *_ = services
+    from research_y.preflight_review import PRESS_ITEMS
+    args=dict(run_id=str(uuid4()),review_id=str(uuid4()),
+        review_plan_sha256='b'*64, review_reviewer_name='Researcher',
+        review_reviewer_role='researcher_self_check',
+        review_items={k:'not_reviewed' for k in PRESS_ITEMS},
+        review_note='',review_known_relevant=())
+    args.update(change)
+    with pytest.raises(commands.ApplicationCommandError, match='invalid_command'):
+        commands.ApplicationCommand.for_project(project,'preflight_record',**args)
+    assert not calls
+
+
+def test_preflight_read_can_target_exact_review_uuid_without_other_review_fields(services):
+    project,calls,*_=services
+    review_id=str(uuid4())
+    command=commands.ApplicationCommand.for_project(
+        project,'preflight_read',run_id=str(uuid4()),review_id=review_id)
+    commands.execute_command(command)
+    assert calls[0][0]=='preflight_read'
+    assert calls[0][2] == {'review_id':review_id}
+    for bad in ({'review_id':'fake'}, {'review_note':'secret'}):
+        with pytest.raises(commands.ApplicationCommandError, match='invalid_command'):
+            commands.ApplicationCommand.for_project(
+                project,'preflight_read',run_id=str(uuid4()),**bad)
+    with pytest.raises(commands.ApplicationCommandError, match='invalid_command'):
+        commands.ApplicationCommand.for_project(
+            project,'inspect',run_id=str(uuid4()),review_note='secret')
