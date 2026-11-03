@@ -120,6 +120,10 @@ def run(args):
                             return flow.select_export(value)
                         if name == 'prepare':
                             return flow.prepare()
+                        if name == 'external_confirm':
+                            return flow.confirm_external_directory()
+                        if name == 'external_clear':
+                            return flow.clear_external_directory()
                         if name == 'resume':
                             return flow.resume()
                         if name == 'cancel':
@@ -127,7 +131,7 @@ def run(args):
                         if name == 'observe':
                             return flow.observe()
                         raise ProjectFlowError('unsupported_action')
-                    if name in ('native_open', 'native_create'):
+                    if name in ('native_open', 'native_create', 'native_export'):
                         # The browser only requests the OS dialog; it cannot
                         # supply or replace the trusted host-selected path.
                         if args.mode != 'native':
@@ -136,9 +140,14 @@ def run(args):
                         if selected is not None:
                             if name == 'native_open':
                                 await asyncio.to_thread(flow.open_native_folder, selected)
-                            else:
+                            elif name == 'native_create':
                                 await asyncio.to_thread(flow.create_native_parent,
                                                         selected, value)
+                            else:
+                                # The unforgeable OS dialog result is held by the
+                                # Python host. It still needs an explicit second
+                                # user confirmation before any export operation.
+                                await asyncio.to_thread(flow.offer_external_directory, selected)
                             events.append(name)
                     else:
                         await asyncio.to_thread(perform)
@@ -214,6 +223,29 @@ def run(args):
                     ui.button('Select stored export ' + eid,
                               on_click=lambda eid=eid: act('select_export', eid)).props('data-testid=select-export')
                 if state['selected_run_id'] is not None:
+                    if args.mode == 'native':
+                        ui.button('Choose external workbook folder with Windows dialog',
+                                  on_click=lambda: act('native_export')).props(
+                                      'data-testid=native-export-folder')
+                    else:
+                        ui.label('External folder selection requires the desktop window.').props(
+                            'data-testid=external-folder-unavailable')
+                    if state['external_destination_candidate'] is not None:
+                        ui.label('Proposed external folder: ' +
+                                 state['external_destination_candidate']).props(
+                                     'data-testid=external-candidate')
+                        ui.button('Confirm this external destination',
+                                  on_click=lambda: act('external_confirm')).props(
+                                      'data-testid=confirm-external-folder')
+                    if state['external_destination_confirmed']:
+                        ui.label('Confirmed external destination: ' +
+                                 state['external_destination_location']).props(
+                                     'data-testid=external-confirmed')
+                    if (state['external_destination_candidate'] is not None or
+                            state['external_destination_confirmed']):
+                        ui.button('Clear external folder selection',
+                                  on_click=lambda: act('external_clear')).props(
+                                      'data-testid=clear-external-folder')
                     ui.label('Default workbook: strategy-summary-' +
                              state['selected_run_id'] + '.xlsx')
                     ui.button('Prepare strategy workbook',
@@ -227,6 +259,14 @@ def run(args):
                         ui.label('Export inventory unavailable — reinspection required.').props('data-testid=export-missing')
                     else:
                         ui.label('Recorded export phase: ' + saved['recorded_state']).props('data-testid=export-phase')
+                        ui.label('Recorded destination: ' + saved['destination_kind']).props(
+                            'data-testid=destination-kind')
+                        if (saved['destination_kind'] == 'external' and
+                                not state['external_destination_confirmed']):
+                            ui.label('EXTERNAL DESTINATION CONFIRMATION REQUIRED — '
+                                     'choose the original folder again; the path '
+                                     'is never stored in the project.').props(
+                                         'data-testid=external-reconfirm')
                         if saved['last_error'] is not None:
                             ui.label('Recorded export error: ' + saved['last_error']).props('data-testid=export-error')
                         if saved['recorded_state'] not in ('cancelled', 'published'):
@@ -248,6 +288,10 @@ def run(args):
                 if observed is not None:
                     ui.label('Observed outcome: ' + observed['outcome']).props('data-testid=observation')
                     ui.label('Audited workbook success: ' + str(observed['audited_success']))
+                    if observed['outcome'] == 'destination_confirmation_required':
+                        ui.label('EXTERNAL DESTINATION CONFIRMATION REQUIRED — '
+                                 'the output cannot be verified without reselecting '
+                                 'its original folder.').props('data-testid=external-observe')
                     if observed['outcome'] == 'published_receipt_missing':
                         ui.label('RECOVERY REQUIRED — the workbook is visible, but the '
                                  'final audited publication receipt is missing. '
@@ -396,6 +440,7 @@ def run(args):
                                  "error: document.querySelector('[data-testid=export-error]')?.textContent || '',"
                                  "nativeOpen: Boolean(document.querySelector('[data-testid=native-open-folder]')),"
                                  "nativeCreate: Boolean(document.querySelector('[data-testid=native-create-folder]')),"
+                                 "nativeExport: Boolean(document.querySelector('[data-testid=native-export-folder]')),"
                                  "injected: window.__researchy_injected === true})")
                 if check is None:
                     raise RuntimeError('native_document_unavailable')
@@ -409,7 +454,8 @@ def run(args):
                             and 'render_failed' not in data['error'])
                         or (args.scenario == 'stage_fault'
                             and 'storage_failed' not in data['error'])
-                        or not data['nativeOpen'] or not data['nativeCreate']):
+                        or not data['nativeOpen'] or not data['nativeCreate']
+                        or not data['nativeExport']):
                     raise RuntimeError('native_rendering_invalid')
                 report['native_rendering_verified'] = True
                 report['status'] = 'finished'
