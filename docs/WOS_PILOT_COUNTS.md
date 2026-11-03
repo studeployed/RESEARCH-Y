@@ -149,3 +149,27 @@ Merge requires all four Windows/Linux Python 3.12/3.13 checks on exact
 HEAD, completed exact-commit Codex code review first then security review,
 individual review receipts and resolved findings, followed by **explicit
 project-owner approval**. No merge is performed automatically.
+
+
+## Shared provider reservation while an attempt is in flight
+
+A durable pilot request without its matching outcome is an **outstanding
+provider reservation**, even after the minimum 1.05-second spacing interval
+has elapsed. The shared project-scoped provider guard used by both the
+minimal-page pilot service and the Web of Science checkpoint worker refuses
+new claims while such a reservation remains unclosed. This is necessary
+because a slow HTTP request might finish after the spacing deadline and
+return a new provider cooldown or exhausted quota. A revalidation flag
+does not authorise overlapping requests.
+
+Completed pilots close their reservation only when the corresponding
+immutable outcome is committed; their observed quota, Retry-After and
+request-start pacing limits remain in force. An interrupted attempt
+without a durable outcome may have already been sent, and remains
+`provider_pilot_outcome_unknown` rather than being automatically
+cleared after an arbitrary timeout. A future explicit recovery
+mechanism needs to verify the prior worker has stopped and disposition
+the unknown attempt, without overwriting audit receipts or silently
+reissuing it. That recovery mechanism is **not** included here.
+This is a fail-closed scope limitation, not a claim that ordinary
+checkpoint work can always resume after a pilot process crashes.
