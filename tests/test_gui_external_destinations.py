@@ -448,3 +448,66 @@ def test_pending_export_reconciles_before_stale_external_folder_is_checked(tmp_p
         assert len(flow.state()['exports']) == 1
     finally:
         flow.close()
+
+
+def test_pending_without_receipt_keeps_same_uuid_when_new_folder_selected(tmp_path, monkeypatch):
+    """Only verified no-receipt permits a new folder, never a new request ID."""
+    project, run_id = fixture(tmp_path)
+    original = tmp_path / 'first-folder'
+    original.mkdir()
+    old_moved = tmp_path / 'old-folder-moved'
+    flow = _flow(tmp_path, project)
+    try:
+        flow.open_selected(); flow.select_run(run_id)
+        flow.offer_external_directory(original)
+        flow.confirm_external_directory()
+        operation = flow._operation
+        first_failure = True
+        inspection_unavailable = False
+        pending = None
+
+        def lost_before_receipt(name, **kwargs):
+            nonlocal first_failure, inspection_unavailable, pending
+            if name == 'prepare_export' and first_failure:
+                pending = kwargs['export_id']
+                first_failure = False
+                inspection_unavailable = True
+                raise ProjectFlowError('worker_interrupted')
+            if name == 'inspect' and inspection_unavailable:
+                raise ProjectFlowError('worker_unavailable')
+            return operation(name, **kwargs)
+
+        monkeypatch.setattr(flow, '_operation', lost_before_receipt)
+        with pytest.raises(ProjectFlowError, match='^worker_interrupted$'):
+            flow.prepare()
+        assert pending == flow._pending_export_id
+        assert flow.selected_export_id is None
+        with sqlite3.connect(project.database_path) as db:
+            assert db.execute(
+                "SELECT COUNT(*) FROM audit_events "
+                "WHERE event_type LIKE 'workbook_export_v1:%'").fetchone()[0] == 0
+
+        original.rename(old_moved)
+        original.mkdir()
+        inspection_unavailable = False
+        with pytest.raises(ProjectFlowError, match='^external_destination_changed$'):
+            flow.prepare()
+        assert flow._pending_export_id == pending
+        assert flow.selected_export_id is None
+
+        # Explicit folder change is permitted only after reinspection has
+        # established no existing receipt for the same tentative UUID.
+        flow.clear_external_directory()
+        assert flow._pending_export_id == pending
+        flow.offer_external_directory(original)
+        flow.confirm_external_directory()
+        prepared = flow.prepare()
+        assert prepared['selected_export_id'] == pending
+        assert len(prepared['exports']) == 1
+        flow.resume()
+        assert flow.observe()['observation']['outcome'] == 'published_verified'
+        output_name = 'strategy-summary-' + run_id + '.xlsx'
+        assert (original / output_name).is_file()
+        assert not (old_moved / output_name).exists()
+    finally:
+        flow.close()
