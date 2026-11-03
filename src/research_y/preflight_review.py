@@ -93,8 +93,9 @@ def _review_payload(review_id, run_id, plan_sha256, *,
                 execution_authorized=False)
 
 
-def _previous(db, run_id, plan_sha):
+def _previous(db, run_id, plan_sha, requested_id=None):
     latest = None
+    requested = None
     for event_id, raw, stamp in db.execute(
         "SELECT event_id,details_json,occurred_at_utc FROM audit_events "
         "WHERE event_type=? ORDER BY event_id", (EVENT,)
@@ -119,10 +120,14 @@ def _previous(db, run_id, plan_sha):
         except (ValueError, TypeError, AttributeError):
             raise PreflightError("review_evidence_invalid") from None
         latest = dict(data, event_id=event_id, occurred_at_utc=stamp)
-    return latest
+        if requested_id is not None and data.get("review_id") == requested_id:
+            if requested is not None:
+                raise PreflightError("review_evidence_invalid")
+            requested = latest
+    return latest, requested
 
 
-def _inspect(db, run_id):
+def _inspect(db, run_id, requested_id=None):
     row = db.execute(
         "SELECT r.strategy_version_id,r.status,v.version_number,v.snapshot_json "
         "FROM search_runs r JOIN strategy_versions v ON "
@@ -210,13 +215,18 @@ def _inspect(db, run_id):
                   "have not been tested.",
                   "PRESS self-check is not an independent peer review."],
     )
-    summary["last_review"] = _previous(db, run_id, plan_sha)
+    latest, requested = _previous(db, run_id, plan_sha, requested_id)
+    summary["last_review"] = latest
+    if requested_id is not None:
+        summary["requested_review"] = requested
     return summary
 
 
-def read_preflight(project, run_id: str) -> dict:
-    """Inspect exact frozen plan and recorded reviewer attestations; never write."""
+def read_preflight(project, run_id: str, *, review_id: str | None = None) -> dict:
+    """Inspect frozen plan; optionally reconcile one earlier review by its own UUID."""
     _uuid(run_id)
+    if review_id is not None:
+        _uuid(review_id)
     try:
         code = None
         with _read(project) as db:
@@ -224,7 +234,7 @@ def read_preflight(project, run_id: str) -> dict:
             # diagnostic. Catch the *static* preflight error inside the context
             # before its generic conversion can obscure the precise status.
             try:
-                result = _inspect(db, run_id)
+                result = _inspect(db, run_id, review_id)
             except PreflightError as exc:
                 code = exc.code
         if code is not None:
