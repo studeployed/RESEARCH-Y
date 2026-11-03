@@ -20,7 +20,9 @@ from research_y.preflight_review import read_preflight
 from research_y.storage import ApprovedTerm, StrategyGroup
 from research_y.strategy_admission import commit_approved_strategy
 from research_y.wos_starter_client import WoSStarterClient, WoSHTTPResponse
-from research_y.wos_checkpoint_store import create_wos_checkpoint
+from research_y.wos_checkpoint_store import (
+    create_wos_checkpoint, _provider_hold, _stamp, _claim,
+)
 from research_y.wos_starter_pilot import (
     REQUEST_EVENT, OUTCOME_EVENT, WoSPilotError, read_wos_pilot,
     probe_wos_starter_once,
@@ -80,6 +82,8 @@ def client(*, headers=None, count=123, trace=None, fail=None,
             return WoSHTTPResponse(403, actual_headers, b'')
         if fail=='throttle':
             return WoSHTTPResponse(429, {**actual_headers,'Retry-After':'30'},b'')
+        if fail=='throttle_no_retry':
+            return WoSHTTPResponse(429, actual_headers, b'')
         if response_override is not None:
             return WoSHTTPResponse(200,actual_headers,
                 json.dumps(response_override).encode('utf-8'))
@@ -210,7 +214,14 @@ def test_network_auth_and_rate_failures_record_unknown_count_with_static_error(
     assert result['status']=='probe_failed'
     assert result['reported_matches'] is None
     assert result['error_code']==code
-    assert result['quota'] is None and not result['retrieval_verified']
+    if failure=='network':
+        assert result['quota'] is None
+        assert result['quota_status']=='not_observed'
+    else:
+        # HTTP error headers remain audited, not discarded with the count.
+        assert result['quota']['daily_remaining']==4997
+        assert result['quota_status']=='institutional_allowance_observed'
+    assert not result['retrieval_verified']
     assert len(audit(project,pilot_id))==2
     assert result['retry_after_seconds']==(30 if failure=='throttle' else None)
 
@@ -428,3 +439,101 @@ def test_historical_pilot_readable_after_run_state_change(tmp_path):
                    ('paused',rid))
     saved=read_wos_pilot(open_project(project.root),report['pilot_id'])
     assert saved==report
+
+
+def _hold(project, *, revalidate=False):
+    with closing(sqlite3.connect(project.database_path)) as db:
+        db.row_factory=sqlite3.Row
+        return _provider_hold(db,_stamp(),revalidate_quota=revalidate)
+
+
+def test_server_retry_after_is_durable_and_cannot_be_bypassed_by_new_pilot(
+    tmp_path, monkeypatch
+):
+    from research_y import wos_starter_pilot as module
+    project,rid,sha,q=fixture(tmp_path)
+    first=submit(project,rid,sha,q,client(fail='throttle'))
+    assert first['status']=='probe_failed'
+    assert first['retry_after_seconds']==30
+    assert first['quota']['daily_remaining']==4997
+    assert _hold(project)[0]=='provider_cooldown'
+    # Isolate the longer server hold from the generic 1.05s pilot gap.
+    monkeypatch.setattr(module,'MIN_REQUEST_INTERVAL',0.0)
+    requests=[]
+    for explicit in (False,True):
+        with pytest.raises(WoSPilotError,match='^provider_cooldown$'):
+            submit(project,rid,sha,q,client(trace=requests),
+                   revalidate_quota=explicit)
+    assert requests==[]
+    assert len(audit(project))==2
+
+
+def test_429_quota_zero_is_durable_and_shared_even_without_retry_after(
+    tmp_path,monkeypatch
+):
+    from research_y import wos_starter_pilot as module
+    project,rid,sha,q=fixture(tmp_path)
+    exhausted={'X-RateLimit-Limit-Day':'5000',
+               'X-RateLimit-Remaining-Day':'0'}
+    failed=submit(project,rid,sha,q,
+                  client(headers=exhausted,fail='throttle_no_retry'))
+    assert failed['status']=='probe_failed'
+    assert failed['reported_matches'] is None
+    assert failed['quota']['daily_remaining']==0
+    assert failed['retry_after_seconds'] is None
+    assert _hold(project)==('provider_quota_revalidation_required',None)
+    monkeypatch.setattr(module,'MIN_REQUEST_INTERVAL',0.0)
+    attempts=[]
+    with pytest.raises(WoSPilotError,match='^provider_quota_revalidation_required$'):
+        submit(project,rid,sha,q,client(trace=attempts))
+    assert attempts==[]
+    permitted=submit(project,rid,sha,q,client(trace=attempts),
+                     revalidate_quota=True)
+    assert permitted['status']=='count_reported_sample_not_retained'
+    assert len(attempts)==1
+    assert _hold(project)[0] is None
+
+
+def test_exhausted_pilot_blocks_existing_checkpoint_worker_without_refetch(tmp_path):
+    project,rid,sha,q=fixture(tmp_path)
+    exhausted={'X-RateLimit-Limit-Day':'5000',
+               'X-RateLimit-Remaining-Day':'0'}
+    result=submit(project,rid,sha,q,client(headers=exhausted))
+    assert result['status']=='quota_exhausted_after_probe'
+    assert _hold(project)[0]=='provider_quota_revalidation_required'
+    create_wos_checkpoint(project,q['query_id'],retention_authorized=True)
+    claimed=_claim(project,q['query_id'],_stamp(),revalidate_quota=False)
+    assert claimed is None
+    assert _hold(project)[0]=='provider_quota_revalidation_required'
+    with closing(sqlite3.connect(project.database_path)) as db:
+        row=db.execute(
+            'SELECT status,reported_matches FROM source_queries WHERE query_id=?',
+            (q['query_id'],)).fetchone()
+    assert row[1] is None
+    assert row[0] in ('pending','paused')
+
+
+def test_failed_http_observed_quota_not_confused_with_source_count(tmp_path):
+    project,rid,sha,q=fixture(tmp_path)
+    exhausted={'X-RateLimit-Limit-Day':'50',
+               'X-RateLimit-Remaining-Day':'0'}
+    failed=submit(project,rid,sha,q,
+                  client(headers=exhausted,fail='auth'))
+    assert failed['status']=='probe_failed'
+    assert failed['reported_matches'] is None
+    assert failed['error_code']=='authentication_or_entitlement_denied'
+    assert failed['quota']['daily_limit']==50
+    assert failed['quota_status']=='below_required_institutional_allowance'
+    assert ordinary_queries(project,rid)[0][2] is None
+    assert _hold(project)[0]=='provider_quota_revalidation_required'
+
+
+def test_completed_attempt_replay_is_allowed_even_with_same_used_client(tmp_path):
+    project,rid,sha,q=fixture(tmp_path)
+    pid=str(uuid4())
+    existing_client=client()
+    first=submit(project,rid,sha,q,existing_client,pilot_id=pid)
+    assert existing_client.requests_made==1
+    replay=submit(project,rid,sha,q,existing_client,pilot_id=pid)
+    assert replay==first
+    assert len(audit(project,pid))==2
