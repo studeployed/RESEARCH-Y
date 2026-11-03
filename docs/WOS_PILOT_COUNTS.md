@@ -74,12 +74,22 @@ unrecognised source fields. Only safe quota integer facts, response digest,
 count/status, observed UTC timestamp, query/plan identities and zero-record
 retention labels are written.
 
-The reservation transaction consults the current project's **existing
-durable WoS checkpoint provider restrictions**. It refuses a live WoS
-retrieval worker, unexpired project cooldown, and unresolved known
-exhaustion unless a **new explicit quota-revalidation** request is authorised
-after the cooldown. Pilot reservations across fresh client instances also
-observe a recorded interrequest pacing gap. No daily reset time is guessed.
+The reservation transaction consults the project's **shared durable
+WoS provider guard**. It refuses a live WoS retrieval worker, an unexpired
+project cooldown, or recorded exhaustion unless a **new explicit
+quota-revalidation** request is authorised *after* any server-directed
+cooldown. Importantly, this guard now consumes both existing checkpoint
+attempts and newer pilot audit observations. **An exhausted pilot blocks
+the regular checkpoint retrieval worker as well**, preventing a fresh
+client or different query from bypassing previously observed quota facts.
+
+Quota headers from HTTP failures (including 429/403) are captured
+independently of whether a valid count was returned. A valid
+`Retry-After` directive creates a durable absolute hold that neither a
+new UUID nor `revalidate_quota=True` may bypass. A non-representable
+server-directed delay fails closed instead of being dropped. Pilot
+reservations across fresh client instances additionally observe a
+recorded interrequest pacing gap. No daily reset time is guessed.
 This is **project-scoped only**, not a cross-project or organisation-wide
 quota coordinator; product-level and account-wide quota controls remain
 future acceptance work. A pilot does not alter the underlying checkpoint
@@ -114,11 +124,12 @@ to final source execution, peer review verified, or a completed search.
 
 Synthetic, disk-backed offline tests exercise an exact page-1/limit-1
 fixed-origin request; safe title/UID non-retention; zero counts;
-missing, trial or exhausted quota; HTTP authentication/network/rate
-failures; reflected secrets; stopped worker, lost result, conflicting UUID,
-concurrent callers, audit rollback, changed immutable source plan and
-run state, old project cooldowns, separate explicit quota revalidation,
-and inter-request pacing. Normal CI makes **no live Starter call**.
+missing, trial or exhausted quota; quota observations from failed HTTP
+responses; absolute server Retry-After deadlines shared with checkpoint
+workers; HTTP authentication/network/rate failures; reflected secrets;
+stopped worker, lost result, conflicting UUID, concurrent callers, audit
+rollback, changed immutable source plan/run state, old project cooldowns,
+separate explicit quota revalidation and inter-request pacing. Normal CI makes **no live Starter call**.
 
 The next increment should expose this service in the isolated GUI/worker
 using a **trusted host-only Starter key**, explicit single-query preview and
