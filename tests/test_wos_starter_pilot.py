@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from threading import Event
+import time
 import json
 import sqlite3
 from urllib.error import URLError
@@ -489,7 +490,10 @@ def test_429_quota_zero_is_durable_and_shared_even_without_retry_after(
     assert failed['retry_after_seconds'] is None
     from research_y import wos_checkpoint_store
     monkeypatch.setattr(wos_checkpoint_store,'MIN_REQUEST_INTERVAL',0.0)
-    assert _hold(project)==('provider_quota_revalidation_required',None)
+    # The guard also retains a previously journalled absolute pacing
+    # deadline. It is not a failed quota check or a reason to drop that
+    # historical timestamp from the audit trail.
+    assert _hold(project)[0]=='provider_quota_revalidation_required'
     monkeypatch.setattr(module,'MIN_REQUEST_INTERVAL',0.0)
     attempts=[]
     with pytest.raises(WoSPilotError,match='^provider_quota_revalidation_required$'):
@@ -662,3 +666,45 @@ def test_checkpoint_worker_uses_shared_pacing_after_prior_pilot(tmp_path):
     create_wos_checkpoint(project,q['query_id'],retention_authorized=True)
     assert _claim(project,q['query_id'],_stamp(),revalidate_quota=True) is None
     assert _hold(project,revalidate=True)[0]=='provider_cooldown'
+
+
+def test_inflight_pilot_blocks_checkpoint_even_after_pacing_window(tmp_path):
+    project,rid,sha,q=fixture(tmp_path)
+    create_wos_checkpoint(project,q['query_id'],retention_authorized=True)
+    entered, release = Event(), Event()
+    trace=[]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        pilot = pool.submit(submit,project,rid,sha,q,
+                            client(trace=trace,block=(entered,release),
+                                   fail='throttle'))
+        try:
+            assert entered.wait(10)
+            # Crossing the request-start pacing deadline is NOT evidence
+            # that the first network call completed.
+            time.sleep(1.14)
+            assert _hold(project)[0]=='provider_pilot_outcome_unknown'
+            assert _hold(project,revalidate=True)[0]=='provider_pilot_outcome_unknown'
+            assert _claim(project,q['query_id'],_stamp(),
+                          revalidate_quota=True) is None
+            assert len(trace)==1
+        finally:
+            release.set()
+        result=pilot.result(timeout=10)
+    assert result['status']=='probe_failed'
+    assert result['retry_after_seconds']==30
+    assert _hold(project)[0]=='provider_cooldown'
+    assert len(trace)==1
+
+
+def test_abandoned_pilot_does_not_silently_release_shared_provider(tmp_path,monkeypatch):
+    from research_y import wos_checkpoint_store
+    monkeypatch.setattr(wos_checkpoint_store,'MIN_REQUEST_INTERVAL',0.0)
+    project,rid,sha,q=fixture(tmp_path)
+    with pytest.raises(KeyboardInterrupt):
+        submit(project,rid,sha,q,client(fail='abrupt'))
+    assert _hold(project)[0]=='provider_pilot_outcome_unknown'
+    create_wos_checkpoint(project,q['query_id'],retention_authorized=True)
+    assert _claim(project,q['query_id'],_stamp(),revalidate_quota=True) is None
+    # There is no proof that the abandoned request was never sent. Clearing
+    # the hold requires explicit future evidence/recovery, not a timer reset.
+    assert _hold(project,revalidate=True)[0]=='provider_pilot_outcome_unknown'
