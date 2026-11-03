@@ -158,7 +158,6 @@ def execute_command(command: ApplicationCommand) -> dict:
     from research_y.projects import Project
     from research_y import application_inspection as inspection
     from research_y import workbook_exports as exports
-    from research_y import strategy_admission as admission
     project = Project(Path(command.project_root), UUID(command.project_id),
                       command.project_name, command.project_created_at)
     try:
@@ -166,6 +165,7 @@ def execute_command(command: ApplicationCommand) -> dict:
             snapshot = inspection.read_application_snapshot(project, selected_run_id=command.run_id)
             return {'snapshot': snapshot.as_dict(), 'location': str(snapshot.location)}
         if command.operation == 'admit_strategy':
+            from research_y import strategy_admission as admission
             try:
                 result = admission.commit_approved_strategy(
                     project, request_id=command.admission_request_id,
@@ -192,6 +192,8 @@ def execute_command(command: ApplicationCommand) -> dict:
         else:
             result = exports.cancel_workbook_export(project, command.export_id, directory=command.directory)
         return asdict(result)
+    except ApplicationCommandError:
+        raise
     except (inspection.ApplicationInspectionError, exports.WorkbookExportError) as exc:
         raise ApplicationCommandError(exc.code) from None
     except sqlite3.Error as exc:
