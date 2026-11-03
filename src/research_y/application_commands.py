@@ -52,6 +52,9 @@ class ApplicationCommand:
     export_id: str | None = None
     output_name: str | None = None
     directory: str | None = None
+    # Trusted host confirmation: filesystem identity bound across the worker
+    # process boundary. Never supplied by a browser request or stored in a project.
+    expected_directory_identity: tuple[int, int] | None = None
 
     def __post_init__(self):
         try:
@@ -69,6 +72,12 @@ class ApplicationCommand:
                 _uuid(self.export_id)
             if self.directory is not None:
                 _path(self.directory)
+            if self.expected_directory_identity is not None:
+                identity = self.expected_directory_identity
+                if (self.operation != 'prepare_export' or self.directory is None
+                        or type(identity) is not tuple or len(identity) != 2
+                        or any(type(part) is not int or part < 0 for part in identity)):
+                    raise ValueError
             if self.operation == 'inspect':
                 if any(v is not None for v in (self.export_id, self.output_name, self.directory)):
                     raise ValueError
@@ -124,8 +133,10 @@ def execute_command(command: ApplicationCommand) -> dict:
         if command.operation == 'observe_export':
             result = inspection.observe_export_request(project, command.export_id, directory=command.directory)
         elif command.operation == 'prepare_export':
+            identity_args = ({} if command.expected_directory_identity is None else
+                             {'expected_directory_identity': command.expected_directory_identity})
             result = exports.prepare_workbook_export(project, command.run_id, command.output_name,
-                       export_id=command.export_id, directory=command.directory)
+                       export_id=command.export_id, directory=command.directory, **identity_args)
         elif command.operation == 'resume_export':
             result = exports.resume_workbook_export(project, command.export_id, directory=command.directory)
         else:
