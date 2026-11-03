@@ -362,7 +362,7 @@ def test_failed_inventory_reinspection_retains_same_prepared_uuid(tmp_path, monk
             if name == 'inspect' and unavailable:
                 raise ProjectFlowError('worker_unavailable')
             result = original_operation(name, **kw)
-            if name == 'prepare_export':
+            if name == 'prepare_export' and committed_id is None:
                 committed_id = kw['export_id']
                 unavailable = True
             return result
@@ -378,6 +378,73 @@ def test_failed_inventory_reinspection_retains_same_prepared_uuid(tmp_path, monk
             assert flow.state()['export_reconciliation_required']
         unavailable = False
         assert flow.prepare()['selected_export_id'] == committed_id
+        assert len(flow.state()['exports']) == 1
+    finally:
+        flow.close()
+
+
+def test_pending_export_reconciles_before_stale_external_folder_is_checked(tmp_path, monkeypatch):
+    """A lost response and failed initial inspect must not strand an export."""
+    project, run_id = fixture(tmp_path)
+    selected = tmp_path / 'original-output'
+    selected.mkdir()
+    moved = tmp_path / 'moved-output'
+    flow = _flow(tmp_path, project)
+    try:
+        flow.open_selected(); flow.select_run(run_id)
+        flow.offer_external_directory(selected)
+        flow.confirm_external_directory()
+        original_operation = flow._operation
+        failed_receipt_reply = False
+        block_inspection = False
+        export_id = None
+
+        def fail_after_receipt(name, **kwargs):
+            nonlocal failed_receipt_reply, block_inspection, export_id
+            if name == 'inspect' and block_inspection:
+                raise ProjectFlowError('worker_unavailable')
+            result = original_operation(name, **kwargs)
+            if name == 'prepare_export' and not failed_receipt_reply:
+                failed_receipt_reply = True
+                block_inspection = True
+                export_id = kwargs['export_id']
+                raise ProjectFlowError('worker_interrupted')
+            return result
+
+        monkeypatch.setattr(flow, '_operation', fail_after_receipt)
+        with pytest.raises(ProjectFlowError, match='^worker_interrupted$'):
+            flow.prepare()
+        assert failed_receipt_reply and export_id
+        assert flow._pending_export_id == export_id
+        assert flow.selected_export_id is None
+        assert flow.state()['export_reconciliation_required'] is True
+
+        # The original filesystem path disappears during the inspection outage.
+        selected.rename(moved)
+        selected.mkdir()
+        block_inspection = False
+        # Reinspection must succeed first, even though the folder validation
+        # must now fail. The original ID becomes selected; clearing the stale
+        # location and choosing its actual relocated identity is permitted.
+        with pytest.raises(ProjectFlowError, match='^external_destination_changed$'):
+            flow.prepare()
+        assert flow._pending_export_id is None
+        assert flow.selected_export_id == export_id
+        assert flow.state()['exports'][0]['export_id'] == export_id
+        assert flow.state()['export_reconciliation_required'] is False
+        flow.clear_external_directory()
+        flow.offer_external_directory(moved)
+        flow.confirm_external_directory()
+        assert flow.prepare()['selected_export_id'] == export_id
+        flow.resume()
+        assert flow.observe()['observation']['outcome'] == 'published_verified'
+        assert (moved / ('strategy-summary-' + run_id + '.xlsx')).is_file()
+        assert list(selected.iterdir()) == []
+        with sqlite3.connect(project.database_path) as db:
+            events = db.execute(
+                'SELECT COUNT(*) FROM audit_events WHERE event_type=?',
+                ('workbook_export_v1:' + export_id,)).fetchone()[0]
+        assert events == 6
         assert len(flow.state()['exports']) == 1
     finally:
         flow.close()
