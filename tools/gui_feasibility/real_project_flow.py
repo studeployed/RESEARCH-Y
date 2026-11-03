@@ -427,6 +427,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('export_reconciliation_required')
             if self._pending_review is not None:
                 raise ProjectFlowError('preflight_reconciliation_required')
+            if self._pending_pilot is not None:
+                raise ProjectFlowError('pilot_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
@@ -848,6 +850,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('strategy_reconciliation_required')
             if self._pending_review is not None:
                 raise ProjectFlowError('preflight_reconciliation_required')
+            if self._pending_pilot is not None:
+                raise ProjectFlowError('pilot_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -899,6 +903,8 @@ class RealProjectFlow:
     def resume(self):
         with self._guard:
             self._require_open()
+            if self._pending_pilot is not None:
+                raise ProjectFlowError('pilot_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -918,6 +924,8 @@ class RealProjectFlow:
     def cancel(self):
         with self._guard:
             self._require_open()
+            if self._pending_pilot is not None:
+                raise ProjectFlowError('pilot_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -936,6 +944,8 @@ class RealProjectFlow:
     def observe(self):
         with self._guard:
             self._require_open()
+            if self._pending_pilot is not None:
+                raise ProjectFlowError('pilot_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             # A previous file observation is time-specific; never display it as
