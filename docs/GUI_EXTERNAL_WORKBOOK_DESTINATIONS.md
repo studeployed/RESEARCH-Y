@@ -73,9 +73,12 @@ confirmation step without adding a browser-controlled filesystem route.
    selected request even if the original path is missing or changed; the
    researcher can then clear the stale selection and explicitly reconfirm the
    original directory at its new location, or leave the request recoverable.
-   If the journal definitively contains no receipt for that UUID, the
-   uncommitted pending state is released. Failed reinspection leaves the UUID
-   retained and blocks ambiguous new requests. No path is silently retargeted.
+   If the journal definitively contains no receipt for that UUID, retain the
+   same tentative UUID for the next preparation attempt. This no-receipt state
+   allows an explicitly reselected folder (rechecked against the journal
+   before the change); it does **not** authorise minting a new UUID or silently
+   retargeting a committed request. Failed reinspection keeps the original
+   pending UUID and blocks ambiguous changes.
 
 ## Tests and explicit limitations
 
