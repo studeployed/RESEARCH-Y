@@ -145,6 +145,8 @@ class ApplicationCommand:
                     if (type(self.pilot_contact_email) is not str or
                             len(self.pilot_contact_email) > 254 or
                             not self.pilot_contact_email.isascii() or
+                            any(ord(c) < 33 or ord(c) > 126
+                                for c in self.pilot_contact_email) or
                             (self.pilot_api_key is not None and
                              (type(self.pilot_api_key) is not str or
                               not 1 <= len(self.pilot_api_key) <= 4096 or
