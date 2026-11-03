@@ -131,7 +131,7 @@ def run(args):
                         if name == 'observe':
                             return flow.observe()
                         raise ProjectFlowError('unsupported_action')
-                    if name in ('native_open', 'native_create', 'native_export'):
+                    if name in ('native_open', 'native_create') or name == 'native_export':
                         # The browser only requests the OS dialog; it cannot
                         # supply or replace the trusted host-selected path.
                         if args.mode != 'native':
