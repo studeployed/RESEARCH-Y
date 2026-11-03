@@ -323,3 +323,44 @@ def test_gui_exposes_real_review_actions_but_not_browser_file_or_source_trigger(
     assert "peer review" in source or "peer-review" in source
     assert "/_probe/terms" not in source
     assert "ui.html(" not in source
+
+
+def test_specific_receipt_reconciles_despite_newer_review_of_the_same_run(tmp_path, monkeypatch):
+    project, run_id = _project(tmp_path)
+    flow = RealProjectFlow(selected_root=project.root,selected_parent=tmp_path)
+    try:
+        flow.open_selected(); flow.select_run(run_id)
+        initial=flow.inspect_preflight()["preflight_report"]
+        flow.offer_preflight_review(
+            reviewer_name="Original researcher",
+            reviewer_role="researcher_self_check",
+            press_items={k:"reviewed" for k in PRESS_ITEMS},
+            review_note="Original review", known_relevant=())
+        first_id=flow.state()["preflight_candidate"]["review_id"]
+        actual=flow._operation
+        added=False
+
+        def newer_review_between_write_and_read(name, **kwargs):
+            nonlocal added
+            response=actual(name, **kwargs)
+            if name=="preflight_record" and not added:
+                added=True
+                second=_submission(run_id, plan_sha=initial["plan_sha256"],
+                                   reviewer_name="Second researcher",
+                                   review_note="Later review")
+                record_preflight_review(project, **second)
+            return response
+
+        monkeypatch.setattr(flow, "_operation", newer_review_between_write_and_read)
+        completed=flow.record_preflight_review()
+        assert completed["preflight_review_reconciliation_required"] is False
+        assert completed["preflight_candidate"] is None
+        assert completed["preflight_report"]["requested_review"]["review_id"] == first_id
+        assert completed["preflight_report"]["last_review"]["review_id"] != first_id
+        assert _reviews(project)==2
+        checked=read_preflight(project,run_id,review_id=first_id)
+        assert checked["requested_review"]["review_id"]==first_id
+        assert checked["last_review"]["review_id"]!=first_id
+        assert checked["execution_authorized"] is False
+    finally:
+        flow.close()
