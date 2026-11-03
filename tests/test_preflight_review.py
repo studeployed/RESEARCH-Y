@@ -320,6 +320,8 @@ def test_gui_exposes_real_review_actions_but_not_browser_file_or_source_trigger(
     assert "data-testid=preflight-query" in source
     assert "data-testid=preflight-unknown" in source
     assert "data-testid=preflight-retry" in source
+    assert "review_note=note.value or ''" in source
+    assert "(known.value or '').splitlines()" in source
     assert "peer review" in source or "peer-review" in source
     assert "/_probe/terms" not in source
     assert "ui.html(" not in source
