@@ -383,14 +383,19 @@ def probe_wos_starter_once(
             # Preserve the observed safe quota independently of whether an
             # HTTP 429/403 or malformed page produced a usable count.
             quota = client.quota
-            quota_data = (asdict(quota) if type(quota) is WoSQuota else None)
+            observed_quota = (type(quota) is WoSQuota and (
+                quota.daily_limit is not None or
+                quota.daily_remaining is not None or
+                quota.per_second_limit is not None or
+                quota.valid is False))
+            quota_data = asdict(quota) if observed_quota else None
             delay_valid = (type(delay) in (int, float) and isfinite(delay)
                            and 0 <= delay <= 365*86400)
             data = dict(
                 status="probe_failed", reported_matches=None,
                 error_code=code, quota=quota_data,
                 quota_status=(quota.entitlement_status
-                              if type(quota) is WoSQuota else "unverified"),
+                              if observed_quota else "not_observed"),
                 retry_after_seconds=(delay if delay_valid else None),
                 # An unrepresentable server-directed delay may not simply
                 # be dropped or shortened; future attempts fail closed.
