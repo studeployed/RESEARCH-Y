@@ -389,10 +389,22 @@ class RealProjectFlow:
             return self._publish()
 
     def _selected_export(self):
+        """Reconcile a previously committed ID when the cached inventory lags.
+
+        A worker can commit the preparation receipt but a following inspection
+        can fail. Do not strand that request or create a new one merely because
+        the cached snapshot predates the commit.
+        """
         row = next((row for row in self.snapshot['exports']
                     if row['export_id'] == self.selected_export_id), None)
         if row is None:
-            raise ProjectFlowError('export_selection_required')
+            if self._reinspect():
+                row = next((item for item in self.snapshot['exports']
+                            if item['export_id'] == self.selected_export_id), None)
+            if row is None:
+                raise ProjectFlowError('export_reconciliation_required')
+        if row['run_id'] != self.selected_run_id:
+            raise ProjectFlowError('export_run_mismatch')
         return row
 
     def _export_directory(self, *, required=True):
@@ -435,9 +447,11 @@ class RealProjectFlow:
             self.observation = None
             self._publish()
             try:
+                identity_args = ({} if directory is None else
+                                 {'expected_directory_identity': self._external_confirmed_identity})
                 result = self._operation('prepare_export', run_id=self.selected_run_id,
                                          export_id=export_id, output_name=filename,
-                                          directory=directory)
+                                         directory=directory, **identity_args)
                 if result.get('export_id') != export_id or result.get('audited_success') is True:
                     raise ProjectFlowError('invalid_preparation')
             except ProjectFlowError:
@@ -533,7 +547,11 @@ class RealProjectFlow:
                 'report': None if data is None else data['report'],
                 'exports': [] if data is None else data['exports'],
                 'selected_export_id': self.selected_export_id,
-                'export_reconciliation_required': self._pending_export_id is not None,
+                'export_reconciliation_required': (
+                    self._pending_export_id is not None or
+                    (self.selected_export_id is not None and data is not None
+                     and not any(row['export_id'] == self.selected_export_id
+                                 for row in data['exports']))),
                 'observation': self.observation,
                 'retained_export_report': self.retained_export_report,
                 'operation_state': self.operation_state,
