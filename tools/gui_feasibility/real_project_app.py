@@ -224,106 +224,115 @@ def run(args):
                               on_click=lambda: act('setup_approve')).props(
                                   'data-testid=setup-approval-retry')
                 else:
-                    theme_input = ui.input('Research theme', value=draft['theme']).props(
-                        'data-testid=setup-theme')
-                    approver_input = ui.input('Researcher approving', value=draft['approved_by']).props(
-                        'data-testid=setup-approver')
-                    ui.button('Save research heading',
-                              on_click=lambda: act('setup_edit', dict(
-                                  action='heading', data=dict(
-                                      theme=theme_input.value,
-                                      approved_by=approver_input.value)))).props(
-                                          'data-testid=setup-save-heading')
-                    new_group = ui.input('New concept group name').props('data-testid=setup-group-input')
-                    ui.button('Add concept group', on_click=lambda: act('setup_edit', dict(
-                        action='add_group', data=dict(label=new_group.value)))).props(
-                            'data-testid=setup-add-group')
-                    for group in draft['groups']:
-                        gid = group['group_id']
-                        with ui.card():
-                            label_input = ui.input('Group name', value=group['label'])
-                            ui.button('Rename group', on_click=lambda gid=gid, box=label_input:
-                                      act('setup_edit', dict(
-                                          action='rename_group',
-                                          data=dict(group_id=gid, label=box.value)))).props(
-                                              'data-testid=setup-rename-group')
-                            ui.button('Move group up', on_click=lambda gid=gid:
-                                      act('setup_edit', dict(action='move_group',
-                                          data=dict(group_id=gid, direction=-1))))
-                            ui.button('Move group down', on_click=lambda gid=gid:
-                                      act('setup_edit', dict(action='move_group',
-                                          data=dict(group_id=gid, direction=1))))
-                            ui.button('Remove group', on_click=lambda gid=gid:
-                                      act('setup_edit', dict(action='remove_group',
-                                          data=dict(group_id=gid)))).props('data-testid=setup-remove-group')
-                            new_term = ui.input('New atomic term (single literal)')
-                            ui.button('Add researcher term', on_click=lambda gid=gid, box=new_term:
-                                      act('setup_edit', dict(action='add_term',
-                                          data=dict(group_id=gid, text=box.value)))).props(
-                                              'data-testid=setup-add-term')
-                            for term in group['terms']:
-                                tid = term['term_id']
-                                with ui.card():
-                                    term_input = ui.input('Atomic term', value=term['text'])
-                                    origin_input = ui.select(
-                                        {'researcher': 'Researcher', 'deterministic': 'Deterministic',
-                                         'ai': 'AI-assisted (requires rationale)'},
-                                        value=term['origin'], label='Term provenance')
-                                    rationale_input = ui.input(
-                                        'Origin rationale / notes', value=term['rationale'])
-                                    enabled_input = ui.checkbox('Include term in OR union',
-                                                                value=term['enabled'])
-                                    ui.button('Save term changes', on_click=lambda
-                                              gid=gid, tid=tid, box=term_input,
-                                              origin=origin_input, note=rationale_input,
-                                              enabled=enabled_input:
-                                              act('setup_edit', dict(action='edit_term',
-                                                  data=dict(group_id=gid, term_id=tid,
-                                                            text=box.value, origin=origin.value,
-                                                            rationale=note.value,
-                                                            enabled=enabled.value)))).props(
-                                                                'data-testid=setup-save-term')
-                                    ui.button('Move term up', on_click=lambda gid=gid, tid=tid:
-                                              act('setup_edit', dict(action='move_term',
-                                                  data=dict(group_id=gid, term_id=tid,
-                                                            direction=-1))))
-                                    ui.button('Move term down', on_click=lambda gid=gid, tid=tid:
-                                              act('setup_edit', dict(action='move_term',
-                                                  data=dict(group_id=gid, term_id=tid,
-                                                            direction=1))))
-                                    ui.button('Remove term', on_click=lambda gid=gid, tid=tid:
-                                              act('setup_edit', dict(action='remove_term',
-                                                  data=dict(group_id=gid, term_id=tid)))).props(
-                                                      'data-testid=setup-remove-term')
-                    ui.button('Preview exact broad-OR source queries',
-                              on_click=lambda: act('setup_preview')).props(
-                                  'data-testid=setup-preview')
-                    preview = draft['preview']
-                    if preview is not None:
-                        ui.label('Strategy preview — NOT EXECUTED').props(
-                            'data-testid=setup-preview-active')
-                        ui.label('Concept groups: ' + str(preview['group_count']) +
-                                 '; enabled terms: ' + str(preview['active_term_count']))
-                        ui.label('Filters/limits: ' + preview['limitations'])
-                        for source in preview['sources']:
-                            ui.label('Source: ' + source['name'] + ' — ' +
-                                     source['coverage']).props('data-testid=setup-source-coverage')
-                            ui.label('OR union preview: ' + source['union_query'])
-                            for query in source['groups']:
-                                if query['exact_query'] is not None:
-                                    ui.label('Group ' + query['label'] + ' exact query: ' +
-                                             query['exact_query']).props(
-                                                 'data-testid=setup-exact-query')
-                                else:
-                                    ui.label('Group ' + query['label'] +
-                                             ' disabled/empty — not executable.')
-                            for warning in source['warnings']:
-                                ui.label('Compiler warning: ' + warning)
-                        ui.label('Provider matches: UNKNOWN (not queried).').props(
-                            'data-testid=setup-unknown-counts')
-                        ui.button('Approve frozen strategy and create pending run',
-                                  on_click=lambda: act('setup_approve')).props(
-                                      'data-testid=setup-approve')
+                    if draft['preview'] is None:
+                        theme_input = ui.input('Research theme', value=draft['theme']).props(
+                            'data-testid=setup-theme')
+                        approver_input = ui.input('Researcher approving', value=draft['approved_by']).props(
+                            'data-testid=setup-approver')
+                        ui.button('Save research heading',
+                                  on_click=lambda: act('setup_edit', dict(
+                                      action='heading', data=dict(
+                                          theme=theme_input.value,
+                                          approved_by=approver_input.value)))).props(
+                                              'data-testid=setup-save-heading')
+                        new_group = ui.input('New concept group name').props('data-testid=setup-group-input')
+                        ui.button('Add concept group', on_click=lambda: act('setup_edit', dict(
+                            action='add_group', data=dict(label=new_group.value)))).props(
+                                'data-testid=setup-add-group')
+                        for group in draft['groups']:
+                            gid = group['group_id']
+                            with ui.card():
+                                label_input = ui.input('Group name', value=group['label'])
+                                ui.button('Rename group', on_click=lambda gid=gid, box=label_input:
+                                          act('setup_edit', dict(
+                                              action='rename_group',
+                                              data=dict(group_id=gid, label=box.value)))).props(
+                                                  'data-testid=setup-rename-group')
+                                ui.button('Move group up', on_click=lambda gid=gid:
+                                          act('setup_edit', dict(action='move_group',
+                                              data=dict(group_id=gid, direction=-1))))
+                                ui.button('Move group down', on_click=lambda gid=gid:
+                                          act('setup_edit', dict(action='move_group',
+                                              data=dict(group_id=gid, direction=1))))
+                                ui.button('Remove group', on_click=lambda gid=gid:
+                                          act('setup_edit', dict(action='remove_group',
+                                              data=dict(group_id=gid)))).props('data-testid=setup-remove-group')
+                                new_term = ui.input('New atomic term (single literal)')
+                                ui.button('Add researcher term', on_click=lambda gid=gid, box=new_term:
+                                          act('setup_edit', dict(action='add_term',
+                                              data=dict(group_id=gid, text=box.value)))).props(
+                                                  'data-testid=setup-add-term')
+                                for term in group['terms']:
+                                    tid = term['term_id']
+                                    with ui.card():
+                                        term_input = ui.input('Atomic term', value=term['text'])
+                                        origin_input = ui.select(
+                                            {'researcher': 'Researcher', 'deterministic': 'Deterministic',
+                                             'ai': 'AI-assisted (requires rationale)'},
+                                            value=term['origin'], label='Term provenance')
+                                        rationale_input = ui.input(
+                                            'Origin rationale / notes', value=term['rationale'])
+                                        enabled_input = ui.checkbox('Include term in OR union',
+                                                                    value=term['enabled'])
+                                        ui.button('Save term changes', on_click=lambda
+                                                  gid=gid, tid=tid, box=term_input,
+                                                  origin=origin_input, note=rationale_input,
+                                                  enabled=enabled_input:
+                                                  act('setup_edit', dict(action='edit_term',
+                                                      data=dict(group_id=gid, term_id=tid,
+                                                                text=box.value, origin=origin.value,
+                                                                rationale=note.value,
+                                                                enabled=enabled.value)))).props(
+                                                                    'data-testid=setup-save-term')
+                                        ui.button('Move term up', on_click=lambda gid=gid, tid=tid:
+                                                  act('setup_edit', dict(action='move_term',
+                                                      data=dict(group_id=gid, term_id=tid,
+                                                                direction=-1))))
+                                        ui.button('Move term down', on_click=lambda gid=gid, tid=tid:
+                                                  act('setup_edit', dict(action='move_term',
+                                                      data=dict(group_id=gid, term_id=tid,
+                                                                direction=1))))
+                                        ui.button('Remove term', on_click=lambda gid=gid, tid=tid:
+                                                  act('setup_edit', dict(action='remove_term',
+                                                      data=dict(group_id=gid, term_id=tid)))).props(
+                                                          'data-testid=setup-remove-term')
+                        ui.button('Preview exact broad-OR source queries',
+                                  on_click=lambda: act('setup_preview')).props(
+                                      'data-testid=setup-preview')
+                    else:
+                        ui.label('Exact-query preview is locked. To change any field, '
+                                 'choose Revise draft and preview again.').props(
+                                     'data-testid=setup-preview-locked')
+                        ui.button('Revise draft before approval',
+                                  on_click=lambda: act('setup_edit', dict(
+                                      action='revise_preview', data={}))).props(
+                                          'data-testid=setup-revise')
+                        preview = draft['preview']
+                        if preview is not None:
+                            ui.label('Strategy preview — NOT EXECUTED').props(
+                                'data-testid=setup-preview-active')
+                            ui.label('Concept groups: ' + str(preview['group_count']) +
+                                     '; enabled terms: ' + str(preview['active_term_count']))
+                            ui.label('Filters/limits: ' + preview['limitations'])
+                            for source in preview['sources']:
+                                ui.label('Source: ' + source['name'] + ' — ' +
+                                         source['coverage']).props('data-testid=setup-source-coverage')
+                                ui.label('OR union preview: ' + source['union_query'])
+                                for query in source['groups']:
+                                    if query['exact_query'] is not None:
+                                        ui.label('Group ' + query['label'] + ' exact query: ' +
+                                                 query['exact_query']).props(
+                                                     'data-testid=setup-exact-query')
+                                    else:
+                                        ui.label('Group ' + query['label'] +
+                                                 ' disabled/empty — not executable.')
+                                for warning in source['warnings']:
+                                    ui.label('Compiler warning: ' + warning)
+                            ui.label('Provider matches: UNKNOWN (not queried).').props(
+                                'data-testid=setup-unknown-counts')
+                            ui.button('Approve frozen strategy and create pending run',
+                                      on_click=lambda: act('setup_approve')).props(
+                                          'data-testid=setup-approve')
                 if state['last_strategy_admission'] is not None:
                     done = state['last_strategy_admission']
                     ui.label('Strategy version ' + str(done['version_number']) +
