@@ -20,6 +20,9 @@ from tools.gui_feasibility.native_folder_selection import (
     NativeFolderError, checked_folder)
 from tools.gui_feasibility.recent_projects import RecentProjects, RecentProjectsError
 from tools.gui_feasibility.strategy_setup import StrategyDraft, DraftError
+from research_y.preflight_review import (
+    PreflightError, _review_payload, PRESS_ITEMS, read_preflight,
+)
 from research_y.query_compiler import QueryCompilationError
 
 
@@ -55,6 +58,9 @@ class RealProjectFlow:
         self._pending_admission_id = None
         self._pending_admission_payload = None
         self._last_strategy_admission = None
+        self._preflight = None
+        self._review_candidate = None
+        self._pending_review = None
         # External folders are transient, host-selected, explicitly confirmed.
         # The audit journal stores directory identity, not the path.
         self._external_candidate = None
@@ -78,6 +84,8 @@ class RealProjectFlow:
             raise ProjectFlowError('flow_closed')
         if self._pending_admission_id is not None:
             raise ProjectFlowError('strategy_reconciliation_required')
+        if self._pending_review is not None:
+            raise ProjectFlowError('preflight_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
                 raise ProjectFlowError('export_reconciliation_required')
@@ -230,6 +238,9 @@ class RealProjectFlow:
         self._pending_admission_id = None
         self._pending_admission_payload = None
         self._last_strategy_admission = None
+        self._preflight = None
+        self._review_candidate = None
+        self._pending_review = None
         self._clear_external()
         self.last_result = inspected
         self.snapshot = snapshot
@@ -321,6 +332,8 @@ class RealProjectFlow:
             self.observation = None
             self.retained_export_report = None
             self._clear_external()
+            self._preflight = None
+            self._review_candidate = None
             self.snapshot = report
             return self._publish()
 
@@ -445,6 +458,92 @@ class RealProjectFlow:
                 # No implicit run selection or source execution.
                 return self._publish()
             except ProjectFlowError:
+                self._publish()
+                raise
+
+    def inspect_preflight(self):
+        """Explicit worker read of one frozen run, not an execution trigger."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            result = self._operation('preflight_read', run_id=self.selected_run_id)
+            if (result.get('run_id') != self.selected_run_id
+                    or result.get('source_retrieval_verified') is not False
+                    or result.get('execution_authorized') is not False):
+                raise ProjectFlowError('invalid_worker_result')
+            self._preflight = result
+            self._review_candidate = None
+            return self._publish()
+
+    def offer_preflight_review(self, *, reviewer_name, reviewer_role,
+                               press_items, review_note='', known_relevant=()):
+        """Host owns a previewed, immutable candidate; offering is not a write."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None or self._preflight is None:
+                raise ProjectFlowError('preflight_inspection_required')
+            try:
+                review_id = str(uuid4())
+                candidate = _review_payload(
+                    review_id, self.selected_run_id, self._preflight['plan_sha256'],
+                    reviewer_name=reviewer_name, reviewer_role=reviewer_role,
+                    press_items=press_items, review_note=review_note,
+                    known_relevant=known_relevant)
+            except PreflightError:
+                raise ProjectFlowError('preflight_review_invalid') from None
+            self._review_candidate = candidate
+            return self._publish()
+
+    def revise_preflight_review(self):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._review_candidate = None
+            return self._publish()
+
+    def record_preflight_review(self):
+        """Confirm the displayed candidate; retain exact ID and data on failure."""
+        with self._guard:
+            self._require_open()
+            if self._pending_admission_id is not None or self._pending_export_id is not None:
+                raise ProjectFlowError('operation_reconciliation_required')
+            if self._pending_review is None:
+                if self._review_candidate is None or self._preflight is None:
+                    raise ProjectFlowError('preflight_confirmation_required')
+                self._pending_review = dict(self._review_candidate)
+            candidate = self._pending_review
+            self._publish()
+            try:
+                reply = self._operation(
+                    'preflight_record', run_id=candidate['run_id'],
+                    review_id=candidate['review_id'],
+                    review_plan_sha256=candidate['plan_sha256'],
+                    review_reviewer_name=candidate['reviewer_name'],
+                    review_reviewer_role=candidate['reviewer_role'],
+                    review_items=dict(candidate['press_items']),
+                    review_note=candidate['review_note'],
+                    review_known_relevant=tuple(candidate['known_relevant']))
+                if (reply.get('review_id') != candidate['review_id']
+                        or reply.get('plan_sha256') != candidate['plan_sha256']
+                        or reply.get('execution_authorized') is not False):
+                    raise ProjectFlowError('invalid_review_receipt')
+                verified = self._operation('preflight_read', run_id=candidate['run_id'])
+                last = verified.get('last_review')
+                if (verified.get('plan_sha256') != candidate['plan_sha256']
+                        or not isinstance(last, dict)
+                        or last.get('review_id') != candidate['review_id']
+                        or last.get('execution_authorized') is not False):
+                    raise ProjectFlowError('preflight_reconciliation_required')
+                self._preflight = verified
+                self._review_candidate = None
+                self._pending_review = None
+                return self._publish()
+            except ProjectFlowError:
+                # A lost reply could follow a durable audit insert. Preserve
+                # original content and idempotency key until authoritative read.
                 self._publish()
                 raise
 
@@ -578,6 +677,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('run_selection_required')
             if self._pending_admission_id is not None:
                 raise ProjectFlowError('strategy_reconciliation_required')
+            if self._pending_review is not None:
+                raise ProjectFlowError('preflight_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -710,6 +811,9 @@ class RealProjectFlow:
                 'strategy_draft': self._setup.state(),
                 'strategy_reconciliation_required': self._pending_admission_id is not None,
                 'last_strategy_admission': self._last_strategy_admission,
+                'preflight_report': self._preflight,
+                'preflight_candidate': self._review_candidate,
+                'preflight_review_reconciliation_required': self._pending_review is not None,
                 'external_destination_candidate': (
                     None if self._external_candidate is None
                     else str(self._external_candidate)),
