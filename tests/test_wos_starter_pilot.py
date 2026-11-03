@@ -712,3 +712,11 @@ def test_abandoned_pilot_does_not_silently_release_shared_provider(tmp_path,monk
     # There is no proof that the abandoned request was never sent. Clearing
     # the hold requires explicit future evidence/recovery, not a timer reset.
     assert _hold(project,revalidate=True)[0]=='provider_pilot_outcome_unknown'
+    trace=[]
+    for revalidate in (False, True):
+        with pytest.raises(WoSPilotError,
+                           match='^provider_pilot_outcome_unknown
+):
+            submit(project,rid,sha,q,client(trace=trace),
+                   revalidate_quota=revalidate)
+    assert trace==[]
