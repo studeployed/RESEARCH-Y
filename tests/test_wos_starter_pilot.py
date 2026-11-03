@@ -701,8 +701,9 @@ def test_inflight_pilot_blocks_checkpoint_even_after_pacing_window(tmp_path):
 
 
 def test_abandoned_pilot_does_not_silently_release_shared_provider(tmp_path,monkeypatch):
-    from research_y import wos_checkpoint_store
+    from research_y import wos_checkpoint_store, wos_starter_pilot
     monkeypatch.setattr(wos_checkpoint_store,'MIN_REQUEST_INTERVAL',0.0)
+    monkeypatch.setattr(wos_starter_pilot,'MIN_REQUEST_INTERVAL',0.0)
     project,rid,sha,q=fixture(tmp_path)
     with pytest.raises(KeyboardInterrupt):
         submit(project,rid,sha,q,client(fail='abrupt'))
