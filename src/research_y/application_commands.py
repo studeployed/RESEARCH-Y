@@ -13,14 +13,17 @@ import sqlite3
 from uuid import UUID
 
 OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_export',
-                        'observe_export', 'export_report', 'admit_strategy'})
+                        'observe_export', 'export_report', 'admit_strategy',
+                        'preflight_read', 'preflight_record'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
     'destination_required', 'directory_changed', 'journal_failed', 'cancelled',
     'invalid_export', 'concurrent_progress_retry', 'strategy_invalid',
     'approval_required', 'invalid_request_id', 'admission_conflict',
-    'admission_evidence_invalid', 'no_active_terms'})
+    'admission_evidence_invalid', 'no_active_terms', 'run_not_pending',
+    'plan_unverified', 'review_invalid', 'review_conflict', 'stale_preflight',
+    'review_evidence_invalid'})
 
 
 class ApplicationCommandError(ValueError):
@@ -64,6 +67,15 @@ class ApplicationCommand:
     admission_approved_by: str | None = None
     admission_groups: tuple | None = None
     approval_confirmed: bool | None = None
+    # Optional pre-execution review, bound to a stored immutable run/plan.
+    # These values originate only from the authenticated host GUI.
+    review_id: str | None = None
+    review_plan_sha256: str | None = None
+    review_reviewer_name: str | None = None
+    review_reviewer_role: str | None = None
+    review_items: dict | None = None
+    review_note: str | None = None
+    review_known_relevant: tuple | None = None
 
     def __post_init__(self):
         try:
@@ -90,7 +102,29 @@ class ApplicationCommand:
             admission_fields = (self.admission_request_id, self.admission_theme,
                                 self.admission_approved_by, self.admission_groups,
                                 self.approval_confirmed)
-            if self.operation == 'admit_strategy':
+            review_fields = (self.review_id, self.review_plan_sha256,
+                             self.review_reviewer_name, self.review_reviewer_role,
+                             self.review_items, self.review_note,
+                             self.review_known_relevant)
+            if self.operation in ('preflight_read', 'preflight_record'):
+                if (self.run_id is None or any(v is not None for v in
+                    (self.export_id, self.output_name, self.directory,
+                     self.expected_directory_identity))):
+                    raise ValueError
+                if self.operation == 'preflight_read':
+                    if any(v is not None for v in review_fields):
+                        raise ValueError
+                else:
+                    from research_y.preflight_review import _review_payload
+                    _review_payload(
+                        self.review_id, self.run_id, self.review_plan_sha256,
+                        reviewer_name=self.review_reviewer_name,
+                        reviewer_role=self.review_reviewer_role,
+                        press_items=self.review_items,
+                        review_note=self.review_note,
+                        known_relevant=self.review_known_relevant,
+                    )
+            elif self.operation == 'admit_strategy':
                 if any(v is not None for v in
                        (self.run_id, self.export_id, self.output_name, self.directory,
                         self.expected_directory_identity)):
@@ -129,6 +163,9 @@ class ApplicationCommand:
             if self.operation != 'admit_strategy' and any(
                     value is not None for value in admission_fields):
                 raise ValueError
+            if self.operation not in ('preflight_read', 'preflight_record') and any(
+                    value is not None for value in review_fields):
+                raise ValueError
         except (ValueError, TypeError, AttributeError, OverflowError):
             raise ApplicationCommandError('invalid_command') from None
 
@@ -164,6 +201,22 @@ def execute_command(command: ApplicationCommand) -> dict:
         if command.operation == 'inspect':
             snapshot = inspection.read_application_snapshot(project, selected_run_id=command.run_id)
             return {'snapshot': snapshot.as_dict(), 'location': str(snapshot.location)}
+        if command.operation in ('preflight_read', 'preflight_record'):
+            from research_y import preflight_review as preflight
+            try:
+                if command.operation == 'preflight_read':
+                    return preflight.read_preflight(project, command.run_id)
+                return preflight.record_preflight_review(
+                    project, run_id=command.run_id,
+                    review_id=command.review_id,
+                    expected_plan_sha256=command.review_plan_sha256,
+                    reviewer_name=command.review_reviewer_name,
+                    reviewer_role=command.review_reviewer_role,
+                    press_items=command.review_items,
+                    review_note=command.review_note,
+                    known_relevant=command.review_known_relevant)
+            except preflight.PreflightError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation == 'admit_strategy':
             from research_y import strategy_admission as admission
             try:
