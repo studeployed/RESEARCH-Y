@@ -67,6 +67,15 @@ confirmation step without adding a browser-controlled filesystem route.
    reconciliation, preserving the original ID. When inspection recovers, the
    same request is reused without recapturing the research report or adding
    a second preparation receipt.
+8. If a preparation response *and* immediate inspection are lost, the pending
+   UUID is resolved by a fresh journal inventory check **before** any external
+   folder validation. A confirmed prior receipt promotes the same UUID to the
+   selected request even if the original path is missing or changed; the
+   researcher can then clear the stale selection and explicitly reconfirm the
+   original directory at its new location, or leave the request recoverable.
+   If the journal definitively contains no receipt for that UUID, the
+   uncommitted pending state is released. Failed reinspection leaves the UUID
+   retained and blocks ambiguous new requests. No path is silently retargeted.
 
 ## Tests and explicit limitations
 
