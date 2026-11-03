@@ -410,6 +410,8 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_export_id is not None:
                 raise ProjectFlowError('export_reconciliation_required')
+            if self._pending_review is not None:
+                raise ProjectFlowError('preflight_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
