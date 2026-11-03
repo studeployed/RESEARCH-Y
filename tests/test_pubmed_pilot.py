@@ -144,7 +144,7 @@ def test_translation_change_is_a_review_required_count_not_verified_search(tmp_p
     assert result["reported_matches"]==901
     assert result["translation_matches_submitted"] is False
     assert result["review_reasons"]
-    assert result["warnings"]==["Unrecognised phrase"]
+    assert result["warnings"]==["outputmessages: Unrecognised phrase"]
     assert result["search_completed"] is False
 
 
