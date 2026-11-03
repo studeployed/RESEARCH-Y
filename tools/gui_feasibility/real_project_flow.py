@@ -532,12 +532,19 @@ class RealProjectFlow:
                         or reply.get('plan_sha256') != candidate['plan_sha256']
                         or reply.get('execution_authorized') is not False):
                     raise ProjectFlowError('invalid_review_receipt')
-                verified = self._operation('preflight_read', run_id=candidate['run_id'])
-                last = verified.get('last_review')
+                verified = self._operation(
+                    'preflight_read', run_id=candidate['run_id'],
+                    review_id=candidate['review_id'])
+                receipt = verified.get('requested_review')
+                # A different reviewer may have appended a newer receipt
+                # between this commit and inspection. Verify our *original*
+                # immutable UUID and every submitted field instead of wrongly
+                # requiring it to remain the latest journal entry.
                 if (verified.get('plan_sha256') != candidate['plan_sha256']
-                        or not isinstance(last, dict)
-                        or last.get('review_id') != candidate['review_id']
-                        or last.get('execution_authorized') is not False):
+                        or not isinstance(receipt, dict)
+                        or any(receipt.get(key) != value
+                               for key, value in candidate.items())
+                        or receipt.get('execution_authorized') is not False):
                     raise ProjectFlowError('preflight_reconciliation_required')
                 self._preflight = verified
                 self._review_candidate = None
