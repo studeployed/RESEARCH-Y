@@ -49,10 +49,11 @@ def services(monkeypatch, tmp_path):
     admission=types.ModuleType('research_y.strategy_admission')
     admission.StrategyAdmissionError=Failure
     admission.commit_approved_strategy=service('admit_strategy',Result())
-    from research_y.preflight_review import _review_payload
+    from research_y.preflight_review import _review_payload, PRESS_ITEMS
     preflight=types.ModuleType('research_y.preflight_review')
     preflight.PreflightError=Failure
     preflight._review_payload=_review_payload
+    preflight.PRESS_ITEMS=PRESS_ITEMS
     preflight.read_preflight=service('preflight_read',{})
     preflight.record_preflight_review=service('preflight_record',{})
     files=types.ModuleType('research_y.export_files')
@@ -326,12 +327,18 @@ def test_preflight_review_command_strict_input_validation(services, change):
     assert not calls
 
 
-def test_preflight_read_and_record_cannot_leak_review_parameters(services):
+def test_preflight_read_can_target_exact_review_uuid_without_other_review_fields(services):
     project,calls,*_=services
-    with pytest.raises(commands.ApplicationCommandError, match='invalid_command'):
-        commands.ApplicationCommand.for_project(
-            project,'preflight_read',run_id=str(uuid4()),review_id=str(uuid4()))
+    review_id=str(uuid4())
+    command=commands.ApplicationCommand.for_project(
+        project,'preflight_read',run_id=str(uuid4()),review_id=review_id)
+    commands.execute_command(command)
+    assert calls[0][0]=='preflight_read'
+    assert calls[0][2] == {'review_id':review_id}
+    for bad in ({'review_id':'fake'}, {'review_note':'secret'}):
+        with pytest.raises(commands.ApplicationCommandError, match='invalid_command'):
+            commands.ApplicationCommand.for_project(
+                project,'preflight_read',run_id=str(uuid4()),**bad)
     with pytest.raises(commands.ApplicationCommandError, match='invalid_command'):
         commands.ApplicationCommand.for_project(
             project,'inspect',run_id=str(uuid4()),review_note='secret')
-    assert not calls
