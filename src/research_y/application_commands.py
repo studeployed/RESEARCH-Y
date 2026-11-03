@@ -13,12 +13,14 @@ import sqlite3
 from uuid import UUID
 
 OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_export',
-                        'observe_export', 'export_report'})
+                        'observe_export', 'export_report', 'admit_strategy'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
     'destination_required', 'directory_changed', 'journal_failed', 'cancelled',
-    'invalid_export', 'concurrent_progress_retry'})
+    'invalid_export', 'concurrent_progress_retry', 'strategy_invalid',
+    'approval_required', 'invalid_request_id', 'admission_conflict',
+    'admission_evidence_invalid', 'no_active_terms'})
 
 
 class ApplicationCommandError(ValueError):
@@ -55,6 +57,13 @@ class ApplicationCommand:
     # Trusted host confirmation: filesystem identity bound across the worker
     # process boundary. Never supplied by a browser request or stored in a project.
     expected_directory_identity: tuple[int, int] | None = None
+    # Only the trusted host's explicit researcher-approved draft uses these
+    # fields. Neither IDs nor groups can serve as a browser filesystem path.
+    admission_request_id: str | None = None
+    admission_theme: str | None = None
+    admission_approved_by: str | None = None
+    admission_groups: tuple | None = None
+    approval_confirmed: bool | None = None
 
     def __post_init__(self):
         try:
@@ -78,7 +87,31 @@ class ApplicationCommand:
                         or type(identity) is not tuple or len(identity) != 2
                         or any(type(part) is not int or part < 0 for part in identity)):
                     raise ValueError
-            if self.operation == 'inspect':
+            admission_fields = (self.admission_request_id, self.admission_theme,
+                                self.admission_approved_by, self.admission_groups,
+                                self.approval_confirmed)
+            if self.operation == 'admit_strategy':
+                if any(v is not None for v in
+                       (self.run_id, self.export_id, self.output_name, self.directory,
+                        self.expected_directory_identity)):
+                    raise ValueError
+                _uuid(self.admission_request_id)
+                if (self.approval_confirmed is not True
+                        or type(self.admission_theme) is not str
+                        or type(self.admission_approved_by) is not str
+                        or type(self.admission_groups) is not tuple
+                        or not self.admission_groups):
+                    raise ValueError
+                # Reject malformed drafts before they cross the process
+                # boundary. Storage and the compiler verify again in child.
+                from research_y.storage import _groups_snapshot
+                from research_y.query_compiler import compile_both
+                frozen = dict(format_version=1, logic='OR',
+                              theme=self.admission_theme,
+                              approved_by=self.admission_approved_by,
+                              groups=_groups_snapshot(self.admission_groups))
+                compile_both(frozen)
+            elif self.operation == 'inspect':
                 if any(v is not None for v in (self.export_id, self.output_name, self.directory)):
                     raise ValueError
             else:
@@ -93,6 +126,9 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation != 'admit_strategy' and any(
+                    value is not None for value in admission_fields):
+                raise ValueError
         except (ValueError, TypeError, AttributeError, OverflowError):
             raise ApplicationCommandError('invalid_command') from None
 
@@ -122,12 +158,26 @@ def execute_command(command: ApplicationCommand) -> dict:
     from research_y.projects import Project
     from research_y import application_inspection as inspection
     from research_y import workbook_exports as exports
+    from research_y import strategy_admission as admission
     project = Project(Path(command.project_root), UUID(command.project_id),
                       command.project_name, command.project_created_at)
     try:
         if command.operation == 'inspect':
             snapshot = inspection.read_application_snapshot(project, selected_run_id=command.run_id)
             return {'snapshot': snapshot.as_dict(), 'location': str(snapshot.location)}
+        if command.operation == 'admit_strategy':
+            try:
+                result = admission.commit_approved_strategy(
+                    project, request_id=command.admission_request_id,
+                    theme=command.admission_theme,
+                    approved_by=command.admission_approved_by,
+                    groups=command.admission_groups,
+                    approval_confirmed=command.approval_confirmed)
+            except admission.StrategyAdmissionError as exc:
+                raise ApplicationCommandError(str(exc)) from None
+            except (ValueError, TypeError):
+                raise ApplicationCommandError('strategy_invalid') from None
+            return dict(asdict(result), source_retrieval_verified=False)
         if command.operation == 'export_report':
             return inspection.read_export_report(project, command.export_id).as_dict()
         if command.operation == 'observe_export':
