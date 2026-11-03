@@ -65,11 +65,16 @@ class RealProjectFlow:
                 self._recent_error = 'recent_history_unavailable'
         self._public_state = self._build_state()
 
-    def _require_no_unresolved_selection(self):
+    def _require_no_unresolved_selection(self, *, for_external_choice=False):
         if self._closed:
             raise ProjectFlowError('flow_closed')
         if self._pending_export_id is not None:
-            raise ProjectFlowError('export_reconciliation_required')
+            if not for_external_choice:
+                raise ProjectFlowError('export_reconciliation_required')
+            # A host-side folder change cannot silently retarget a committed
+            # request. First consult the journal for the original pending UUID.
+            # Only the no-receipt case may change folder using that *same* ID.
+            self._reconcile_pending_before_destination()
 
     def _clear_external(self):
         # A file observation is tied to a specific confirmed directory at an
@@ -345,7 +350,7 @@ class RealProjectFlow:
         confirm the candidate; no path is written to the project or history.
         """
         with self._guard:
-            self._require_no_unresolved_selection()
+            self._require_no_unresolved_selection(for_external_choice=True)
             self._require_open()
             if self.selected_run_id is None:
                 raise ProjectFlowError('run_selection_required')
@@ -365,7 +370,7 @@ class RealProjectFlow:
     def confirm_external_directory(self):
         """Confirm a pending host-selected folder; browser cannot submit a path."""
         with self._guard:
-            self._require_no_unresolved_selection()
+            self._require_no_unresolved_selection(for_external_choice=True)
             self._require_open()
             if self._external_candidate is None:
                 raise ProjectFlowError('external_destination_not_selected')
@@ -383,7 +388,7 @@ class RealProjectFlow:
 
     def clear_external_directory(self):
         with self._guard:
-            self._require_no_unresolved_selection()
+            self._require_no_unresolved_selection(for_external_choice=True)
             self._require_open()
             self._clear_external()
             return self._publish()
@@ -446,7 +451,11 @@ class RealProjectFlow:
             if row['run_id'] != self.selected_run_id:
                 raise ProjectFlowError('export_run_mismatch')
             self.selected_export_id = pending_id
-        self._pending_export_id = None
+            self._pending_export_id = None
+        # A definitive *absence* of a preparation receipt does not authorise
+        # minting a new UUID on retry. Retain the tentative original UUID.
+        # This also permits explicitly selected new folders, but only after
+        # the journal has again shown no receipt for that UUID.
         self._publish()
 
     def prepare(self, filename=None):
