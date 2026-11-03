@@ -25,8 +25,11 @@ expressions, a logical overall union, group/term counts, source coverage and
 compiler warnings, with explicit unknown provider match counts and
 `not_executed` status. Web of Science Starter Topic is *not* article full
 text or web-interface All Fields. An invalid term/syntax fails closed; no
-query is submitted. Edits invalidate the preview and prohibit approval until
-the researcher re-previews the current draft.
+query is submitted. In the **preview state all editable controls are hidden**
+and the user must click **Revise draft** to return to editing. Edits then
+invalidate the preview and prohibit approval until the researcher re-previews
+the current draft. Browser input typed but not explicitly saved cannot be
+mistaken for a reviewed, approved term.
 
 Only **Approve frozen strategy and create pending run**, a distinct user
 button appearing after successful preview, creates a durable version. It
