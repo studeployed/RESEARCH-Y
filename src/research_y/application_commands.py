@@ -14,7 +14,8 @@ from uuid import UUID
 
 OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'export_report', 'admit_strategy',
-                        'preflight_read', 'preflight_record'})
+                        'preflight_read', 'preflight_record',
+                        'pubmed_pilot_count', 'pubmed_pilot_read'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -23,7 +24,10 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
     'approval_required', 'invalid_request_id', 'admission_conflict',
     'admission_evidence_invalid', 'no_active_terms', 'run_not_pending',
     'plan_unverified', 'review_invalid', 'review_conflict', 'stale_preflight',
-    'review_evidence_invalid'})
+    'review_evidence_invalid',
+    'pilot_confirmation_required', 'pilot_conflict',
+    'pilot_evidence_invalid', 'pilot_plan_invalid', 'pilot_storage_failed',
+    'pilot_client_invalid', 'pubmed_profile_invalid'})
 
 
 class ApplicationCommandError(ValueError):
@@ -76,6 +80,16 @@ class ApplicationCommand:
     review_items: dict | None = None
     review_note: str | None = None
     review_known_relevant: tuple | None = None
+    # A single explicitly confirmed, count-only pilot; contact/key come
+    # from trusted Python host configuration, NEVER browser request values.
+    # The core command's repr excludes *all* fields and child exceptions
+    # cannot echo them. No secrets are persisted by the pilot audit service.
+    pilot_id: str | None = None
+    pilot_query_id: str | None = None
+    pilot_plan_sha256: str | None = None
+    pilot_contact_email: str | None = None
+    pilot_api_key: str | None = None
+    pilot_confirmed: bool | None = None
 
     def __post_init__(self):
         try:
@@ -106,7 +120,43 @@ class ApplicationCommand:
                              self.review_reviewer_name, self.review_reviewer_role,
                              self.review_items, self.review_note,
                              self.review_known_relevant)
-            if self.operation in ('preflight_read', 'preflight_record'):
+            pilot_fields = (self.pilot_id, self.pilot_query_id,
+                            self.pilot_plan_sha256, self.pilot_contact_email,
+                            self.pilot_api_key, self.pilot_confirmed)
+            if self.operation in ('pubmed_pilot_count', 'pubmed_pilot_read'):
+                if any(v is not None for v in
+                       (self.export_id, self.output_name, self.directory,
+                        self.expected_directory_identity)):
+                    raise ValueError
+                _uuid(self.pilot_id)
+                if self.operation == 'pubmed_pilot_read':
+                    if self.run_id is not None or any(
+                            v is not None for v in pilot_fields[1:]):
+                        raise ValueError
+                else:
+                    _uuid(self.run_id)
+                    _uuid(self.pilot_query_id)
+                    digest = self.pilot_plan_sha256
+                    if (type(digest) is not str or len(digest) != 64 or
+                            any(c not in '0123456789abcdef' for c in digest) or
+                            self.pilot_confirmed is not True):
+                        raise ValueError
+                    from research_y.pubmed_probe import PubMedESearchProbeClient
+                    if (type(self.pilot_contact_email) is not str or
+                            len(self.pilot_contact_email) > 254 or
+                            not self.pilot_contact_email.isascii() or
+                            (self.pilot_api_key is not None and
+                             (type(self.pilot_api_key) is not str or
+                              not 1 <= len(self.pilot_api_key) <= 4096 or
+                              not self.pilot_api_key.isascii() or
+                              any(ord(c) < 33 or ord(c) > 126
+                                  for c in self.pilot_api_key)))):
+                        raise ValueError
+                    # Constructor validation is local only: no network,
+                    # no persistent state, and no source query construction.
+                    PubMedESearchProbeClient(
+                        email=self.pilot_contact_email, api_key=self.pilot_api_key)
+            elif self.operation in ('preflight_read', 'preflight_record'):
                 if (self.run_id is None or any(v is not None for v in
                     (self.export_id, self.output_name, self.directory,
                      self.expected_directory_identity))):
@@ -170,6 +220,9 @@ class ApplicationCommand:
             if self.operation not in ('preflight_read', 'preflight_record') and any(
                     value is not None for value in review_fields):
                 raise ValueError
+            if self.operation not in ('pubmed_pilot_count', 'pubmed_pilot_read') and any(
+                    value is not None for value in pilot_fields):
+                raise ValueError
         except (ValueError, TypeError, AttributeError, OverflowError):
             raise ApplicationCommandError('invalid_command') from None
 
@@ -205,6 +258,26 @@ def execute_command(command: ApplicationCommand) -> dict:
         if command.operation == 'inspect':
             snapshot = inspection.read_application_snapshot(project, selected_run_id=command.run_id)
             return {'snapshot': snapshot.as_dict(), 'location': str(snapshot.location)}
+        if command.operation in ('pubmed_pilot_count', 'pubmed_pilot_read'):
+            from research_y import pubmed_pilot as pilot
+            try:
+                if command.operation == 'pubmed_pilot_read':
+                    return {'pilot': pilot.read_pubmed_pilot(
+                        project, command.pilot_id),
+                        'source_retrieval_verified': False}
+                from research_y.pubmed_probe import PubMedESearchProbeClient
+                client = PubMedESearchProbeClient(
+                    email=command.pilot_contact_email,
+                    api_key=command.pilot_api_key)
+                return pilot.probe_pubmed_count_once(
+                    project, pilot_id=command.pilot_id,
+                    run_id=command.run_id, query_id=command.pilot_query_id,
+                    expected_plan_sha256=command.pilot_plan_sha256,
+                    confirmed=command.pilot_confirmed, client=client)
+            except pilot.PubMedPilotError as exc:
+                raise ApplicationCommandError(exc.code) from None
+            except ValueError:
+                raise ApplicationCommandError('pubmed_profile_invalid') from None
         if command.operation in ('preflight_read', 'preflight_record'):
             from research_y import preflight_review as preflight
             try:
