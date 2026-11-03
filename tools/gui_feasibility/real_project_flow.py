@@ -19,6 +19,8 @@ from research_y.export_files import Directory, ExportFileError
 from tools.gui_feasibility.native_folder_selection import (
     NativeFolderError, checked_folder)
 from tools.gui_feasibility.recent_projects import RecentProjects, RecentProjectsError
+from tools.gui_feasibility.strategy_setup import StrategyDraft, DraftError
+from research_y.query_compiler import QueryCompilationError
 
 
 class ProjectFlowError(ValueError):
@@ -47,6 +49,12 @@ class RealProjectFlow:
         self.last_result = None
         self.observation = None
         self.retained_export_report = None
+        self._setup = StrategyDraft()
+        # Stable until the authoritative run inventory confirms a commit.
+        # On worker interruption, every retry carries the same exact snapshot.
+        self._pending_admission_id = None
+        self._pending_admission_payload = None
+        self._last_strategy_admission = None
         # External folders are transient, host-selected, explicitly confirmed.
         # The audit journal stores directory identity, not the path.
         self._external_candidate = None
@@ -68,6 +76,8 @@ class RealProjectFlow:
     def _require_no_unresolved_selection(self, *, for_external_choice=False):
         if self._closed:
             raise ProjectFlowError('flow_closed')
+        if self._pending_admission_id is not None:
+            raise ProjectFlowError('strategy_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
                 raise ProjectFlowError('export_reconciliation_required')
@@ -216,6 +226,10 @@ class RealProjectFlow:
         self._pending_export_id = None
         self.observation = None
         self.retained_export_report = None
+        self._setup = StrategyDraft()
+        self._pending_admission_id = None
+        self._pending_admission_payload = None
+        self._last_strategy_admission = None
         self._clear_external()
         self.last_result = inspected
         self.snapshot = snapshot
@@ -296,8 +310,7 @@ class RealProjectFlow:
     def select_run(self, run_id: str):
         with self._guard:
             self._require_open()
-            if self._pending_export_id is not None:
-                raise ProjectFlowError('export_reconciliation_required')
+            self._require_no_unresolved_selection()
             if type(run_id) is not str or run_id not in {r['run_id'] for r in self.snapshot['runs']}:
                 raise ProjectFlowError('unknown_run')
             report = self._operation('inspect', run_id=run_id)['snapshot']
@@ -314,8 +327,7 @@ class RealProjectFlow:
     def select_export(self, export_id: str):
         with self._guard:
             self._require_open()
-            if self._pending_export_id is not None:
-                raise ProjectFlowError('export_reconciliation_required')
+            self._require_no_unresolved_selection()
             if type(export_id) is not str:
                 raise ProjectFlowError('unknown_export')
             row = next((item for item in self.snapshot['exports']
@@ -334,6 +346,101 @@ class RealProjectFlow:
             self.retained_export_report = retained
             self.observation = None
             return self._publish()
+
+    # Research Setup draft controls. The only persistence boundary is the
+    # explicit Confirm approval action below. There is no network action here.
+    _SETUP_ACTIONS = {
+        'heading': 'update_heading',
+        'add_group': 'add_group',
+        'rename_group': 'rename_group',
+        'remove_group': 'remove_group',
+        'move_group': 'move_group',
+        'add_term': 'add_term',
+        'edit_term': 'edit_term',
+        'remove_term': 'remove_term',
+        'move_term': 'move_term',
+    }
+
+    def edit_setup(self, action: str, data: dict):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if (type(action) is not str or action not in self._SETUP_ACTIONS
+                    or type(data) is not dict):
+                raise ProjectFlowError('invalid_setup_action')
+            try:
+                method = getattr(self._setup, self._SETUP_ACTIONS[action])
+                method(**data)
+            except (DraftError, ValueError, TypeError):
+                raise ProjectFlowError('invalid_setup_input') from None
+            self._last_strategy_admission = None
+            return self._publish()
+
+    def preview_setup(self):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            try:
+                self._setup.preview()
+            except (DraftError, QueryCompilationError, ValueError, TypeError):
+                raise ProjectFlowError('strategy_preview_invalid') from None
+            return self._publish()
+
+    def approve_setup(self):
+        """Only the explicit user-facing approval click invokes this method.
+
+        A lost worker reply retains the original approved terms and request ID;
+        the next click replays *exactly* those, without double-approving.
+        """
+        with self._guard:
+            self._require_open()
+            if self._pending_export_id is not None:
+                raise ProjectFlowError('export_reconciliation_required')
+            if self._pending_admission_id is None:
+                if self._setup.preview_data is None:
+                    raise ProjectFlowError('strategy_preview_required')
+                self._pending_admission_id = str(uuid4())
+                self._pending_admission_payload = dict(
+                    admission_theme=self._setup.theme,
+                    admission_approved_by=self._setup.approved_by,
+                    admission_groups=self._setup.approved_groups(),
+                    approval_confirmed=True,
+                )
+            request_id = self._pending_admission_id
+            payload = self._pending_admission_payload
+            self._publish()
+            try:
+                result = self._operation('admit_strategy',
+                    admission_request_id=request_id, **payload)
+                if (result.get('request_id') != request_id
+                        or result.get('query_count', 0) < 2
+                        or result.get('source_retrieval_verified') is not False):
+                    raise ProjectFlowError('invalid_admission_receipt')
+                # Inspection is authoritative; a successful-looking worker
+                # response alone does not clear an uncertain mutation.
+                inspected = self._operation('inspect')['snapshot']
+                if (not isinstance(inspected, dict)
+                        or not any(row['run_id'] == result['run_id']
+                                   and row['strategy_version_id'] ==
+                                       result['strategy_version_id']
+                                   for row in inspected.get('runs', []))):
+                    raise ProjectFlowError('admission_reconciliation_required')
+                self.snapshot = inspected
+                self._last_strategy_admission = {
+                    'strategy_version_id': result['strategy_version_id'],
+                    'version_number': result['version_number'],
+                    'run_id': result['run_id'],
+                    'query_count': result['query_count'],
+                    'source_retrieval_verified': False,
+                }
+                self._pending_admission_id = None
+                self._pending_admission_payload = None
+                self._setup = StrategyDraft()
+                # No implicit run selection or source execution.
+                return self._publish()
+            except ProjectFlowError:
+                self._publish()
+                raise
 
     def _reinspect(self):
         """Best-effort inventory after a failed worker; never invent a receipt."""
@@ -463,6 +570,8 @@ class RealProjectFlow:
             self._require_open()
             if self.selected_run_id is None:
                 raise ProjectFlowError('run_selection_required')
+            if self._pending_admission_id is not None:
+                raise ProjectFlowError('strategy_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -592,6 +701,9 @@ class RealProjectFlow:
                 'source_retrieval_verified': False,
                 'recent_projects': list(self._recent_items),
                 'recent_history_error': self._recent_error,
+                'strategy_draft': self._setup.state(),
+                'strategy_reconciliation_required': self._pending_admission_id is not None,
+                'last_strategy_admission': self._last_strategy_admission,
                 'external_destination_candidate': (
                     None if self._external_candidate is None
                     else str(self._external_candidate)),
