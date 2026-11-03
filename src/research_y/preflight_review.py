@@ -218,8 +218,18 @@ def read_preflight(project, run_id: str) -> dict:
     """Inspect exact frozen plan and recorded reviewer attestations; never write."""
     _uuid(run_id)
     try:
+        code = None
         with _read(project) as db:
-            return _inspect(db, run_id)
+            # The existing read context maps arbitrary ValueError to its own
+            # diagnostic. Catch the *static* preflight error inside the context
+            # before its generic conversion can obscure the precise status.
+            try:
+                result = _inspect(db, run_id)
+            except PreflightError as exc:
+                code = exc.code
+        if code is not None:
+            raise PreflightError(code)
+        return result
     except PreflightError:
         raise
     except (sqlite3.Error, ValueError, TypeError, KeyError):
