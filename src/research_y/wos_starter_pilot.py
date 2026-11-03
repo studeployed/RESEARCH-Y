@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime, timezone
+from math import isfinite
 import json
 import sqlite3
 from uuid import UUID
@@ -204,6 +205,7 @@ def _view(request, outcome):
         quota=quota, quota_status=record.get("quota_status", "not_observed"),
         error_code=record.get("error_code"),
         retry_after_seconds=record.get("retry_after_seconds"),
+        retry_after_unverifiable=record.get("retry_after_unverifiable", False),
         response_sha256=record.get("response_sha256"),
         access_probe_records_received=record.get("access_probe_records_received"),
         requested_at_utc=request["recorded_at_utc"],
@@ -264,39 +266,19 @@ def _guard_provider(db, *, revalidate_quota, now):
         raise WoSPilotError("pilot_evidence_invalid") from None
     if hold is not None:
         raise WoSPilotError(hold)
+    # The shared checkpoint guard now handles *both* checkpoint and pilot
+    # quota observations (including failed-HTTP quota and Retry-After). Only
+    # the pilot's separate request-start pacing remains local here.
     last_stamp = None
-    last_remaining = None
-    for kind, raw, stamp in db.execute(
-        "SELECT event_type,details_json,occurred_at_utc FROM audit_events "
-        "WHERE event_type IN (?,?) ORDER BY event_id DESC",
-        (REQUEST_EVENT, OUTCOME_EVENT),
+    for (stamp,) in db.execute(
+        "SELECT occurred_at_utc FROM audit_events WHERE event_type=? "
+        "ORDER BY event_id DESC LIMIT 1", (REQUEST_EVENT,)
     ):
-        try:
-            data = json.loads(raw, object_pairs_hook=_unique)
-            if type(data) is not dict:
-                raise ValueError
-        except (TypeError, ValueError):
-            raise WoSPilotError("pilot_evidence_invalid") from None
-        if data.get("method") != METHOD:
-            raise WoSPilotError("pilot_evidence_invalid")
-        if kind == REQUEST_EVENT and last_stamp is None:
-            last_stamp = _utc(stamp)
-        if kind == OUTCOME_EVENT and last_remaining is None:
-            quota = data.get("quota")
-            if quota is not None:
-                if (type(quota) is not dict or
-                        type(quota.get("valid")) is not bool or
-                        type(quota.get("daily_remaining")) not in (int, type(None))):
-                    raise WoSPilotError("pilot_evidence_invalid")
-                last_remaining = quota["daily_remaining"]
-        if last_stamp is not None and last_remaining is not None:
-            break
+        last_stamp = _utc(stamp)
     if last_stamp is not None:
         elapsed = (now - last_stamp).total_seconds()
         if not elapsed >= MIN_REQUEST_INTERVAL:
             raise WoSPilotError("provider_pilot_cooldown")
-    if last_remaining == 0 and not revalidate_quota:
-        raise WoSPilotError("provider_quota_revalidation_required")
 
 
 def _outcome(page, expected_query, client):
@@ -361,8 +343,7 @@ def probe_wos_starter_once(
         raise WoSPilotError("pilot_confirmation_required")
     if type(revalidate_quota) is not bool:
         raise WoSPilotError("pilot_confirmation_required")
-    if (type(client) is not WoSStarterClient or
-            client.requests_made != 0):
+    if type(client) is not WoSStarterClient:
         raise WoSPilotError("pilot_client_invalid")
     base = _base(pilot_id, run_id, query_id, plan_sha,
                  revalidate_quota=revalidate_quota)
@@ -376,6 +357,10 @@ def probe_wos_starter_once(
                     if any(request.get(k) != v for k, v in base.items()):
                         raise WoSPilotError("pilot_conflict")
                     return _view(request, outcome)
+                # A prior client may be used to *read* a completed attempt,
+                # but no new UUID can reuse a client's old request budget.
+                if client.requests_made != 0:
+                    raise WoSPilotError("pilot_client_invalid")
                 exact_query = _query(db, run_id, query_id, plan_sha)
                 _guard_provider(db, revalidate_quota=revalidate_quota,
                                 now=datetime.now(timezone.utc))
@@ -395,11 +380,21 @@ def probe_wos_starter_once(
         except WoSStarterError as exc:
             code = exc.code if exc.code in PROVIDER_CODES else "source_invalid"
             delay = exc.retry_after_seconds
+            # Preserve the observed safe quota independently of whether an
+            # HTTP 429/403 or malformed page produced a usable count.
+            quota = client.quota
+            quota_data = (asdict(quota) if type(quota) is WoSQuota else None)
+            delay_valid = (type(delay) in (int, float) and isfinite(delay)
+                           and 0 <= delay <= 365*86400)
             data = dict(
                 status="probe_failed", reported_matches=None,
-                error_code=code,
-                retry_after_seconds=(delay if type(delay) in (int, float)
-                                     and 0 <= delay <= 86400 else None),
+                error_code=code, quota=quota_data,
+                quota_status=(quota.entitlement_status
+                              if type(quota) is WoSQuota else "unverified"),
+                retry_after_seconds=(delay if delay_valid else None),
+                # An unrepresentable server-directed delay may not simply
+                # be dropped or shortened; future attempts fail closed.
+                retry_after_unverifiable=(delay is not None and not delay_valid),
             )
         except Exception:
             data = dict(status="probe_failed", reported_matches=None,
