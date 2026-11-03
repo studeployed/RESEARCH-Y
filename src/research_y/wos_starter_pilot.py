@@ -57,6 +57,7 @@ class WoSPilotError(ValueError):
             "pilot_storage_failed", "pilot_client_invalid",
             "provider_cooldown", "provider_quota_revalidation_required",
             "provider_worker_active", "provider_pilot_cooldown",
+            "provider_pilot_outcome_unknown",
         }
         self.code = code if code in allowed else "pilot_evidence_invalid"
         super().__init__(self.code)
