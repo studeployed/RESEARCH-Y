@@ -426,11 +426,35 @@ class RealProjectFlow:
                 raise ProjectFlowError('external_destination_changed')
         return None if self._external_confirmed is None else str(self._external_confirmed)
 
+    def _reconcile_pending_before_destination(self):
+        """Resolve the original tentative UUID without requiring its folder.
+
+        If the worker committed a receipt but its response and reinspection
+        failed, the originally confirmed external folder may no longer exist.
+        The research journal, not that path, determines whether this UUID was
+        retained. Only a completed inspection can release the pending guard.
+        """
+        if self._pending_export_id is None:
+            return
+        pending_id = self._pending_export_id
+        if not self._reinspect():
+            self._publish()
+            raise ProjectFlowError('export_reconciliation_required')
+        row = next((item for item in self.snapshot['exports']
+                    if item['export_id'] == pending_id), None)
+        if row is not None:
+            if row['run_id'] != self.selected_run_id:
+                raise ProjectFlowError('export_run_mismatch')
+            self.selected_export_id = pending_id
+        self._pending_export_id = None
+        self._publish()
+
     def prepare(self, filename=None):
         with self._guard:
             self._require_open()
             if self.selected_run_id is None:
                 raise ProjectFlowError('run_selection_required')
+            self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
                 filename = 'strategy-summary-' + self.selected_run_id + '.xlsx'
