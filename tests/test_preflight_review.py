@@ -186,14 +186,14 @@ def test_changed_incomplete_or_executed_plan_fails_closed(tmp_path, mutation):
 
 @pytest.mark.parametrize("change", [
     {"reviewer_name":""},
-    {"reviewer_name":" private"},
+    {"reviewer_name":"\x00private"},
     {"reviewer_role":"certified_by_software"},
     {"press_items":{}},
     {"press_items":{k:"passed" for k in PRESS_ITEMS}},
     {"known_relevant":("duplicate","duplicate")},
-    {"known_relevant":("record secret",)},
+    {"known_relevant":("record\x00secret",)},
     {"known_relevant":["not a tuple"]},
-    {"review_note":" private path"},
+    {"review_note":"\x00private path"},
     {"review_id":"not uuid"},
 ])
 def test_invalid_review_input_never_creates_a_receipt(tmp_path, change):
