@@ -109,13 +109,13 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     if 'directory' in kw: assert calls[0][2]['directory']==kw['directory']
     if operation=='inspect':
         assert calls[0][2]['selected_run_id']==kw['run_id']
+        assert result['snapshot']['reported'] is None and result['snapshot']['retrieved']==0
     if operation=='preflight_read':
         assert calls[0][1][1] == kw['run_id']
     if operation=='preflight_record':
         assert calls[0][2]['review_id'] == kw['review_id']
         assert calls[0][2]['run_id'] == kw['run_id']
         assert calls[0][2]['press_items'] == kw['review_items']
-        assert result['snapshot']['reported'] is None and result['snapshot']['retrieved']==0
 
 
 def test_no_implicit_run_selection_or_progress(services):
@@ -308,8 +308,8 @@ def test_strategy_admission_error_code_is_not_silent_success_or_private_text(ser
 
 @pytest.mark.parametrize('change', [
     {'review_id':'not-a-uuid'}, {'review_plan_sha256':'short'},
-    {'review_reviewer_name':'\\x00bad'}, {'review_reviewer_role':'fake'},
-    {'review_items':{}}, {'review_note':'bad\\x00data'},
+    {'review_reviewer_name':chr(0) + 'bad'}, {'review_reviewer_role':'fake'},
+    {'review_items':{}}, {'review_note':'bad' + chr(0) + 'data'},
     {'review_known_relevant':['PMID123']},
     {'directory':'/private/folder'}, {'export_id':'x'},
 ])
