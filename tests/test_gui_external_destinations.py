@@ -5,7 +5,9 @@ worker, immutable report and append-only workbook export services without a
 browser-supplied path or optional graphical dependency.
 """
 from pathlib import Path
+import os
 import sqlite3
+import subprocess
 from zipfile import ZipFile
 
 import pytest
@@ -149,13 +151,39 @@ def test_host_picker_refuses_browser_paths_project_internals_and_unsafe_links(tm
             flow.offer_external_directory(project.root / 'exports')
         with pytest.raises(ProjectFlowError, match='^native_selection_unsafe$'):
             flow.offer_external_directory(tmp_path / 'missing')
-        linked.symlink_to(outside, target_is_directory=True)
-        with pytest.raises(ProjectFlowError, match='^native_selection_unsafe$'):
+        if os.name == 'nt':
+            subprocess.run(['cmd', '/c', 'mklink', '/J', str(linked), str(outside)],
+                           check=True, capture_output=True)
+        else:
+            linked.symlink_to(outside, target_is_directory=True)
+        with pytest.raises(ProjectFlowError, match='^native_selection_unsafe
+
+
+def test_external_confirmation_is_not_a_browser_path_endpoint():
+    import inspect
+    from tools.gui_feasibility.real_project_app import run
+    source = inspect.getsource(run)
+    assert "name == 'native_export'" in source
+    assert "await select_from_native_window(app.native.main_window)" in source
+    assert "flow.offer_external_directory, selected" in source
+    assert "name == 'external_confirm'" in source
+    assert "flow.confirm_external_directory()" in source
+    assert 'create_file_dialog' not in source
+    assert 'flow.offer_external_directory(value)' not in source
+    assert 'flow.offer_external_directory, value' not in source
+    assert 'data-testid=native-export-folder' in source
+    assert 'data-testid=external-reconfirm' in source
+):
             flow.offer_external_directory(linked)
         assert flow.state()['external_destination_confirmed'] is False
         assert flow.state()['exports'] == []
     finally:
         flow.close()
+        if linked.is_symlink() or (os.name == 'nt' and linked.exists()):
+            if os.name == 'nt':
+                os.rmdir(linked)
+            else:
+                linked.unlink()
 
 
 def test_external_confirmation_is_not_a_browser_path_endpoint():
