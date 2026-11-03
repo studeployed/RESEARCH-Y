@@ -12,6 +12,7 @@ from zipfile import ZipFile
 
 import pytest
 
+from research_y.projects import create_project
 from tools.gui_feasibility.real_project_flow import RealProjectFlow, ProjectFlowError
 from tools.gui_feasibility.run_real_project import fixture
 
@@ -133,6 +134,11 @@ def test_external_selection_must_not_leak_across_run_or_project_or_local_export(
         assert flow.state()['external_destination_confirmed'] is False
         flow.resume()
         assert flow.observe()['observation']['outcome'] == 'published_verified'
+        new_project = create_project(tmp_path, 'Next project')
+        switched = flow.open_native_folder(new_project.root)
+        assert switched['selected_run_id'] is None
+        assert switched['external_destination_confirmed'] is False
+        assert switched['external_destination_candidate'] is None
     finally:
         flow.close()
 
@@ -199,3 +205,29 @@ def test_external_confirmation_is_not_a_browser_path_endpoint():
     assert "'native_export', 'external_confirm'" not in source  # no browser paths
     assert 'data-testid=native-export-folder' in source
     assert 'data-testid=external-reconfirm' in source
+
+
+def test_changed_external_directory_between_selection_and_confirmation_fails_closed(tmp_path):
+    project, run_id = fixture(tmp_path)
+    original = tmp_path / 'external-target'
+    original.mkdir()
+    moved = tmp_path / 'moved-target'
+    flow = _flow(tmp_path, project)
+    try:
+        flow.open_selected(); flow.select_run(run_id)
+        flow.offer_external_directory(original)
+        original.rename(moved)
+        original.mkdir()
+        with pytest.raises(ProjectFlowError, match='^external_destination_changed$'):
+            flow.confirm_external_directory()
+        assert flow.state()['external_destination_confirmed'] is False
+        assert flow.state()['exports'] == []
+        flow.offer_external_directory(original)
+        flow.confirm_external_directory()
+        original.rename(tmp_path / 'changed-after-confirm')
+        original.mkdir()
+        with pytest.raises(ProjectFlowError, match='^external_destination_changed$'):
+            flow.prepare()
+        assert flow.state()['exports'] == [] and flow.selected_export_id is None
+    finally:
+        flow.close()
