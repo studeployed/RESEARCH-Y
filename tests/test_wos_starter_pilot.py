@@ -707,16 +707,13 @@ def test_abandoned_pilot_does_not_silently_release_shared_provider(tmp_path,monk
     with pytest.raises(KeyboardInterrupt):
         submit(project,rid,sha,q,client(fail='abrupt'))
     assert _hold(project)[0]=='provider_pilot_outcome_unknown'
-    create_wos_checkpoint(project,q['query_id'],retention_authorized=True)
-    assert _claim(project,q['query_id'],_stamp(),revalidate_quota=True) is None
-    # There is no proof that the abandoned request was never sent. Clearing
-    # the hold requires explicit future evidence/recovery, not a timer reset.
-    assert _hold(project,revalidate=True)[0]=='provider_pilot_outcome_unknown'
     trace=[]
     for revalidate in (False, True):
-        with pytest.raises(WoSPilotError,
-                           match='^provider_pilot_outcome_unknown
-):
+        with pytest.raises(WoSPilotError, match='provider_pilot_outcome_unknown'):
             submit(project,rid,sha,q,client(trace=trace),
                    revalidate_quota=revalidate)
     assert trace==[]
+    create_wos_checkpoint(project,q['query_id'],retention_authorized=True)
+    assert _claim(project,q['query_id'],_stamp(),revalidate_quota=True) is None
+    # An interrupted request might have been sent; time cannot clear it.
+    assert _hold(project,revalidate=True)[0]=='provider_pilot_outcome_unknown'
