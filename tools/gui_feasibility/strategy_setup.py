@@ -143,6 +143,10 @@ class StrategyDraft:
             for group in self.groups
         )
 
+    def revise_preview(self):
+        """Leave an approved preview only by returning to editable draft state."""
+        self._invalidate()
+
     def preview(self):
         # A complete read-only rehearsal using the same immutable compiler as
         # the admission service. No model/provider/worker/storage writes.
