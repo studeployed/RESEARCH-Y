@@ -290,3 +290,44 @@ def test_revise_preview_must_return_to_edit_mode_without_prior_approval(tmp_path
         assert flow.approve_setup()['last_strategy_admission']['query_count'] == 4
     finally:
         flow.close()
+
+
+def test_approving_new_version_keeps_previous_explicit_run_and_export_view(tmp_path):
+    from tools.gui_feasibility.run_real_project import fixture
+    project, original_run = fixture(tmp_path)
+    flow = RealProjectFlow(selected_root=project.root, selected_parent=tmp_path)
+    try:
+        flow.open_selected()
+        flow.select_run(original_run)
+        prepared = flow.prepare()
+        old_export = prepared['selected_export_id']
+        flow.resume()
+        before = flow.observe()
+        assert before['report']['run']['run_id'] == original_run
+        assert before['observation']['audited_success'] is True
+        original_retained = before['retained_export_report']
+
+        _seed(flow)
+        flow.preview_setup()
+        approved = flow.approve_setup()
+        assert len(approved['runs']) == 2
+        assert approved['selected_run_id'] == original_run
+        assert approved['report'] == before['report'] or (
+            approved['report']['run']['run_id'] == original_run and
+            approved['report']['queries'] == before['report']['queries'])
+        assert approved['selected_export_id'] == old_export
+        assert approved['retained_export_report'] == original_retained
+        assert approved['observation'] == before['observation']
+        new_id = approved['last_strategy_admission']['run_id']
+        assert new_id != original_run
+        assert approved['report']['run']['run_id'] != new_id
+        # The newly approved run is selectable only by a further deliberate
+        # action; changing run clears retained export state as before.
+        chosen = flow.select_run(new_id)
+        assert chosen['selected_run_id'] == new_id
+        assert chosen['report']['run']['run_id'] == new_id
+        assert chosen['selected_export_id'] is None
+        assert chosen['retained_export_report'] is None
+        assert chosen['observation'] is None
+    finally:
+        flow.close()
