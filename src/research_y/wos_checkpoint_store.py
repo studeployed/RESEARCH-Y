@@ -17,6 +17,7 @@ from research_y.projects import Project, _validated_project_connection
 from research_y.query_compiler import compile_source
 from research_y.storage import _audit
 from research_y.wos_starter import WoSPage, WoSQuota, WoSStarterError, parse_document_page, validate_request
+from research_y.wos_starter_client import MIN_REQUEST_INTERVAL
 
 
 # These failures require a new query/run, never a pause/recovery override.
@@ -369,7 +370,6 @@ def _pilot_provider_evidence(db):
     # The existing client enforces this spacing *within one client*. Pilot
     # and checkpoint workers use fresh clients, so bind the last pilot
     # reservation time into the same durable, cross-worker provider guard.
-    from research_y.wos_starter_client import MIN_REQUEST_INTERVAL
     latest = db.execute(
         "SELECT occurred_at_utc FROM audit_events "
         "WHERE event_type='wos_starter_pilot_requested_v1' "
