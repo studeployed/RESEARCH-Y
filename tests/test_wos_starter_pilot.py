@@ -292,7 +292,9 @@ def test_changed_run_during_response_makes_count_stale(tmp_path):
     result=submit(project,rid,sha,q,c)
     assert result['status']=='stale_plan'
     assert result['reported_matches'] is None
-    assert result['quota'] is None
+    # A stale count must not erase the actually observed quota.
+    assert result['quota']['daily_limit']==5000
+    assert result['quota']['daily_remaining']==4997
     assert result['source_retrieval_verified'] is False
 
 
@@ -411,6 +413,8 @@ def test_zero_remaining_from_prior_pilot_requires_explicit_revalidation(tmp_path
     # Remove only the *short pacing* guard to isolate project-level durable
     # quota blocking; no real HTTP is performed in these tests.
     monkeypatch.setattr(module,'MIN_REQUEST_INTERVAL',0.0)
+    from research_y import wos_checkpoint_store
+    monkeypatch.setattr(wos_checkpoint_store,'MIN_REQUEST_INTERVAL',0.0)
     trace=[]
     with pytest.raises(WoSPilotError,match='provider_quota_revalidation_required'):
         submit(project,rid,sha,q,client(trace=trace))
@@ -457,8 +461,10 @@ def test_server_retry_after_is_durable_and_cannot_be_bypassed_by_new_pilot(
     assert first['retry_after_seconds']==30
     assert first['quota']['daily_remaining']==4997
     assert _hold(project)[0]=='provider_cooldown'
-    # Isolate the longer server hold from the generic 1.05s pilot gap.
+    # Isolate the longer server hold from both local and shared 1.05s pacing.
     monkeypatch.setattr(module,'MIN_REQUEST_INTERVAL',0.0)
+    from research_y import wos_checkpoint_store
+    monkeypatch.setattr(wos_checkpoint_store,'MIN_REQUEST_INTERVAL',0.0)
     requests=[]
     for explicit in (False,True):
         with pytest.raises(WoSPilotError,match='^provider_cooldown$'):
@@ -481,6 +487,8 @@ def test_429_quota_zero_is_durable_and_shared_even_without_retry_after(
     assert failed['reported_matches'] is None
     assert failed['quota']['daily_remaining']==0
     assert failed['retry_after_seconds'] is None
+    from research_y import wos_checkpoint_store
+    monkeypatch.setattr(wos_checkpoint_store,'MIN_REQUEST_INTERVAL',0.0)
     assert _hold(project)==('provider_quota_revalidation_required',None)
     monkeypatch.setattr(module,'MIN_REQUEST_INTERVAL',0.0)
     attempts=[]
@@ -494,7 +502,11 @@ def test_429_quota_zero_is_durable_and_shared_even_without_retry_after(
     assert _hold(project)[0] is None
 
 
-def test_exhausted_pilot_blocks_existing_checkpoint_worker_without_refetch(tmp_path):
+def test_exhausted_pilot_blocks_existing_checkpoint_worker_without_refetch(
+    tmp_path,monkeypatch
+):
+    from research_y import wos_checkpoint_store
+    monkeypatch.setattr(wos_checkpoint_store,'MIN_REQUEST_INTERVAL',0.0)
     project,rid,sha,q=fixture(tmp_path)
     exhausted={'X-RateLimit-Limit-Day':'5000',
                'X-RateLimit-Remaining-Day':'0'}
@@ -513,7 +525,11 @@ def test_exhausted_pilot_blocks_existing_checkpoint_worker_without_refetch(tmp_p
     assert row[0] in ('pending','paused')
 
 
-def test_failed_http_observed_quota_not_confused_with_source_count(tmp_path):
+def test_failed_http_observed_quota_not_confused_with_source_count(
+    tmp_path,monkeypatch
+):
+    from research_y import wos_checkpoint_store
+    monkeypatch.setattr(wos_checkpoint_store,'MIN_REQUEST_INTERVAL',0.0)
     project,rid,sha,q=fixture(tmp_path)
     exhausted={'X-RateLimit-Limit-Day':'50',
                'X-RateLimit-Remaining-Day':'0'}
@@ -598,7 +614,11 @@ def test_stale_run_discards_count_but_keeps_provider_failure_limits(tmp_path):
     assert all(row[2] is None for row in ordinary_queries(project,rid))
 
 
-def test_stale_successful_count_still_preserves_observed_exhaustion(tmp_path):
+def test_stale_successful_count_still_preserves_observed_exhaustion(
+    tmp_path,monkeypatch
+):
+    from research_y import wos_checkpoint_store
+    monkeypatch.setattr(wos_checkpoint_store,'MIN_REQUEST_INTERVAL',0.0)
     project,rid,sha,q=fixture(tmp_path)
     exhausted={'X-RateLimit-Limit-Day':'5000',
                'X-RateLimit-Remaining-Day':'0'}
@@ -630,3 +650,15 @@ def test_unrepresentable_retry_after_fails_closed_without_discarding_count(tmp_p
     assert result['retry_after_unverifiable'] is True
     with pytest.raises(WoSCheckpointError,match='provider_retry_after_unverifiable'):
         _hold(project,revalidate=True)
+
+
+def test_checkpoint_worker_uses_shared_pacing_after_prior_pilot(tmp_path):
+    project,rid,sha,q=fixture(tmp_path)
+    complete=submit(project,rid,sha,q,client())
+    assert complete['status']=='count_reported_sample_not_retained'
+    # The checkpoint's fresh transport has no memory of this previous
+    # request, but its existing project-wide claim guard must respect it.
+    assert _hold(project)[0]=='provider_cooldown'
+    create_wos_checkpoint(project,q['query_id'],retention_authorized=True)
+    assert _claim(project,q['query_id'],_stamp(),revalidate_quota=True) is None
+    assert _hold(project,revalidate=True)[0]=='provider_cooldown'
