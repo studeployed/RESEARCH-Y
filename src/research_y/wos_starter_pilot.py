@@ -259,16 +259,9 @@ def _guard_provider(db, *, revalidate_quota, now):
             "SELECT 1 FROM wos_checkpoint_jobs WHERE owner_token IS NOT NULL LIMIT 1"
     ).fetchone():
         raise WoSPilotError("provider_worker_active")
-    try:
-        hold, _ = _provider_hold(
-            db, _stamp(now), revalidate_quota=revalidate_quota)
-    except (WoSCheckpointError, TypeError, ValueError):
-        raise WoSPilotError("pilot_evidence_invalid") from None
-    if hold is not None:
-        raise WoSPilotError(hold)
-    # The shared checkpoint guard now handles *both* checkpoint and pilot
-    # quota observations (including failed-HTTP quota and Retry-After). Only
-    # the pilot's separate request-start pacing remains local here.
+    # Keep the pilot-specific diagnostic for a second pilot too soon.
+    # The shared checkpoint guard below enforces this same reservation-based
+    # floor for *other* WoS workers and also checks quota/Retry-After.
     last_stamp = None
     for (stamp,) in db.execute(
         "SELECT occurred_at_utc FROM audit_events WHERE event_type=? "
@@ -279,6 +272,13 @@ def _guard_provider(db, *, revalidate_quota, now):
         elapsed = (now - last_stamp).total_seconds()
         if not elapsed >= MIN_REQUEST_INTERVAL:
             raise WoSPilotError("provider_pilot_cooldown")
+    try:
+        hold, _ = _provider_hold(
+            db, _stamp(now), revalidate_quota=revalidate_quota)
+    except (WoSCheckpointError, TypeError, ValueError):
+        raise WoSPilotError("pilot_evidence_invalid") from None
+    if hold is not None:
+        raise WoSPilotError(hold)
 
 
 def _outcome(page, expected_query, client):
