@@ -467,9 +467,9 @@ def run(args):
                                           reviewer_role=reviewer_role.value,
                                           press_items={key:box.value
                                                        for key, box in press.items()},
-                                          review_note=note.value,
+                                          review_note=note.value or '',
                                           known_relevant=tuple(
-                                              line.strip() for line in known.value.splitlines()
+                                              line.strip() for line in (known.value or '').splitlines()
                                               if line.strip())))).props(
                                                   'data-testid=preflight-offer')
                         else:
