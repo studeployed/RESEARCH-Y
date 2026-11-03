@@ -351,6 +351,7 @@ class RealProjectFlow:
     # explicit Confirm approval action below. There is no network action here.
     _SETUP_ACTIONS = {
         'heading': 'update_heading',
+        'revise_preview': 'revise_preview',
         'add_group': 'add_group',
         'rename_group': 'rename_group',
         'remove_group': 'remove_group',
