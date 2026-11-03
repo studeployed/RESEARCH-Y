@@ -245,3 +245,139 @@ def test_verified_success_is_invalidated_on_every_external_destination_change(tm
         assert flow.clear_external_directory()['observation'] is None
     finally:
         flow.close()
+
+
+def test_swapped_directory_after_host_validation_is_refused_by_worker(tmp_path, monkeypatch):
+    """The race can occur after host validation, just before child execution."""
+    project, run_id = fixture(tmp_path)
+    selected = tmp_path / 'selected-for-export'
+    selected.mkdir()
+    moved = tmp_path / 'original-folder'
+    flow = _flow(tmp_path, project)
+    try:
+        flow.open_selected(); flow.select_run(run_id)
+        flow.offer_external_directory(selected)
+        flow.confirm_external_directory()
+        confirmed = flow._external_confirmed_identity
+        assert confirmed is not None
+        original_operation = flow._operation
+        swapped = False
+
+        def swap_before_worker(name, **kw):
+            nonlocal swapped
+            if name == 'prepare_export' and not swapped:
+                assert kw['directory'] == str(selected)
+                assert kw['expected_directory_identity'] == confirmed
+                # This happens AFTER _export_directory verified the
+                # original identity, but BEFORE the worker opens it.
+                selected.rename(moved)
+                selected.mkdir()
+                (selected / 'attacker-existing.txt').write_text('keep unchanged')
+                swapped = True
+            return original_operation(name, **kw)
+
+        monkeypatch.setattr(flow, '_operation', swap_before_worker)
+        with pytest.raises(ProjectFlowError, match='^directory_changed$'):
+            flow.prepare()
+        assert swapped
+        assert flow.state()['exports'] == []
+        assert flow.state()['selected_export_id'] is None
+        assert (selected / 'attacker-existing.txt').read_text() == 'keep unchanged'
+        assert list(selected.glob('*.xlsx')) == []
+        with sqlite3.connect(project.database_path) as db:
+            assert db.execute(
+                "SELECT COUNT(*) FROM audit_events "
+                "WHERE event_type LIKE 'workbook_export_v1:%'").fetchone()[0] == 0
+    finally:
+        flow.close()
+
+
+@pytest.mark.parametrize('external', [False, True])
+def test_inspection_failure_after_committed_receipt_can_retry_same_id(tmp_path, monkeypatch, external):
+    """A stale inventory must not strand the old ID or silently mint another."""
+    project, run_id = fixture(tmp_path)
+    outside = tmp_path / 'trusted-output'
+    outside.mkdir()
+    flow = _flow(tmp_path, project)
+    try:
+        flow.open_selected(); flow.select_run(run_id)
+        if external:
+            flow.offer_external_directory(outside)
+            flow.confirm_external_directory()
+        original_operation = flow._operation
+        failed_once = False
+        captured_id = None
+
+        def fail_inspection_after_prepare(name, **kw):
+            nonlocal failed_once, captured_id
+            if name == 'inspect' and captured_id and not failed_once:
+                failed_once = True
+                raise ProjectFlowError('worker_unavailable')
+            result = original_operation(name, **kw)
+            if name == 'prepare_export':
+                captured_id = kw['export_id']
+            return result
+
+        monkeypatch.setattr(flow, '_operation', fail_inspection_after_prepare)
+        with pytest.raises(ProjectFlowError, match='^worker_unavailable$'):
+            flow.prepare()
+        assert failed_once and captured_id == flow.selected_export_id
+        assert flow.state()['export_reconciliation_required'] is True
+        assert flow.state()['exports'] == []
+        with sqlite3.connect(project.database_path) as db:
+            count_before = db.execute(
+                "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+                ('workbook_export_v1:' + captured_id,)).fetchone()[0]
+        assert count_before == 1
+        recovered = flow.prepare()
+        assert recovered['selected_export_id'] == captured_id
+        assert recovered['export_reconciliation_required'] is False
+        assert len(recovered['exports']) == 1
+        with sqlite3.connect(project.database_path) as db:
+            count_after = db.execute(
+                "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+                ('workbook_export_v1:' + captured_id,)).fetchone()[0]
+        assert count_after == count_before
+        flow.resume()
+        verified = flow.observe()['observation']
+        assert verified['outcome'] == 'published_verified'
+        assert verified['audited_success'] is True
+        dest = outside if external else project.root / 'exports'
+        assert (dest / ('strategy-summary-' + run_id + '.xlsx')).exists()
+    finally:
+        flow.close()
+
+
+def test_failed_inventory_reinspection_retains_same_prepared_uuid(tmp_path, monkeypatch):
+    project, run_id = fixture(tmp_path)
+    flow = _flow(tmp_path, project)
+    try:
+        flow.open_selected(); flow.select_run(run_id)
+        original_operation = flow._operation
+        unavailable = False
+        committed_id = None
+
+        def intermittent_inspect(name, **kw):
+            nonlocal unavailable, committed_id
+            if name == 'inspect' and unavailable:
+                raise ProjectFlowError('worker_unavailable')
+            result = original_operation(name, **kw)
+            if name == 'prepare_export':
+                committed_id = kw['export_id']
+                unavailable = True
+            return result
+
+        monkeypatch.setattr(flow, '_operation', intermittent_inspect)
+        with pytest.raises(ProjectFlowError, match='^worker_unavailable$'):
+            flow.prepare()
+        assert flow.selected_export_id == committed_id
+        for _ in range(2):
+            with pytest.raises(ProjectFlowError, match='^export_reconciliation_required$'):
+                flow.prepare()
+            assert flow.selected_export_id == committed_id
+            assert flow.state()['export_reconciliation_required']
+        unavailable = False
+        assert flow.prepare()['selected_export_id'] == committed_id
+        assert len(flow.state()['exports']) == 1
+    finally:
+        flow.close()
