@@ -90,13 +90,31 @@ def _renderer():
     return RENDER_METHOD, render_strategy_workbook
 
 
-def _selection(project, directory):
+def _selection(project, directory, *, expected_directory_identity=None):
+    """Validate an explicit host-confirmed directory *inside the worker*.
+
+    The host identity must match the filesystem handle used for the initial
+    selection, before a preparation receipt can be committed. The subsequent
+    _target() check independently rejects a swap between selection and use.
+    """
+    if expected_directory_identity is not None:
+        if (type(expected_directory_identity) is not tuple
+                or len(expected_directory_identity) != 2
+                or any(type(part) is not int or part < 0
+                       for part in expected_directory_identity)
+                or directory is None):
+            raise WorkbookExportError('invalid_export', '')
     chosen = project.root / 'exports' if directory is None else Path(directory)
     with Directory(chosen) as target:
         if chosen == project.root / 'exports':
+            if expected_directory_identity is not None:
+                raise WorkbookExportError('directory_changed', '')
             return {'kind': 'project_exports'}
         if chosen.is_relative_to(project.root):
             raise ExportFileError('Use the project exports directory or an external directory')
+        if (expected_directory_identity is not None
+                and target.identity != expected_directory_identity):
+            raise WorkbookExportError('directory_changed', '')
         return {'kind': 'external', 'directory_identity': list(target.identity)}
 
 
@@ -238,17 +256,21 @@ def _failure(project, export_id, code):
 
 
 def prepare_workbook_export(project: Project, run_id: str, output_name: str, *,
-                            export_id: str, directory: Path | str | None = None) -> WorkbookExport:
+                            export_id: str, directory: Path | str | None = None,
+                            expected_directory_identity: tuple[int, int] | None = None) -> WorkbookExport:
     """Capture and journal once. Supply the same export_id to retry this request.
 
     The default destination is project-relative exports/. An external destination
     must exist and be supplied again when resuming; its absolute path is not stored.
+    When a native host supplies a confirmed directory identity, reject a swapped
+    path in this worker *before* recording any new preparation receipt.
     """
     _uuid(export_id)
     _uuid(run_id)
     filename(output_name, workbook=True)
     try:
-        selection = _selection(project, directory)
+        selection = _selection(project, directory,
+                               expected_directory_identity=expected_directory_identity)
         with _transaction(project) as db:
             prior = _load(db, project, export_id)
             if prior is not None:

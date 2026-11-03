@@ -15,7 +15,7 @@ from research_y.application_commands import ApplicationCommand
 from research_y.application_worker import ApplicationWorker
 from research_y.projects import (MANIFEST_FILENAME, ProjectFormatError, ProjectVersionError,
                                   _parse_manifest, create_project, open_project)
-from research_y.export_files import Directory
+from research_y.export_files import Directory, ExportFileError
 from tools.gui_feasibility.native_folder_selection import (
     NativeFolderError, checked_folder)
 from tools.gui_feasibility.recent_projects import RecentProjects, RecentProjectsError
@@ -47,6 +47,12 @@ class RealProjectFlow:
         self.last_result = None
         self.observation = None
         self.retained_export_report = None
+        # External folders are transient, host-selected, explicitly confirmed.
+        # The audit journal stores directory identity, not the path.
+        self._external_candidate = None
+        self._external_candidate_identity = None
+        self._external_confirmed = None
+        self._external_confirmed_identity = None
         self._recent_index = None
         self._recent_items = []
         self._recent_error = None
@@ -59,11 +65,33 @@ class RealProjectFlow:
                 self._recent_error = 'recent_history_unavailable'
         self._public_state = self._build_state()
 
-    def _require_no_unresolved_selection(self):
+    def _require_no_unresolved_selection(self, *, for_external_choice=False):
         if self._closed:
             raise ProjectFlowError('flow_closed')
         if self._pending_export_id is not None:
-            raise ProjectFlowError('export_reconciliation_required')
+            if not for_external_choice:
+                raise ProjectFlowError('export_reconciliation_required')
+            # A host-side folder change cannot silently retarget a committed
+            # request. First consult the journal for the original pending UUID.
+            # Only the no-receipt case may change folder using that *same* ID.
+            self._reconcile_pending_before_destination()
+
+    def _clear_external(self):
+        # A file observation is tied to a specific confirmed directory at an
+        # instant in time. Never carry success across a destination change.
+        self.observation = None
+        self._external_candidate = None
+        self._external_candidate_identity = None
+        self._external_confirmed = None
+        self._external_confirmed_identity = None
+
+    @staticmethod
+    def _checked_external_identity(path: Path):
+        try:
+            with Directory(path) as target:
+                return target.identity
+        except (ExportFileError, OSError, ValueError, TypeError):
+            raise ProjectFlowError('external_destination_changed') from None
 
     def _remember_project(self, project):
         if self._recent_index is None:
@@ -188,6 +216,7 @@ class RealProjectFlow:
         self._pending_export_id = None
         self.observation = None
         self.retained_export_report = None
+        self._clear_external()
         self.last_result = inspected
         self.snapshot = snapshot
         return self._publish()
@@ -278,6 +307,7 @@ class RealProjectFlow:
             self.selected_export_id = None
             self.observation = None
             self.retained_export_report = None
+            self._clear_external()
             self.snapshot = report
             return self._publish()
 
@@ -299,6 +329,7 @@ class RealProjectFlow:
             retained = self._operation('export_report', export_id=export_id)
             if retained.get('run', {}).get('run_id') != self.selected_run_id:
                 raise ProjectFlowError('retained_report_run_mismatch')
+            self._clear_external()
             self.selected_export_id = export_id
             self.retained_export_report = retained
             self.observation = None
@@ -312,11 +343,128 @@ class RealProjectFlow:
         except ProjectFlowError:
             return False
 
+    def offer_external_directory(self, selected: Path):
+        """Accept only the trusted native/host folder selection, not browser text.
+
+        Selecting alone is not permission to write. The user must explicitly
+        confirm the candidate; no path is written to the project or history.
+        """
+        with self._guard:
+            self._require_no_unresolved_selection(for_external_choice=True)
+            self._require_open()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            if self.selected_export_id is not None:
+                row = self._selected_export()
+                if row['destination_kind'] != 'external':
+                    raise ProjectFlowError('external_destination_not_applicable')
+            path = self._validated_host_directory(selected)
+            if path == self.project.root or path.is_relative_to(self.project.root):
+                raise ProjectFlowError('external_destination_invalid')
+            identity = self._checked_external_identity(path)
+            self._clear_external()
+            self._external_candidate = path
+            self._external_candidate_identity = identity
+            return self._publish()
+
+    def confirm_external_directory(self):
+        """Confirm a pending host-selected folder; browser cannot submit a path."""
+        with self._guard:
+            self._require_no_unresolved_selection(for_external_choice=True)
+            self._require_open()
+            if self._external_candidate is None:
+                raise ProjectFlowError('external_destination_not_selected')
+            path = self._validated_host_directory(self._external_candidate)
+            if path == self.project.root or path.is_relative_to(self.project.root):
+                raise ProjectFlowError('external_destination_invalid')
+            if self._checked_external_identity(path) != self._external_candidate_identity:
+                raise ProjectFlowError('external_destination_changed')
+            self.observation = None
+            self._external_confirmed = path
+            self._external_confirmed_identity = self._external_candidate_identity
+            self._external_candidate = None
+            self._external_candidate_identity = None
+            return self._publish()
+
+    def clear_external_directory(self):
+        with self._guard:
+            self._require_no_unresolved_selection(for_external_choice=True)
+            self._require_open()
+            self._clear_external()
+            return self._publish()
+
+    def _selected_export(self):
+        """Reconcile a previously committed ID when the cached inventory lags.
+
+        A worker can commit the preparation receipt but a following inspection
+        can fail. Do not strand that request or create a new one merely because
+        the cached snapshot predates the commit.
+        """
+        row = next((row for row in self.snapshot['exports']
+                    if row['export_id'] == self.selected_export_id), None)
+        if row is None:
+            if self._reinspect():
+                row = next((item for item in self.snapshot['exports']
+                            if item['export_id'] == self.selected_export_id), None)
+            if row is None:
+                raise ProjectFlowError('export_reconciliation_required')
+        if row['run_id'] != self.selected_run_id:
+            raise ProjectFlowError('export_run_mismatch')
+        return row
+
+    def _export_directory(self, *, required=True):
+        if self._external_candidate is not None:
+            raise ProjectFlowError('external_destination_confirmation_required')
+        if self.selected_export_id is not None:
+            kind = self._selected_export()['destination_kind']
+            if kind == 'project_exports':
+                if self._external_confirmed is not None:
+                    raise ProjectFlowError('external_destination_not_applicable')
+                return None
+            if kind != 'external':
+                raise ProjectFlowError('invalid_export_destination')
+            if self._external_confirmed is None and required:
+                raise ProjectFlowError('external_destination_confirmation_required')
+        if self._external_confirmed is not None:
+            if (self._checked_external_identity(self._external_confirmed)
+                    != self._external_confirmed_identity):
+                raise ProjectFlowError('external_destination_changed')
+        return None if self._external_confirmed is None else str(self._external_confirmed)
+
+    def _reconcile_pending_before_destination(self):
+        """Resolve the original tentative UUID without requiring its folder.
+
+        If the worker committed a receipt but its response and reinspection
+        failed, the originally confirmed external folder may no longer exist.
+        The research journal, not that path, determines whether this UUID was
+        retained. Only a completed inspection can release the pending guard.
+        """
+        if self._pending_export_id is None:
+            return
+        pending_id = self._pending_export_id
+        if not self._reinspect():
+            self._publish()
+            raise ProjectFlowError('export_reconciliation_required')
+        row = next((item for item in self.snapshot['exports']
+                    if item['export_id'] == pending_id), None)
+        if row is not None:
+            if row['run_id'] != self.selected_run_id:
+                raise ProjectFlowError('export_run_mismatch')
+            self.selected_export_id = pending_id
+            self._pending_export_id = None
+        # A definitive *absence* of a preparation receipt does not authorise
+        # minting a new UUID on retry. Retain the tentative original UUID.
+        # This also permits explicitly selected new folders, but only after
+        # the journal has again shown no receipt for that UUID.
+        self._publish()
+
     def prepare(self, filename=None):
         with self._guard:
             self._require_open()
             if self.selected_run_id is None:
                 raise ProjectFlowError('run_selection_required')
+            self._reconcile_pending_before_destination()
+            directory = self._export_directory()
             if filename is None:
                 filename = 'strategy-summary-' + self.selected_run_id + '.xlsx'
             if self.selected_export_id is None:
@@ -332,8 +480,11 @@ class RealProjectFlow:
             self.observation = None
             self._publish()
             try:
+                identity_args = ({} if directory is None else
+                                 {'expected_directory_identity': self._external_confirmed_identity})
                 result = self._operation('prepare_export', run_id=self.selected_run_id,
-                                         export_id=export_id, output_name=filename)
+                                         export_id=export_id, output_name=filename,
+                                         directory=directory, **identity_args)
                 if result.get('export_id') != export_id or result.get('audited_success') is True:
                     raise ProjectFlowError('invalid_preparation')
             except ProjectFlowError:
@@ -368,7 +519,9 @@ class RealProjectFlow:
             self.observation = None
             self._publish()
             try:
-                self._operation('resume_export', export_id=self.selected_export_id)
+                directory = self._export_directory()
+                self._operation('resume_export', export_id=self.selected_export_id,
+                                directory=directory)
                 self.snapshot = self._operation('inspect', run_id=self.selected_run_id)['snapshot']
                 return self._publish()
             except ProjectFlowError:
@@ -385,7 +538,9 @@ class RealProjectFlow:
             self.observation = None
             self._publish()
             try:
-                self._operation('cancel_export', export_id=self.selected_export_id)
+                directory = self._export_directory()
+                self._operation('cancel_export', export_id=self.selected_export_id,
+                                directory=directory)
                 self.snapshot = self._operation('inspect', run_id=self.selected_run_id)['snapshot']
                 return self._publish()
             except ProjectFlowError:
@@ -403,8 +558,12 @@ class RealProjectFlow:
             self.observation = None
             self._publish()
             try:
+                # Missing external reconfirmation remains an honest observation
+                # of confirmation-required, never audited file success.
+                directory = self._export_directory(required=False)
                 self.observation = self._operation('observe_export',
-                                                    export_id=self.selected_export_id)
+                                                    export_id=self.selected_export_id,
+                                                    directory=directory)
                 return self._publish()
             except ProjectFlowError:
                 self._publish()
@@ -421,7 +580,11 @@ class RealProjectFlow:
                 'report': None if data is None else data['report'],
                 'exports': [] if data is None else data['exports'],
                 'selected_export_id': self.selected_export_id,
-                'export_reconciliation_required': self._pending_export_id is not None,
+                'export_reconciliation_required': (
+                    self._pending_export_id is not None or
+                    (self.selected_export_id is not None and data is not None
+                     and not any(row['export_id'] == self.selected_export_id
+                                 for row in data['exports']))),
                 'observation': self.observation,
                 'retained_export_report': self.retained_export_report,
                 'operation_state': self.operation_state,
@@ -429,6 +592,13 @@ class RealProjectFlow:
                 'source_retrieval_verified': False,
                 'recent_projects': list(self._recent_items),
                 'recent_history_error': self._recent_error,
+                'external_destination_candidate': (
+                    None if self._external_candidate is None
+                    else str(self._external_candidate)),
+                'external_destination_confirmed': self._external_confirmed is not None,
+                'external_destination_location': (
+                    None if self._external_confirmed is None
+                    else str(self._external_confirmed)),
                 'gui_acceptance': False,
                 'production_adoption_approved': False,
             }

@@ -145,3 +145,63 @@ def test_unexpected_error_is_static(services,monkeypatch):
     monkeypatch.setattr(inspection,'read_application_snapshot',fail)
     with pytest.raises(commands.ApplicationCommandError,match='operation_failed'):
         commands.execute_command(commands.ApplicationCommand.for_project(p,'inspect'))
+
+
+def test_prepare_passes_validated_confirmed_external_identity_to_service(services, tmp_path):
+    project, calls, _, _, _ = services
+    identity = (12, 340)
+    cmd = commands.ApplicationCommand.for_project(
+        project, 'prepare_export', run_id=str(uuid4()), export_id=str(uuid4()),
+        output_name='report.xlsx', directory=str(tmp_path / 'chosen'),
+        expected_directory_identity=identity)
+    assert cmd.expected_directory_identity == identity
+    commands.execute_command(cmd)
+    assert len(calls) == 1 and calls[0][0] == 'prepare_export'
+    assert calls[0][2]['directory'] == str(tmp_path / 'chosen')
+    assert calls[0][2]['expected_directory_identity'] == identity
+
+
+@pytest.mark.parametrize('invalid', [
+    [], [1, 2], (1,), (1, 2, 3), (True, 2), (1, False),
+    (-1, 2), (1, -1), (1.0, 2), ('1', 2), {'a': 1},
+])
+def test_confirmed_directory_identity_contract_rejects_malformed_values(services, tmp_path, invalid):
+    project, calls, *_ = services
+    with pytest.raises(commands.ApplicationCommandError, match='^invalid_command$'):
+        commands.ApplicationCommand.for_project(
+            project, 'prepare_export', run_id=str(uuid4()), export_id=str(uuid4()),
+            output_name='report.xlsx', directory=str(tmp_path / 'chosen'),
+            expected_directory_identity=invalid)
+    assert not calls
+
+
+def test_confirmed_directory_identity_cannot_be_reused_for_other_commands(services, tmp_path):
+    project, calls, *_ = services
+    for operation in ('inspect', 'resume_export', 'cancel_export', 'observe_export',
+                      'export_report'):
+        kw = {'expected_directory_identity': (1, 2)}
+        if operation == 'inspect':
+            kw['run_id'] = str(uuid4())
+        else:
+            kw['export_id'] = str(uuid4())
+        if operation != 'export_report':
+            kw['directory'] = str(tmp_path / 'chosen')
+        with pytest.raises(commands.ApplicationCommandError, match='^invalid_command$'):
+            commands.ApplicationCommand.for_project(project, operation, **kw)
+    with pytest.raises(commands.ApplicationCommandError, match='^invalid_command$'):
+        commands.ApplicationCommand.for_project(
+            project, 'prepare_export', run_id=str(uuid4()), export_id=str(uuid4()),
+            output_name='report.xlsx', expected_directory_identity=(1, 2))
+    assert not calls
+
+
+def test_mutated_command_identity_is_revalidated_at_worker_boundary(services, tmp_path):
+    project, calls, *_ = services
+    cmd = commands.ApplicationCommand.for_project(
+        project, 'prepare_export', run_id=str(uuid4()), export_id=str(uuid4()),
+        output_name='report.xlsx', directory=str(tmp_path / 'chosen'),
+        expected_directory_identity=(1, 2))
+    object.__setattr__(cmd, 'expected_directory_identity', (True, 2))
+    with pytest.raises(commands.ApplicationCommandError, match='^invalid_command$'):
+        commands.execute_command(cmd)
+    assert not calls
