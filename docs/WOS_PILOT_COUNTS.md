@@ -91,9 +91,11 @@ hold that neither a new UUID nor `revalidate_quota=True` may bypass.
 If a saved run becomes stale while its provider request is in flight,
 its **count is discarded** but safe observed quota and cooldown evidence
 are preserved and still restrict other pending runs. A non-representable
-server-directed delay fails closed instead of being dropped. Pilot
-reservations across fresh client instances additionally observe a
-recorded interrequest pacing gap. No daily reset time is guessed.
+server-directed delay fails closed instead of being dropped. The
+pilot's durable request timestamp also applies the existing **1.05-second
+request pacing floor to subsequent checkpoint workers**, not merely to
+fresh pilot clients. All such restrictions are enforced inside the same
+shared provider guard. No daily reset time is guessed.
 This is **project-scoped only**, not a cross-project or organisation-wide
 quota coordinator; product-level and account-wide quota controls remain
 future acceptance work. A pilot does not alter the underlying checkpoint
