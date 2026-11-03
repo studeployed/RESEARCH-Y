@@ -176,11 +176,10 @@ def test_invalid_draft_and_forged_group_ids_never_write_a_strategy(tmp_path):
             flow.edit_setup('heading', {'theme':'will not partially save',
                                          'approved_by':'\x00invalid'})
         assert flow.state()['strategy_draft']==before_draft
-        with pytest.raises(ProjectFlowError, match='invalid_setup_input'):
-            flow.edit_setup('add_term', {'group_id':groups[0]['group_id'],
-                                        'text':'bad "phrase"'})
-        # Invalid syntax may be stored as draft text but must be rejected
-        # by the compiler before any actual approval.
+        # An unreviewed quote is allowed as draft text, but the existing
+        # provider compiler must reject it before any approved mutation.
+        flow.edit_setup('add_term', {'group_id':groups[0]['group_id'],
+                                     'text':'bad "phrase"'})
         with pytest.raises(ProjectFlowError, match='strategy_preview_invalid'):
             flow.preview_setup()
         assert _counts(project)==before
