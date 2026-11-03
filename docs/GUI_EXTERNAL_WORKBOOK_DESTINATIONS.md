@@ -32,10 +32,16 @@ confirmation step without adding a browser-controlled filesystem route.
    the proposed local folder as *plain text*. The researcher separately clicks
    **Confirm this external destination**; a missing confirmation blocks
    preparation rather than falling back silently to the project exports folder.
-3. Offer, confirmation and use independently revalidate the guarded directory
-   and its filesystem identity. A replaced folder fails closed. Project
-   descendants cannot be selected as external destinations; only the ordinary
-   project `exports/` folder or a genuinely external directory is allowed.
+3. Offer and confirmation independently revalidate the guarded directory
+   and its filesystem identity. The immutable two-number filesystem identity
+   is additionally passed through the allowlisted, supervised Python worker
+   command for **preparation**, which compares it while holding the directory
+   handle **before** committing a new preparation receipt. The normal target
+   validation checks identity again at publishing. This closes the
+   host-validation → worker-open swap interval; no client-supplied identity
+   or project-stored path is trusted. A replaced folder fails closed.
+   Project descendants cannot be selected as external destinations; only the
+   ordinary project `exports/` folder or a genuinely external directory is allowed.
 4. The existing `ApplicationWorker` executes `prepare_export`,
    `resume_export`, `cancel_export` and `observe_export` on the selected
    **immutable export request UUID**. The original frozen research report,
@@ -54,6 +60,13 @@ confirmation step without adding a browser-controlled filesystem route.
    the external selection leaves the request intact and retains the original
    receipt; it never deletes a workbook or generates a replacement export ID.
    A project-exports request cannot be converted into an external request.
+7. A prepared receipt can commit even if the following inspection fails. The
+   active export ID remains selected. On an explicit retry, the trusted host
+   rereads the authoritative export inventory *before* checking destination
+   kind. If reinspection is unavailable, it refuses the operation as requiring
+   reconciliation, preserving the original ID. When inspection recovers, the
+   same request is reused without recapturing the research report or adding
+   a second preparation receipt.
 
 ## Tests and explicit limitations
 
@@ -62,7 +75,11 @@ actual workbook renderer, an external filesystem directory, full publication
 and independent workbook observation. They cover two-step confirmation, stable
 request IDs, restarted re-selection, wrong-directory rejection, no writes into
 the wrong destination, project/run change invalidation, unsafe link rejection
-and directory swap between offer/confirm/use. Earlier native-folder tests
+and directory swap between offer/confirm/use, including a swap
+**after the host's final check but immediately before the worker opens the
+directory**. Other tests inject a transient post-preparation inspection
+failure, verify no duplicate receipt or new request ID, and preserve the ID
+when successive inventory reads fail. Earlier native-folder tests
 exercise the asynchronous pywebview API using a controlled fake window; the
 Windows graphical lifecycle test verifies that the external picker button is
 actually rendered under an authenticated native session.
