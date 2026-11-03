@@ -83,10 +83,14 @@ attempts and newer pilot audit observations. **An exhausted pilot blocks
 the regular checkpoint retrieval worker as well**, preventing a fresh
 client or different query from bypassing previously observed quota facts.
 
-Quota headers from HTTP failures (including 429/403) are captured
-independently of whether a valid count was returned. A valid
-`Retry-After` directive creates a durable absolute hold that neither a
-new UUID nor `revalidate_quota=True` may bypass. A non-representable
+Quota headers from HTTP failures (including 429/403) and malformed
+HTTP-200 bodies are captured **independently** of whether a valid count
+was returned. All provider-observed `Retry-After` instructions—including
+ones on otherwise successful HTTP 200 responses—create a durable absolute
+hold that neither a new UUID nor `revalidate_quota=True` may bypass.
+If a saved run becomes stale while its provider request is in flight,
+its **count is discarded** but safe observed quota and cooldown evidence
+are preserved and still restrict other pending runs. A non-representable
 server-directed delay fails closed instead of being dropped. Pilot
 reservations across fresh client instances additionally observe a
 recorded interrequest pacing gap. No daily reset time is guessed.
