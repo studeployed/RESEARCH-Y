@@ -22,7 +22,8 @@ OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_ex
                          'wos_acquisition_verify_plan', 'wos_acquisition_verify',
                          'wos_acquisition_pause', 'pubmed_identifier_preview',
                          'pubmed_identifier_read', 'pubmed_identifier_run',
-                         'pubmed_identifier_pause'})
+                         'pubmed_identifier_pause', 'pubmed_metadata_read',
+                         'pubmed_metadata_preview', 'pubmed_metadata_run'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -57,7 +58,10 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
      'pubmed_worker_recovery_required', 'pubmed_source_unavailable',
      'pubmed_query_not_ready', 'pubmed_checkpoint_not_ready',
      'pubmed_verification_exceeds_budget',
-     'pubmed_worker_not_running'})
+     'pubmed_worker_not_running',
+     'pubmed_metadata_evidence_invalid', 'pubmed_metadata_not_ready',
+     'pubmed_metadata_already_acquired', 'pubmed_metadata_plan_changed',
+     'pubmed_metadata_confirmation_required', 'pubmed_metadata_unavailable'})
 
 
 class ApplicationCommandError(ValueError):
@@ -193,7 +197,9 @@ class ApplicationCommand:
             )
             if self.operation in ('pubmed_identifier_preview',
                                   'pubmed_identifier_read',
-                                  'pubmed_identifier_run', 'pubmed_identifier_pause'):
+                                  'pubmed_identifier_run', 'pubmed_identifier_pause',
+                                  'pubmed_metadata_read', 'pubmed_metadata_preview',
+                                  'pubmed_metadata_run'):
                 if any(v is not None for v in (
                         self.export_id, self.output_name, self.directory,
                         self.expected_directory_identity)):
@@ -201,13 +207,17 @@ class ApplicationCommand:
                 _uuid(self.run_id)
                 _uuid(self.pubmed_source_query_id)
                 if self.operation in ('pubmed_identifier_preview',
-                                      'pubmed_identifier_read', 'pubmed_identifier_pause'):
+                                      'pubmed_identifier_read', 'pubmed_identifier_pause',
+                                      'pubmed_metadata_read', 'pubmed_metadata_preview'):
                     if any(v is not None for v in pubmed_source_fields[1:]):
                         raise ValueError
                 else:
                     from research_y.pubmed_source_gui import _sha, _window
                     _sha(self.pubmed_source_plan_sha256)
-                    _window(self.pubmed_coverage_start, self.pubmed_coverage_end)
+                    if self.operation == 'pubmed_identifier_run':
+                        _window(self.pubmed_coverage_start, self.pubmed_coverage_end)
+                    elif self.pubmed_coverage_start is not None or self.pubmed_coverage_end is not None:
+                        raise ValueError
                     if (self.pubmed_source_confirmed is not True or
                             type(self.pubmed_source_contact_email) is not str or
                             len(self.pubmed_source_contact_email) > 254 or
@@ -400,7 +410,9 @@ class ApplicationCommand:
             if self.operation not in ('pubmed_identifier_preview',
                                         'pubmed_identifier_read',
                                         'pubmed_identifier_run',
-                                        'pubmed_identifier_pause') and any(
+                                        'pubmed_identifier_pause',
+                                        'pubmed_metadata_read', 'pubmed_metadata_preview',
+                                        'pubmed_metadata_run') and any(
                     v is not None for v in pubmed_source_fields):
                 raise ValueError
             if self.operation != 'wos_acquisition_verify' and self.verification_expected_requests is not None:
@@ -510,6 +522,32 @@ def execute_command(command: ApplicationCommand) -> dict:
                     revalidate_quota=command.acquisition_revalidate_quota,
                     client=client)
             except acquisition.WoSAcquisitionError as exc:
+                raise ApplicationCommandError(exc.code) from None
+        if command.operation in ('pubmed_metadata_read',
+                                 'pubmed_metadata_preview',
+                                 'pubmed_metadata_run'):
+            from research_y import pubmed_metadata_gui as metadata
+            try:
+                if command.operation == 'pubmed_metadata_read':
+                    return metadata.inspect_pubmed_metadata(
+                        project, run_id=command.run_id,
+                        query_id=command.pubmed_source_query_id)
+                if command.operation == 'pubmed_metadata_preview':
+                    return metadata.preview_pubmed_metadata(
+                        project, run_id=command.run_id,
+                        query_id=command.pubmed_source_query_id)
+                from research_y.pubmed_probe import PubMedESearchProbeClient
+                from research_y.pubmed_metadata import PubMedEFetchClient
+                esearch = PubMedESearchProbeClient(
+                    email=command.pubmed_source_contact_email,
+                    api_key=command.pubmed_source_api_key, timeout=15)
+                return metadata.run_pubmed_metadata_session(
+                    project, run_id=command.run_id,
+                    query_id=command.pubmed_source_query_id,
+                    expected_plan_sha256=command.pubmed_source_plan_sha256,
+                    confirmed=command.pubmed_source_confirmed,
+                    client=PubMedEFetchClient(esearch))
+            except metadata.PubMedMetadataGUIError as exc:
                 raise ApplicationCommandError(exc.code) from None
         if command.operation in ('pubmed_identifier_preview',
                                  'pubmed_identifier_read',
