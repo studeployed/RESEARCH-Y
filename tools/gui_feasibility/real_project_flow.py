@@ -496,6 +496,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
@@ -603,7 +605,8 @@ class RealProjectFlow:
                     self._pending_pilot is not None or
                     self._pending_wos_pilot is not None or
                     self._wos_acquisition_prepare_pending is not None or
-                    self._wos_acquisition_tick_pending is not None):
+                    self._wos_acquisition_tick_pending is not None or
+                    self._verify_pending is not None):
                 raise ProjectFlowError('operation_reconciliation_required')
             if self._pending_review is None:
                 if self._review_candidate is None or self._preflight is None:
@@ -711,6 +714,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -853,6 +858,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -1630,6 +1637,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -1686,6 +1695,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1710,6 +1721,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1733,6 +1746,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             # A previous file observation is time-specific; never display it as
