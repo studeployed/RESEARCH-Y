@@ -19,7 +19,8 @@ OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_ex
                          'wos_pilot_sample', 'wos_pilot_read', 'pilot_history',
                          'wos_acquisition_preview', 'wos_acquisition_prepare',
                          'wos_acquisition_read', 'wos_acquisition_tick',
-                         'wos_acquisition_verify_plan', 'wos_acquisition_verify'})
+                         'wos_acquisition_verify_plan', 'wos_acquisition_verify',
+                         'wos_acquisition_pause'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -215,7 +216,7 @@ class ApplicationCommand:
             elif self.operation in (
                     'wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
                     'wos_acquisition_tick', 'wos_acquisition_verify_plan',
-                    'wos_acquisition_verify'):
+                    'wos_acquisition_verify', 'wos_acquisition_pause'):
                 if any(v is not None for v in (
                         self.export_id, self.output_name, self.directory,
                         self.expected_directory_identity)):
@@ -223,7 +224,7 @@ class ApplicationCommand:
                 _uuid(self.run_id)
                 _uuid(self.acquisition_query_id)
                 if self.operation in ('wos_acquisition_read','wos_acquisition_preview',
-                                      'wos_acquisition_verify_plan'):
+                                      'wos_acquisition_verify_plan','wos_acquisition_pause'):
                     if any(v is not None for v in acquisition_fields[1:]):
                         raise ValueError
                 elif self.operation == 'wos_acquisition_prepare':
@@ -341,7 +342,7 @@ class ApplicationCommand:
                 raise ValueError
             if self.operation not in ('wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
                                        'wos_acquisition_tick', 'wos_acquisition_verify_plan',
-                                       'wos_acquisition_verify') and any(
+                                       'wos_acquisition_verify','wos_acquisition_pause') and any(
                     value is not None for value in acquisition_fields):
                 raise ValueError
             if self.operation != 'pilot_history' and self.history_before_event_id is not None:
@@ -394,9 +395,13 @@ def execute_command(command: ApplicationCommand) -> dict:
         if command.operation in (
                 'wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
                 'wos_acquisition_tick', 'wos_acquisition_verify_plan',
-                'wos_acquisition_verify'):
+                'wos_acquisition_verify','wos_acquisition_pause'):
             from research_y import wos_acquisition_gui as acquisition
             try:
+                if command.operation == 'wos_acquisition_pause':
+                    return acquisition.pause_wos_verification_session(
+                        project,run_id=command.run_id,
+                        query_id=command.acquisition_query_id)
                 if command.operation == 'wos_acquisition_verify_plan':
                     return acquisition.preview_wos_verification(
                         project,run_id=command.run_id,
