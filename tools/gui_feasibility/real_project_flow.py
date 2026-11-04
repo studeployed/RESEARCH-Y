@@ -1623,6 +1623,25 @@ class RealProjectFlow:
             self._pubmed_source = read
             return self._publish()
 
+    @staticmethod
+    def _pubmed_checkpoint_receipt_consistent(receipt, stored):
+        """Allow only a late explicit pause, never differing source evidence.
+
+        The supervisor can still be 'running' after its child has committed
+        and buffered a result. A concurrent user pause of a genuinely
+        incomplete checkpoint may change ONLY its status to paused, with no
+        identifier/page/count/metadata changes. A completed identifier
+        checkpoint cannot be downgraded (enforced atomically by the core).
+        """
+        if receipt == stored:
+            return True
+        return (type(receipt) is dict and type(stored) is dict and
+                receipt.keys() == stored.keys() and
+                receipt.get('status') == 'incomplete' and
+                stored.get('status') == 'paused' and
+                all(receipt[key] == stored[key] for key in receipt
+                    if key != 'status'))
+
     def reconcile_pubmed_source(self):
         """Require terminal child and compare its result to durable source data."""
         with self._guard:
@@ -1659,7 +1678,8 @@ class RealProjectFlow:
                             receipt.get('source_retrieval_verified') is not False or
                             receipt.get('whole_search_verified') is not False or
                             receipt.get('metadata_complete') is not False or
-                            receipt.get('checkpoint')!=read['checkpoint'] or
+                            not self._pubmed_checkpoint_receipt_consistent(
+                                receipt.get('checkpoint'),read['checkpoint']) or
                             type(receipt.get('session_requests_reserved')) is not int or
                             not 0 <= receipt['session_requests_reserved'] <= 128):
                         raise ProjectFlowError('pubmed_receipt_invalid')
