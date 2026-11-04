@@ -241,6 +241,8 @@ def test_incomplete_efetch_stops_before_any_second_provider_request(
     assert result['dispatched_step_count']==1
     assert result['steps'][0]['metadata_records_committed']==20
     assert result['steps'][0]['metadata_records_pending']==5
+    assert result['steps'][0]['successful_batches']==1
+    assert result['steps'][0]['requests_made'] is None
     assert result['stopped_reason']=='source_outcome_uncertain'
     assert len(pubmed.calls)==2 and not wos.calls
     assert read_run_execution_board(p,rid)['totals']['metadata_source_records']==20

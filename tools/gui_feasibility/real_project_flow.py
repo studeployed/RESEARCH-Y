@@ -2143,12 +2143,15 @@ class RealProjectFlow:
                 coord_plan_sha256=candidate['preview']['plan_sha256'],
                 coord_tasks=tuple(dict(t) for t in candidate['tasks']),
                 coord_confirmed=True,
-                coord_wos_key=(None if self._wos_profile is None
-                               else self._wos_profile.api_key),
-                coord_pubmed_email=(None if self._pubmed_profile is None
-                                    else self._pubmed_profile.contact_email),
-                coord_pubmed_key=(None if self._pubmed_profile is None
-                                  else self._pubmed_profile.api_key))
+                coord_wos_key=(self._wos_profile.api_key if
+                               any(t['source_name'] == 'wos' for t in
+                                   candidate['tasks']) else None),
+                coord_pubmed_email=(self._pubmed_profile.contact_email if
+                                    any(t['source_name'] == 'pubmed' for t in
+                                        candidate['tasks']) else None),
+                coord_pubmed_key=(self._pubmed_profile.api_key if
+                                  any(t['source_name'] == 'pubmed' for t in
+                                      candidate['tasks']) else None))
             try:
                 operation_id = self._coord_worker.submit(command)
             except ApplicationWorkerError as exc:
@@ -2250,8 +2253,13 @@ class RealProjectFlow:
                                 entry.get('query_id') != task['query_id'] or
                                 entry.get('action') != task['action'] or
                                 entry.get('source_name') != task['source_name'] or
-                                type(entry.get('requests_made')) is not int or
-                                not 0 <= entry['requests_made'] <= task['max_requests'] or
+                                (not (
+                                    entry.get('requests_made') is None and
+                                    task['action'] == 'pubmed_metadata' and
+                                    entry.get('outcome_uncertain') is True)
+                                 and (type(entry.get('requests_made')) is not int or
+                                      not 0 <= entry['requests_made'] <=
+                                          task['max_requests'])) or
                                 type(entry.get('stop_required')) is not bool or
                                 type(entry.get('outcome_uncertain')) is not bool):
                             raise ProjectFlowError('run_coordination_receipt_invalid')

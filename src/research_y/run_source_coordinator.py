@@ -263,7 +263,12 @@ def _source_step(project, run_id, task, *, wos_key, pubmed_email,
                                   pubmed_metadata.MAX_METADATA_BATCHES)
         return dict(query_id=qid,source_name="pubmed",action=action,
                     source_status=receipt["status"],
-                    requests_made=receipt["successful_batches"],
+                    # The collector counts *successful* commits, not failed
+                    # POST attempts. Never label a possibly delivered HTTP
+                    # request as a known number of transport calls.
+                    requests_made=(None if uncertain else
+                                   receipt["successful_batches"]),
+                    successful_batches=receipt["successful_batches"],
                     metadata_records_committed=receipt["metadata_records_committed"],
                     metadata_records_pending=receipt["metadata_records_pending"],
                     stop_required=uncertain or not (done or deliberate_budget_stop),
