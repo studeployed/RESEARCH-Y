@@ -59,6 +59,9 @@ class RealProjectFlow:
         # Bounded EFetch metadata sessions run independently of GUI rendering.
         # Only the original source-record store is permitted to persist rows.
         self._pubmed_metadata_worker = ApplicationWorker()
+        # At most two already authorised source stages per consent; a separate
+        # supervised child never executes network work on the GUI event loop.
+        self._coord_worker = ApplicationWorker()
         self._closed = False
         self.project = None
         self.snapshot = None
@@ -114,6 +117,12 @@ class RealProjectFlow:
         self._pubmed_metadata_last_outcome = None
         self._run_execution_board = None
         self._run_board_error = None
+        self._coord_offer = None
+        self._coord_pending = None
+        self._coord_operation_id = None
+        self._coord_worker_state = 'idle'
+        self._coord_worker_error = None
+        self._coord_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -153,6 +162,8 @@ class RealProjectFlow:
             raise ProjectFlowError('pubmed_source_reconciliation_required')
         if self._pubmed_metadata_pending is not None:
             raise ProjectFlowError('pubmed_metadata_reconciliation_required')
+        if self._coord_pending is not None:
+            raise ProjectFlowError('run_coordination_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
                 raise ProjectFlowError('export_reconciliation_required')
@@ -341,6 +352,12 @@ class RealProjectFlow:
         self._pubmed_metadata_last_outcome = None
         self._run_execution_board = None
         self._run_board_error = None
+        self._coord_offer = None
+        self._coord_pending = None
+        self._coord_operation_id = None
+        self._coord_worker_state = 'idle'
+        self._coord_worker_error = None
+        self._coord_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -463,6 +480,8 @@ class RealProjectFlow:
             self._pubmed_metadata_last_outcome = None
             self._run_execution_board = None
             self._run_board_error = None
+            self._coord_offer = None
+            self._coord_last_outcome = None
             self.snapshot = report
             return self._publish()
 
@@ -552,6 +571,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self._pubmed_metadata_pending is not None:
                 raise ProjectFlowError('pubmed_metadata_reconciliation_required')
+            if self._coord_pending is not None:
+                raise ProjectFlowError('run_coordination_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
@@ -662,7 +683,8 @@ class RealProjectFlow:
                     self._wos_acquisition_tick_pending is not None or
                     self._verify_pending is not None or
                     self._pubmed_source_pending is not None or
-                    self._pubmed_metadata_pending is not None):
+                    self._pubmed_metadata_pending is not None or
+                    self._coord_pending is not None):
                 raise ProjectFlowError('operation_reconciliation_required')
             if self._pending_review is None:
                 if self._review_candidate is None or self._preflight is None:
@@ -776,6 +798,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self._pubmed_metadata_pending is not None:
                 raise ProjectFlowError('pubmed_metadata_reconciliation_required')
+            if self._coord_pending is not None:
+                raise ProjectFlowError('run_coordination_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -924,6 +948,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self._pubmed_metadata_pending is not None:
                 raise ProjectFlowError('pubmed_metadata_reconciliation_required')
+            if self._coord_pending is not None:
+                raise ProjectFlowError('run_coordination_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -2256,6 +2282,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self._pubmed_metadata_pending is not None:
                 raise ProjectFlowError('pubmed_metadata_reconciliation_required')
+            if self._coord_pending is not None:
+                raise ProjectFlowError('run_coordination_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -2318,6 +2346,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self._pubmed_metadata_pending is not None:
                 raise ProjectFlowError('pubmed_metadata_reconciliation_required')
+            if self._coord_pending is not None:
+                raise ProjectFlowError('run_coordination_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -2348,6 +2378,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self._pubmed_metadata_pending is not None:
                 raise ProjectFlowError('pubmed_metadata_reconciliation_required')
+            if self._coord_pending is not None:
+                raise ProjectFlowError('run_coordination_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -2377,6 +2409,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self._pubmed_metadata_pending is not None:
                 raise ProjectFlowError('pubmed_metadata_reconciliation_required')
+            if self._coord_pending is not None:
+                raise ProjectFlowError('run_coordination_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             # A previous file observation is time-specific; never display it as
@@ -2456,6 +2490,11 @@ class RealProjectFlow:
                 'pubmed_metadata_last_outcome': self._pubmed_metadata_last_outcome,
                 'run_execution_board': self._run_execution_board,
                 'run_board_error': self._run_board_error,
+                'run_coordination_offer': self._coord_offer,
+                'run_coordination_pending': self._coord_pending is not None,
+                'run_coordination_worker_state': self._coord_worker_state,
+                'run_coordination_worker_error': self._coord_worker_error,
+                'run_coordination_last_outcome': self._coord_last_outcome,
                 'pilot_history': self._pilot_history,
                 'pilot_history_error': self._pilot_history_error,
                 'saved_pilot_detail': self._saved_pilot_detail,
@@ -2490,7 +2529,10 @@ class RealProjectFlow:
                 try:
                     try:
                         try:
-                            self._pubmed_metadata_worker.close(grace_seconds=0, kill_seconds=2)
+                            try:
+                                self._coord_worker.close(grace_seconds=0, kill_seconds=2)
+                            finally:
+                                self._pubmed_metadata_worker.close(grace_seconds=0, kill_seconds=2)
                         finally:
                             self._pubmed_source_worker.close(grace_seconds=0, kill_seconds=2)
                     finally:
