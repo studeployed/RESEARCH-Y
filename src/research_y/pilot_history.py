@@ -19,6 +19,16 @@ REQUEST_TYPES = (
     pubmed_pilot.REQUEST_EVENT,
     wos_starter_pilot.REQUEST_EVENT,
 )
+OUTCOME_TYPES = (
+    pubmed_pilot.OUTCOME_EVENT,
+    wos_starter_pilot.OUTCOME_EVENT,
+)
+EVENT_SOURCES = {
+    pubmed_pilot.REQUEST_EVENT: 'pubmed',
+    pubmed_pilot.OUTCOME_EVENT: 'pubmed',
+    wos_starter_pilot.REQUEST_EVENT: 'wos',
+    wos_starter_pilot.OUTCOME_EVENT: 'wos',
+}
 PROVIDERS = {
     pubmed_pilot.REQUEST_EVENT: ("pubmed", pubmed_pilot),
     wos_starter_pilot.REQUEST_EVENT: ("wos", wos_starter_pilot),
@@ -80,6 +90,22 @@ def read_pilot_history(project, *, before_event_id=None) -> dict:
         # Freeze one coherent read view: an outcome committed concurrently
         # cannot appear for some rows but be absent for other rows.
         db.execute("BEGIN")
+        # Validate project-wide request/outcome topology, not just the
+        # visible page. An orphan outcome, duplicate ID or malformed older
+        # receipt must never masquerade as a clean/empty history.
+        requests, outcomes = {}, {}
+        for event_id, event_type, raw in db.execute(
+                "SELECT event_id,event_type,details_json FROM audit_events "
+                "WHERE event_type IN (?,?,?,?) ORDER BY event_id",
+                (*REQUEST_TYPES, *OUTCOME_TYPES)):
+            key = (EVENT_SOURCES[event_type], _request_id(raw))
+            seen = requests if event_type in REQUEST_TYPES else outcomes
+            if key in seen:
+                raise PilotHistoryError()
+            seen[key] = event_id
+        if any(key not in requests or event_id <= requests[key]
+               for key, event_id in outcomes.items()):
+            raise PilotHistoryError()
         where = ("event_type IN (?,?)"
                  if before_event_id is None
                  else "event_type IN (?,?) AND event_id < ?")
@@ -136,10 +162,7 @@ def read_pilot_history(project, *, before_event_id=None) -> dict:
                     wos_starter_pilot.WoSPilotError, KeyError, TypeError,
                     ValueError):
                 raise PilotHistoryError() from None
-        total = db.execute(
-            "SELECT COUNT(*) FROM audit_events WHERE event_type IN (?,?)",
-            REQUEST_TYPES,
-        ).fetchone()[0]
+        total = len(requests)
         next_cursor = selected[-1][0] if len(rows) > PAGE_SIZE else None
         return {
             "entries": history,
