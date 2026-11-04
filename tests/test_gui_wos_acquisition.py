@@ -370,6 +370,68 @@ def test_non_gui_checkpoint_read_only_not_silently_upgraded(tmp_path):
         flow.close()
 
 
+def test_preexisting_cli_checkpoint_stays_view_only_when_gui_previews(tmp_path):
+    from research_y.wos_checkpoint_store import (
+        WoSCheckpointError, create_wos_checkpoint)
+    project,rid=_project(tmp_path)
+    with closing(sqlite3.connect(project.database_path)) as db:
+        qid=db.execute(
+            "SELECT query_id FROM source_queries "
+            "WHERE run_id=? AND source_name='wos'",(rid,)).fetchone()[0]
+    create_wos_checkpoint(project,qid,retention_authorized=True)
+    # No second checkpoint may be silently adopted, even from CLI.
+    with pytest.raises(WoSCheckpointError,match='checkpoint_already_exists'):
+        create_wos_checkpoint(project,qid,retention_authorized=True)
+    before=_rows(project)
+    flow=RealProjectFlow(selected_root=project.root,selected_parent=tmp_path,
+                         wos_profile=WoSHostProfile(KEY))
+    try:
+        flow.open_selected()
+        flow.select_run(rid)
+        state=flow.offer_wos_acquisition(qid)
+        assert state['wos_acquisition_offer'] is None
+        assert state['wos_acquisition_prepare_pending'] is False
+        assert state['wos_acquisition']['approved_gui_retention'] is False
+        assert state['wos_acquisition']['no_network_requests'] is True
+        with pytest.raises(ProjectFlowError,match='retention_confirmation_required'):
+            flow.confirm_wos_acquisition()
+        with pytest.raises(ProjectFlowError,match='gui_admission_missing'):
+            flow.offer_wos_acquisition_tick()
+        flow.select_run(rid)  # Not trapped in an unresolvable consent state.
+        assert _rows(project)==before
+    finally:
+        flow.close()
+
+
+def test_cli_checkpoint_creation_between_preview_and_consent_is_dispositioned(
+        tmp_path):
+    from research_y.wos_checkpoint_store import create_wos_checkpoint
+    project,flow,rid,q=_flow(tmp_path)
+    try:
+        flow.offer_wos_acquisition(q['query_id'])
+        assert flow.state()['wos_acquisition_offer'] is not None
+        # Concurrent external legitimate workflow creates an unrelated
+        # retention-authorised checkpoint before the GUI's confirmation.
+        create_wos_checkpoint(project,q['query_id'],retention_authorized=True)
+        before=_rows(project)
+        with pytest.raises(ProjectFlowError,match='checkpoint_already_exists'):
+            flow.confirm_wos_acquisition()
+        assert flow.state()['wos_acquisition_prepare_pending'] is True
+        with pytest.raises(ProjectFlowError,match='acquisition_reconciliation_required'):
+            flow.select_run(rid)
+        result=flow.reconcile_wos_acquisition()
+        assert result['wos_acquisition_prepare_pending'] is False
+        assert result['wos_acquisition_offer'] is None
+        assert result['wos_acquisition']['approved_gui_retention'] is False
+        assert result['wos_acquisition']['preflight_sha256'] is None
+        with pytest.raises(ProjectFlowError,match='gui_admission_missing'):
+            flow.offer_wos_acquisition_tick()
+        flow.select_run(rid)
+        assert _rows(project)==before  # No duplicate/overwrite/lost receipt.
+    finally:
+        flow.close()
+
+
 def test_source_session_requires_explicit_confirmation_and_fresh_client(tmp_path):
     project,flow,rid,q=_flow(tmp_path)
     try:
