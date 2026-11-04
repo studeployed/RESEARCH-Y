@@ -145,4 +145,9 @@ def run_wos_acquisition_session(
     except WoSCheckpointError as exc:
         raise WoSAcquisitionError(str(exc)) from None
     result = inspect_wos_acquisition(project, run_id=run_id, query_id=query_id)
+    # A tick is network-capable, but a guarded/no-op session may make zero
+    # actual requests. Preserve the observed transport count accurately.
+    result['no_network_requests'] = client.requests_made == 0
+    result['session_requests_made'] = client.requests_made
+    result['session_confirmed'] = True
     return result
