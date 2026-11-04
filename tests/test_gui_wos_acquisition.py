@@ -142,7 +142,7 @@ def _inject_tick(monkeypatch,flow, *, count=103,lost_reply=False):
         assert type(kw['acquisition_revalidate_quota']) is bool
         client=WoSStarterClient(
             api_key=kw['acquisition_api_key'],
-            request_budget=2,timeout=10,
+            request_budget=3,timeout=10,
             transport=provider,clock=clock.monotonic,
             sleep=clock.sleep,utc_now=clock.now)
         result=acquisition.run_wos_acquisition_session(
@@ -245,7 +245,7 @@ def test_lost_prepare_response_reopens_original_checkpoint_not_duplicate(tmp_pat
         flow.close()
 
 
-def test_actual_two_request_bounded_acquisition_stores_records_without_false_completion(
+def test_actual_three_request_bounded_acquisition_stores_records_without_false_completion(
         tmp_path,monkeypatch):
     project,flow,rid,q=_flow(tmp_path)
     try:
@@ -262,10 +262,10 @@ def test_actual_two_request_bounded_acquisition_stores_records_without_false_com
         flow.offer_wos_acquisition_tick()
         done=flow.confirm_wos_acquisition_tick()
         state=done['wos_acquisition']
-        assert provider.calls==[(1,50),(2,50)]
+        assert provider.calls==[(1,50),(2,50),(3,50)]
         assert state['checkpoint']['status']=='paused'
-        assert state['checkpoint']['records_committed']==100
-        assert state['checkpoint']['pages_committed']==2
+        assert state['checkpoint']['records_committed']==103
+        assert state['checkpoint']['pages_committed']==3
         assert state['checkpoint']['reported_matches']==103
         assert not state['checkpoint']['enumeration_reconciled']
         assert not state['source_retrieval_verified']
@@ -275,11 +275,11 @@ def test_actual_two_request_bounded_acquisition_stores_records_without_false_com
         assert KEY not in json.dumps(done)
         assert TITLE not in json.dumps(done)
         stored=_rows(project)
-        assert len(stored['metadata'])==100
+        assert len(stored['metadata'])==103
         assert TITLE in stored['metadata'][0][0]
         with pytest.raises(ProjectFlowError,match='session_confirmation_required'):
             flow.confirm_wos_acquisition_tick()  # double click must not resend
-        assert len(provider.calls)==2
+        assert len(provider.calls)==3
         assert flow.state()['preflight_report'] is None
     finally:
         flow.close()
@@ -300,10 +300,10 @@ def test_crash_after_source_record_commit_only_read_back_never_replay(tmp_path,m
         with pytest.raises(ProjectFlowError,match='acquisition_reconciliation_required'):
             flow.select_run(rid)
         observed=flow.reconcile_wos_acquisition_tick()
-        assert observed['wos_acquisition']['checkpoint']['records_committed']==100
+        assert observed['wos_acquisition']['checkpoint']['records_committed']==103
         assert observed['wos_acquisition_tick_pending'] is False
-        assert len(provider.calls)==2
-        assert len(_rows(project)['metadata'])==100
+        assert len(provider.calls)==3
+        assert len(_rows(project)['metadata'])==103
     finally:
         flow.close()
 
@@ -324,14 +324,14 @@ def test_reopen_source_checkpoint_with_no_host_key_does_not_authorize_network(
         new.open_selected()
         new.select_run(rid)
         stored=new.inspect_stored_wos_acquisition(q['query_id'])['wos_acquisition']
-        assert stored['checkpoint']['records_committed']==100
+        assert stored['checkpoint']['records_committed']==103
         assert stored['approved_gui_retention'] is True
         assert stored['no_network_requests'] is True
         assert new.state()['wos_profile_configured'] is False
         with pytest.raises(ProjectFlowError,match='wos_profile_unavailable'):
             new.offer_wos_acquisition_tick()
-        assert len(_rows(project)['metadata'])==100
-        assert len(provider.calls)==2
+        assert len(_rows(project)['metadata'])==103
+        assert len(provider.calls)==3
     finally:
         new.close()
 

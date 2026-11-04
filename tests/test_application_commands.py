@@ -77,6 +77,8 @@ def services(monkeypatch, tmp_path):
     from research_y.wos_acquisition_gui import WoSAcquisitionError
     acquisition=types.ModuleType('research_y.wos_acquisition_gui')
     acquisition.WoSAcquisitionError=WoSAcquisitionError
+    acquisition.preview_wos_acquisition=service('wos_acquisition_preview',{
+        'source_retrieval_verified':False})
     acquisition.inspect_wos_acquisition=service('wos_acquisition_read',{
         'source_retrieval_verified':False})
     acquisition.prepare_wos_acquisition=service('wos_acquisition_prepare',{
@@ -114,6 +116,8 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
                   approval_confirmed=True)
     elif operation=='pilot_history':
         kw['history_before_event_id']=123
+    elif operation=='wos_acquisition_preview':
+        kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
     elif operation=='wos_acquisition_read':
         kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
     elif operation=='wos_acquisition_prepare':
@@ -181,6 +185,9 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][2]['client']._budget == 1
         assert calls[0][2]['revalidate_quota'] is False
         assert kw['pilot_api_key'] not in repr(cmd)
+    if operation=='wos_acquisition_preview':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['acquisition_query_id']
     if operation=='wos_acquisition_read':
         assert calls[0][2]['run_id']==kw['run_id']
         assert calls[0][2]['query_id']==kw['acquisition_query_id']
@@ -196,7 +203,7 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][2]['confirmed'] is True
         assert calls[0][2]['revalidate_quota'] is False
         assert calls[0][2]['client']._key==kw['acquisition_api_key']
-        assert calls[0][2]['client']._budget==2
+        assert calls[0][2]['client']._budget==3
         assert calls[0][2]['client']._timeout==10
         assert kw['acquisition_api_key'] not in repr(cmd)
     if operation=='pilot_history':
@@ -556,6 +563,7 @@ def test_history_cursor_and_pilot_credentials_cannot_be_sent_on_unrelated_comman
 
 
 @pytest.mark.parametrize('operation,patch',[
+    ('wos_acquisition_preview',{'acquisition_api_key':'SECRET'}),
     ('wos_acquisition_read',{'acquisition_api_key':'SECRET'}),
     ('wos_acquisition_read',{'acquisition_confirmed':True}),
     ('wos_acquisition_read',{'acquisition_revalidate_quota':False}),
