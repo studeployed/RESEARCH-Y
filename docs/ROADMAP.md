@@ -24,7 +24,8 @@ The scope and gates are fixed in section 20 of the approved specification. Track
   - **P1-06f8 — merged PR #63:** audited, paginated pilot history survives GUI restart, including unknown request outcomes. The shared quota guard is not silently released.
   - **P1-06g1 — owner-merged PR #64:** explicit GUI local-record retention admission and bounded three-request Starter checkpointed acquisition. Multi-page verification and whole-run source completion remained outstanding.
   - **P1-06g2 — owner-merged PR #65:** explicitly consented, bounded supervised multi-page Starter identity verification with read-only checkpoint progress and graceful pause. Full abstracts and whole-run completion remain outstanding; see `docs/GUI_WOS_VERIFICATION.md`.
-  - **P1-06h1 — current increment:** supervised, explicitly confirmed PubMed ESearch identifier retrieval, original immutable count/date-partition checkpoints, budgeted requests, honest incomplete/paused status and read-only GUI progress. **Identifiers are not complete EFetch bibliographic records.** See `docs/GUI_PUBMED_IDENTIFIERS.md`.
+  - **P1-06h1 — owner-merged PR #66:** supervised PubMed ESearch identifier retrieval with frozen OR plan, complete count/date-partition checkpoint evidence, explicit bounded source consent and read-only progress. Identifier reconciliation does not establish bibliographic metadata.
+  - **P1-06h2 — current increment:** explicit GUI-assisted EFetch metadata/abstract acquisition using the original transactional PubMed source-record store, bounded at 100 batches per consent, read-only progress and original receipt reconciliation. Parent run remains incomplete. See `docs/GUI_PUBMED_EFETCH.md`.
 
 ## Milestone M2 — Specialist processing (Phase 2)
 

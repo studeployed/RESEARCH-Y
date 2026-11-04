@@ -105,6 +105,16 @@ def services(monkeypatch, tmp_path):
         'no_network_requests':True,'source_retrieval_verified':False})
     pubmed_source.run_pubmed_source_session=service('pubmed_identifier_run',{
         'status':'incomplete','source_retrieval_verified':False})
+    from research_y.pubmed_metadata_gui import PubMedMetadataGUIError
+    metadata=types.ModuleType('research_y.pubmed_metadata_gui')
+    metadata.PubMedMetadataGUIError=PubMedMetadataGUIError
+    metadata.inspect_pubmed_metadata=service('pubmed_metadata_read',{
+        'no_network_requests':True,'source_retrieval_verified':False})
+    metadata.preview_pubmed_metadata=service('pubmed_metadata_preview',{
+        'no_network_requests':True,'source_retrieval_verified':False})
+    metadata.run_pubmed_metadata_session=service('pubmed_metadata_run',{
+        'status':'incomplete','source_retrieval_verified':False,
+        'whole_search_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -116,6 +126,7 @@ def services(monkeypatch, tmp_path):
                         ('wos_starter_pilot',wos),('pilot_history',history),
                         ('wos_acquisition_gui',acquisition),
                         ('pubmed_source_gui',pubmed_source),
+                        ('pubmed_metadata_gui',metadata),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -162,6 +173,14 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     elif operation in ('pubmed_identifier_preview','pubmed_identifier_read',
                        'pubmed_identifier_pause'):
         kw.update(run_id=str(uuid4()),pubmed_source_query_id=str(uuid4()))
+    elif operation in ('pubmed_metadata_read','pubmed_metadata_preview'):
+        kw.update(run_id=str(uuid4()),pubmed_source_query_id=str(uuid4()))
+    elif operation=='pubmed_metadata_run':
+        kw.update(run_id=str(uuid4()),pubmed_source_query_id=str(uuid4()),
+                  pubmed_source_plan_sha256='a'*64,
+                  pubmed_source_confirmed=True,
+                  pubmed_source_contact_email='fixture@example.org',
+                  pubmed_source_api_key='PRIVATE-PUBMED-KEY')
     elif operation=='pubmed_identifier_run':
         kw.update(run_id=str(uuid4()),pubmed_source_query_id=str(uuid4()),
                   pubmed_source_plan_sha256='a'*64,
@@ -243,6 +262,17 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][2]['client']._budget==512
         assert calls[0][2]['client']._timeout==10
         assert kw['acquisition_api_key'] not in repr(cmd)
+    if operation in ('pubmed_metadata_read','pubmed_metadata_preview'):
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['pubmed_source_query_id']
+        assert result['no_network_requests'] is True
+    if operation=='pubmed_metadata_run':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['pubmed_source_query_id']
+        assert calls[0][2]['expected_plan_sha256']==kw['pubmed_source_plan_sha256']
+        assert calls[0][2]['confirmed'] is True
+        assert calls[0][2]['client']._client._api_key==kw['pubmed_source_api_key']
+        assert kw['pubmed_source_api_key'] not in repr(cmd)
     if operation=='wos_acquisition_read':
         assert calls[0][2]['run_id']==kw['run_id']
         assert calls[0][2]['query_id']==kw['acquisition_query_id']
@@ -754,4 +784,27 @@ def test_pubmed_identifier_key_cannot_be_routed_to_unrelated_commands(
         attrs.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
     with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
         commands.ApplicationCommand.for_project(project,operation,**attrs)
+    assert not calls
+
+
+
+@pytest.mark.parametrize('op,extra',[
+    ('pubmed_metadata_read',{'pubmed_source_api_key':'SECRET'}),
+    ('pubmed_metadata_preview',{'pubmed_source_confirmed':True}),
+    ('pubmed_metadata_run',{'pubmed_source_confirmed':False}),
+    ('pubmed_metadata_run',{'pubmed_source_plan_sha256':'bad'}),
+    ('pubmed_metadata_run',{'pubmed_source_api_key':'BAD\nKEY'}),
+    ('pubmed_metadata_run',{'pubmed_coverage_start':'1800-01-01'}),
+    ('pubmed_metadata_run',{'pubmed_coverage_end':'2026-01-01'}),
+])
+def test_pubmed_metadata_command_rejects_cross_operation_credentials_and_fields(
+        services,op,extra):
+    project,calls,*_=services
+    values=dict(run_id=str(uuid4()),pubmed_source_query_id=str(uuid4()))
+    if op=='pubmed_metadata_run':
+        values.update(pubmed_source_confirmed=True,pubmed_source_plan_sha256='a'*64,
+                      pubmed_source_contact_email='fixture@example.org',
+                      pubmed_source_api_key='PRIVATE-PUBMED-KEY')
+    with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+        commands.ApplicationCommand.for_project(project,op,**(values|extra))
     assert not calls
