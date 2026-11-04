@@ -453,6 +453,132 @@ def test_late_pause_of_incomplete_receipt_permits_only_status_change(
         flow.close()
 
 
+def _historical_daily_partition_checkpoint(project,qid,query,days):
+    """Valid historical CLI checkpoint with more leaves than the GUI planner."""
+    from datetime import timedelta
+    from research_y.pubmed_partition import (
+        DateWindow, CountedPartition, PubMedPartitionResult)
+    from research_y.pubmed_checkpoint_store import create_pubmed_checkpoint
+    start=date(2025,1,1)
+    window=DateWindow(start,start+timedelta(days=days-1))
+    nodes=[]
+
+    def split(interval,parent=None,depth=0):
+        idx=len(nodes)
+        count=(interval.end-interval.start).days+1
+        decision='collect' if count==1 else 'split'
+        nodes.append(CountedPartition(
+            idx,parent,interval,interval.query_for(query),count,depth,
+            decision,'Synthetic historically planned Create Date partition'))
+        if decision=='split':
+            left,right=interval.split()
+            split(left,idx,depth+1)
+            split(right,idx,depth+1)
+    split(window)
+    plan=PubMedPartitionResult(
+        query,window,days,'incomplete',(),tuple(nodes),(),())
+    create_pubmed_checkpoint(project,qid,plan,page_size=200)
+    return window
+
+
+def test_128_historical_leaf_counts_reconcile_with_extended_budget(tmp_path):
+    project,rid,qid,query=_project(tmp_path)
+    window=_historical_daily_partition_checkpoint(project,qid,query,128)
+    source_preview=source.preview_pubmed_source(
+        project,run_id=rid,query_id=qid)
+    cp=source_preview['checkpoint']
+    assert cp['partition_leaf_count']==128
+    assert cp['minimum_resume_requests']==130
+    assert cp['resume_budget_sufficient'] is True
+    assert source_preview['max_session_requests']==512
+    assert cp['coverage']=={
+        'start':window.start.isoformat(),'end':window.end.isoformat()}
+    counts=[]
+    from datetime import timedelta
+    import re
+    def transport(req,timeout):
+        assert req.get_method()=='POST'
+        values=parse_qs(req.data.decode())
+        term=values['term'][0]
+        offset=int(values.get('retstart',['0'])[0])
+        retmax=int(values['retmax'][0])
+        if term==query:
+            count=128
+            ids=[str(1100000+i) for i in range(128)]
+        else:
+            pair=re.search(
+                r'(\d{4})/(\d{2})/(\d{2}):(\d{4})/(\d{2})/(\d{2})',
+                term)
+            assert pair is not None
+            y1,m1,d1,y2,m2,d2=map(int,pair.groups())
+            first,last=date(y1,m1,d1),date(y2,m2,d2)
+            count=(last-first).days+1
+            ids=[str(1100000+(first-window.start).days+i)
+                 for i in range(count)]
+        counts.append((term,retmax))
+        return json.dumps({'esearchresult':{
+            'count':str(count),'retstart':str(offset),
+            'retmax':str(retmax),
+            'idlist':ids[offset:offset+retmax] if retmax else [],
+            'querytranslation':term,
+            'warninglist':{'outputmessages':[]},
+            'errorlist':{'phrasesnotfound':[]},
+        }}).encode()
+    receipt=source.run_pubmed_source_session(
+        project,run_id=rid,query_id=qid,
+        expected_plan_sha256=source_preview['plan_sha256'],
+        coverage_start=window.start.isoformat(),
+        coverage_end=window.end.isoformat(),confirmed=True,
+        client=_client(transport))
+    assert receipt['status']=='identifiers_reconciled_metadata_pending'
+    assert receipt['checkpoint']['identifiers_committed']==128
+    assert receipt['checkpoint']['pages_committed']==128
+    assert receipt['checkpoint']['identifiers_reconciled'] is True
+    assert receipt['session_requests_reserved']==258
+    assert len(counts)==258
+    assert not receipt['source_retrieval_verified']
+    assert _db(project)['ids']==128 and _db(project)['metadata']==0
+
+
+def test_511_leaf_legacy_checkpoint_fails_before_any_provider_requests(tmp_path):
+    project,rid,qid,query=_project(tmp_path)
+    window=_historical_daily_partition_checkpoint(project,qid,query,511)
+    source_preview=source.preview_pubmed_source(project,run_id=rid,query_id=qid)
+    cp=source_preview['checkpoint']
+    assert cp['partition_leaf_count']==511
+    assert cp['minimum_resume_requests']==513
+    assert cp['resume_budget_sufficient'] is False
+    before=_db(project)
+    provider=Transport(query,ids=(),root_count=511,dated_count=511)
+    with pytest.raises(source.PubMedSourceError,
+                       match='pubmed_verification_exceeds_budget'):
+        source.run_pubmed_source_session(
+            project,run_id=rid,query_id=qid,
+            expected_plan_sha256=source_preview['plan_sha256'],
+            coverage_start=window.start.isoformat(),
+            coverage_end=window.end.isoformat(),confirmed=True,
+            client=_client(provider))
+    assert provider.calls==[]
+    assert _db(project)==before
+    flow=RealProjectFlow(
+        selected_root=project.root,selected_parent=tmp_path,
+        pubmed_profile=PubMedHostProfile(EMAIL,KEY))
+    try:
+        flow.open_selected()
+        flow.select_run(rid)
+        read=flow.inspect_stored_pubmed_source(qid)['pubmed_source']
+        assert read['checkpoint']['minimum_resume_requests']==513
+        assert read['checkpoint']['resume_budget_sufficient'] is False
+        with pytest.raises(ProjectFlowError,match='pubmed_verification_exceeds_budget'):
+            flow.offer_pubmed_source(
+                qid,coverage_start=window.start.isoformat(),
+                coverage_end=window.end.isoformat())
+        assert flow.state()['pubmed_source_pending'] is False
+        assert _db(project)==before
+    finally:
+        flow.close()
+
+
 def test_graphical_pubmed_controls_never_exposed_on_probe_automation_route():
     text=inspect.getsource(run)
     for operation in ('pubmed_identifier_offer','pubmed_identifier_confirm',
