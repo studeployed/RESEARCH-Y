@@ -21,7 +21,8 @@ OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_ex
                          'wos_acquisition_read', 'wos_acquisition_tick',
                          'wos_acquisition_verify_plan', 'wos_acquisition_verify',
                          'wos_acquisition_pause', 'pubmed_identifier_preview',
-                         'pubmed_identifier_read', 'pubmed_identifier_run'})
+                         'pubmed_identifier_read', 'pubmed_identifier_run',
+                         'pubmed_identifier_pause'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -54,7 +55,8 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
      'pubmed_identifier_budget_invalid', 'pubmed_coverage_invalid',
      'pubmed_coverage_changed', 'pubmed_provider_incomplete',
      'pubmed_worker_recovery_required', 'pubmed_source_unavailable',
-     'pubmed_query_not_ready'})
+     'pubmed_query_not_ready', 'pubmed_checkpoint_not_ready',
+     'pubmed_worker_not_running'})
 
 
 class ApplicationCommandError(ValueError):
@@ -190,7 +192,7 @@ class ApplicationCommand:
             )
             if self.operation in ('pubmed_identifier_preview',
                                   'pubmed_identifier_read',
-                                  'pubmed_identifier_run'):
+                                  'pubmed_identifier_run', 'pubmed_identifier_pause'):
                 if any(v is not None for v in (
                         self.export_id, self.output_name, self.directory,
                         self.expected_directory_identity)):
@@ -198,7 +200,7 @@ class ApplicationCommand:
                 _uuid(self.run_id)
                 _uuid(self.pubmed_source_query_id)
                 if self.operation in ('pubmed_identifier_preview',
-                                      'pubmed_identifier_read'):
+                                      'pubmed_identifier_read', 'pubmed_identifier_pause'):
                     if any(v is not None for v in pubmed_source_fields[1:]):
                         raise ValueError
                 else:
@@ -396,7 +398,8 @@ class ApplicationCommand:
                     raise ValueError
             if self.operation not in ('pubmed_identifier_preview',
                                         'pubmed_identifier_read',
-                                        'pubmed_identifier_run') and any(
+                                        'pubmed_identifier_run',
+                                        'pubmed_identifier_pause') and any(
                     v is not None for v in pubmed_source_fields):
                 raise ValueError
             if self.operation != 'wos_acquisition_verify' and self.verification_expected_requests is not None:
@@ -509,9 +512,13 @@ def execute_command(command: ApplicationCommand) -> dict:
                 raise ApplicationCommandError(exc.code) from None
         if command.operation in ('pubmed_identifier_preview',
                                  'pubmed_identifier_read',
-                                 'pubmed_identifier_run'):
+                                 'pubmed_identifier_run', 'pubmed_identifier_pause'):
             from research_y import pubmed_source_gui as source
             try:
+                if command.operation == 'pubmed_identifier_pause':
+                    return source.pause_pubmed_source_session(
+                        project,run_id=command.run_id,
+                        query_id=command.pubmed_source_query_id)
                 if command.operation == 'pubmed_identifier_read':
                     return source.inspect_pubmed_source(
                         project,run_id=command.run_id,

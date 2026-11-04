@@ -27,7 +27,8 @@ SAFE_CODES = frozenset((
     "pubmed_identifier_budget_invalid", "pubmed_coverage_invalid",
     "pubmed_coverage_changed", "pubmed_provider_incomplete",
     "pubmed_worker_recovery_required", "pubmed_source_unavailable",
-    "pubmed_query_not_ready",
+    "pubmed_query_not_ready", "pubmed_checkpoint_not_ready",
+    "pubmed_worker_not_running",
 ))
 
 
@@ -241,3 +242,21 @@ def run_pubmed_source_session(
         "whole_search_verified": False,
         "metadata_complete": False,
     }
+
+
+
+def pause_pubmed_source_session(project, *, run_id, query_id):
+    """Gracefully stop new identifier-page requests after the current page.
+
+    No provider call. If no durable checkpoint plan exists yet, its planning
+    stage cannot be paused safely; do not fabricate a persisted pause state.
+    """
+    state = inspect_pubmed_source(project, run_id=run_id, query_id=query_id)
+    if state["checkpoint"] is None:
+        raise PubMedSourceError("pubmed_checkpoint_not_ready")
+    from research_y.pubmed_checkpoint_store import pause_pubmed_checkpoint
+    try:
+        pause_pubmed_checkpoint(project, query_id)
+    except (CheckpointIntegrityError, KeyError, ValueError):
+        raise PubMedSourceError("pubmed_checkpoint_invalid") from None
+    return inspect_pubmed_source(project, run_id=run_id, query_id=query_id)
