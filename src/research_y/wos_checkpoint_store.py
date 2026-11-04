@@ -156,6 +156,15 @@ def create_wos_checkpoint(project: Project, query_id: str, *, retention_authoriz
         if (row is None or row["source_name"] != "wos" or row["status"] != "pending"
                 or (expected_run_id is not None and row["run_id"] != expected_run_id)):
             raise WoSCheckpointError("pending_wos_query_required")
+        # A checkpoint prepared in another workflow can still leave its
+        # source query pending. Refuse duplicate adoption with a stable
+        # actionable code rather than leaking a raw SQLite constraint error.
+        # This runs under BEGIN IMMEDIATE so a competing admission cannot
+        # appear between the check and the INSERT below.
+        if db.execute(
+                "SELECT 1 FROM wos_checkpoint_jobs WHERE query_id=?",
+                (query_id,)).fetchone() is not None:
+            raise WoSCheckpointError("checkpoint_already_exists")
         parameters = json.loads(row["parameters_json"])
         if (not isinstance(parameters, dict)
                 or set(parameters) - {"database", "page_size", "max_query_bytes"}):
