@@ -18,7 +18,9 @@ OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_ex
                         'pubmed_pilot_count', 'pubmed_pilot_read',
                          'wos_pilot_sample', 'wos_pilot_read', 'pilot_history',
                          'wos_acquisition_preview', 'wos_acquisition_prepare',
-                         'wos_acquisition_read', 'wos_acquisition_tick'})
+                         'wos_acquisition_read', 'wos_acquisition_tick',
+                         'wos_acquisition_verify_plan', 'wos_acquisition_verify',
+                         'wos_acquisition_pause'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -42,7 +44,10 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
      'worker_busy_or_interrupted', 'another_wos_worker_active',
      'local_retention_not_authorized', 'unsupported_query_parameters',
      'query_not_in_approved_compilation', 'unknown_checkpoint',
-     'checkpoint_already_exists', 'verification_requires_long_worker'})
+     'checkpoint_already_exists', 'verification_requires_long_worker',
+     'verification_not_ready', 'verification_budget_exceeded',
+     'verification_plan_changed', 'verification_worker_recovery_required',
+     'verification_worker_not_running'})
 
 
 class ApplicationCommandError(ValueError):
@@ -109,7 +114,7 @@ class ApplicationCommand:
     pilot_wos_revalidate_quota: bool | None = None
     # Read-only audit cursor; NEVER a browser-supplied SQL expression.
     history_before_event_id: int | None = None
-    # Explicit WoS source-acquisition consent. NOT a pilot; up to two HTTPS
+    # Explicit WoS source-acquisition consent. NOT a pilot; up to three HTTPS
     # requests and lawfully permitted source-metadata retention per session.
     acquisition_query_id: str | None = None
     acquisition_plan_sha256: str | None = None
@@ -117,6 +122,9 @@ class ApplicationCommand:
     acquisition_retention_authorized: bool | None = None
     acquisition_revalidate_quota: bool | None = None
     acquisition_api_key: str | None = None
+    # Frozen long-verification request count; derived by core from committed
+    # source pages, never provided as an arbitrary browser-side budget.
+    verification_expected_requests: int | None = None
 
     def __post_init__(self):
         try:
@@ -208,14 +216,16 @@ class ApplicationCommand:
                             api_key=self.pilot_api_key)
             elif self.operation in (
                     'wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
-                    'wos_acquisition_tick'):
+                    'wos_acquisition_tick', 'wos_acquisition_verify_plan',
+                    'wos_acquisition_verify', 'wos_acquisition_pause'):
                 if any(v is not None for v in (
                         self.export_id, self.output_name, self.directory,
                         self.expected_directory_identity)):
                     raise ValueError
                 _uuid(self.run_id)
                 _uuid(self.acquisition_query_id)
-                if self.operation in ('wos_acquisition_read','wos_acquisition_preview'):
+                if self.operation in ('wos_acquisition_read','wos_acquisition_preview',
+                                      'wos_acquisition_verify_plan','wos_acquisition_pause'):
                     if any(v is not None for v in acquisition_fields[1:]):
                         raise ValueError
                 elif self.operation == 'wos_acquisition_prepare':
@@ -227,7 +237,7 @@ class ApplicationCommand:
                             self.acquisition_api_key is not None or
                             self.acquisition_revalidate_quota is not None):
                         raise ValueError
-                else:
+                elif self.operation == 'wos_acquisition_tick':
                     if (self.acquisition_plan_sha256 is not None or
                             self.acquisition_confirmed is not True or
                             self.acquisition_retention_authorized is not None or
@@ -238,6 +248,28 @@ class ApplicationCommand:
                     try:
                         WoSStarterClient(api_key=self.acquisition_api_key,
                                          request_budget=3, timeout=10)
+                    except WoSStarterError:
+                        raise ValueError from None
+                else:
+                    from research_y.wos_acquisition_gui import MAX_VERIFY_REQUESTS
+                    if (self.operation != 'wos_acquisition_verify' or
+                            self.acquisition_retention_authorized is not None or
+                            self.acquisition_confirmed is not True or
+                            type(self.acquisition_revalidate_quota) is not bool or
+                            type(self.acquisition_plan_sha256) is not str or
+                            len(self.acquisition_plan_sha256) != 64 or
+                            any(c not in '0123456789abcdef'
+                                for c in self.acquisition_plan_sha256) or
+                            type(self.verification_expected_requests) is not int or
+                            not 3 <= self.verification_expected_requests <=
+                                MAX_VERIFY_REQUESTS):
+                        raise ValueError
+                    from research_y.wos_starter_client import WoSStarterClient
+                    from research_y.wos_starter import WoSStarterError
+                    try:
+                        WoSStarterClient(api_key=self.acquisition_api_key,
+                                         request_budget=MAX_VERIFY_REQUESTS,
+                                         timeout=10)
                     except WoSStarterError:
                         raise ValueError from None
             elif self.operation == 'pilot_history':
@@ -307,8 +339,11 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation != 'wos_acquisition_verify' and self.verification_expected_requests is not None:
+                raise ValueError
             if self.operation not in ('wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
-                                       'wos_acquisition_tick') and any(
+                                       'wos_acquisition_tick', 'wos_acquisition_verify_plan',
+                                       'wos_acquisition_verify','wos_acquisition_pause') and any(
                     value is not None for value in acquisition_fields):
                 raise ValueError
             if self.operation != 'pilot_history' and self.history_before_event_id is not None:
@@ -360,9 +395,31 @@ def execute_command(command: ApplicationCommand) -> dict:
             return {'snapshot': snapshot.as_dict(), 'location': str(snapshot.location)}
         if command.operation in (
                 'wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
-                'wos_acquisition_tick'):
+                'wos_acquisition_tick', 'wos_acquisition_verify_plan',
+                'wos_acquisition_verify','wos_acquisition_pause'):
             from research_y import wos_acquisition_gui as acquisition
             try:
+                if command.operation == 'wos_acquisition_pause':
+                    return acquisition.pause_wos_verification_session(
+                        project,run_id=command.run_id,
+                        query_id=command.acquisition_query_id)
+                if command.operation == 'wos_acquisition_verify_plan':
+                    return acquisition.preview_wos_verification(
+                        project,run_id=command.run_id,
+                        query_id=command.acquisition_query_id)
+                if command.operation == 'wos_acquisition_verify':
+                    from research_y.wos_starter_client import WoSStarterClient
+                    from research_y.wos_acquisition_gui import MAX_VERIFY_REQUESTS
+                    client = WoSStarterClient(api_key=command.acquisition_api_key,
+                                               request_budget=MAX_VERIFY_REQUESTS,timeout=10)
+                    return acquisition.run_wos_verification_session(
+                        project,run_id=command.run_id,
+                        query_id=command.acquisition_query_id,
+                        expected_plan_sha256=command.acquisition_plan_sha256,
+                        expected_requests=command.verification_expected_requests,
+                        confirmed=command.acquisition_confirmed,
+                        revalidate_quota=command.acquisition_revalidate_quota,
+                        client=client)
                 if command.operation == 'wos_acquisition_preview':
                     return acquisition.preview_wos_acquisition(
                         project,run_id=command.run_id,

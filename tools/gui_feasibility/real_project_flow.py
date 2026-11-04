@@ -12,7 +12,7 @@ import time
 from uuid import uuid4
 
 from research_y.application_commands import ApplicationCommand
-from research_y.application_worker import ApplicationWorker
+from research_y.application_worker import ApplicationWorker, ApplicationWorkerError
 from research_y.projects import (MANIFEST_FILENAME, ProjectFormatError, ProjectVersionError,
                                   _parse_manifest, create_project, open_project)
 from research_y.export_files import Directory, ExportFileError
@@ -49,6 +49,10 @@ class RealProjectFlow:
         self._wos_profile = wos_profile
         self._guard = threading.RLock()
         self._worker = ApplicationWorker()
+        # Separate supervised process: verification may run longer than
+        # ordinary 35-second inspection operations. Durable checkpoint
+        # progress remains readable via the independent ordinary worker.
+        self._verify_worker = ApplicationWorker()
         self._closed = False
         self.project = None
         self.snapshot = None
@@ -82,6 +86,12 @@ class RealProjectFlow:
         self._wos_acquisition = None
         self._wos_acquisition_tick_offer = None
         self._wos_acquisition_tick_pending = None
+        self._verify_operation_id = None
+        self._verify_offer = None
+        self._verify_pending = None
+        self._verify_worker_state = 'idle'
+        self._verify_error = None
+        self._verify_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -115,6 +125,8 @@ class RealProjectFlow:
         if (self._wos_acquisition_prepare_pending is not None or
                 self._wos_acquisition_tick_pending is not None):
             raise ProjectFlowError('acquisition_reconciliation_required')
+        if self._verify_pending is not None:
+            raise ProjectFlowError('verification_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
                 raise ProjectFlowError('export_reconciliation_required')
@@ -281,6 +293,12 @@ class RealProjectFlow:
         self._wos_acquisition = None
         self._wos_acquisition_tick_offer = None
         self._wos_acquisition_tick_pending = None
+        self._verify_operation_id = None
+        self._verify_offer = None
+        self._verify_pending = None
+        self._verify_worker_state = 'idle'
+        self._verify_error = None
+        self._verify_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -393,6 +411,8 @@ class RealProjectFlow:
             self._wos_acquisition_offer = None
             self._wos_acquisition = None
             self._wos_acquisition_tick_offer = None
+            self._verify_offer = None
+            self._verify_last_outcome = None
             self.snapshot = report
             return self._publish()
 
@@ -476,6 +496,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
@@ -583,7 +605,8 @@ class RealProjectFlow:
                     self._pending_pilot is not None or
                     self._pending_wos_pilot is not None or
                     self._wos_acquisition_prepare_pending is not None or
-                    self._wos_acquisition_tick_pending is not None):
+                    self._wos_acquisition_tick_pending is not None or
+                    self._verify_pending is not None):
                 raise ProjectFlowError('operation_reconciliation_required')
             if self._pending_review is None:
                 if self._review_candidate is None or self._preflight is None:
@@ -691,6 +714,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -833,6 +858,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -1108,6 +1135,7 @@ class RealProjectFlow:
                     and job['stage'] in ('verify','final')):
                 raise ProjectFlowError('verification_requires_long_worker')
             self._wos_acquisition = verified
+            self._verify_offer = None
             self._wos_acquisition_tick_offer = dict(
                 run_id=verified['run_id'], query_id=verified['query_id'],
                 preflight_sha256=verified['preflight_sha256'],
@@ -1181,6 +1209,213 @@ class RealProjectFlow:
             except ProjectFlowError:
                 # A killed worker may still have a durable reservation.
                 # Keep the original pending state; only inspect, never retry.
+                self._publish()
+                raise
+
+    def offer_wos_verification(self, *, revalidate_quota=False):
+        """Read exact verification workload; no provider requests or keys."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self._wos_profile is None:
+                raise ProjectFlowError('wos_profile_unavailable')
+            if type(revalidate_quota) is not bool:
+                raise ProjectFlowError('session_confirmation_required')
+            source = self._wos_acquisition
+            if (type(source) is not dict or
+                    source.get('run_id') != self.selected_run_id or
+                    source.get('approved_gui_retention') is not True):
+                raise ProjectFlowError('acquisition_selection_required')
+            preview = self._operation('wos_acquisition_verify_plan',
+                run_id=source['run_id'],acquisition_query_id=source['query_id'])
+            if (preview.get('run_id') != self.selected_run_id or
+                    preview.get('query_id') != source['query_id'] or
+                    preview.get('preflight_sha256') != source['preflight_sha256'] or
+                    preview.get('exact_query') != source['exact_query'] or
+                    preview.get('source_retrieval_verified') is not False or
+                    preview.get('no_network_requests') is not True or
+                    preview.get('whole_search_verified') is not False or
+                    type(preview.get('pages_to_verify')) is not int or
+                    type(preview.get('expected_requests')) is not int or
+                    preview['expected_requests'] != preview['pages_to_verify'] + 2 or
+                    not 3 <= preview['expected_requests'] <= 512):
+                raise ProjectFlowError('verification_plan_invalid')
+            self._verify_offer = dict(preview, revalidate_quota=revalidate_quota)
+            self._wos_acquisition_tick_offer = None
+            self._pilot_candidate = None
+            self._wos_pilot_candidate = None
+            return self._publish()
+
+    def dismiss_wos_verification(self):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._verify_offer = None
+            return self._publish()
+
+    def confirm_wos_verification(self):
+        """Spawn ONE approved long session; return immediately to the GUI."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer = self._verify_offer
+            if (self._wos_profile is None or offer is None or
+                    offer.get('run_id') != self.selected_run_id):
+                raise ProjectFlowError('session_confirmation_required')
+            # Never authorise a stale query/page count after user review.
+            fresh = self._operation('wos_acquisition_verify_plan',
+                run_id=offer['run_id'],
+                acquisition_query_id=offer['query_id'])
+            if any(fresh.get(key) != offer.get(key) for key in
+                    ('run_id', 'query_id', 'exact_query', 'preflight_sha256',
+                     'pages_to_verify', 'expected_requests')):
+                raise ProjectFlowError('verification_plan_changed')
+            cmd = ApplicationCommand.for_project(
+                self.project, 'wos_acquisition_verify',
+                run_id=offer['run_id'],
+                acquisition_query_id=offer['query_id'],
+                acquisition_plan_sha256=offer['preflight_sha256'],
+                acquisition_confirmed=True,
+                acquisition_revalidate_quota=offer['revalidate_quota'],
+                acquisition_api_key=self._wos_profile.api_key,
+                verification_expected_requests=offer['expected_requests'])
+            try:
+                operation_id = self._verify_worker.submit(cmd)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            self._verify_pending = dict(offer)
+            self._verify_operation_id = operation_id
+            self._verify_offer = None
+            self._verify_worker_state = 'running'
+            self._verify_error = None
+            self._verify_last_outcome = None
+            return self._publish()
+
+    def poll_wos_verification(self):
+        """Nonblocking supervisor status plus independent durable progress read.
+
+        A running response is never treated as completed source retrieval.
+        """
+        with self._guard:
+            self._require_open()
+            if self._verify_pending is None or self._verify_operation_id is None:
+                raise ProjectFlowError('verification_reconciliation_not_required')
+            try:
+                status = self._verify_worker.poll(self._verify_operation_id)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            self._verify_worker_state = status.state
+            self._verify_error = status.error
+            pending = self._verify_pending
+            try:
+                read = self._operation('wos_acquisition_read',
+                    run_id=pending['run_id'],
+                    acquisition_query_id=pending['query_id'])
+                if (read.get('run_id') != pending['run_id'] or
+                        read.get('query_id') != pending['query_id'] or
+                        read.get('preflight_sha256') != pending['preflight_sha256'] or
+                        read.get('approved_gui_retention') is not True or
+                        read.get('no_network_requests') is not True or
+                        read.get('source_retrieval_verified') is not False):
+                    raise ProjectFlowError('verification_receipt_invalid')
+                self._wos_acquisition = read
+                return self._publish()
+            except ProjectFlowError:
+                self._publish()
+                raise
+
+    def pause_wos_verification(self):
+        """Request a durable cooperative pause; the owner may still be active."""
+        with self._guard:
+            self._require_open()
+            if self._verify_pending is None or self._verify_operation_id is None:
+                raise ProjectFlowError('verification_reconciliation_not_required')
+            status = self._verify_worker.poll(self._verify_operation_id)
+            if status.state != 'running':
+                raise ProjectFlowError('verification_worker_not_running')
+            pending = self._verify_pending
+            read = self._operation('wos_acquisition_pause',
+                run_id=pending['run_id'],
+                acquisition_query_id=pending['query_id'])
+            if (read.get('run_id') != pending['run_id'] or
+                    read.get('query_id') != pending['query_id'] or
+                    read.get('approved_gui_retention') is not True or
+                    read.get('source_retrieval_verified') is not False):
+                raise ProjectFlowError('verification_receipt_invalid')
+            self._wos_acquisition = read
+            return self._publish()
+
+    def reconcile_wos_verification(self):
+        """Verify stopped supervised process AND original checkpoint evidence.
+
+        A lost result, active ownership or unknown HTTP attempt never releases
+        the GUI lock or causes an implicit retry.
+        """
+        with self._guard:
+            self._require_open()
+            pending = self._verify_pending
+            if pending is None or self._verify_operation_id is None:
+                raise ProjectFlowError('verification_reconciliation_not_required')
+            try:
+                status = self._verify_worker.poll(self._verify_operation_id)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            if status.state == 'running':
+                raise ProjectFlowError('verification_worker_still_running')
+            self._verify_worker_state = status.state
+            self._verify_error = status.error
+            try:
+                read = self._operation('wos_acquisition_read',
+                    run_id=pending['run_id'],
+                    acquisition_query_id=pending['query_id'])
+                if (read.get('run_id') != pending['run_id'] or
+                        read.get('query_id') != pending['query_id'] or
+                        read.get('preflight_sha256') != pending['preflight_sha256'] or
+                        read.get('approved_gui_retention') is not True or
+                        read.get('no_network_requests') is not True or
+                        read.get('source_retrieval_verified') is not False):
+                    raise ProjectFlowError('verification_receipt_invalid')
+                job = read['checkpoint']
+                if job['worker_active'] is True or job['requests_unknown'] != 0:
+                    raise ProjectFlowError('verification_worker_recovery_required')
+                if status.state == 'returned':
+                    receipt = status.result()
+                    if (type(receipt) is not dict or
+                            receipt.get('run_id') != pending['run_id'] or
+                            receipt.get('query_id') != pending['query_id'] or
+                            receipt.get('preflight_sha256') != pending['preflight_sha256'] or
+                            receipt.get('expected_requests') != pending['expected_requests'] or
+                            receipt.get('whole_search_verified') is not False or
+                            receipt.get('source_retrieval_verified') is not False or
+                            receipt.get('provider_snapshot_guaranteed') is not False or
+                            receipt.get('actual_checkpoint') != job or
+                            receipt.get('enumeration_reconciled') != job['enumeration_reconciled'] or
+                            type(receipt.get('session_requests_made')) is not int or
+                            not 0 <= receipt['session_requests_made'] <= pending['expected_requests']):
+                        raise ProjectFlowError('verification_receipt_invalid')
+                    spent = receipt['session_requests_made']
+                elif status.state in ('failed', 'interrupted'):
+                    spent = None
+                else:
+                    raise ProjectFlowError('verification_receipt_invalid')
+                self._wos_acquisition = read
+                self.snapshot = self._operation(
+                    'inspect',run_id=self.selected_run_id)['snapshot']
+                self._preflight = None
+                self._pilot_candidate = None
+                self._wos_pilot_candidate = None
+                self._verify_last_outcome = dict(
+                    worker_state=status.state, worker_error=status.error,
+                    run_id=pending['run_id'], query_id=pending['query_id'],
+                    requests_made=spent,
+                    enumeration_reconciled=job['enumeration_reconciled'],
+                    durable_source_status=job['status'],
+                    whole_search_verified=False,
+                    source_retrieval_verified=False)
+                self._verify_pending = None
+                self._verify_operation_id = None
+                return self._publish()
+            except ProjectFlowError:
                 self._publish()
                 raise
 
@@ -1402,6 +1637,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -1458,6 +1695,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1482,6 +1721,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1505,6 +1746,8 @@ class RealProjectFlow:
             if (self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('acquisition_reconciliation_required')
+            if self._verify_pending is not None:
+                raise ProjectFlowError('verification_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             # A previous file observation is time-specific; never display it as
@@ -1565,6 +1808,11 @@ class RealProjectFlow:
                 'wos_acquisition': self._wos_acquisition,
                 'wos_acquisition_tick_offer': self._wos_acquisition_tick_offer,
                 'wos_acquisition_tick_pending': self._wos_acquisition_tick_pending is not None,
+                'wos_verification_offer': self._verify_offer,
+                'wos_verification_pending': self._verify_pending is not None,
+                'wos_verification_worker_state': self._verify_worker_state,
+                'wos_verification_worker_error': self._verify_error,
+                'wos_verification_last_outcome': self._verify_last_outcome,
                 'pilot_history': self._pilot_history,
                 'pilot_history_error': self._pilot_history_error,
                 'saved_pilot_detail': self._saved_pilot_detail,
@@ -1594,4 +1842,9 @@ class RealProjectFlow:
         with self._guard:
             if not self._closed:
                 self._closed = True
-                self._worker.close(grace_seconds=0, kill_seconds=2)
+                # Shutdown cannot fabricate completion or automatically clear
+                # a durable provider reservation; recovery requires inspection.
+                try:
+                    self._verify_worker.close(grace_seconds=0, kill_seconds=2)
+                finally:
+                    self._worker.close(grace_seconds=0, kill_seconds=2)

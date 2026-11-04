@@ -199,6 +199,25 @@ def run(args):
                         if name == 'wos_acquisition_tick_reconcile':
                             # Read-only checkpoint inspection; NEVER resend.
                             return flow.reconcile_wos_acquisition_tick()
+                        if name == 'wos_verification_offer':
+                            return flow.offer_wos_verification()
+                        if name == 'wos_verification_revalidate_offer':
+                            return flow.offer_wos_verification(revalidate_quota=True)
+                        if name == 'wos_verification_dismiss':
+                            return flow.dismiss_wos_verification()
+                        if name == 'wos_verification_confirm':
+                            # ONLY a separate explicit click authorises transport.
+                            # The separate worker starts without blocking the GUI.
+                            return flow.confirm_wos_verification()
+                        if name == 'wos_verification_poll':
+                            # Read-only supervisor + durable original checkpoint.
+                            return flow.poll_wos_verification()
+                        if name == 'wos_verification_pause':
+                            # Explicit cooperative pause, NEVER network initiation.
+                            return flow.pause_wos_verification()
+                        if name == 'wos_verification_reconcile':
+                            # Terminal child evidence AND durable source receipt.
+                            return flow.reconcile_wos_verification()
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -993,6 +1012,101 @@ def run(args):
                                       on_click=lambda: act(
                                           'wos_acquisition_tick_confirm')).props(
                                               'data-testid=wos-acquisition-tick-confirm')
+                ui.separator()
+                ui.label('Web of Science — longer supervised identity verification '
+                         '(experimental)').props('data-testid=wos-verification-heading')
+                if state['wos_verification_pending']:
+                    ui.label('An explicitly authorised verification worker is '
+                             'running or needs final receipt reconciliation. '
+                             'Other project/run operations remain locked.')
+                    ui.label('Supervisor status: ' +
+                             state['wos_verification_worker_state'] +
+                             '; error: ' +
+                             str(state['wos_verification_worker_error'])).props(
+                                 'data-testid=wos-verification-worker-state')
+                    active = state['wos_acquisition']
+                    if active is not None:
+                        progress = active['checkpoint']
+                        ui.label('Durable verification progress: ' +
+                                 str(progress['verification_pages']) + ' / ' +
+                                 ('UNKNOWN' if progress['pages_expected'] is None
+                                  else str(progress['pages_expected'])) +
+                                 ' pages; recorded source hits ' +
+                                 str(progress['records_committed']) +
+                                 '; unknown requests ' +
+                                 str(progress['requests_unknown'])).props(
+                                     'data-testid=wos-verification-progress')
+                        if progress['worker_active'] or progress['requests_unknown']:
+                            ui.label('Do not repeat provider calls: the original '
+                                     'worker or an HTTP outcome may be unknown.')
+                    ui.button('Refresh source verification status (no provider request)',
+                              on_click=lambda: act('wos_verification_poll')).props(
+                                  'data-testid=wos-verification-poll')
+                    if state['wos_verification_worker_state'] == 'running':
+                        ui.button('Request graceful pause after current page',
+                                  on_click=lambda: act('wos_verification_pause')).props(
+                                      'data-testid=wos-verification-pause')
+                    else:
+                        ui.button('Reconcile stopped worker with durable checkpoint',
+                                  on_click=lambda: act('wos_verification_reconcile')).props(
+                                      'data-testid=wos-verification-reconcile')
+                elif state['wos_verification_offer'] is not None:
+                    proposal = state['wos_verification_offer']
+                    ui.label('Locked exact query: ' + proposal['exact_query']).props(
+                        'data-testid=wos-verification-locked-query')
+                    ui.label('Previously captured pages requiring verification: ' +
+                             str(proposal['pages_to_verify']) +
+                             '; exact maximum provider requests in this session: ' +
+                             str(proposal['expected_requests']) +
+                             ' (one initial recheck, all verification pages, '
+                             'one final recheck). Up to 512 requests supported. '
+                             'Rate limits, quota, server Retry-After or source '
+                             'change can pause or fail this sweep.').props(
+                                 'data-testid=wos-verification-budget')
+                    ui.label('No source request has been sent by this preview. '
+                             'Confirmation stores permitted validation evidence '
+                             'in the original project and may consume institutional quota. '
+                             'The app must remain open; closing it interrupts '
+                             'the child and may require explicit recovery.')
+                    if proposal['revalidate_quota']:
+                        ui.label('Explicit revalidation requested, but server '
+                                 'cooldown and unknown previous provider '
+                                 'requests cannot be bypassed.')
+                    ui.button('Cancel unsent verification',
+                              on_click=lambda: act('wos_verification_dismiss')).props(
+                                  'data-testid=wos-verification-dismiss')
+                    ui.button('CONFIRM one bounded supervised verification session',
+                              on_click=lambda: act('wos_verification_confirm')).props(
+                                  'data-testid=wos-verification-confirm')
+                else:
+                    acquired = state['wos_acquisition']
+                    if (acquired is not None and
+                            acquired['approved_gui_retention'] is True and
+                            state['wos_profile_configured'] and
+                            acquired['checkpoint']['stage'] in ('verify', 'final') and
+                            not acquired['checkpoint']['enumeration_reconciled'] and
+                            not acquired['checkpoint']['worker_active'] and
+                            acquired['checkpoint']['requests_unknown'] == 0):
+                        ui.label('The existing short-session limit cannot '
+                                 'finish this verification sweep. A separate '
+                                 'longer supervised worker can verify the '
+                                 'already captured pages in one explicit session.')
+                        ui.button('Preview full source verification workload',
+                                  on_click=lambda: act('wos_verification_offer')).props(
+                                      'data-testid=wos-verification-offer')
+                        ui.button('Preview verification with explicit quota revalidation',
+                                  on_click=lambda: act(
+                                      'wos_verification_revalidate_offer')).props(
+                                          'data-testid=wos-verification-revalidate')
+                if state['wos_verification_last_outcome'] is not None:
+                    outcome = state['wos_verification_last_outcome']
+                    ui.label('Last supervised session: ' +
+                             outcome['worker_state'] +
+                             '; source status: ' + outcome['durable_source_status'] +
+                             '; enumeration reconciled: ' +
+                             str(outcome['enumeration_reconciled']) +
+                             '; whole search verified: FALSE').props(
+                                 'data-testid=wos-verification-outcome')
                 for item in state['exports']:
                     # Only offer requests belonging to the explicitly selected run.
                     if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:
@@ -1112,6 +1226,16 @@ def run(args):
                 ui.label('Native folder selection is available only in the desktop window.').props(
                     'data-testid=native-folder-unavailable')
             panel()
+
+            async def refresh_running_verification():
+                # Passive host polling is STRICTLY read-only. The sole source
+                # network action remains the separate explicit Confirm button.
+                # One timer per connected page, not per panel refresh.
+                if (flow.state()['wos_verification_pending'] and
+                        not action_lock.locked()):
+                    await act('wos_verification_poll')
+
+            ui.timer(2.0, refresh_running_verification)
 
         @app.get('/_probe/state')
         async def state():

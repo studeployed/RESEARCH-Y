@@ -566,3 +566,354 @@ def test_gui_has_explicit_retention_and_session_controls_not_probe_automation():
         "@app.post('/_probe/stop')")[0]
     assert 'wos_acquisition' not in block
     assert 'ui.html(' not in source
+
+
+
+class SyntheticLongSupervisor:
+    """A deterministic host boundary; core retrieval remains the real code."""
+
+    def __init__(self):
+        self.operation_id=str(uuid4())
+        self.command=None
+        self.status='running'
+        self.receipt=None
+        self.error=None
+        self.closed=False
+        self.submissions=0
+
+    def submit(self,command):
+        assert self.command is None
+        assert command.operation=='wos_acquisition_verify'
+        self.command=command
+        self.submissions+=1
+        return self.operation_id
+
+    def poll(self,operation_id):
+        from research_y.application_worker import OperationStatus
+        assert operation_id==self.operation_id
+        return OperationStatus(operation_id,'wos_acquisition_verify',None,
+                               self.status,self.error,
+                               None if self.receipt is None
+                               else json.dumps(self.receipt))
+
+    def close(self,*,grace_seconds=0,kill_seconds=2):
+        self.closed=True
+
+
+def _ready_for_long_verification(tmp_path,monkeypatch,*,count=103):
+    project,flow,rid,q=_flow(tmp_path)
+    flow.offer_wos_acquisition(q['query_id'])
+    flow.confirm_wos_acquisition()
+    clock,provider=_inject_tick(monkeypatch,flow,count=count)
+    flow.offer_wos_acquisition_tick()
+    progress=flow.confirm_wos_acquisition_tick()['wos_acquisition']
+    assert progress['checkpoint']['stage']=='verify'
+    assert progress['checkpoint']['records_committed']==count
+    assert not progress['checkpoint']['enumeration_reconciled']
+    return project,flow,rid,q,clock,provider
+
+
+def test_extended_source_verification_plan_and_final_recount(tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch,count=103)
+    try:
+        before=_rows(project)
+        preview=acquisition.preview_wos_verification(
+            project,run_id=rid,query_id=q['query_id'])
+        assert preview['pages_to_verify']==3
+        assert preview['expected_requests']==5
+        assert preview['max_session_requests']==512
+        assert preview['no_network_requests'] is True
+        assert len(provider.calls)==3 and _rows(project)==before
+        clock.sleep(2)  # Respect provider's persisted minimum pacing.
+        client=WoSStarterClient(
+            api_key=KEY,request_budget=512,timeout=10,
+            transport=provider,clock=clock.monotonic,
+            sleep=clock.sleep,utc_now=clock.now)
+        result=acquisition.run_wos_verification_session(
+            project,run_id=rid,query_id=q['query_id'],
+            expected_plan_sha256=preview['preflight_sha256'],
+            expected_requests=preview['expected_requests'],
+            confirmed=True,revalidate_quota=False,client=client)
+        assert result['session_requests_made']==5
+        assert result['enumeration_reconciled'] is True
+        assert result['actual_checkpoint']['status']=='completed_with_warnings'
+        assert result['actual_checkpoint']['verification_pages']==3
+        assert result['actual_checkpoint']['records_committed']==103
+        assert not result['source_retrieval_verified']
+        assert not result['whole_search_verified']
+        assert not result['provider_snapshot_guaranteed']
+        assert provider.calls[3:]==[(1,1),(1,50),(2,50),(3,50),(1,1)]
+        assert len(_rows(project)['metadata'])==103
+        assert KEY not in json.dumps(result)
+        assert TITLE not in json.dumps(result)
+        with pytest.raises(acquisition.WoSAcquisitionError,
+                           match='verification_not_ready'):
+            acquisition.preview_wos_verification(
+                project,run_id=rid,query_id=q['query_id'])
+    finally:
+        flow.close()
+
+
+def test_extended_verification_rejects_stale_plan_bad_consent_and_budget(
+        tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch)
+    try:
+        preview=acquisition.preview_wos_verification(
+            project,run_id=rid,query_id=q['query_id'])
+        before=_rows(project)
+        client=WoSStarterClient(api_key=KEY,request_budget=512)
+        for overrides in (
+            {'confirmed':False},
+            {'revalidate_quota':1},
+            {'expected_requests':4},
+            {'expected_plan_sha256':'b'*64},
+            {'expected_requests':True},
+            {'expected_requests':513},
+        ):
+            kw=dict(run_id=rid,query_id=q['query_id'],
+                    expected_plan_sha256=preview['preflight_sha256'],
+                    expected_requests=5,
+                    confirmed=True,revalidate_quota=False,client=client)
+            kw.update(overrides)
+            with pytest.raises(acquisition.WoSAcquisitionError):
+                acquisition.run_wos_verification_session(project,**kw)
+        assert _rows(project)==before
+        assert len(provider.calls)==3
+    finally:
+        flow.close()
+
+
+def test_extended_verification_refuses_oversized_sweep_before_network(
+        tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch)
+    try:
+        baseline=acquisition.inspect_wos_acquisition(
+            project,run_id=rid,query_id=q['query_id'])
+        large=json.loads(json.dumps(baseline))
+        large['checkpoint']['pages_expected']=511
+        large['checkpoint']['pages_committed']=511
+        original=acquisition.inspect_wos_acquisition
+        monkeypatch.setattr(
+            acquisition,'inspect_wos_acquisition',lambda *a,**k:large)
+        with pytest.raises(acquisition.WoSAcquisitionError,
+                           match='verification_budget_exceeded'):
+            acquisition.preview_wos_verification(
+                project,run_id=rid,query_id=q['query_id'])
+        monkeypatch.setattr(acquisition,'inspect_wos_acquisition',original)
+        assert len(provider.calls)==3
+    finally:
+        flow.close()
+
+
+def test_long_supervised_gui_explicit_consent_read_only_poll_and_reconciliation(
+        tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch)
+    supervisor=SyntheticLongSupervisor()
+    flow._verify_worker.close()
+    flow._verify_worker=supervisor
+    try:
+        before=_rows(project)
+        offer=flow.offer_wos_verification()
+        assert offer['wos_verification_offer']['expected_requests']==5
+        assert offer['wos_verification_pending'] is False
+        assert len(provider.calls)==3 and _rows(project)==before
+        flow.dismiss_wos_verification()
+        assert flow.state()['wos_verification_offer'] is None
+        with pytest.raises(ProjectFlowError,match='session_confirmation_required'):
+            flow.confirm_wos_verification()
+        flow.offer_wos_verification()
+        started=flow.confirm_wos_verification()
+        assert started['wos_verification_pending'] is True
+        assert started['wos_verification_worker_state']=='running'
+        assert supervisor.submissions==1
+        assert supervisor.command.verification_expected_requests==5
+        assert supervisor.command.acquisition_api_key==KEY
+        assert KEY not in repr(supervisor.command)
+        assert KEY not in json.dumps(started)
+        with pytest.raises(ProjectFlowError,match='verification_reconciliation_required'):
+            flow.select_run(rid)
+        with pytest.raises(ProjectFlowError,match='verification_reconciliation_required'):
+            flow.confirm_wos_verification()
+        for blocked in (
+                flow.confirm_pubmed_pilot,
+                flow.confirm_wos_pilot,
+                flow.approve_setup,
+                flow.prepare):
+            with pytest.raises(ProjectFlowError,match='verification_reconciliation_required'):
+                blocked()
+        with pytest.raises(ProjectFlowError,match='operation_reconciliation_required'):
+            flow.record_preflight_review()
+        refreshed=flow.poll_wos_verification()
+        assert refreshed['wos_verification_pending']
+        assert refreshed['wos_acquisition']['checkpoint']['records_committed']==103
+        assert refreshed['wos_acquisition']['checkpoint']['verification_pages']==0
+        assert len(provider.calls)==3  # Polling never sends a request.
+        clock.sleep(2)
+        client=WoSStarterClient(
+            api_key=KEY,request_budget=512,timeout=10,
+            transport=provider,clock=clock.monotonic,
+            sleep=clock.sleep,utc_now=clock.now)
+        receipt=acquisition.run_wos_verification_session(
+            project,run_id=rid,query_id=q['query_id'],
+            expected_plan_sha256=supervisor.command.acquisition_plan_sha256,
+            expected_requests=5,confirmed=True,revalidate_quota=False,
+            client=client)
+        supervisor.receipt=receipt
+        supervisor.status='returned'
+        done=flow.reconcile_wos_verification()
+        assert done['wos_verification_pending'] is False
+        assert done['wos_verification_worker_state']=='returned'
+        assert done['wos_verification_last_outcome']['requests_made']==5
+        assert done['wos_verification_last_outcome']['enumeration_reconciled'] is True
+        assert done['wos_verification_last_outcome']['whole_search_verified'] is False
+        assert done['wos_acquisition']['checkpoint']['enumeration_reconciled'] is True
+        assert done['report']['status']=='incomplete'
+        assert len(provider.calls)==8 and supervisor.submissions==1
+        assert KEY not in json.dumps(done)
+        assert TITLE not in json.dumps(done)
+    finally:
+        flow.close()
+    assert supervisor.closed is True
+
+
+def test_long_verification_failed_or_forged_result_never_becomes_source_success(
+        tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch)
+    supervisor=SyntheticLongSupervisor()
+    flow._verify_worker.close()
+    flow._verify_worker=supervisor
+    try:
+        flow.offer_wos_verification()
+        flow.confirm_wos_verification()
+        supervisor.status='returned'
+        supervisor.receipt=dict(run_id=rid,query_id=q['query_id'],
+                                enumeration_reconciled=True,
+                                source_retrieval_verified=False)
+        with pytest.raises(ProjectFlowError,match='verification_receipt_invalid'):
+            flow.reconcile_wos_verification()
+        assert flow.state()['wos_verification_pending']
+        supervisor.status='failed'
+        supervisor.error='operation_failed'
+        supervisor.receipt=None
+        outcome=flow.reconcile_wos_verification()['wos_verification_last_outcome']
+        assert outcome['worker_state']=='failed'
+        assert outcome['enumeration_reconciled'] is False
+        assert outcome['source_retrieval_verified'] is False
+        assert outcome['whole_search_verified'] is False
+        assert len(provider.calls)==3
+    finally:
+        flow.close()
+
+
+def test_long_verification_abort_unknown_outcome_blocks_reconciliation(
+        tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch)
+    supervisor=SyntheticLongSupervisor()
+    flow._verify_worker.close()
+    flow._verify_worker=supervisor
+    try:
+        flow.offer_wos_verification()
+        flow.confirm_wos_verification()
+        supervisor.status='interrupted'
+        supervisor.error='worker_interrupted'
+        original=flow._operation
+        def unconfirmed(name,**kw):
+            reply=original(name,**kw)
+            if name=='wos_acquisition_read':
+                reply['checkpoint']['worker_active']=True
+            return reply
+        monkeypatch.setattr(flow,'_operation',unconfirmed)
+        with pytest.raises(ProjectFlowError,match='verification_worker_recovery_required'):
+            flow.reconcile_wos_verification()
+        assert flow.state()['wos_verification_pending'] is True
+        assert len(provider.calls)==3
+        monkeypatch.setattr(flow,'_operation',original)
+    finally:
+        flow.close()
+
+
+def test_gui_auto_progress_refresh_is_read_only_and_confirm_gated():
+    source=inspect.getsource(run)
+    assert "name == 'wos_verification_confirm'" in source
+    assert "name == 'wos_verification_poll'" in source
+    assert "name == 'wos_verification_pause'" in source
+    assert "name == 'wos_verification_reconcile'" in source
+    assert "ui.timer(2.0, refresh_running_verification)" in source
+    assert "await act('wos_verification_poll')" in source
+    assert 'ui.html(' not in source
+    probe=source.split("@app.post('/_probe/start')")[1].split(
+        "@app.post('/_probe/stop')")[0]
+    assert 'wos_verification' not in probe
+
+
+
+def test_graceful_pause_waits_for_durable_ownership_and_retains_pages(
+        tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch)
+    try:
+        # A pause cannot race before _claim() and then be overwritten by it.
+        with pytest.raises(acquisition.WoSAcquisitionError,
+                           match='verification_worker_not_running'):
+            acquisition.pause_wos_verification_session(
+                project,run_id=rid,query_id=q['query_id'])
+        assert len(provider.calls)==3
+        clock.sleep(2)
+        seen=[]
+        def pausing_transport(req,timeout):
+            response=provider(req,timeout)
+            if len(provider.calls)==4:
+                observed=acquisition.pause_wos_verification_session(
+                    project,run_id=rid,query_id=q['query_id'])
+                assert observed['checkpoint']['worker_active'] is True
+                assert observed['checkpoint']['status']=='paused'
+                seen.append(observed['checkpoint']['records_committed'])
+            return response
+        client=WoSStarterClient(
+            api_key=KEY,request_budget=512,timeout=10,
+            transport=pausing_transport,clock=clock.monotonic,
+            sleep=clock.sleep,utc_now=clock.now)
+        original=acquisition.preview_wos_verification(
+            project,run_id=rid,query_id=q['query_id'])
+        result=acquisition.run_wos_verification_session(
+            project,run_id=rid,query_id=q['query_id'],
+            expected_plan_sha256=original['preflight_sha256'],
+            expected_requests=original['expected_requests'],
+            confirmed=True,revalidate_quota=False,client=client)
+        checkpoint=result['actual_checkpoint']
+        assert seen==[103]
+        assert result['session_requests_made']==1
+        assert checkpoint['status']=='paused'
+        assert checkpoint['worker_active'] is False
+        assert checkpoint['requests_unknown']==0
+        assert checkpoint['records_committed']==103
+        assert checkpoint['enumeration_reconciled'] is False
+        assert result['whole_search_verified'] is False
+        assert len(provider.calls)==4
+    finally:
+        flow.close()
+
+
+def test_gui_pause_before_real_supervisor_claim_fails_safely(tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch)
+    supervisor=SyntheticLongSupervisor()
+    flow._verify_worker.close()
+    flow._verify_worker=supervisor
+    try:
+        flow.offer_wos_verification()
+        flow.confirm_wos_verification()
+        with pytest.raises(ProjectFlowError,
+                           match='verification_worker_not_running'):
+            flow.pause_wos_verification()
+        assert flow.state()['wos_verification_pending'] is True
+        assert supervisor.submissions==1
+        assert len(provider.calls)==3
+    finally:
+        flow.close()
