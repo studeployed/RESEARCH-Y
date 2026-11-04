@@ -56,6 +56,9 @@ class RealProjectFlow:
         # PubMed ESearch may need long, separately supervised partition work.
         # Read-only progress remains possible through the ordinary worker.
         self._pubmed_source_worker = ApplicationWorker()
+        # Bounded EFetch metadata sessions run independently of GUI rendering.
+        # Only the original source-record store is permitted to persist rows.
+        self._pubmed_metadata_worker = ApplicationWorker()
         self._closed = False
         self.project = None
         self.snapshot = None
@@ -102,6 +105,13 @@ class RealProjectFlow:
         self._pubmed_source_worker_state = 'idle'
         self._pubmed_source_worker_error = None
         self._pubmed_source_last_outcome = None
+        self._pubmed_metadata_offer = None
+        self._pubmed_metadata_pending = None
+        self._pubmed_metadata_operation_id = None
+        self._pubmed_metadata = None
+        self._pubmed_metadata_worker_state = 'idle'
+        self._pubmed_metadata_worker_error = None
+        self._pubmed_metadata_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -139,6 +149,8 @@ class RealProjectFlow:
             raise ProjectFlowError('verification_reconciliation_required')
         if self._pubmed_source_pending is not None:
             raise ProjectFlowError('pubmed_source_reconciliation_required')
+        if self._pubmed_metadata_pending is not None:
+            raise ProjectFlowError('pubmed_metadata_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
                 raise ProjectFlowError('export_reconciliation_required')
@@ -318,6 +330,13 @@ class RealProjectFlow:
         self._pubmed_source_worker_state = 'idle'
         self._pubmed_source_worker_error = None
         self._pubmed_source_last_outcome = None
+        self._pubmed_metadata_offer = None
+        self._pubmed_metadata_pending = None
+        self._pubmed_metadata_operation_id = None
+        self._pubmed_metadata = None
+        self._pubmed_metadata_worker_state = 'idle'
+        self._pubmed_metadata_worker_error = None
+        self._pubmed_metadata_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -435,6 +454,9 @@ class RealProjectFlow:
             self._pubmed_source_offer = None
             self._pubmed_source = None
             self._pubmed_source_last_outcome = None
+            self._pubmed_metadata_offer = None
+            self._pubmed_metadata = None
+            self._pubmed_metadata_last_outcome = None
             self.snapshot = report
             return self._publish()
 
@@ -522,6 +544,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('verification_reconciliation_required')
             if self._pubmed_source_pending is not None:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
+            if self._pubmed_metadata_pending is not None:
+                raise ProjectFlowError('pubmed_metadata_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
@@ -631,7 +655,8 @@ class RealProjectFlow:
                     self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None or
                     self._verify_pending is not None or
-                    self._pubmed_source_pending is not None):
+                    self._pubmed_source_pending is not None or
+                    self._pubmed_metadata_pending is not None):
                 raise ProjectFlowError('operation_reconciliation_required')
             if self._pending_review is None:
                 if self._review_candidate is None or self._preflight is None:
@@ -743,6 +768,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('verification_reconciliation_required')
             if self._pubmed_source_pending is not None:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
+            if self._pubmed_metadata_pending is not None:
+                raise ProjectFlowError('pubmed_metadata_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -889,6 +916,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('verification_reconciliation_required')
             if self._pubmed_source_pending is not None:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
+            if self._pubmed_metadata_pending is not None:
+                raise ProjectFlowError('pubmed_metadata_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -1930,6 +1959,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('verification_reconciliation_required')
             if self._pubmed_source_pending is not None:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
+            if self._pubmed_metadata_pending is not None:
+                raise ProjectFlowError('pubmed_metadata_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -1990,6 +2021,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('verification_reconciliation_required')
             if self._pubmed_source_pending is not None:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
+            if self._pubmed_metadata_pending is not None:
+                raise ProjectFlowError('pubmed_metadata_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -2018,6 +2051,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('verification_reconciliation_required')
             if self._pubmed_source_pending is not None:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
+            if self._pubmed_metadata_pending is not None:
+                raise ProjectFlowError('pubmed_metadata_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -2045,6 +2080,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('verification_reconciliation_required')
             if self._pubmed_source_pending is not None:
                 raise ProjectFlowError('pubmed_source_reconciliation_required')
+            if self._pubmed_metadata_pending is not None:
+                raise ProjectFlowError('pubmed_metadata_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             # A previous file observation is time-specific; never display it as
@@ -2116,6 +2153,12 @@ class RealProjectFlow:
                 'pubmed_source_worker_error': self._pubmed_source_worker_error,
                 'pubmed_source': self._pubmed_source,
                 'pubmed_source_last_outcome': self._pubmed_source_last_outcome,
+                'pubmed_metadata_offer': self._pubmed_metadata_offer,
+                'pubmed_metadata_pending': self._pubmed_metadata_pending is not None,
+                'pubmed_metadata_worker_state': self._pubmed_metadata_worker_state,
+                'pubmed_metadata_worker_error': self._pubmed_metadata_worker_error,
+                'pubmed_metadata': self._pubmed_metadata,
+                'pubmed_metadata_last_outcome': self._pubmed_metadata_last_outcome,
                 'pilot_history': self._pilot_history,
                 'pilot_history_error': self._pilot_history_error,
                 'saved_pilot_detail': self._saved_pilot_detail,
@@ -2149,7 +2192,10 @@ class RealProjectFlow:
                 # a durable provider reservation; recovery requires inspection.
                 try:
                     try:
-                        self._pubmed_source_worker.close(grace_seconds=0, kill_seconds=2)
+                        try:
+                            self._pubmed_metadata_worker.close(grace_seconds=0, kill_seconds=2)
+                        finally:
+                            self._pubmed_source_worker.close(grace_seconds=0, kill_seconds=2)
                     finally:
                         self._verify_worker.close(grace_seconds=0, kill_seconds=2)
                 finally:
