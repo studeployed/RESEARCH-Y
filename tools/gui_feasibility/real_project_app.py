@@ -262,6 +262,19 @@ def run(args):
                                     'query_id','revision'}:
                                 raise ProjectFlowError('run_board_invalid')
                             return flow.choose_run_execution_step(**value)
+                        if name == 'run_coord_offer':
+                            return flow.offer_run_coordination()
+                        if name == 'run_coord_dismiss':
+                            return flow.dismiss_run_coordination()
+                        if name == 'run_coord_confirm':
+                            # Only this separately confirmed click can begin
+                            # a bounded source-work sequence.
+                            return flow.confirm_run_coordination()
+                        if name == 'run_coord_poll':
+                            # Original source checkpoint reads ONLY.
+                            return flow.poll_run_coordination()
+                        if name == 'run_coord_reconcile':
+                            return flow.reconcile_run_coordination()
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -653,6 +666,120 @@ def run(args):
                                  'missing abstracts, deduplication, official society '
                                  'coverage or completed Preferred Reporting Items for '
                                  'Systematic Reviews and Meta-Analyses searches.')
+
+                if state['selected_run_id'] is not None:
+                    ui.separator()
+                    ui.label('Bounded whole-run source coordination — '
+                             'EXPLICIT CONFIRMATION required before ANY provider '
+                             'request. Experimental, not unattended.').props(
+                                 'data-testid=run-coordination-heading')
+                    ui.label('Already prepared provider stages may run in sequence, '
+                             'at most TWO stages per consent. The original source '
+                             'services enforce the request budgets and stop on '
+                             'unknown outcomes. Untouched PubMed queries still '
+                             'require explicit Create Date coverage; unprepared '
+                             'Web of Science queries still require separate '
+                             'licensed metadata retention consent.')
+                    if state['run_coordination_pending']:
+                        ui.label('Supervised coordinator state: ' +
+                                 state['run_coordination_worker_state'] +
+                                 '; error: ' +
+                                 str(state['run_coordination_worker_error'])).props(
+                                     'data-testid=run-coordination-worker')
+                        ui.label('Running does NOT imply provider access succeeded. '
+                                 'An interrupted process or uncertain request '
+                                 'must be inspected, never automatically repeated.')
+                        progress=state['run_execution_board']
+                        if progress is not None:
+                            for item in progress['queries']:
+                                ui.label(item['source_name'] + ' • ' +
+                                         item['group_id'] + ' • ' +
+                                         item['source_stage'] +
+                                         ' • IDs saved ' +
+                                         str(item['identifiers_retrieved']) +
+                                         ' • metadata rows ' +
+                                         str(item['metadata_records_retained'])).props(
+                                             'data-testid=run-coordination-progress')
+                        ui.button('Read durable run progress (NO provider call)',
+                                  on_click=lambda: act('run_coord_poll')).props(
+                                      'data-testid=run-coordination-poll')
+                        if state['run_coordination_worker_state'] != 'running':
+                            ui.button('Reconcile STOPPED source coordinator with '
+                                      'original saved checkpoint evidence',
+                                      on_click=lambda: act('run_coord_reconcile')).props(
+                                          'data-testid=run-coordination-reconcile')
+                    elif state['run_coordination_offer'] is not None:
+                        offer=state['run_coordination_offer']
+                        tasks=offer['tasks']
+                        if tasks:
+                            ui.label('Frozen, unsent work: ' + str(len(tasks)) +
+                                     ' source stages. Maximum combined external '
+                                     'HTTP requests: ' +
+                                     str(offer['max_external_requests']) +
+                                     '. Each original provider limiter may stop '
+                                     'earlier due to quotas, network errors, '
+                                     'count drift or an interrupted request.').props(
+                                         'data-testid=run-coordination-budget')
+                            for item in tasks:
+                                ui.label('To execute after confirmation: ' +
+                                         item['source_name'] + ' • group ' +
+                                         item['group_id'] + ' • ' +
+                                         item['action'] + ' • exact query ' +
+                                         item['exact_query'] +
+                                         ' • at most ' +
+                                         str(item['max_requests']) +
+                                         ' source requests.').props(
+                                             'data-testid=run-coordination-proposal')
+                            ui.label('One approval authorises ONLY the above '
+                                     'displayed existing source stages. No '
+                                     'new WoS retention is authorised, no '
+                                     'filters are applied, and no provider '
+                                     'quota revalidation is assumed. Your '
+                                     'application must remain open.').props(
+                                         'data-testid=run-coordination-consent')
+                            ui.button('CONFIRM one bounded source-coordination session',
+                                      on_click=lambda: act('run_coord_confirm')).props(
+                                          'data-testid=run-coordination-confirm')
+                        else:
+                            ui.label('No already-authorised executable source '
+                                     'stages are available with current local '
+                                     'provider configuration. Complete the '
+                                     'existing source-specific preparation or '
+                                     'recovery actions first.').props(
+                                         'data-testid=run-coordination-no-work')
+                        for item in offer['preview']['blocked_tasks']:
+                            ui.label('Manual prerequisite: ' +
+                                     item['source_name'] + ' • ' +
+                                     item['group_id'] + ' • ' +
+                                     item['blocker']).props(
+                                         'data-testid=run-coordination-blocked')
+                        for item in offer['unavailable']:
+                            ui.label('Missing local provider profile: ' +
+                                     item['source_name'] + ' • ' +
+                                     item['query_id']).props(
+                                         'data-testid=run-coordination-no-profile')
+                        ui.button('Cancel unsent run coordination',
+                                  on_click=lambda: act('run_coord_dismiss')).props(
+                                      'data-testid=run-coordination-dismiss')
+                    else:
+                        ui.button('Preview next eligible run-wide source jobs '
+                                  '(OFFLINE, no source requests)',
+                                  on_click=lambda: act('run_coord_offer')).props(
+                                      'data-testid=run-coordination-offer')
+                    if state['run_coordination_last_outcome'] is not None:
+                        outcome=state['run_coordination_last_outcome']
+                        ui.label('Last supervised session: ' +
+                                 outcome['worker_state'] +
+                                 '; planned stages ' +
+                                 str(outcome['planned_step_count']) +
+                                 '; dispatched stages ' +
+                                 ('UNKNOWN' if
+                                  outcome['dispatched_step_count'] is None
+                                  else str(outcome['dispatched_step_count'])) +
+                                 '; stop reason ' +
+                                 str(outcome['stopped_reason']) +
+                                 '; whole search verified: FALSE.').props(
+                                     'data-testid=run-coordination-outcome')
 
                 if state['selected_run_id'] is not None:
                     ui.separator()
@@ -1641,6 +1768,8 @@ def run(args):
                         await act('pubmed_identifier_poll')
                     elif flow.state()['pubmed_metadata_pending']:
                         await act('pubmed_metadata_poll')
+                    elif flow.state()['run_coordination_pending']:
+                        await act('run_coord_poll')
 
             ui.timer(2.0, refresh_running_verification)
 
