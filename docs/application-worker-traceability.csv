@@ -35,3 +35,14 @@ RUN-05,source_retrieval_verified false despite complete saved EFetch records,tes
 RUN-06,supervised bounded EFetch session with explicit manual restart/test replay,test_gui_pubmed_metadata.py,partial no cooperative metadata-specific pause
 SEC-01,host-only email and API key excluded from browser EFetch payload,test_application_commands.py and test_gui_pubmed_metadata.py,partial no packaged OS credential vault
 AT-09,fully checked PubMed identifier source then two saved EFetch batches,test_gui_pubmed_metadata.py,partial real network and multi-source acceptance untested
+SEARCH-06,run_execution_board groups independent sources without conceptual intersections,test_run_execution_board.py,partial no automatic execution of every group
+RUN-03,read_run_execution_board source checkpoint pages IDs saved metadata and status,test_run_execution_board.py,partial offline read model not live-worker detection
+COUNT-01,original run-count projection provider and query denominators in execution board,test_run_execution_board.py,partial global unique publications not verified
+COUNT-02,source union across groups not arithmetic group sum,test_run_execution_board.py,partial provisional publication identities only
+COUNT-03,reported versus retrieved source identifiers including unknown and zero,test_run_execution_board.py,partial provider-specific completeness independent
+COUNT-04,read-only group/source execution table with explicit incomplete flags,test_run_execution_board.py,partial society/manual source table and final unique count outstanding
+COUNT-05,execution board never sets verified complete or source_retrieval_verified,test_run_execution_board.py,partial acceptance remains open
+UI-05,whole-run read-only progress alongside original source-specific preview actions,test_run_execution_board.py,partial no automatic entire-run job
+UI-06,per-group and per-source honest summary,test_run_execution_board.py,partial final global unique publication count not implemented
+SEC-01,credential-free worker board and revision-fenced preview selection,test_application_commands.py and test_run_execution_board.py,partial local security acceptance ongoing
+AT-19,unfinished source cannot be promoted by equal numeric count,test_run_execution_board.py,partial no live failure mix verification
