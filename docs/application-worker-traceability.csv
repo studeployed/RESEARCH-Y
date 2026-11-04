@@ -19,3 +19,11 @@ RUN-05,source enumeration separate from whole-run source_retrieval_verified flag
 RUN-06,supervised child foreground app lifetime with explicit pause and restart-safe receipts,test_gui_wos_acquisition.py,partial ambiguous ownership requires separate verified recovery
 SEC-01,host-only transient Starter key and exact worker-validated request budget,test_application_commands.py,partial final OS credential store not implemented
 AT-09,continuous multi-page page-identity verification fixture,test_gui_wos_acquisition.py,partial no live 510-page acceptance
+SRC-01,pubmed_source_gui and supervised ESearch client budget,test_gui_pubmed_identifiers.py,partial live contact rate entitlement untested
+SRC-02,pubmed_partition DateWindow and durable identifier checkpoints,test_gui_pubmed_identifiers.py,partial selected coverage must equal full unfiltered count
+RUN-03,pubmed_source_gui read-only checkpoint progress plus GUI polling,test_gui_pubmed_identifiers.py,partial real source large queries outstanding
+RUN-04,source request cap and original checkpoint reuse,test_gui_pubmed_identifiers.py,partial no durable pre-plan reservation or cross-machine mutex
+RUN-06,pubmed pause and explicit resumed session after first saved plan,test_gui_pubmed_identifiers.py,partial no unattended run after GUI close
+COUNT-05,identifier count not promoted to full source retrieval,test_gui_pubmed_identifiers.py,partial EFetch missing
+SEC-01,host-only PubMed email and key not returned to client,test_application_commands.py,partial OS credential management outstanding
+AT-09,original PubMed partitions and checkpoint pause simulated through graphical host,test_gui_pubmed_identifiers.py,partial live full metadata pending

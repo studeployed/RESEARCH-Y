@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from datetime import date
 from importlib.metadata import version
 import json
 import os
@@ -218,6 +219,25 @@ def run(args):
                         if name == 'wos_verification_reconcile':
                             # Terminal child evidence AND durable source receipt.
                             return flow.reconcile_wos_verification()
+                        if name == 'pubmed_identifier_read':
+                            return flow.inspect_stored_pubmed_source(value)
+                        if name == 'pubmed_identifier_offer':
+                            if type(value) is not dict or set(value) != {
+                                    'query_id','coverage_start','coverage_end'}:
+                                raise ProjectFlowError('pubmed_coverage_invalid')
+                            return flow.offer_pubmed_source(**value)
+                        if name == 'pubmed_identifier_dismiss':
+                            return flow.dismiss_pubmed_source()
+                        if name == 'pubmed_identifier_confirm':
+                            # Only explicit separate confirmation starts ESearch.
+                            return flow.confirm_pubmed_source()
+                        if name == 'pubmed_identifier_poll':
+                            # No PubMed request; original disk checkpoint only.
+                            return flow.poll_pubmed_source()
+                        if name == 'pubmed_identifier_pause':
+                            return flow.pause_pubmed_source()
+                        if name == 'pubmed_identifier_reconcile':
+                            return flow.reconcile_pubmed_source()
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -1107,6 +1127,156 @@ def run(args):
                              str(outcome['enumeration_reconciled']) +
                              '; whole search verified: FALSE').props(
                                  'data-testid=wos-verification-outcome')
+                if state['selected_run_id'] is not None:
+                    ui.separator()
+                    ui.label('PubMed ESearch — supervised identifier retrieval '
+                             '(EXPERIMENTAL; metadata is a separate stage).').props(
+                                 'data-testid=pubmed-source-heading')
+                    ui.label('Every approved group remains independent and '
+                             'the conceptual search is OR-only. No language, '
+                             'species or study-type exclusion is applied. '
+                             'Identifiers are stored in the project with a '
+                             'source checkpoint, NOT treated as a finished '
+                             'bibliographic search.').props(
+                                 'data-testid=pubmed-source-method')
+                    ui.label('One explicitly confirmed session is limited to '
+                             '512 source requests, including count probes; '
+                             'individual identifier pages are capped at 200. '
+                             'A broader query may need Create Date partitioning, '
+                             'but its initial unfiltered count must equal the '
+                             'count over the researcher-confirmed date coverage. '
+                             'Otherwise results remain INCOMPLETE.')
+                    if state['pubmed_source_pending']:
+                        ui.label('Supervised identifier worker: ' +
+                                 state['pubmed_source_worker_state'] +
+                                 '; error: ' + str(
+                                     state['pubmed_source_worker_error'])).props(
+                                         'data-testid=pubmed-source-worker-state')
+                        ui.label('Do not repeat an uncertain source request. '
+                                 'The original checkpoint must be inspected '
+                                 'after the worker stops.')
+                        progress = state['pubmed_source']
+                        if progress is not None and progress['checkpoint'] is not None:
+                            cp=progress['checkpoint']
+                            ui.label('Saved source results: ' +
+                                     str(cp['identifiers_committed']) + ' / ' +
+                                     str(cp['reported_matches']) + ' PMIDs; ' +
+                                     str(cp['pages_committed']) + ' / ' +
+                                     str(cp['pages_expected']) + ' pages; ' +
+                                     'identifier reconciliation: ' +
+                                     str(cp['identifiers_reconciled'])).props(
+                                         'data-testid=pubmed-source-progress')
+                        else:
+                            ui.label('No durable source checkpoint yet: count '
+                                     'planning may still be in progress, or '
+                                     'the source outcome is unknown.').props(
+                                         'data-testid=pubmed-source-no-checkpoint')
+                        ui.button('Refresh original PubMed checkpoint (no HTTP)',
+                                  on_click=lambda: act('pubmed_identifier_poll')).props(
+                                      'data-testid=pubmed-source-poll')
+                        if (state['pubmed_source_worker_state']=='running' and
+                                progress is not None and
+                                progress['checkpoint'] is not None):
+                            ui.button('Request graceful pause after committed page',
+                                      on_click=lambda: act('pubmed_identifier_pause')).props(
+                                          'data-testid=pubmed-source-pause')
+                        if state['pubmed_source_worker_state'] != 'running':
+                            ui.button('Reconcile terminal worker and saved checkpoint',
+                                      on_click=lambda: act(
+                                          'pubmed_identifier_reconcile')).props(
+                                              'data-testid=pubmed-source-reconcile')
+                    elif state['pubmed_source_offer'] is not None:
+                        choice=state['pubmed_source_offer']
+                        ui.label('Frozen PubMed All Fields exact query: ' +
+                                 choice['exact_query']).props(
+                                     'data-testid=pubmed-source-exact-query')
+                        ui.label('Explicit administrative Create Date coverage: ' +
+                                 choice['coverage_start'] + ' to ' +
+                                 choice['coverage_end'] +
+                                 '. The range is used only if a large search '
+                                 'must be partitioned; unfiltered counts must '
+                                 'reconcile with this coverage.').props(
+                                     'data-testid=pubmed-source-coverage')
+                        ui.label('This PREVIEW has made NO provider requests. '
+                                 'Confirming starts one bounded, supervised '
+                                 'ESearch session and uses trusted host-only '
+                                 'NCBI contact settings. The application must '
+                                 'remain open for source work to continue.')
+                        ui.button('Cancel unsent PubMed session',
+                                  on_click=lambda: act('pubmed_identifier_dismiss')).props(
+                                      'data-testid=pubmed-source-dismiss')
+                        ui.button('CONFIRM bounded PubMed identifier retrieval',
+                                  on_click=lambda: act('pubmed_identifier_confirm')).props(
+                                      'data-testid=pubmed-source-confirm')
+                    else:
+                        pubmed_start = ui.input(
+                            'Administrative Create Date coverage start (YYYY-MM-DD)',
+                            value='1800-01-01').props(
+                                'data-testid=pubmed-source-start')
+                        pubmed_end = ui.input(
+                            'Administrative Create Date coverage end (YYYY-MM-DD)',
+                            value=date.today().isoformat()).props(
+                                'data-testid=pubmed-source-end')
+                        for row in (state['report']['queries'] if state['report']
+                                    is not None else ()):
+                            if row['source_name'] != 'pubmed':
+                                continue
+                            qid=row['query_id']
+                            ui.label('Saved PubMed query: ' + row['exact_query']).props(
+                                'data-testid=pubmed-source-saved-query')
+                            ui.button('Read existing checkpoint for ' + row['group_id'],
+                                      on_click=lambda qid=qid: act(
+                                          'pubmed_identifier_read',qid)).props(
+                                              'data-testid=pubmed-source-read')
+                            if state['pubmed_profile_configured']:
+                                ui.button('Preview identifier session for ' +
+                                          row['group_id'],
+                                          on_click=lambda qid=qid: act(
+                                              'pubmed_identifier_offer',dict(
+                                                  query_id=qid,
+                                                  coverage_start=pubmed_start.value,
+                                                  coverage_end=pubmed_end.value))).props(
+                                                      'data-testid=pubmed-source-offer')
+                        if not state['pubmed_profile_configured']:
+                            ui.label('NCBI ESearch requests require a trusted '
+                                     'host contact email. Saved checkpoints '
+                                     'remain readable without credentials.')
+                    if state['pubmed_source'] is not None and not state['pubmed_source_pending']:
+                        cp=state['pubmed_source']['checkpoint']
+                        if cp is not None:
+                            if not cp['resume_budget_sufficient']:
+                                ui.label('This existing checkpoint requires at least ' +
+                                         str(cp['minimum_resume_requests']) +
+                                         ' count verification / forward-progress requests. '
+                                         'The GUI limit is 512, so another session '
+                                         'would make NO progress. Use the original '
+                                         'higher-budget PubMed checkpoint resume service '
+                                         'outside this experimental GUI, or obtain a '
+                                         'separate longer-worker implementation.').props(
+                                             'data-testid=pubmed-source-budget-blocked')
+                            ui.label('Last inspected PubMed checkpoint: ' +
+                                     cp['status'] + '; ' +
+                                     str(cp['identifiers_committed']) +
+                                     ' identifiers saved; pages ' +
+                                     str(cp['pages_committed']) + '/' +
+                                     str(cp['pages_expected']) + '; metadata '
+                                     'records linked ' +
+                                     str(cp['metadata_records_linked'])).props(
+                                         'data-testid=pubmed-source-saved-progress')
+                            if cp['identifiers_reconciled']:
+                                ui.label('Identifiers reconciled only. EFetch '
+                                         'bibliography/abstract acquisition, '
+                                         'deduplication and complete whole-run '
+                                         'acceptance remain OUTSTANDING.')
+                    if state['pubmed_source_last_outcome'] is not None:
+                        outcome=state['pubmed_source_last_outcome']
+                        ui.label('Last PubMed worker: ' +
+                                 outcome['worker_state'] +
+                                 '; requests reserved: ' +
+                                 ('UNKNOWN' if outcome['requests_reserved'] is None
+                                  else str(outcome['requests_reserved'])) +
+                                 '; whole search verified: FALSE').props(
+                                     'data-testid=pubmed-source-outcome')
                 for item in state['exports']:
                     # Only offer requests belonging to the explicitly selected run.
                     if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:
@@ -1231,9 +1401,11 @@ def run(args):
                 # Passive host polling is STRICTLY read-only. The sole source
                 # network action remains the separate explicit Confirm button.
                 # One timer per connected page, not per panel refresh.
-                if (flow.state()['wos_verification_pending'] and
-                        not action_lock.locked()):
-                    await act('wos_verification_poll')
+                if not action_lock.locked():
+                    if flow.state()['wos_verification_pending']:
+                        await act('wos_verification_poll')
+                    elif flow.state()['pubmed_source_pending']:
+                        await act('pubmed_identifier_poll')
 
             ui.timer(2.0, refresh_running_verification)
 

@@ -130,6 +130,8 @@ def resume_pubmed_checkpoint(
 def start_checkpointed_pubmed_retrieval(
     project: Project, query_id: str, client: PubMedESearchProbeClient,
     *, date_window: DateWindow, page_size: int = 200, max_count_probes: int = 255,
+    expected_run_id: str | None = None,
+    expected_plan_sha256: str | None = None,
 ) -> CheckpointResumeResult:
     """Start or resume an approved, persisted PubMed query.
 
@@ -145,7 +147,9 @@ def start_checkpointed_pubmed_retrieval(
     # Do not pass any credentials, absolute project paths, or provider error
     # strings through result statuses or audit detail records.
     def on_plan(result: PubMedPartitionResult) -> None:
-        create_pubmed_checkpoint(project, query_id, result, page_size=page_size)
+        create_pubmed_checkpoint(project, query_id, result, page_size=page_size,
+            expected_run_id=expected_run_id,
+            expected_plan_sha256=expected_plan_sha256)
 
     def on_page(page: PubMedIdentifierPage) -> None:
         snap = commit_pubmed_checkpoint_page(project, query_id, page)

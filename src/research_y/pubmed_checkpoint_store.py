@@ -210,6 +210,8 @@ def _find_query(connection: sqlite3.Connection, query_id: str) -> tuple[str, str
 
 def create_pubmed_checkpoint(
     project: Project, query_id: str, result: PubMedPartitionResult, *, page_size: int = 200,
+    expected_run_id: str | None = None,
+    expected_plan_sha256: str | None = None,
 ) -> CheckpointSnapshot:
     """Persist a complete counted partition plan under a real approved query.
 
@@ -221,9 +223,30 @@ def create_pubmed_checkpoint(
         raise CheckpointIntegrityError("Unverified or rejected count plan cannot be checkpointed")
     plan = _plan_from_result(result, page_size)
     encoded, digest = _json(plan), _hash(_json(plan))
+    if (expected_run_id is None) != (expected_plan_sha256 is None):
+        raise CheckpointIntegrityError("pubmed_source_plan_unverified")
     now = _utc_now()
     with _validated_project_connection(project) as con:
         con.execute("BEGIN IMMEDIATE")
+        # Exact GUI admission must be checked atomically with the first
+        # immutable plan write, even if another source/group has advanced.
+        if expected_run_id is not None:
+            from research_y.preflight_review import _inspect, PreflightError
+            try:
+                verified = _inspect(con, expected_run_id, allow_started=True)
+                matches = [
+                    item for source in verified["sources"]
+                    if source["source_name"] == "pubmed"
+                    for item in source["queries"]
+                    if item["query_id"] == query_id
+                ]
+                if (type(expected_plan_sha256) is not str or
+                        verified["plan_sha256"] != expected_plan_sha256 or
+                        len(matches) != 1 or
+                        matches[0]["status"] != "pending"):
+                    raise CheckpointIntegrityError("pubmed_source_plan_unverified")
+            except (PreflightError, KeyError, TypeError):
+                raise CheckpointIntegrityError("pubmed_source_plan_unverified") from None
         source_name, stored_query = _find_query(con, query_id)
         if plan["root_query"] != stored_query:
             raise CheckpointIntegrityError("Approved query differs from stored source query")
@@ -247,7 +270,9 @@ def create_pubmed_checkpoint(
             )
             _audit(con, kind="pubmed_checkpoint_created", timestamp=now,
                    details={"query_id": query_id, "plan_sha256": digest,
-                            "root_count": plan["root_count"], "partitions": len(plan["partitions"])})
+                            "root_count": plan["root_count"], "partitions": len(plan["partitions"]),
+                            **({"approved_preflight_sha256": expected_plan_sha256}
+                               if expected_plan_sha256 is not None else {})})
     return inspect_pubmed_checkpoint(project, query_id)
 
 
@@ -472,6 +497,15 @@ def _set_checkpoint_status(
     with _validated_project_connection(project) as con:
         con.execute("BEGIN IMMEDIATE")
         previous = _snapshot_from_db(con, query_id)
+        # The completed identifier stage is immutable as a source checkpoint
+        # status. A late GUI pause can race with the worker's buffered final
+        # receipt while its supervisor still appears 'running'. Never
+        # downgrade a completed identifier checkpoint to paused; no work
+        # remains to pause at this stage. This check is under BEGIN IMMEDIATE
+        # so it cannot race a simultaneous final-status transaction.
+        if (status == "paused" and
+                previous.stored_status == "identifiers_reconciled_metadata_pending"):
+            return
         # The write lock is held. A user pause cannot be lost to a later
         # failure transition even if the pause arrived after a caller read.
         if preserve_pause and previous.stored_status == "paused":

@@ -53,6 +53,9 @@ class RealProjectFlow:
         # ordinary 35-second inspection operations. Durable checkpoint
         # progress remains readable via the independent ordinary worker.
         self._verify_worker = ApplicationWorker()
+        # PubMed ESearch may need long, separately supervised partition work.
+        # Read-only progress remains possible through the ordinary worker.
+        self._pubmed_source_worker = ApplicationWorker()
         self._closed = False
         self.project = None
         self.snapshot = None
@@ -92,6 +95,13 @@ class RealProjectFlow:
         self._verify_worker_state = 'idle'
         self._verify_error = None
         self._verify_last_outcome = None
+        self._pubmed_source_offer = None
+        self._pubmed_source_pending = None
+        self._pubmed_source_operation_id = None
+        self._pubmed_source = None
+        self._pubmed_source_worker_state = 'idle'
+        self._pubmed_source_worker_error = None
+        self._pubmed_source_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -127,6 +137,8 @@ class RealProjectFlow:
             raise ProjectFlowError('acquisition_reconciliation_required')
         if self._verify_pending is not None:
             raise ProjectFlowError('verification_reconciliation_required')
+        if self._pubmed_source_pending is not None:
+            raise ProjectFlowError('pubmed_source_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
                 raise ProjectFlowError('export_reconciliation_required')
@@ -299,6 +311,13 @@ class RealProjectFlow:
         self._verify_worker_state = 'idle'
         self._verify_error = None
         self._verify_last_outcome = None
+        self._pubmed_source_offer = None
+        self._pubmed_source_pending = None
+        self._pubmed_source_operation_id = None
+        self._pubmed_source = None
+        self._pubmed_source_worker_state = 'idle'
+        self._pubmed_source_worker_error = None
+        self._pubmed_source_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -413,6 +432,9 @@ class RealProjectFlow:
             self._wos_acquisition_tick_offer = None
             self._verify_offer = None
             self._verify_last_outcome = None
+            self._pubmed_source_offer = None
+            self._pubmed_source = None
+            self._pubmed_source_last_outcome = None
             self.snapshot = report
             return self._publish()
 
@@ -498,6 +520,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('acquisition_reconciliation_required')
             if self._verify_pending is not None:
                 raise ProjectFlowError('verification_reconciliation_required')
+            if self._pubmed_source_pending is not None:
+                raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
@@ -606,7 +630,8 @@ class RealProjectFlow:
                     self._pending_wos_pilot is not None or
                     self._wos_acquisition_prepare_pending is not None or
                     self._wos_acquisition_tick_pending is not None or
-                    self._verify_pending is not None):
+                    self._verify_pending is not None or
+                    self._pubmed_source_pending is not None):
                 raise ProjectFlowError('operation_reconciliation_required')
             if self._pending_review is None:
                 if self._review_candidate is None or self._preflight is None:
@@ -716,6 +741,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('acquisition_reconciliation_required')
             if self._verify_pending is not None:
                 raise ProjectFlowError('verification_reconciliation_required')
+            if self._pubmed_source_pending is not None:
+                raise ProjectFlowError('pubmed_source_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -860,6 +887,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('acquisition_reconciliation_required')
             if self._verify_pending is not None:
                 raise ProjectFlowError('verification_reconciliation_required')
+            if self._pubmed_source_pending is not None:
+                raise ProjectFlowError('pubmed_source_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -1419,6 +1448,266 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
+    # PubMed source identifier collection, distinct from count-only pilots.
+    def inspect_stored_pubmed_source(self, query_id: str):
+        """Read original identifier checkpoint, even without an API profile."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None or type(query_id) is not str:
+                raise ProjectFlowError('run_selection_required')
+            allowed = {q['query_id'] for q in self.snapshot['report']['queries']
+                       if q['source_name']=='pubmed'}
+            if query_id not in allowed:
+                raise ProjectFlowError('unknown_pubmed_query')
+            read = self._operation('pubmed_identifier_read',
+                run_id=self.selected_run_id,pubmed_source_query_id=query_id)
+            if (read.get('run_id') != self.selected_run_id or
+                    read.get('query_id') != query_id or
+                    read.get('no_network_requests') is not True or
+                    read.get('source_retrieval_verified') is not False or
+                    read.get('metadata_complete') is not False):
+                raise ProjectFlowError('pubmed_receipt_invalid')
+            self._pubmed_source = read
+            self._pubmed_source_offer = None
+            return self._publish()
+
+    def offer_pubmed_source(self, query_id: str, *,
+                            coverage_start: str, coverage_end: str):
+        """Exact frozen OR source and explicitly selected partition coverage."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self._pubmed_profile is None:
+                raise ProjectFlowError('pubmed_profile_unavailable')
+            if self.selected_run_id is None or type(query_id) is not str:
+                raise ProjectFlowError('run_selection_required')
+            from research_y.pubmed_source_gui import _window
+            try:
+                _window(coverage_start,coverage_end)
+            except ValueError:
+                raise ProjectFlowError('pubmed_coverage_invalid') from None
+            allowed = {q['query_id'] for q in self.snapshot['report']['queries']
+                       if q['source_name']=='pubmed'}
+            if query_id not in allowed:
+                raise ProjectFlowError('unknown_pubmed_query')
+            preview = self._operation('pubmed_identifier_preview',
+                run_id=self.selected_run_id,pubmed_source_query_id=query_id)
+            if (preview.get('run_id') != self.selected_run_id or
+                    preview.get('query_id') != query_id or
+                    preview.get('source_retrieval_verified') is not False or
+                    preview.get('no_network_requests') is not True or
+                    preview.get('whole_search_verified') is not False or
+                    preview.get('max_session_requests') != 512 or
+                    preview.get('page_size') != 200 or
+                    preview.get('max_partition_count_probes') != 100):
+                raise ProjectFlowError('pubmed_plan_unverified')
+            saved = preview['checkpoint']
+            if preview.get('resume_budget_sufficient') is not True:
+                raise ProjectFlowError('pubmed_verification_exceeds_budget')
+            if (saved is not None and
+                    saved['status']=='identifiers_reconciled_metadata_pending'):
+                raise ProjectFlowError('pubmed_query_not_ready')
+            if (saved is not None and saved.get('coverage') is not None and
+                    saved['coverage'] != {'start':coverage_start,'end':coverage_end}):
+                raise ProjectFlowError('pubmed_coverage_changed')
+            self._pubmed_source_offer = dict(
+                run_id=self.selected_run_id,query_id=query_id,
+                exact_query=preview['exact_query'],
+                group_id=preview['group_id'],plan_sha256=preview['plan_sha256'],
+                coverage_start=coverage_start,coverage_end=coverage_end,
+                checkpoint=saved,max_session_requests=512)
+            self._pilot_candidate = None
+            self._wos_pilot_candidate = None
+            self._wos_acquisition_offer = None
+            self._wos_acquisition_tick_offer = None
+            return self._publish()
+
+    def dismiss_pubmed_source(self):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._pubmed_source_offer = None
+            return self._publish()
+
+    def confirm_pubmed_source(self):
+        """One explicit bounded ESearch session; return without blocking UI."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            candidate = self._pubmed_source_offer
+            if self._pubmed_profile is None or candidate is None:
+                raise ProjectFlowError('pubmed_session_confirmation_required')
+            if candidate['run_id'] != self.selected_run_id:
+                raise ProjectFlowError('pubmed_plan_unverified')
+            fresh = self._operation('pubmed_identifier_preview',
+                run_id=candidate['run_id'],pubmed_source_query_id=candidate['query_id'])
+            if (fresh.get('run_id') != candidate['run_id'] or
+                    fresh.get('query_id') != candidate['query_id'] or
+                    fresh.get('plan_sha256') != candidate['plan_sha256'] or
+                    fresh.get('exact_query') != candidate['exact_query'] or
+                    fresh.get('checkpoint') != candidate['checkpoint'] or
+                    fresh.get('source_retrieval_verified') is not False or
+                    fresh.get('no_network_requests') is not True):
+                raise ProjectFlowError('pubmed_plan_unverified')
+            command = ApplicationCommand.for_project(
+                self.project,'pubmed_identifier_run',
+                run_id=candidate['run_id'],
+                pubmed_source_query_id=candidate['query_id'],
+                pubmed_source_plan_sha256=candidate['plan_sha256'],
+                pubmed_coverage_start=candidate['coverage_start'],
+                pubmed_coverage_end=candidate['coverage_end'],
+                pubmed_source_confirmed=True,
+                pubmed_source_contact_email=self._pubmed_profile.contact_email,
+                pubmed_source_api_key=self._pubmed_profile.api_key)
+            try:
+                operation_id = self._pubmed_source_worker.submit(command)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            self._pubmed_source_pending = dict(candidate)
+            self._pubmed_source_operation_id = operation_id
+            self._pubmed_source_offer = None
+            self._pubmed_source_worker_state = 'running'
+            self._pubmed_source_worker_error = None
+            self._pubmed_source_last_outcome = None
+            return self._publish()
+
+    def poll_pubmed_source(self):
+        """Passive checkpoint read during retrieval; never calls PubMed."""
+        with self._guard:
+            self._require_open()
+            pending = self._pubmed_source_pending
+            if pending is None or self._pubmed_source_operation_id is None:
+                raise ProjectFlowError('pubmed_source_reconciliation_not_required')
+            try:
+                status = self._pubmed_source_worker.poll(
+                    self._pubmed_source_operation_id)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            self._pubmed_source_worker_state = status.state
+            self._pubmed_source_worker_error = status.error
+            try:
+                read = self._operation('pubmed_identifier_read',
+                    run_id=pending['run_id'],
+                    pubmed_source_query_id=pending['query_id'])
+                if (read.get('run_id') != pending['run_id'] or
+                        read.get('query_id') != pending['query_id'] or
+                        read.get('exact_query') != pending['exact_query'] or
+                        read.get('source_retrieval_verified') is not False or
+                        read.get('whole_search_verified') is not False or
+                        read.get('no_network_requests') is not True):
+                    raise ProjectFlowError('pubmed_receipt_invalid')
+                self._pubmed_source = read
+                return self._publish()
+            except ProjectFlowError:
+                self._publish()
+                raise
+
+    def pause_pubmed_source(self):
+        """Request cooperative checkpoint pause, not worker termination."""
+        with self._guard:
+            self._require_open()
+            pending = self._pubmed_source_pending
+            if pending is None:
+                raise ProjectFlowError('pubmed_source_reconciliation_not_required')
+            status = self._pubmed_source_worker.poll(
+                self._pubmed_source_operation_id)
+            if status.state != 'running':
+                raise ProjectFlowError('pubmed_worker_not_running')
+            read = self._operation('pubmed_identifier_pause',
+                run_id=pending['run_id'],
+                pubmed_source_query_id=pending['query_id'])
+            if (read.get('run_id') != pending['run_id'] or
+                    read.get('query_id') != pending['query_id'] or
+                    read.get('source_retrieval_verified') is not False or
+                    read.get('no_network_requests') is not True):
+                raise ProjectFlowError('pubmed_receipt_invalid')
+            self._pubmed_source = read
+            return self._publish()
+
+    @staticmethod
+    def _pubmed_checkpoint_receipt_consistent(receipt, stored):
+        """Allow only a late explicit pause, never differing source evidence.
+
+        The supervisor can still be 'running' after its child has committed
+        and buffered a result. A concurrent user pause of a genuinely
+        incomplete checkpoint may change ONLY its status to paused, with no
+        identifier/page/count/metadata changes. A completed identifier
+        checkpoint cannot be downgraded (enforced atomically by the core).
+        """
+        if receipt == stored:
+            return True
+        return (type(receipt) is dict and type(stored) is dict and
+                receipt.keys() == stored.keys() and
+                receipt.get('status') == 'incomplete' and
+                stored.get('status') == 'paused' and
+                all(receipt[key] == stored[key] for key in receipt
+                    if key != 'status'))
+
+    def reconcile_pubmed_source(self):
+        """Require terminal child and compare its result to durable source data."""
+        with self._guard:
+            self._require_open()
+            pending = self._pubmed_source_pending
+            if pending is None or self._pubmed_source_operation_id is None:
+                raise ProjectFlowError('pubmed_source_reconciliation_not_required')
+            try:
+                status = self._pubmed_source_worker.poll(
+                    self._pubmed_source_operation_id)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            if status.state == 'running':
+                raise ProjectFlowError('pubmed_worker_still_running')
+            self._pubmed_source_worker_state = status.state
+            self._pubmed_source_worker_error = status.error
+            try:
+                read = self._operation('pubmed_identifier_read',
+                    run_id=pending['run_id'],
+                    pubmed_source_query_id=pending['query_id'])
+                if (read.get('run_id') != pending['run_id'] or
+                        read.get('query_id') != pending['query_id'] or
+                        read.get('exact_query') != pending['exact_query'] or
+                        read.get('source_retrieval_verified') is not False or
+                        read.get('metadata_complete') is not False or
+                        read.get('no_network_requests') is not True):
+                    raise ProjectFlowError('pubmed_receipt_invalid')
+                if status.state=='returned':
+                    receipt=status.result()
+                    if (type(receipt) is not dict or
+                            receipt.get('run_id')!=pending['run_id'] or
+                            receipt.get('query_id')!=pending['query_id'] or
+                            receipt.get('plan_sha256')!=pending['plan_sha256'] or
+                            receipt.get('source_retrieval_verified') is not False or
+                            receipt.get('whole_search_verified') is not False or
+                            receipt.get('metadata_complete') is not False or
+                            not self._pubmed_checkpoint_receipt_consistent(
+                                receipt.get('checkpoint'),read['checkpoint']) or
+                            type(receipt.get('session_requests_reserved')) is not int or
+                            not 0 <= receipt['session_requests_reserved'] <= 512):
+                        raise ProjectFlowError('pubmed_receipt_invalid')
+                    attempts = receipt['session_requests_reserved']
+                elif status.state in ('interrupted','failed'):
+                    attempts = None  # Do NOT claim unknown HTTP attempts were zero.
+                else:
+                    raise ProjectFlowError('pubmed_receipt_invalid')
+                self._pubmed_source = read
+                self.snapshot = self._operation(
+                    'inspect',run_id=self.selected_run_id)['snapshot']
+                self._preflight = None
+                self._pubmed_source_last_outcome = dict(
+                    run_id=pending['run_id'],query_id=pending['query_id'],
+                    worker_state=status.state,worker_error=status.error,
+                    requests_reserved=attempts,
+                    durable_checkpoint=read['checkpoint'],
+                    source_retrieval_verified=False,
+                    whole_search_verified=False,metadata_complete=False)
+                self._pubmed_source_pending = None
+                self._pubmed_source_operation_id = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publish()
+                raise
+
     def inspect_pilot_history(self, *, before_event_id=None):
         """Read a page of prior project-wide pilot requests, no source network."""
         with self._guard:
@@ -1639,6 +1928,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('acquisition_reconciliation_required')
             if self._verify_pending is not None:
                 raise ProjectFlowError('verification_reconciliation_required')
+            if self._pubmed_source_pending is not None:
+                raise ProjectFlowError('pubmed_source_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -1697,6 +1988,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('acquisition_reconciliation_required')
             if self._verify_pending is not None:
                 raise ProjectFlowError('verification_reconciliation_required')
+            if self._pubmed_source_pending is not None:
+                raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1723,6 +2016,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('acquisition_reconciliation_required')
             if self._verify_pending is not None:
                 raise ProjectFlowError('verification_reconciliation_required')
+            if self._pubmed_source_pending is not None:
+                raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1748,6 +2043,8 @@ class RealProjectFlow:
                 raise ProjectFlowError('acquisition_reconciliation_required')
             if self._verify_pending is not None:
                 raise ProjectFlowError('verification_reconciliation_required')
+            if self._pubmed_source_pending is not None:
+                raise ProjectFlowError('pubmed_source_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             # A previous file observation is time-specific; never display it as
@@ -1813,6 +2110,12 @@ class RealProjectFlow:
                 'wos_verification_worker_state': self._verify_worker_state,
                 'wos_verification_worker_error': self._verify_error,
                 'wos_verification_last_outcome': self._verify_last_outcome,
+                'pubmed_source_offer': self._pubmed_source_offer,
+                'pubmed_source_pending': self._pubmed_source_pending is not None,
+                'pubmed_source_worker_state': self._pubmed_source_worker_state,
+                'pubmed_source_worker_error': self._pubmed_source_worker_error,
+                'pubmed_source': self._pubmed_source,
+                'pubmed_source_last_outcome': self._pubmed_source_last_outcome,
                 'pilot_history': self._pilot_history,
                 'pilot_history_error': self._pilot_history_error,
                 'saved_pilot_detail': self._saved_pilot_detail,
@@ -1845,6 +2148,9 @@ class RealProjectFlow:
                 # Shutdown cannot fabricate completion or automatically clear
                 # a durable provider reservation; recovery requires inspection.
                 try:
-                    self._verify_worker.close(grace_seconds=0, kill_seconds=2)
+                    try:
+                        self._pubmed_source_worker.close(grace_seconds=0, kill_seconds=2)
+                    finally:
+                        self._verify_worker.close(grace_seconds=0, kill_seconds=2)
                 finally:
                     self._worker.close(grace_seconds=0, kill_seconds=2)
