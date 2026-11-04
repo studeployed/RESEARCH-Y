@@ -288,3 +288,23 @@ def run_wos_verification_session(
                 source_retrieval_verified=False,
                 whole_search_verified=False,
                 provider_snapshot_guaranteed=False)
+
+
+
+def pause_wos_verification_session(project: Project, *, run_id, query_id) -> dict:
+    """Request graceful pause without sending any provider call.
+
+    A currently in-flight page can still finish. The source worker checks the
+    paused checkpoint between requests and releases its ownership only after
+    it exits. The host must independently confirm worker termination; this
+    receipt alone never establishes a stopped process.
+    """
+    evidence = inspect_wos_acquisition(project, run_id=run_id, query_id=query_id)
+    if not evidence["approved_gui_retention"]:
+        raise WoSAcquisitionError("gui_admission_missing")
+    from research_y.wos_checkpoint_store import pause_wos_checkpoint
+    try:
+        pause_wos_checkpoint(project, query_id)
+    except WoSCheckpointError as exc:
+        raise WoSAcquisitionError(str(exc)) from None
+    return inspect_wos_acquisition(project, run_id=run_id, query_id=query_id)
