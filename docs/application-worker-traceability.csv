@@ -27,3 +27,11 @@ RUN-06,pubmed pause and explicit resumed session after first saved plan,test_gui
 COUNT-05,identifier count not promoted to full source retrieval,test_gui_pubmed_identifiers.py,partial EFetch missing
 SEC-01,host-only PubMed email and key not returned to client,test_application_commands.py,partial OS credential management outstanding
 AT-09,original PubMed partitions and checkpoint pause simulated through graphical host,test_gui_pubmed_identifiers.py,partial live full metadata pending
+SRC-04,pubmed_metadata_gui EFetch existing XML metadata client and source store,test_gui_pubmed_metadata.py,partial no full-source metadata acceptance
+DATA-03,preserved original EFetch bibliographic fields and available abstract status,test_pubmed_metadata.py and test_gui_pubmed_metadata.py,partial missing source metadata and rights review remain
+RUN-03,read-only metadata count progress in isolated graphical worker,test_gui_pubmed_metadata.py,partial no live high-volume responsiveness evidence
+RUN-04,manual bounded batches skip previously committed source IDs,test_gui_pubmed_metadata.py,partial no per-HTTP request journal or persisted Retry-After for EFetch
+RUN-05,source_retrieval_verified false despite complete saved EFetch records,test_gui_pubmed_metadata.py,partial whole-run reconciliation not established
+RUN-06,supervised bounded EFetch session with explicit manual restart/test replay,test_gui_pubmed_metadata.py,partial no cooperative metadata-specific pause
+SEC-01,host-only email and API key excluded from browser EFetch payload,test_application_commands.py and test_gui_pubmed_metadata.py,partial no packaged OS credential vault
+AT-09,fully checked PubMed identifier source then two saved EFetch batches,test_gui_pubmed_metadata.py,partial real network and multi-source acceptance untested
