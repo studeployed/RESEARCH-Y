@@ -117,10 +117,18 @@ def preview_wos_acquisition(project: Project, *, run_id, query_id) -> dict:
                               (query_id,run_id)).fetchone()
             if live is None or live[0] != 'pending':
                 raise WoSAcquisitionError('pending_wos_query_required')
+            # Existing CLI/manual checkpoints may leave the source-query
+            # status pending. A GUI must view them, never assume this
+            # confirms new GUI retention. Admission also checks under its
+            # own BEGIN IMMEDIATE transaction to close the race.
+            existing = db.execute(
+                'SELECT 1 FROM wos_checkpoint_jobs WHERE query_id=?',
+                (query_id,)).fetchone() is not None
             return dict(run_id=run_id,query_id=query_id,
                         exact_query=matches[0]['exact_query'],
                         group_id=matches[0]['group_id'],
                         plan_sha256=summary['plan_sha256'],
+                        checkpoint_exists=existing,
                         source_retrieval_verified=False,no_network_requests=True)
     except PreflightError:
         raise WoSAcquisitionError('source_plan_unverified') from None
