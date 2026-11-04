@@ -12,7 +12,7 @@ from pathlib import Path
 import sqlite3
 from uuid import UUID
 
-OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_export',
+OPERATIONS = frozenset({'inspect', 'run_board', 'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
@@ -24,7 +24,8 @@ OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_ex
                          'pubmed_identifier_read', 'pubmed_identifier_run',
                          'pubmed_identifier_pause', 'pubmed_metadata_read',
                          'pubmed_metadata_preview', 'pubmed_metadata_run'})
-SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
+SERVICE_ERRORS = frozenset({'run_board_unavailable', 'run_board_invalid',
+    'run_board_unknown_run', 'run_board_stale', 'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
     'destination_required', 'directory_changed', 'journal_failed', 'cancelled',
@@ -392,6 +393,11 @@ class ApplicationCommand:
                               approved_by=self.admission_approved_by,
                               groups=_groups_snapshot(self.admission_groups))
                 compile_both(frozen)
+            elif self.operation == 'run_board':
+                if (self.run_id is None or any(v is not None for v in
+                        (self.export_id, self.output_name, self.directory,
+                         self.expected_directory_identity))):
+                    raise ValueError
             elif self.operation == 'inspect':
                 if any(v is not None for v in (self.export_id, self.output_name, self.directory)):
                     raise ValueError
@@ -466,6 +472,13 @@ def execute_command(command: ApplicationCommand) -> dict:
     project = Project(Path(command.project_root), UUID(command.project_id),
                       command.project_name, command.project_created_at)
     try:
+        if command.operation == 'run_board':
+            from research_y.run_execution_board import (
+                read_run_execution_board, ExecutionBoardError)
+            try:
+                return read_run_execution_board(project, command.run_id)
+            except ExecutionBoardError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation == 'inspect':
             snapshot = inspection.read_application_snapshot(project, selected_run_id=command.run_id)
             return {'snapshot': snapshot.as_dict(), 'location': str(snapshot.location)}
