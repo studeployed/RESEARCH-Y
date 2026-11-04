@@ -1498,11 +1498,13 @@ class RealProjectFlow:
                     preview.get('source_retrieval_verified') is not False or
                     preview.get('no_network_requests') is not True or
                     preview.get('whole_search_verified') is not False or
-                    preview.get('max_session_requests') != 128 or
+                    preview.get('max_session_requests') != 512 or
                     preview.get('page_size') != 200 or
                     preview.get('max_partition_count_probes') != 100):
                 raise ProjectFlowError('pubmed_plan_unverified')
             saved = preview['checkpoint']
+            if preview.get('resume_budget_sufficient') is not True:
+                raise ProjectFlowError('pubmed_verification_exceeds_budget')
             if (saved is not None and
                     saved['status']=='identifiers_reconciled_metadata_pending'):
                 raise ProjectFlowError('pubmed_query_not_ready')
@@ -1514,7 +1516,7 @@ class RealProjectFlow:
                 exact_query=preview['exact_query'],
                 group_id=preview['group_id'],plan_sha256=preview['plan_sha256'],
                 coverage_start=coverage_start,coverage_end=coverage_end,
-                checkpoint=saved,max_session_requests=128)
+                checkpoint=saved,max_session_requests=512)
             self._pilot_candidate = None
             self._wos_pilot_candidate = None
             self._wos_acquisition_offer = None
@@ -1681,7 +1683,7 @@ class RealProjectFlow:
                             not self._pubmed_checkpoint_receipt_consistent(
                                 receipt.get('checkpoint'),read['checkpoint']) or
                             type(receipt.get('session_requests_reserved')) is not int or
-                            not 0 <= receipt['session_requests_reserved'] <= 128):
+                            not 0 <= receipt['session_requests_reserved'] <= 512):
                         raise ProjectFlowError('pubmed_receipt_invalid')
                     attempts = receipt['session_requests_reserved']
                 elif status.state in ('interrupted','failed'):

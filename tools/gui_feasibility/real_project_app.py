@@ -1140,7 +1140,7 @@ def run(args):
                              'bibliographic search.').props(
                                  'data-testid=pubmed-source-method')
                     ui.label('One explicitly confirmed session is limited to '
-                             '128 source requests, including count probes; '
+                             '512 source requests, including count probes; '
                              'individual identifier pages are capped at 200. '
                              'A broader query may need Create Date partitioning, '
                              'but its initial unfiltered count must equal the '
@@ -1244,6 +1244,16 @@ def run(args):
                     if state['pubmed_source'] is not None and not state['pubmed_source_pending']:
                         cp=state['pubmed_source']['checkpoint']
                         if cp is not None:
+                            if not cp['resume_budget_sufficient']:
+                                ui.label('This existing checkpoint requires at least ' +
+                                         str(cp['minimum_resume_requests']) +
+                                         ' count verification / forward-progress requests. '
+                                         'The GUI limit is 512, so another session '
+                                         'would make NO progress. Use the original '
+                                         'higher-budget PubMed checkpoint resume service '
+                                         'outside this experimental GUI, or obtain a '
+                                         'separate longer-worker implementation.').props(
+                                             'data-testid=pubmed-source-budget-blocked')
                             ui.label('Last inspected PubMed checkpoint: ' +
                                      cp['status'] + '; ' +
                                      str(cp['identifiers_committed']) +

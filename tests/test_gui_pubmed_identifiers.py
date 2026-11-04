@@ -175,7 +175,7 @@ def test_explicit_preview_no_transport_then_actual_bounded_identifier_reconcilia
             qid,coverage_start=START,coverage_end=END)
         assert preview['pubmed_source_offer']['exact_query']==query
         assert preview['pubmed_source_offer']['coverage_start']==START
-        assert preview['pubmed_source_offer']['max_session_requests']==128
+        assert preview['pubmed_source_offer']['max_session_requests']==512
         assert _db(project)==before and provider.calls==[]
         flow.dismiss_pubmed_source()
         with pytest.raises(ProjectFlowError,match='pubmed_session_confirmation_required'):

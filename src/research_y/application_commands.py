@@ -56,6 +56,7 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
      'pubmed_coverage_changed', 'pubmed_provider_incomplete',
      'pubmed_worker_recovery_required', 'pubmed_source_unavailable',
      'pubmed_query_not_ready', 'pubmed_checkpoint_not_ready',
+     'pubmed_verification_exceeds_budget',
      'pubmed_worker_not_running'})
 
 
