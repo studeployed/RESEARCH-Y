@@ -17,8 +17,8 @@ OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_ex
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
                          'wos_pilot_sample', 'wos_pilot_read', 'pilot_history',
-                         'wos_acquisition_prepare', 'wos_acquisition_read',
-                         'wos_acquisition_tick'})
+                         'wos_acquisition_preview', 'wos_acquisition_prepare',
+                         'wos_acquisition_read', 'wos_acquisition_tick'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -42,7 +42,7 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
      'worker_busy_or_interrupted', 'another_wos_worker_active',
      'local_retention_not_authorized', 'unsupported_query_parameters',
      'query_not_in_approved_compilation', 'unknown_checkpoint',
-     'checkpoint_already_exists'})
+     'checkpoint_already_exists', 'verification_requires_long_worker'})
 
 
 class ApplicationCommandError(ValueError):
@@ -207,7 +207,7 @@ class ApplicationCommand:
                             email=self.pilot_contact_email,
                             api_key=self.pilot_api_key)
             elif self.operation in (
-                    'wos_acquisition_prepare', 'wos_acquisition_read',
+                    'wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
                     'wos_acquisition_tick'):
                 if any(v is not None for v in (
                         self.export_id, self.output_name, self.directory,
@@ -215,7 +215,7 @@ class ApplicationCommand:
                     raise ValueError
                 _uuid(self.run_id)
                 _uuid(self.acquisition_query_id)
-                if self.operation == 'wos_acquisition_read':
+                if self.operation in ('wos_acquisition_read','wos_acquisition_preview'):
                     if any(v is not None for v in acquisition_fields[1:]):
                         raise ValueError
                 elif self.operation == 'wos_acquisition_prepare':
@@ -237,7 +237,7 @@ class ApplicationCommand:
                     from research_y.wos_starter import WoSStarterError
                     try:
                         WoSStarterClient(api_key=self.acquisition_api_key,
-                                         request_budget=2, timeout=10)
+                                         request_budget=3, timeout=10)
                     except WoSStarterError:
                         raise ValueError from None
             elif self.operation == 'pilot_history':
@@ -307,7 +307,7 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
-            if self.operation not in ('wos_acquisition_prepare', 'wos_acquisition_read',
+            if self.operation not in ('wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
                                        'wos_acquisition_tick') and any(
                     value is not None for value in acquisition_fields):
                 raise ValueError
@@ -359,10 +359,14 @@ def execute_command(command: ApplicationCommand) -> dict:
             snapshot = inspection.read_application_snapshot(project, selected_run_id=command.run_id)
             return {'snapshot': snapshot.as_dict(), 'location': str(snapshot.location)}
         if command.operation in (
-                'wos_acquisition_prepare', 'wos_acquisition_read',
+                'wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
                 'wos_acquisition_tick'):
             from research_y import wos_acquisition_gui as acquisition
             try:
+                if command.operation == 'wos_acquisition_preview':
+                    return acquisition.preview_wos_acquisition(
+                        project,run_id=command.run_id,
+                        query_id=command.acquisition_query_id)
                 if command.operation == 'wos_acquisition_read':
                     return acquisition.inspect_wos_acquisition(
                         project, run_id=command.run_id,
@@ -377,7 +381,7 @@ def execute_command(command: ApplicationCommand) -> dict:
                 from research_y.wos_starter_client import WoSStarterClient
                 client = WoSStarterClient(
                     api_key=command.acquisition_api_key,
-                    request_budget=2, timeout=10)
+                    request_budget=3, timeout=10)
                 return acquisition.run_wos_acquisition_session(
                     project, run_id=command.run_id,
                     query_id=command.acquisition_query_id,
