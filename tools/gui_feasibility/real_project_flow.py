@@ -944,6 +944,26 @@ class RealProjectFlow:
             if (self._preflight is not None and
                     verified.get('plan_sha256') != self._preflight.get('plan_sha256')):
                 raise ProjectFlowError('stale_preflight')
+            if verified.get('checkpoint_exists') is True:
+                # The query may still say pending even though a different
+                # CLI/manual workflow already created a durable checkpoint.
+                # Inspect it as historical read-only evidence rather than
+                # mistakenly entering an unfinishable GUI-retention offer.
+                existing = self._operation('wos_acquisition_read',
+                    run_id=self.selected_run_id,
+                    acquisition_query_id=query_id)
+                if (existing.get('run_id') != self.selected_run_id or
+                        existing.get('query_id') != query_id or
+                        existing.get('exact_query') != verified['exact_query'] or
+                        existing.get('no_network_requests') is not True or
+                        existing.get('source_retrieval_verified') is not False):
+                    raise ProjectFlowError('acquisition_receipt_invalid')
+                self._wos_acquisition = existing
+                self._wos_acquisition_offer = None
+                self._wos_acquisition_tick_offer = None
+                return self._publish()
+            if verified.get('checkpoint_exists') is not False:
+                raise ProjectFlowError('source_plan_unverified')
             self._wos_acquisition_offer = dict(
                 run_id=self.selected_run_id,query_id=query_id,
                 group_id=verified['group_id'],
@@ -1004,10 +1024,22 @@ class RealProjectFlow:
                 if (response.get('run_id') != candidate['run_id'] or
                         response.get('query_id') != candidate['query_id'] or
                         response.get('exact_query') != candidate['exact_query'] or
-                        response.get('preflight_sha256') != candidate['plan_sha256'] or
-                        response.get('approved_gui_retention') is not True or
                         response.get('no_network_requests') is not True or
                         response.get('source_retrieval_verified') is not False):
+                    raise ProjectFlowError('acquisition_receipt_invalid')
+                if (response.get('approved_gui_retention') is False and
+                        response.get('preflight_sha256') is None):
+                    # A competing CLI/manual checkpoint may have appeared
+                    # after the offline GUI preview. The original immutable
+                    # ledger is now view-only, not GUI-authorised. This
+                    # safe conflict disposition clears the stale pending UI
+                    # state without creating another job or sending HTTP.
+                    self._wos_acquisition = response
+                    self._wos_acquisition_prepare_pending = None
+                    self._wos_acquisition_offer = None
+                    return self._publish()
+                if (response.get('approved_gui_retention') is not True or
+                        response.get('preflight_sha256') != candidate['plan_sha256']):
                     raise ProjectFlowError('acquisition_receipt_invalid')
                 self._wos_acquisition = response
                 self._wos_acquisition_prepare_pending = None
