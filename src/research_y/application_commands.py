@@ -16,7 +16,7 @@ OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_ex
                         'observe_export', 'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
-                         'wos_pilot_sample', 'wos_pilot_read'})
+                         'wos_pilot_sample', 'wos_pilot_read', 'pilot_history'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -31,7 +31,7 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
     'pilot_client_invalid', 'pubmed_profile_invalid', 'wos_profile_invalid',
      'provider_cooldown', 'provider_quota_revalidation_required',
      'provider_worker_active', 'provider_pilot_cooldown',
-     'provider_pilot_outcome_unknown'})
+     'provider_pilot_outcome_unknown', 'pilot_history_cursor_invalid'})
 
 
 class ApplicationCommandError(ValueError):
@@ -96,6 +96,8 @@ class ApplicationCommand:
     pilot_confirmed: bool | None = None
     # WoS-only explicit quota revalidation, never inferred from an HTTP error.
     pilot_wos_revalidate_quota: bool | None = None
+    # Read-only audit cursor; NEVER a browser-supplied SQL expression.
+    history_before_event_id: int | None = None
 
     def __post_init__(self):
         try:
@@ -179,6 +181,15 @@ class ApplicationCommand:
                         PubMedESearchProbeClient(
                             email=self.pilot_contact_email,
                             api_key=self.pilot_api_key)
+            elif self.operation == 'pilot_history':
+                if any(v is not None for v in
+                       (self.run_id, self.export_id, self.output_name,
+                        self.directory, self.expected_directory_identity)):
+                    raise ValueError
+                value = self.history_before_event_id
+                if value is not None and (
+                        type(value) is not int or not 1 <= value <= 2**63 - 1):
+                    raise ValueError
             elif self.operation in ('preflight_read', 'preflight_record'):
                 if (self.run_id is None or any(v is not None for v in
                     (self.export_id, self.output_name, self.directory,
@@ -237,6 +248,8 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation != 'pilot_history' and self.history_before_event_id is not None:
+                raise ValueError
             if self.operation != 'admit_strategy' and any(
                     value is not None for value in admission_fields):
                 raise ValueError
@@ -282,6 +295,13 @@ def execute_command(command: ApplicationCommand) -> dict:
         if command.operation == 'inspect':
             snapshot = inspection.read_application_snapshot(project, selected_run_id=command.run_id)
             return {'snapshot': snapshot.as_dict(), 'location': str(snapshot.location)}
+        if command.operation == 'pilot_history':
+            from research_y.pilot_history import read_pilot_history, PilotHistoryError
+            try:
+                return read_pilot_history(
+                    project, before_event_id=command.history_before_event_id)
+            except PilotHistoryError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation in ('pubmed_pilot_count', 'pubmed_pilot_read'):
             from research_y import pubmed_pilot as pilot
             try:
