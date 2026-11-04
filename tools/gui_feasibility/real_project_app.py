@@ -838,7 +838,7 @@ def run(args):
                              'retention consent and a separate provider-session '
                              'confirmation are both required. Verify your '
                              'institutional licence before using it.')
-                    ui.label('One confirmed session uses at most TWO Starter '
+                    ui.label('One confirmed session uses at most THREE Starter '
                              'requests (a count/identity recheck where required '
                              'and up to one additional 50-record page). '
                              'Provider quota, cooldowns and interruption '
@@ -899,7 +899,6 @@ def run(args):
                                               'wos_acquisition_read',qid)).props(
                                                   'data-testid=wos-acquisition-read')
                                 if (state['wos_profile_configured'] and
-                                        state['preflight_report'] is not None and
                                         row['status'] == 'pending'):
                                     ui.button('Preview full-source retention for ' +
                                               row['group_id'],
@@ -952,12 +951,21 @@ def run(args):
                                      'WITH WARNINGS. Full bibliography and '
                                      'whole search remain incomplete.').props(
                                          'data-testid=wos-acquisition-partial-complete')
+                        elif (job['pages_expected'] is not None and
+                              job['pages_expected'] > 1 and
+                              job['stage'] in ('verify','final')):
+                            ui.label('Acquisition pages retained. Multi-page '
+                                     'identity verification needs a longer '
+                                     'uninterrupted supervised worker session. '
+                                     'Short GUI sessions are DISABLED here to '
+                                     'prevent repeated quota-consuming loops.').props(
+                                         'data-testid=wos-acquisition-long-verification-required')
                         elif job['status']=='cancelled':
                             ui.label('Checkpoint cancelled; no further requests '
                                      'from this interface.')
                         elif state['wos_acquisition_tick_offer'] is None:
                             if state['wos_profile_configured']:
-                                ui.button('Preview next bounded session (up to TWO requests)',
+                                ui.button('Preview next bounded session (up to THREE requests)',
                                           on_click=lambda: act(
                                               'wos_acquisition_tick_offer')).props(
                                                   'data-testid=wos-acquisition-tick-offer')
@@ -968,8 +976,8 @@ def run(args):
                         else:
                             offered = state['wos_acquisition_tick_offer']
                             ui.label('Unsent bounded session for source query ' +
-                                     offered['query_id'] + ', maximum TWO '
-                                     'requests. It may retain up to two pages '
+                                     offered['query_id'] + ', maximum THREE '
+                                     'requests. It may retain up to three pages '
                                      'of licensed metadata, without silently '
                                      'changing your OR-only query.').props(
                                          'data-testid=wos-acquisition-tick-preview')
