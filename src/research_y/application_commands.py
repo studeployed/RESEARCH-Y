@@ -20,7 +20,8 @@ OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_ex
                          'wos_acquisition_preview', 'wos_acquisition_prepare',
                          'wos_acquisition_read', 'wos_acquisition_tick',
                          'wos_acquisition_verify_plan', 'wos_acquisition_verify',
-                         'wos_acquisition_pause'})
+                         'wos_acquisition_pause', 'pubmed_identifier_preview',
+                         'pubmed_identifier_read', 'pubmed_identifier_run'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -47,7 +48,13 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
      'checkpoint_already_exists', 'verification_requires_long_worker',
      'verification_not_ready', 'verification_budget_exceeded',
      'verification_plan_changed', 'verification_worker_recovery_required',
-     'verification_worker_not_running'})
+     'verification_worker_not_running',
+     'pubmed_plan_unverified', 'pubmed_checkpoint_invalid',
+     'pubmed_contact_required', 'pubmed_session_confirmation_required',
+     'pubmed_identifier_budget_invalid', 'pubmed_coverage_invalid',
+     'pubmed_coverage_changed', 'pubmed_provider_incomplete',
+     'pubmed_worker_recovery_required', 'pubmed_source_unavailable',
+     'pubmed_query_not_ready'})
 
 
 class ApplicationCommandError(ValueError):
@@ -125,6 +132,16 @@ class ApplicationCommand:
     # Frozen long-verification request count; derived by core from committed
     # source pages, never provided as an arbitrary browser-side budget.
     verification_expected_requests: int | None = None
+    # PubMed ESearch identifier retrieval; host-supplied contact/key only.
+    # Dates specify an explicitly reviewed administrative Create Date window
+    # for partitioning >10,000 IDs, never a hidden conceptual date exclusion.
+    pubmed_source_query_id: str | None = None
+    pubmed_source_plan_sha256: str | None = None
+    pubmed_coverage_start: str | None = None
+    pubmed_coverage_end: str | None = None
+    pubmed_source_confirmed: bool | None = None
+    pubmed_source_contact_email: str | None = None
+    pubmed_source_api_key: str | None = None
 
     def __post_init__(self):
         try:
@@ -165,7 +182,45 @@ class ApplicationCommand:
                 self.acquisition_retention_authorized,
                 self.acquisition_revalidate_quota, self.acquisition_api_key,
             )
-            if self.operation in ('pubmed_pilot_count', 'pubmed_pilot_read',
+            pubmed_source_fields = (
+                self.pubmed_source_query_id, self.pubmed_source_plan_sha256,
+                self.pubmed_coverage_start, self.pubmed_coverage_end,
+                self.pubmed_source_confirmed, self.pubmed_source_contact_email,
+                self.pubmed_source_api_key,
+            )
+            if self.operation in ('pubmed_identifier_preview',
+                                  'pubmed_identifier_read',
+                                  'pubmed_identifier_run'):
+                if any(v is not None for v in (
+                        self.export_id, self.output_name, self.directory,
+                        self.expected_directory_identity)):
+                    raise ValueError
+                _uuid(self.run_id)
+                _uuid(self.pubmed_source_query_id)
+                if self.operation in ('pubmed_identifier_preview',
+                                      'pubmed_identifier_read'):
+                    if any(v is not None for v in pubmed_source_fields[1:]):
+                        raise ValueError
+                else:
+                    from research_y.pubmed_source_gui import _sha, _window
+                    _sha(self.pubmed_source_plan_sha256)
+                    _window(self.pubmed_coverage_start, self.pubmed_coverage_end)
+                    if (self.pubmed_source_confirmed is not True or
+                            type(self.pubmed_source_contact_email) is not str or
+                            len(self.pubmed_source_contact_email) > 254 or
+                            not self.pubmed_source_contact_email.isascii() or
+                            (self.pubmed_source_api_key is not None and
+                             (type(self.pubmed_source_api_key) is not str or
+                              not 1 <= len(self.pubmed_source_api_key) <= 4096 or
+                              not self.pubmed_source_api_key.isascii() or
+                              any(ord(c) < 33 or ord(c) > 126
+                                  for c in self.pubmed_source_api_key)))):
+                        raise ValueError
+                    from research_y.pubmed_probe import PubMedESearchProbeClient
+                    PubMedESearchProbeClient(
+                        email=self.pubmed_source_contact_email,
+                        api_key=self.pubmed_source_api_key,timeout=15)
+            elif self.operation in ('pubmed_pilot_count', 'pubmed_pilot_read',
                                   'wos_pilot_sample', 'wos_pilot_read'):
                 if any(v is not None for v in
                        (self.export_id, self.output_name, self.directory,
@@ -339,6 +394,11 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation not in ('pubmed_identifier_preview',
+                                        'pubmed_identifier_read',
+                                        'pubmed_identifier_run') and any(
+                    v is not None for v in pubmed_source_fields):
+                raise ValueError
             if self.operation != 'wos_acquisition_verify' and self.verification_expected_requests is not None:
                 raise ValueError
             if self.operation not in ('wos_acquisition_preview', 'wos_acquisition_prepare', 'wos_acquisition_read',
@@ -446,6 +506,32 @@ def execute_command(command: ApplicationCommand) -> dict:
                     revalidate_quota=command.acquisition_revalidate_quota,
                     client=client)
             except acquisition.WoSAcquisitionError as exc:
+                raise ApplicationCommandError(exc.code) from None
+        if command.operation in ('pubmed_identifier_preview',
+                                 'pubmed_identifier_read',
+                                 'pubmed_identifier_run'):
+            from research_y import pubmed_source_gui as source
+            try:
+                if command.operation == 'pubmed_identifier_read':
+                    return source.inspect_pubmed_source(
+                        project,run_id=command.run_id,
+                        query_id=command.pubmed_source_query_id)
+                if command.operation == 'pubmed_identifier_preview':
+                    return source.preview_pubmed_source(
+                        project,run_id=command.run_id,
+                        query_id=command.pubmed_source_query_id)
+                from research_y.pubmed_probe import PubMedESearchProbeClient
+                client = PubMedESearchProbeClient(
+                    email=command.pubmed_source_contact_email,
+                    api_key=command.pubmed_source_api_key,timeout=15)
+                return source.run_pubmed_source_session(
+                    project,run_id=command.run_id,
+                    query_id=command.pubmed_source_query_id,
+                    expected_plan_sha256=command.pubmed_source_plan_sha256,
+                    coverage_start=command.pubmed_coverage_start,
+                    coverage_end=command.pubmed_coverage_end,
+                    confirmed=command.pubmed_source_confirmed,client=client)
+            except source.PubMedSourceError as exc:
                 raise ApplicationCommandError(exc.code) from None
         if command.operation == 'pilot_history':
             from research_y.pilot_history import read_pilot_history, PilotHistoryError
