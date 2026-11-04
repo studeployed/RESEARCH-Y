@@ -77,6 +77,9 @@ class RealProjectFlow:
         self._wos_pilot_candidate = None
         self._pending_wos_pilot = None
         self._last_wos_pilot = None
+        self._pilot_history = None
+        self._pilot_history_error = None
+        self._saved_pilot_detail = None
         # External folders are transient, host-selected, explicitly confirmed.
         # The audit journal stores directory identity, not the path.
         self._external_candidate = None
@@ -265,9 +268,21 @@ class RealProjectFlow:
         self._wos_pilot_candidate = None
         self._pending_wos_pilot = None
         self._last_wos_pilot = None
+        self._pilot_history = None
+        self._pilot_history_error = None
+        self._saved_pilot_detail = None
         self._clear_external()
         self.last_result = inspected
         self.snapshot = snapshot
+        # A source pilot may have been journalled by an earlier GUI session.
+        # Read its current receipt history without touching either provider.
+        # If history is damaged, preserve access to the project/workbooks but
+        # show an explicit warning instead of assuming it contains no pilots.
+        try:
+            self.inspect_pilot_history()
+        except ProjectFlowError:
+            self._pilot_history = None
+            self._pilot_history_error = 'pilot_history_unavailable'
         return self._publish()
 
     def open_selected(self):
@@ -872,6 +887,87 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
+    def inspect_pilot_history(self, *, before_event_id=None):
+        """Read a page of prior project-wide pilot requests, no source network."""
+        with self._guard:
+            self._require_open()
+            if before_event_id is not None:
+                if (self._pilot_history is None or
+                        self._pilot_history.get('next_before_event_id') != before_event_id):
+                    raise ProjectFlowError('pilot_history_cursor_invalid')
+            self._saved_pilot_detail = None
+            try:
+                history = self._operation(
+                    'pilot_history', history_before_event_id=before_event_id)
+                if (type(history) is not dict or
+                        type(history.get('entries')) is not list or
+                        type(history.get('request_events_total')) is not int or
+                        history.get('no_network_requests') is not True or
+                        history.get('source_retrieval_verified') is not False or
+                        history.get('search_completed') is not False or
+                        history.get('execution_authorized') is not False):
+                    raise ProjectFlowError('pilot_history_unavailable')
+                for record in history['entries']:
+                    if (type(record) is not dict or
+                            record.get('source') not in ('pubmed','wos') or
+                            type(record.get('pilot_id')) is not str or
+                            type(record.get('run_id')) is not str or
+                            type(record.get('query_id')) is not str or
+                            record.get('source_retrieval_verified') is not False or
+                            record.get('execution_authorized') is not False or
+                            record.get('search_completed') is not False):
+                        raise ProjectFlowError('pilot_history_unavailable')
+                self._pilot_history = history
+                self._pilot_history_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._pilot_history_error = 'pilot_history_unavailable'
+                self._publish()
+                raise
+
+    def inspect_saved_pilot(self, pilot_id: str):
+        """Explicit historical detail read; ID must belong to visible page."""
+        with self._guard:
+            self._require_open()
+            history = self._pilot_history
+            if (history is None or self._pilot_history_error is not None or
+                    type(pilot_id) is not str):
+                raise ProjectFlowError('pilot_history_unavailable')
+            matched = [x for x in history['entries']
+                       if x['pilot_id'] == pilot_id]
+            if len(matched) != 1:
+                raise ProjectFlowError('unknown_pilot')
+            row = matched[0]
+            operation = ('pubmed_pilot_read' if row['source'] == 'pubmed'
+                         else 'wos_pilot_read')
+            self._saved_pilot_detail = None
+            self._publish()
+            try:
+                response = self._operation(operation, pilot_id=pilot_id)
+                detail = response.get('pilot')
+                if (response.get('source_retrieval_verified') is not False or
+                        type(detail) is not dict or
+                        any(detail.get(k) != row[k] for k in
+                            ('pilot_id','run_id','query_id',
+                             'status','reported_matches','requested_at_utc')) or
+                        detail.get('source_retrieval_verified') is not False or
+                        detail.get('retrieval_verified') is not False or
+                        detail.get('search_completed') is not False or
+                        detail.get('execution_authorized') is not False or
+                        detail.get('automatically_retryable') is not False or
+                        detail.get('count_only') is not row['count_only']):
+                    raise ProjectFlowError('pilot_history_stale')
+                if row['source'] == 'wos' and (
+                        detail.get('source') != 'wos' or
+                        detail.get('sample_only') is not True or
+                        detail.get('bibliographic_records_persisted') != 0):
+                    raise ProjectFlowError('pilot_history_stale')
+                self._saved_pilot_detail = detail
+                return self._publish()
+            except ProjectFlowError:
+                self._publish()
+                raise
+
     def _reinspect(self):
         """Best-effort inventory after a failed worker; never invent a receipt."""
         try:
@@ -1155,6 +1251,9 @@ class RealProjectFlow:
                 'wos_pilot_candidate': self._wos_pilot_candidate,
                 'wos_pilot_reconciliation_required': self._pending_wos_pilot is not None,
                 'last_wos_pilot': self._last_wos_pilot,
+                'pilot_history': self._pilot_history,
+                'pilot_history_error': self._pilot_history_error,
+                'saved_pilot_detail': self._saved_pilot_detail,
                 'external_destination_candidate': (
                     None if self._external_candidate is None
                     else str(self._external_candidate)),
