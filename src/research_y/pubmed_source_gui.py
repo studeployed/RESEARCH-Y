@@ -18,7 +18,7 @@ from research_y.pubmed_checkpoint_resume import start_checkpointed_pubmed_retrie
 from research_y.pubmed_partition import DateWindow
 from research_y.pubmed_probe import PubMedESearchProbeClient, PubMedProbeError
 
-MAX_PUBMED_REQUESTS = 128  # per explicit session, including count probes
+MAX_PUBMED_REQUESTS = 512  # per explicit session, including count probes
 MAX_COUNT_PROBES = 100
 PUBMED_PAGE_SIZE = 200
 SAFE_CODES = frozenset((
@@ -28,6 +28,7 @@ SAFE_CODES = frozenset((
     "pubmed_coverage_changed", "pubmed_provider_incomplete",
     "pubmed_worker_recovery_required", "pubmed_source_unavailable",
     "pubmed_query_not_ready", "pubmed_checkpoint_not_ready",
+    "pubmed_verification_exceeds_budget",
     "pubmed_worker_not_running",
 ))
 
@@ -97,6 +98,12 @@ def _checkpoint(db, query_id):
     parts = plan["partitions"]
     coverage = None if not parts else {
         "start": parts[0]["start"], "end": parts[0]["end"]}
+    # One root translation/count recheck and one operation (page or final
+    # recount) are required AFTER every leaf count/translation recheck.
+    # Detect checkpoints that cannot advance within a bounded session,
+    # including older/manual checkpoints with more leaves than this GUI's
+    # original planning budget permitted.
+    minimum_resume_requests = len(leaves) + 2
     linked = db.execute(
         "SELECT COUNT(*) FROM query_retrievals "
         "WHERE query_id=? AND source_name='pubmed'", (query_id,),
@@ -112,6 +119,9 @@ def _checkpoint(db, query_id):
         "metadata_records_linked": linked,
         "metadata_pending": True,
         "coverage": coverage,
+        "partition_leaf_count": len(leaves),
+        "minimum_resume_requests": minimum_resume_requests,
+        "resume_budget_sufficient": minimum_resume_requests <= MAX_PUBMED_REQUESTS,
     }
 
 
@@ -165,6 +175,10 @@ def preview_pubmed_source(project, *, run_id, query_id):
                 "max_session_requests": MAX_PUBMED_REQUESTS,
                 "page_size": PUBMED_PAGE_SIZE,
                 "max_partition_count_probes": MAX_COUNT_PROBES,
+                "minimum_resume_requests": (
+                    None if checkpoint is None else checkpoint["minimum_resume_requests"]),
+                "resume_budget_sufficient": (
+                    True if checkpoint is None else checkpoint["resume_budget_sufficient"]),
                 "source_retrieval_verified": False,
                 "whole_search_verified": False,
                 "no_network_requests": True,
@@ -213,6 +227,8 @@ def run_pubmed_source_session(
     if preview["plan_sha256"] != expected_plan_sha256:
         raise PubMedSourceError("pubmed_plan_unverified")
     prior = preview["checkpoint"]
+    if prior is not None and not prior["resume_budget_sufficient"]:
+        raise PubMedSourceError("pubmed_verification_exceeds_budget")
     if prior is not None and prior["coverage"] is not None:
         if prior["coverage"] != {"start": coverage_start, "end": coverage_end}:
             raise PubMedSourceError("pubmed_coverage_changed")
