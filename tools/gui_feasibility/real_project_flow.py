@@ -734,6 +734,144 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
+    def offer_wos_pilot(self, query_id: str, *, revalidate_quota=False):
+        """Preview a current, source-backed Starter Topic query without network."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self._wos_profile is None:
+                raise ProjectFlowError('wos_profile_unavailable')
+            if type(revalidate_quota) is not bool:
+                raise ProjectFlowError('pilot_confirmation_required')
+            if self.selected_run_id is None or self._preflight is None:
+                raise ProjectFlowError('preflight_inspection_required')
+            if type(query_id) is not str:
+                raise ProjectFlowError('unknown_wos_query')
+            verified = self._operation('preflight_read',
+                                       run_id=self.selected_run_id)
+            if (verified.get('plan_sha256') != self._preflight.get('plan_sha256')
+                    or verified.get('run_id') != self.selected_run_id
+                    or verified.get('source_retrieval_verified') is not False
+                    or verified.get('execution_authorized') is not False):
+                raise ProjectFlowError('stale_preflight')
+            matches = [q for source in verified.get('sources', [])
+                       if source.get('source_name') == 'wos'
+                       for q in source.get('queries', [])
+                       if q.get('query_id') == query_id and
+                       q.get('status') == 'pending']
+            if len(matches) != 1 or type(matches[0].get('exact_query')) is not str:
+                raise ProjectFlowError('unknown_wos_query')
+            candidate = dict(
+                pilot_id=str(uuid4()), run_id=self.selected_run_id,
+                query_id=query_id, group_id=matches[0]['group_id'],
+                plan_sha256=verified['plan_sha256'],
+                exact_query=matches[0]['exact_query'],
+                revalidate_quota=revalidate_quota,
+            )
+            self._preflight = verified
+            self._wos_pilot_candidate = candidate
+            self._pilot_candidate = None
+            return self._publish()
+
+    def revise_wos_pilot(self):
+        """Cancel an unsent offer without reserving or consuming any quota."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._wos_pilot_candidate = None
+            return self._publish()
+
+    def confirm_wos_pilot(self):
+        """The ONLY network-capable Starter GUI action.
+
+        Preserve one UUID until inspecting its immutable receipt, even when
+        the worker response is lost or the service rejects the attempt.
+        """
+        with self._guard:
+            self._require_open()
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
+                raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._pending_admission_id is not None or
+                    self._pending_review is not None or
+                    self._pending_export_id is not None):
+                raise ProjectFlowError('operation_reconciliation_required')
+            if self._wos_profile is None:
+                raise ProjectFlowError('wos_profile_unavailable')
+            candidate = self._wos_pilot_candidate
+            if (not isinstance(candidate, dict) or
+                    candidate.get('run_id') != self.selected_run_id):
+                raise ProjectFlowError('pilot_confirmation_required')
+            self._pending_wos_pilot = dict(candidate)
+            self._publish()
+            try:
+                reply = self._operation('wos_pilot_sample',
+                    run_id=candidate['run_id'], pilot_id=candidate['pilot_id'],
+                    pilot_query_id=candidate['query_id'],
+                    pilot_plan_sha256=candidate['plan_sha256'],
+                    pilot_api_key=self._wos_profile.api_key,
+                    pilot_confirmed=True,
+                    pilot_wos_revalidate_quota=candidate['revalidate_quota'])
+                if (any(reply.get(key) != candidate[key] for key in
+                        ('pilot_id','run_id','query_id','plan_sha256',
+                         'exact_query','revalidate_quota')) or
+                        reply.get('source') != 'wos' or
+                        reply.get('sample_only') is not True or
+                        reply.get('count_only') is not False or
+                        reply.get('bibliographic_records_persisted') != 0 or
+                        reply.get('source_retrieval_verified') is not False or
+                        reply.get('execution_authorized') is not False):
+                    raise ProjectFlowError('pilot_receipt_invalid')
+            except ProjectFlowError:
+                self._publish()
+                raise
+            return self.reconcile_wos_pilot()
+
+    def reconcile_wos_pilot(self):
+        """Read-only original attempt inspection; never repeat a Starter GET."""
+        with self._guard:
+            self._require_open()
+            candidate = self._pending_wos_pilot
+            if candidate is None:
+                raise ProjectFlowError('pilot_reconciliation_not_required')
+            try:
+                response = self._operation('wos_pilot_read',
+                                           pilot_id=candidate['pilot_id'])
+                if (response.get('source_retrieval_verified') is not False
+                        or 'pilot' not in response):
+                    raise ProjectFlowError('pilot_receipt_invalid')
+                observed = response['pilot']
+                if observed is None:
+                    self._last_wos_pilot = dict(
+                        pilot_id=candidate['pilot_id'],
+                        run_id=candidate['run_id'],
+                        query_id=candidate['query_id'],
+                        revalidate_quota=candidate['revalidate_quota'],
+                        status='not_recorded', reported_matches=None,
+                        source_retrieval_verified=False,
+                        execution_authorized=False, search_completed=False)
+                else:
+                    if (type(observed) is not dict or
+                            any(observed.get(key) != candidate[key] for key in
+                                ('pilot_id','run_id','query_id','plan_sha256',
+                                 'exact_query','revalidate_quota')) or
+                            observed.get('source') != 'wos' or
+                            observed.get('sample_only') is not True or
+                            observed.get('count_only') is not False or
+                            observed.get('bibliographic_records_persisted') != 0 or
+                            observed.get('source_retrieval_verified') is not False or
+                            observed.get('execution_authorized') is not False or
+                            observed.get('search_completed') is not False or
+                            observed.get('retrieval_verified') is not False or
+                            observed.get('automatically_retryable') is not False):
+                        raise ProjectFlowError('pilot_receipt_invalid')
+                    self._last_wos_pilot = observed
+                self._pending_wos_pilot = None
+                self._wos_pilot_candidate = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publish()
+                raise
+
     def _reinspect(self):
         """Best-effort inventory after a failed worker; never invent a receipt."""
         try:
