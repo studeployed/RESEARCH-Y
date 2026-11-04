@@ -74,9 +74,16 @@ def services(monkeypatch, tmp_path):
     history.read_pilot_history=service('pilot_history',{
         'entries':[], 'no_network_requests':True,
         'source_retrieval_verified':False})
-    from research_y.wos_acquisition_gui import WoSAcquisitionError
+    from research_y.wos_acquisition_gui import WoSAcquisitionError, MAX_VERIFY_REQUESTS
     acquisition=types.ModuleType('research_y.wos_acquisition_gui')
     acquisition.WoSAcquisitionError=WoSAcquisitionError
+    acquisition.MAX_VERIFY_REQUESTS=MAX_VERIFY_REQUESTS
+    acquisition.preview_wos_verification=service('wos_acquisition_verify_plan',{
+        'no_network_requests':True,'source_retrieval_verified':False})
+    acquisition.pause_wos_verification_session=service('wos_acquisition_pause',{
+        'no_network_requests':True,'source_retrieval_verified':False})
+    acquisition.run_wos_verification_session=service('wos_acquisition_verify',{
+        'source_retrieval_verified':False,'whole_search_verified':False})
     acquisition.preview_wos_acquisition=service('wos_acquisition_preview',{
         'source_retrieval_verified':False})
     acquisition.inspect_wos_acquisition=service('wos_acquisition_read',{
@@ -120,6 +127,15 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
     elif operation=='wos_acquisition_read':
         kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
+    elif operation in ('wos_acquisition_verify_plan','wos_acquisition_pause'):
+        kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
+    elif operation=='wos_acquisition_verify':
+        kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()),
+                  acquisition_plan_sha256='a'*64,
+                  acquisition_confirmed=True,
+                  acquisition_revalidate_quota=False,
+                  acquisition_api_key='SYNTHETIC-PRIVATE-STARTER-KEY',
+                  verification_expected_requests=24)
     elif operation=='wos_acquisition_prepare':
         kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()),
                   acquisition_plan_sha256='a'*64,
@@ -188,6 +204,20 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     if operation=='wos_acquisition_preview':
         assert calls[0][2]['run_id']==kw['run_id']
         assert calls[0][2]['query_id']==kw['acquisition_query_id']
+    if operation in ('wos_acquisition_verify_plan','wos_acquisition_pause'):
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['acquisition_query_id']
+        assert result['no_network_requests'] is True
+    if operation=='wos_acquisition_verify':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['acquisition_query_id']
+        assert calls[0][2]['expected_plan_sha256']==kw['acquisition_plan_sha256']
+        assert calls[0][2]['expected_requests']==24
+        assert calls[0][2]['confirmed'] is True
+        assert calls[0][2]['revalidate_quota'] is False
+        assert calls[0][2]['client']._budget==512
+        assert calls[0][2]['client']._timeout==10
+        assert kw['acquisition_api_key'] not in repr(cmd)
     if operation=='wos_acquisition_read':
         assert calls[0][2]['run_id']==kw['run_id']
         assert calls[0][2]['query_id']==kw['acquisition_query_id']
@@ -563,6 +593,16 @@ def test_history_cursor_and_pilot_credentials_cannot_be_sent_on_unrelated_comman
 
 
 @pytest.mark.parametrize('operation,patch',[
+    ('wos_acquisition_verify_plan',{'acquisition_api_key':'PRIVATE'}),
+    ('wos_acquisition_pause',{'acquisition_confirmed':True}),
+    ('wos_acquisition_verify',{'acquisition_confirmed':False}),
+    ('wos_acquisition_verify',{'verification_expected_requests':2}),
+    ('wos_acquisition_verify',{'verification_expected_requests':513}),
+    ('wos_acquisition_verify',{'verification_expected_requests':'24'}),
+    ('wos_acquisition_verify',{'verification_expected_requests':True}),
+    ('wos_acquisition_verify',{'acquisition_retention_authorized':True}),
+    ('wos_acquisition_verify',{'acquisition_api_key':'NO\nGOOD'}),
+
     ('wos_acquisition_preview',{'acquisition_api_key':'SECRET'}),
     ('wos_acquisition_read',{'acquisition_api_key':'SECRET'}),
     ('wos_acquisition_read',{'acquisition_confirmed':True}),
@@ -581,6 +621,11 @@ def test_wos_acquisition_command_rejects_unapproved_or_cross_operation_fields(
         services,operation,patch):
     project,calls,*_=services
     base=dict(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
+    if operation=='wos_acquisition_verify':
+        base.update(acquisition_plan_sha256='a'*64,acquisition_confirmed=True,
+                    acquisition_api_key='SYNTHETIC-PRIVATE-STARTER-KEY',
+                    acquisition_revalidate_quota=False,
+                    verification_expected_requests=24)
     if operation=='wos_acquisition_prepare':
         base.update(acquisition_plan_sha256='a'*64,
                     acquisition_retention_authorized=True,
@@ -602,4 +647,23 @@ def test_acquisition_key_cannot_be_routed_to_inspection_or_pilot(services):
             kw['pilot_id']=str(uuid4())
         with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
             commands.ApplicationCommand.for_project(project,operation,**kw)
+    assert not calls
+
+
+
+@pytest.mark.parametrize('operation', [
+    'inspect','wos_acquisition_tick','wos_acquisition_read',
+    'wos_acquisition_verify_plan','wos_acquisition_pause',
+])
+def test_extended_verification_budget_never_routes_through_other_commands(services,operation):
+    project,calls,*_=services
+    kwargs={'verification_expected_requests':5}
+    if operation!='inspect':
+        kwargs.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
+    if operation=='wos_acquisition_tick':
+        kwargs.update(acquisition_confirmed=True,
+                      acquisition_revalidate_quota=False,
+                      acquisition_api_key='SYNTHETIC-PRIVATE-STARTER-KEY')
+    with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+        commands.ApplicationCommand.for_project(project,operation,**kwargs)
     assert not calls
