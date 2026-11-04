@@ -20,6 +20,7 @@ from tools.gui_feasibility.native_folder_selection import (
     NativeFolderError, checked_folder)
 from tools.gui_feasibility.recent_projects import RecentProjects, RecentProjectsError
 from tools.gui_feasibility.pubmed_host_profile import PubMedHostProfile
+from tools.gui_feasibility.wos_host_profile import WoSHostProfile
 from tools.gui_feasibility.strategy_setup import StrategyDraft, DraftError
 from research_y.preflight_review import (
     PreflightError, _review_payload, PRESS_ITEMS, read_preflight,
@@ -34,14 +35,18 @@ class ProjectFlowError(ValueError):
 class RealProjectFlow:
     def __init__(self, *, selected_root: Path, selected_parent: Path,
                  recent_parent: Path | None = None,
-                 pubmed_profile: PubMedHostProfile | None = None):
+                 pubmed_profile: PubMedHostProfile | None = None,
+                  wos_profile: WoSHostProfile | None = None):
         self._root = Path(selected_root)
         self._parent = Path(selected_parent)
         if not self._root.is_absolute() or not self._parent.is_absolute():
             raise ProjectFlowError('trusted_selection_required')
         if pubmed_profile is not None and type(pubmed_profile) is not PubMedHostProfile:
             raise ProjectFlowError('pubmed_profile_invalid')
+        if wos_profile is not None and type(wos_profile) is not WoSHostProfile:
+            raise ProjectFlowError('wos_profile_invalid')
         self._pubmed_profile = pubmed_profile
+        self._wos_profile = wos_profile
         self._guard = threading.RLock()
         self._worker = ApplicationWorker()
         self._closed = False
@@ -69,6 +74,9 @@ class RealProjectFlow:
         self._pilot_candidate = None
         self._pending_pilot = None
         self._last_pilot = None
+        self._wos_pilot_candidate = None
+        self._pending_wos_pilot = None
+        self._last_wos_pilot = None
         # External folders are transient, host-selected, explicitly confirmed.
         # The audit journal stores directory identity, not the path.
         self._external_candidate = None
@@ -94,7 +102,7 @@ class RealProjectFlow:
             raise ProjectFlowError('strategy_reconciliation_required')
         if self._pending_review is not None:
             raise ProjectFlowError('preflight_reconciliation_required')
-        if self._pending_pilot is not None:
+        if self._pending_pilot is not None or self._pending_wos_pilot is not None:
             raise ProjectFlowError('pilot_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
@@ -254,6 +262,9 @@ class RealProjectFlow:
         self._pilot_candidate = None
         self._pending_pilot = None
         self._last_pilot = None
+        self._wos_pilot_candidate = None
+        self._pending_wos_pilot = None
+        self._last_wos_pilot = None
         self._clear_external()
         self.last_result = inspected
         self.snapshot = snapshot
@@ -349,6 +360,8 @@ class RealProjectFlow:
             self._review_candidate = None
             self._pilot_candidate = None
             self._last_pilot = None
+            self._wos_pilot_candidate = None
+            self._last_wos_pilot = None
             self.snapshot = report
             return self._publish()
 
@@ -427,7 +440,7 @@ class RealProjectFlow:
                 raise ProjectFlowError('export_reconciliation_required')
             if self._pending_review is not None:
                 raise ProjectFlowError('preflight_reconciliation_required')
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
@@ -497,6 +510,7 @@ class RealProjectFlow:
             # A pilot confirmation always has to show the current plan, not
             # silently retain an old candidate after reinspection.
             self._pilot_candidate = None
+            self._wos_pilot_candidate = None
             return self._publish()
 
     def offer_preflight_review(self, *, reviewer_name, reviewer_role,
@@ -532,7 +546,8 @@ class RealProjectFlow:
             self._require_open()
             if (self._pending_admission_id is not None or
                     self._pending_export_id is not None or
-                    self._pending_pilot is not None):
+                    self._pending_pilot is not None or
+                    self._pending_wos_pilot is not None):
                 raise ProjectFlowError('operation_reconciliation_required')
             if self._pending_review is None:
                 if self._review_candidate is None or self._preflight is None:
@@ -616,6 +631,7 @@ class RealProjectFlow:
             )
             self._preflight = verified
             self._pilot_candidate = candidate
+            self._wos_pilot_candidate = None
             return self._publish()
 
     def revise_pubmed_pilot(self):
@@ -634,7 +650,7 @@ class RealProjectFlow:
         """
         with self._guard:
             self._require_open()
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
@@ -850,7 +866,7 @@ class RealProjectFlow:
                 raise ProjectFlowError('strategy_reconciliation_required')
             if self._pending_review is not None:
                 raise ProjectFlowError('preflight_reconciliation_required')
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
@@ -903,7 +919,7 @@ class RealProjectFlow:
     def resume(self):
         with self._guard:
             self._require_open()
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
@@ -924,7 +940,7 @@ class RealProjectFlow:
     def cancel(self):
         with self._guard:
             self._require_open()
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
@@ -944,7 +960,7 @@ class RealProjectFlow:
     def observe(self):
         with self._guard:
             self._require_open()
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
@@ -997,6 +1013,10 @@ class RealProjectFlow:
                 'pubmed_pilot_candidate': self._pilot_candidate,
                 'pubmed_pilot_reconciliation_required': self._pending_pilot is not None,
                 'last_pubmed_pilot': self._last_pilot,
+                'wos_profile_configured': self._wos_profile is not None,
+                'wos_pilot_candidate': self._wos_pilot_candidate,
+                'wos_pilot_reconciliation_required': self._pending_wos_pilot is not None,
+                'last_wos_pilot': self._last_wos_pilot,
                 'external_destination_candidate': (
                     None if self._external_candidate is None
                     else str(self._external_candidate)),
