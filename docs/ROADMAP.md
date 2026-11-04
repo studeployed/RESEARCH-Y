@@ -23,7 +23,8 @@ The scope and gates are fixed in section 20 of the approved specification. Track
   - **P1-06f1–f7 — merged PRs #56–#62:** approved broad-OR strategy, frozen preflight and PRESS self-review, audited one-shot PubMed and WoS Starter pilots and explicit host-confirmed graphical consent. Pilot counts remain provisional and distinct from full retrieval.
   - **P1-06f8 — merged PR #63:** audited, paginated pilot history survives GUI restart, including unknown request outcomes. The shared quota guard is not silently released.
   - **P1-06g1 — owner-merged PR #64:** explicit GUI local-record retention admission and bounded three-request Starter checkpointed acquisition. Multi-page verification and whole-run source completion remained outstanding.
-  - **P1-06g2 — current increment:** explicitly consented, bounded **separate supervised long-source verification** with read-only persistent checkpoint progress and graceful pause. Can reconcile already acquired multi-page Starter checkpoints within one verification epoch when quotas/provider conditions permit; still **not** complete-abstract or whole-run acceptance, nor validated real 510-page load. Details: `docs/GUI_WOS_VERIFICATION.md`.
+  - **P1-06g2 — owner-merged PR #65:** explicitly consented, bounded supervised multi-page Starter identity verification with read-only checkpoint progress and graceful pause. Full abstracts and whole-run completion remain outstanding; see `docs/GUI_WOS_VERIFICATION.md`.
+  - **P1-06h1 — current increment:** supervised, explicitly confirmed PubMed ESearch identifier retrieval, original immutable count/date-partition checkpoints, budgeted requests, honest incomplete/paused status and read-only GUI progress. **Identifiers are not complete EFetch bibliographic records.** See `docs/GUI_PUBMED_IDENTIFIERS.md`.
 
 ## Milestone M2 — Specialist processing (Phase 2)
 
