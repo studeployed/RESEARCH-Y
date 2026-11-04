@@ -1737,6 +1737,223 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
+    # PubMed EFetch bibliographic and abstract acquisition, distinct from ESearch.
+    def inspect_stored_pubmed_metadata(self, query_id: str):
+        """Read saved metadata completeness without any credential or HTTP call."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None or type(query_id) is not str:
+                raise ProjectFlowError('run_selection_required')
+            allowed = {q['query_id'] for q in self.snapshot['report']['queries']
+                       if q['source_name']=='pubmed'}
+            if query_id not in allowed:
+                raise ProjectFlowError('unknown_pubmed_query')
+            result=self._operation('pubmed_metadata_read',
+                run_id=self.selected_run_id,pubmed_source_query_id=query_id)
+            if (result.get('run_id')!=self.selected_run_id or
+                    result.get('query_id')!=query_id or
+                    result.get('no_network_requests') is not True or
+                    result.get('source_retrieval_verified') is not False or
+                    result.get('whole_search_verified') is not False):
+                raise ProjectFlowError('pubmed_metadata_receipt_invalid')
+            self._pubmed_metadata=result
+            self._pubmed_metadata_offer=None
+            return self._publish()
+
+    def offer_pubmed_metadata(self, query_id: str):
+        """Lock the original exact source query and unfinished EFetch counts."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self._pubmed_profile is None:
+                raise ProjectFlowError('pubmed_profile_unavailable')
+            if self.selected_run_id is None or type(query_id) is not str:
+                raise ProjectFlowError('run_selection_required')
+            allowed = {q['query_id'] for q in self.snapshot['report']['queries']
+                       if q['source_name']=='pubmed'}
+            if query_id not in allowed:
+                raise ProjectFlowError('unknown_pubmed_query')
+            preview=self._operation('pubmed_metadata_preview',
+                run_id=self.selected_run_id,pubmed_source_query_id=query_id)
+            if (preview.get('run_id')!=self.selected_run_id or
+                    preview.get('query_id')!=query_id or
+                    type(preview.get('plan_sha256')) is not str or
+                    len(preview['plan_sha256'])!=64 or
+                    preview.get('identifier_checkpoint_reconciled') is not True or
+                    preview.get('metadata_records_reconciled') is not False or
+                    type(preview.get('metadata_records_pending')) is not int or
+                    preview['metadata_records_pending']<1 or
+                    preview.get('max_batch_size')!=20 or
+                    preview.get('max_session_batches')!=100 or
+                    preview.get('no_network_requests') is not True or
+                    preview.get('source_retrieval_verified') is not False or
+                    preview.get('whole_search_verified') is not False):
+                raise ProjectFlowError('pubmed_metadata_plan_invalid')
+            self._pubmed_metadata_offer=preview
+            self._pubmed_source_offer=None
+            self._pilot_candidate=None
+            return self._publish()
+
+    def dismiss_pubmed_metadata(self):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._pubmed_metadata_offer=None
+            return self._publish()
+
+    def confirm_pubmed_metadata(self):
+        """Spawn one capped EFetch session after a separate deliberate click."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            candidate=self._pubmed_metadata_offer
+            if self._pubmed_profile is None or candidate is None:
+                raise ProjectFlowError('pubmed_metadata_confirmation_required')
+            fresh=self._operation('pubmed_metadata_preview',
+                run_id=candidate['run_id'],
+                pubmed_source_query_id=candidate['query_id'])
+            if fresh!=candidate:
+                raise ProjectFlowError('pubmed_metadata_plan_changed')
+            command=ApplicationCommand.for_project(
+                self.project,'pubmed_metadata_run',
+                run_id=candidate['run_id'],
+                pubmed_source_query_id=candidate['query_id'],
+                pubmed_source_plan_sha256=candidate['plan_sha256'],
+                pubmed_source_confirmed=True,
+                pubmed_source_contact_email=self._pubmed_profile.contact_email,
+                pubmed_source_api_key=self._pubmed_profile.api_key)
+            try:
+                operation_id=self._pubmed_metadata_worker.submit(command)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            self._pubmed_metadata_pending=dict(candidate)
+            self._pubmed_metadata_operation_id=operation_id
+            self._pubmed_metadata_offer=None
+            self._pubmed_metadata_worker_state='running'
+            self._pubmed_metadata_worker_error=None
+            self._pubmed_metadata_last_outcome=None
+            return self._publish()
+
+    def poll_pubmed_metadata(self):
+        """Nonblocking supervisor check and read-only disk metadata inventory."""
+        with self._guard:
+            self._require_open()
+            pending=self._pubmed_metadata_pending
+            if pending is None or self._pubmed_metadata_operation_id is None:
+                raise ProjectFlowError('pubmed_metadata_reconciliation_not_required')
+            try:
+                status=self._pubmed_metadata_worker.poll(
+                    self._pubmed_metadata_operation_id)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            self._pubmed_metadata_worker_state=status.state
+            self._pubmed_metadata_worker_error=status.error
+            try:
+                observed=self._operation('pubmed_metadata_read',
+                    run_id=pending['run_id'],
+                    pubmed_source_query_id=pending['query_id'])
+                if (observed.get('run_id')!=pending['run_id'] or
+                        observed.get('query_id')!=pending['query_id'] or
+                        observed.get('exact_query')!=pending['exact_query'] or
+                        observed.get('no_network_requests') is not True or
+                        observed.get('source_retrieval_verified') is not False or
+                        observed.get('whole_search_verified') is not False):
+                    raise ProjectFlowError('pubmed_metadata_receipt_invalid')
+                self._pubmed_metadata=observed
+                return self._publish()
+            except ProjectFlowError:
+                self._publish()
+                raise
+
+    def reconcile_pubmed_metadata(self):
+        """Terminal worker + original verified PubMed source-record inventory.
+
+        Neither a returned service dict nor a missing worker reply establishes
+        metadata completeness. An interruption keeps earlier EFetch batches
+        stored; any further POST requires a NEW explicit consent.
+        """
+        with self._guard:
+            self._require_open()
+            pending=self._pubmed_metadata_pending
+            if pending is None or self._pubmed_metadata_operation_id is None:
+                raise ProjectFlowError('pubmed_metadata_reconciliation_not_required')
+            try:
+                status=self._pubmed_metadata_worker.poll(
+                    self._pubmed_metadata_operation_id)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            if status.state=='running':
+                raise ProjectFlowError('pubmed_metadata_worker_still_running')
+            self._pubmed_metadata_worker_state=status.state
+            self._pubmed_metadata_worker_error=status.error
+            try:
+                read=self._operation('pubmed_metadata_read',
+                    run_id=pending['run_id'],
+                    pubmed_source_query_id=pending['query_id'])
+                if (read.get('run_id')!=pending['run_id'] or
+                        read.get('query_id')!=pending['query_id'] or
+                        read.get('exact_query')!=pending['exact_query'] or
+                        read.get('no_network_requests') is not True or
+                        read.get('source_retrieval_verified') is not False or
+                        read.get('whole_search_verified') is not False or
+                        read.get('identifier_checkpoint_reconciled') is not True):
+                    raise ProjectFlowError('pubmed_metadata_receipt_invalid')
+                if status.state=='returned':
+                    receipt=status.result()
+                    if (type(receipt) is not dict or
+                            receipt.get('run_id')!=pending['run_id'] or
+                            receipt.get('query_id')!=pending['query_id'] or
+                            receipt.get('plan_sha256')!=pending['plan_sha256'] or
+                            receipt.get('metadata_records_committed')!=
+                                read['metadata_records_committed'] or
+                            receipt.get('metadata_records_pending')!=
+                                read['metadata_records_pending'] or
+                            receipt.get('original_checkpoint_status')!=read['status'] or
+                            receipt.get('metadata_records_reconciled') is not
+                                read['metadata_records_reconciled'] or
+                            receipt.get('session_batch_limit')!=100 or
+                            type(receipt.get('successful_batches')) is not int or
+                            not 0<=receipt['successful_batches']<=100 or
+                            receipt.get('automatically_retryable') is not False or
+                            receipt.get('source_retrieval_verified') is not False or
+                            receipt.get('whole_search_verified') is not False or
+                            receipt.get('status') not in (
+                                'metadata_acquired_reconciliation_pending',
+                                'incomplete','paused')):
+                        raise ProjectFlowError('pubmed_metadata_receipt_invalid')
+                    if (receipt['status']=='metadata_acquired_reconciliation_pending'
+                            and not read['metadata_records_reconciled']):
+                        raise ProjectFlowError('pubmed_metadata_receipt_invalid')
+                    batches=receipt['successful_batches']
+                    result_status=receipt['status']
+                elif status.state in ('failed','interrupted'):
+                    batches=None
+                    result_status='outcome_uncertain'
+                else:
+                    raise ProjectFlowError('pubmed_metadata_receipt_invalid')
+                self._pubmed_metadata=read
+                self.snapshot=self._operation(
+                    'inspect',run_id=self.selected_run_id)['snapshot']
+                self._pubmed_source=self._operation(
+                    'pubmed_identifier_read',run_id=self.selected_run_id,
+                    pubmed_source_query_id=pending['query_id'])
+                self._pubmed_metadata_last_outcome=dict(
+                    run_id=pending['run_id'],query_id=pending['query_id'],
+                    worker_state=status.state,worker_error=status.error,
+                    session_status=result_status,
+                    successful_batches=batches,
+                    metadata_records_committed=read['metadata_records_committed'],
+                    metadata_records_pending=read['metadata_records_pending'],
+                    source_retrieval_verified=False,whole_search_verified=False,
+                    automatically_retryable=False)
+                self._pubmed_metadata_pending=None
+                self._pubmed_metadata_operation_id=None
+                return self._publish()
+            except ProjectFlowError:
+                self._publish()
+                raise
+
     def inspect_pilot_history(self, *, before_event_id=None):
         """Read a page of prior project-wide pilot requests, no source network."""
         with self._guard:
