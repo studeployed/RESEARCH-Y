@@ -22,6 +22,7 @@ from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard
 from tools.gui_feasibility.prototype_app import guarded_open_window
 from tools.gui_feasibility.real_project_flow import ProjectFlowError, RealProjectFlow
 from tools.gui_feasibility.pubmed_host_profile import PubMedHostProfile
+from tools.gui_feasibility.wos_host_profile import WoSHostProfile
 from tools.gui_feasibility.native_folder_selection import NativeFolderError, select_from_native_window
 
 LITERAL_NAME = '<img src=x onerror="window.__researchy_injected=true">'
@@ -83,9 +84,11 @@ def run(args):
         # from the environment before constructing any browser session.
         # No browser control or HTTP route can supply credentials.
         pubmed_profile = PubMedHostProfile.from_prototype_environment()
+        wos_profile = WoSHostProfile.from_prototype_environment()
         flow = RealProjectFlow(selected_root=root, selected_parent=parent,
                                recent_parent=recents_parent,
-                               pubmed_profile=pubmed_profile)
+                               pubmed_profile=pubmed_profile,
+                               wos_profile=wos_profile)
         os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN'] = session.origin
         os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'] = str(args.directory)
         events, clients, tasks = [], [], []
@@ -154,6 +157,18 @@ def run(args):
                         if name == 'pubmed_pilot_reconcile':
                             # Read-only journal inspection; NEVER resend.
                             return flow.reconcile_pubmed_pilot()
+                        if name == 'wos_pilot_offer':
+                            return flow.offer_wos_pilot(value)
+                        if name == 'wos_pilot_revalidation_offer':
+                            return flow.offer_wos_pilot(value, revalidate_quota=True)
+                        if name == 'wos_pilot_revise':
+                            return flow.revise_wos_pilot()
+                        if name == 'wos_pilot_confirm':
+                            # Only a separate confirmed click may send Starter GET.
+                            return flow.confirm_wos_pilot()
+                        if name == 'wos_pilot_reconcile':
+                            # No network; read original UUID's immutable journal.
+                            return flow.reconcile_wos_pilot()
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -530,6 +545,9 @@ def run(args):
                         ui.button('Inspect original pilot receipt (no network)',
                                   on_click=lambda: act('pubmed_pilot_reconcile')).props(
                                       'data-testid=pubmed-pilot-reconcile')
+                    elif state['wos_pilot_reconciliation_required']:
+                        ui.label('Resolve the Web of Science pilot receipt before '
+                                 'starting a PubMed pilot.')
                     elif state['pubmed_pilot_candidate'] is not None:
                         candidate = state['pubmed_pilot_candidate']
                         ui.label('Unsent, locked pilot candidate for group ' +
