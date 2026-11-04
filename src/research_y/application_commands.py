@@ -457,6 +457,8 @@ class ApplicationCommand:
                               approved_by=self.admission_approved_by,
                               groups=_groups_snapshot(self.admission_groups))
                 compile_both(frozen)
+            elif self.operation in ('run_coord_preview','run_coord_run'):
+                pass  # Validated above; not an export operation.
             elif self.operation == 'run_board':
                 if (self.run_id is None or any(v is not None for v in
                         (self.export_id, self.output_name, self.directory,
