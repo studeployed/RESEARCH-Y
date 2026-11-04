@@ -17,7 +17,7 @@ from research_y.wos_checkpoint_store import (
 from research_y.wos_checkpoint_runner import run_wos_checkpoint
 from research_y.wos_starter_client import WoSStarterClient
 
-MAX_SESSION_REQUESTS = 2
+MAX_SESSION_REQUESTS = 3
 SAFE_ERRORS = frozenset((
     "pending_wos_query_required", "source_plan_unverified",
     "checkpoint_already_exists", "unknown_checkpoint",
@@ -35,7 +35,7 @@ class WoSAcquisitionError(ValueError):
         self.code = code if code in SAFE_ERRORS | {
             "invalid_identifier", "retention_confirmation_required",
             "session_confirmation_required", "gui_admission_missing",
-            "source_execution_unavailable",
+            "source_execution_unavailable", "verification_requires_long_worker",
         } else "source_execution_unavailable"
         super().__init__(self.code)
 
@@ -94,6 +94,39 @@ def inspect_wos_acquisition(project: Project, *, run_id, query_id) -> dict:
     return result
 
 
+def preview_wos_acquisition(project: Project, *, run_id, query_id) -> dict:
+    """Verify one still-pending source query against the frozen complete OR plan.
+
+    Sibling query counts/statuses may have progressed, but the original
+    approved group expressions and snapshot hash must still reconcile.
+    This operation is read-only and cannot submit source requests.
+    """
+    _uuid(run_id)
+    _uuid(query_id)
+    from research_y.preflight_review import _inspect, PreflightError
+    try:
+        with _db(project) as db:
+            summary = _inspect(db, run_id, allow_started=True)
+            matches = [q for src in summary['sources']
+                       if src['source_name'] == 'wos'
+                       for q in src['queries']
+                       if q['query_id'] == query_id]
+            if len(matches) != 1:
+                raise WoSAcquisitionError('source_plan_unverified')
+            live = db.execute('SELECT status FROM source_queries WHERE query_id=? AND run_id=?',
+                              (query_id,run_id)).fetchone()
+            if live is None or live[0] != 'pending':
+                raise WoSAcquisitionError('pending_wos_query_required')
+            return dict(run_id=run_id,query_id=query_id,
+                        exact_query=matches[0]['exact_query'],
+                        group_id=matches[0]['group_id'],
+                        plan_sha256=summary['plan_sha256'],
+                        source_retrieval_verified=False,no_network_requests=True)
+    except PreflightError:
+        raise WoSAcquisitionError('source_plan_unverified') from None
+
+
+
 def prepare_wos_acquisition(
     project: Project, *, run_id, query_id, expected_plan_sha256,
     retention_authorized, confirmed,
@@ -125,7 +158,7 @@ def run_wos_acquisition_session(
     project: Project, *, run_id, query_id, confirmed, client: WoSStarterClient,
     revalidate_quota=False,
 ) -> dict:
-    """At most TWO provider requests per manually confirmed worker invocation.
+    """At most THREE provider requests per manually confirmed worker invocation.
 
     There are NO automatic retries. On interruption, only read the existing
     checkpoint: an unknown in-flight request must not be silently resent.
@@ -135,6 +168,13 @@ def run_wos_acquisition_session(
     if type(client) is not WoSStarterClient or client.requests_made != 0:
         raise WoSAcquisitionError("session_confirmation_required")
     initial = inspect_wos_acquisition(project, run_id=run_id, query_id=query_id)
+    job = initial["checkpoint"]
+    # The existing identity-verification epoch restarts on every session.
+    # Short sessions cannot certify multi-page verification/final count,
+    # and MUST NOT spend quota repeating that same first verification page.
+    if (job["pages_expected"] is not None and job["pages_expected"] > 1
+            and job["stage"] in ("verify", "final")):
+        raise WoSAcquisitionError("verification_requires_long_worker")
     if not initial["approved_gui_retention"]:
         raise WoSAcquisitionError("gui_admission_missing")
     try:

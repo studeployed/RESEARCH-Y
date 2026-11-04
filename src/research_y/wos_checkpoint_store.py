@@ -135,7 +135,7 @@ def create_wos_checkpoint(project: Project, query_id: str, *, retention_authoriz
         if expected_run_id is not None:
             from research_y.preflight_review import _inspect, PreflightError
             try:
-                preview = _inspect(db, expected_run_id)
+                preview = _inspect(db, expected_run_id, allow_started=True)
                 if (preview["plan_sha256"] != expected_plan_sha256 or
                         type(expected_plan_sha256) is not str or
                         len(expected_plan_sha256) != 64 or
