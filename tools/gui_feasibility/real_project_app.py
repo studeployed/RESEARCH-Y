@@ -238,6 +238,21 @@ def run(args):
                             return flow.pause_pubmed_source()
                         if name == 'pubmed_identifier_reconcile':
                             return flow.reconcile_pubmed_source()
+                        if name == 'pubmed_metadata_read':
+                            return flow.inspect_stored_pubmed_metadata(value)
+                        if name == 'pubmed_metadata_offer':
+                            return flow.offer_pubmed_metadata(value)
+                        if name == 'pubmed_metadata_dismiss':
+                            return flow.dismiss_pubmed_metadata()
+                        if name == 'pubmed_metadata_confirm':
+                            # Explicit user consent; the ONLY EFetch HTTP path.
+                            return flow.confirm_pubmed_metadata()
+                        if name == 'pubmed_metadata_poll':
+                            # Original durable record counts, no network.
+                            return flow.poll_pubmed_metadata()
+                        if name == 'pubmed_metadata_reconcile':
+                            # Read-only final verification of stopped worker.
+                            return flow.reconcile_pubmed_metadata()
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -1277,6 +1292,128 @@ def run(args):
                                   else str(outcome['requests_reserved'])) +
                                  '; whole search verified: FALSE').props(
                                      'data-testid=pubmed-source-outcome')
+                if state['selected_run_id'] is not None:
+                    ui.separator()
+                    ui.label('PubMed — full EFetch bibliographic metadata and abstracts '
+                             '(experimental)').props('data-testid=pubmed-metadata-heading')
+                    ui.label('This stage begins ONLY after the selected PubMed ESearch '
+                             'identifier checkpoint reconciles. The source records and '
+                             'abstract text are stored privately in the local project; '
+                             'their copyright/redistribution status remains distinct. '
+                             'Never confuse EFetch metadata with a complete two-source '
+                             'research search.')
+                    if state['pubmed_metadata_pending']:
+                        ui.label('EFetch worker: ' +
+                                 state['pubmed_metadata_worker_state'] +
+                                 '; error: ' +
+                                 str(state['pubmed_metadata_worker_error'])).props(
+                                     'data-testid=pubmed-metadata-worker-state')
+                        saved=state['pubmed_metadata']
+                        if saved is not None:
+                            ui.label('Saved full metadata: ' +
+                                     str(saved['metadata_records_committed']) + ' / ' +
+                                     ('UNKNOWN' if saved['identifier_count'] is None
+                                      else str(saved['identifier_count'])) +
+                                     ' identifier-linked records; abstract present: ' +
+                                     str(saved['abstract_present']) +
+                                     '; abstract not supplied in response: ' +
+                                     str(saved['abstract_not_supplied'])).props(
+                                         'data-testid=pubmed-metadata-progress')
+                        else:
+                            ui.label('No metadata observation yet. An already-sent '
+                                     'request may have an uncertain outcome.')
+                        ui.button('Refresh saved EFetch progress (NO HTTP)',
+                                  on_click=lambda: act('pubmed_metadata_poll')).props(
+                                      'data-testid=pubmed-metadata-poll')
+                        if state['pubmed_metadata_worker_state'] != 'running':
+                            ui.button('Reconcile terminal EFetch worker with original ledger',
+                                      on_click=lambda: act(
+                                          'pubmed_metadata_reconcile')).props(
+                                              'data-testid=pubmed-metadata-reconcile')
+                    elif state['pubmed_metadata_offer'] is not None:
+                        proposed=state['pubmed_metadata_offer']
+                        ui.label('Frozen exact PubMed All Fields query: ' +
+                                 proposed['exact_query']).props(
+                                     'data-testid=pubmed-metadata-exact-query')
+                        ui.label('Original confirmed source identifiers: ' +
+                                 str(proposed['identifier_count']) +
+                                 '; already retained metadata records: ' +
+                                 str(proposed['metadata_records_committed']) +
+                                 '; still missing: ' +
+                                 str(proposed['metadata_records_pending'])).props(
+                                     'data-testid=pubmed-metadata-preview')
+                        ui.label('One manually confirmed session sends up to ' +
+                                 str(proposed['max_session_batches']) +
+                                 ' EFetch requests of at most ' +
+                                 str(proposed['max_batch_size']) +
+                                 ' PubMed IDs each. Each successful batch is '
+                                 'transactional and already saved IDs are '
+                                 'skipped on a subsequent manual session. '
+                                 'This preview sends NO request. An interrupted '
+                                 'POST may consume quota without returning a '
+                                 'verified result; it will NOT be automatically '
+                                 'reissued. Keep the app open until the worker stops.')
+                        ui.button('Cancel unsent EFetch metadata session',
+                                  on_click=lambda: act('pubmed_metadata_dismiss')).props(
+                                      'data-testid=pubmed-metadata-dismiss')
+                        ui.button('CONFIRM bounded EFetch metadata and abstract retrieval',
+                                  on_click=lambda: act('pubmed_metadata_confirm')).props(
+                                      'data-testid=pubmed-metadata-confirm')
+                    else:
+                        current=state['pubmed_metadata']
+                        for query in (state['report']['queries'] if
+                                      state['report'] is not None else ()):
+                            if query['source_name'] != 'pubmed':
+                                continue
+                            qid=query['query_id']
+                            ui.button('Inspect saved EFetch metadata for ' +
+                                      query['group_id'],
+                                      on_click=lambda qid=qid: act(
+                                          'pubmed_metadata_read',qid)).props(
+                                              'data-testid=pubmed-metadata-read')
+                            if (state['pubmed_profile_configured'] and
+                                    state['pubmed_source'] is not None and
+                                    state['pubmed_source']['query_id']==qid and
+                                    state['pubmed_source']['checkpoint'] is not None and
+                                    state['pubmed_source']['checkpoint'][
+                                        'identifiers_reconciled']):
+                                ui.button('Preview EFetch metadata session for ' +
+                                          query['group_id'],
+                                          on_click=lambda qid=qid: act(
+                                              'pubmed_metadata_offer',qid)).props(
+                                                  'data-testid=pubmed-metadata-offer')
+                        if current is not None:
+                            ui.label('EFetch source state: ' + current['status'] +
+                                     '; metadata records: ' +
+                                     str(current['metadata_records_committed']) +
+                                     '; pending: ' +
+                                     ('UNKNOWN' if current['metadata_records_pending']
+                                      is None else str(
+                                          current['metadata_records_pending']))).props(
+                                              'data-testid=pubmed-metadata-saved')
+                            ui.label('Abstract supplied: ' +
+                                     str(current['abstract_present']) +
+                                     '; not supplied by EFetch: ' +
+                                     str(current['abstract_not_supplied']))
+                            if current['metadata_records_reconciled']:
+                                ui.label('Every previously reconciled PubMed identifier '
+                                         'has a saved EFetch record. This does NOT '
+                                         'establish complete abstract availability, '
+                                         'global publication deduplication or a '
+                                         'verified whole-run search.').props(
+                                             'data-testid=pubmed-metadata-not-whole-run')
+                        if not state['pubmed_profile_configured']:
+                            ui.label('Without configured local PubMed contact '
+                                     'details, saved EFetch progress is readable '
+                                     'but new network sessions are unavailable.')
+                    if state['pubmed_metadata_last_outcome'] is not None:
+                        last=state['pubmed_metadata_last_outcome']
+                        ui.label('Last EFetch worker: ' + last['worker_state'] +
+                                 '; successfully committed batches: ' +
+                                 ('UNKNOWN' if last['successful_batches'] is None
+                                  else str(last['successful_batches'])) +
+                                 '; whole run verified: FALSE').props(
+                                     'data-testid=pubmed-metadata-outcome')
                 for item in state['exports']:
                     # Only offer requests belonging to the explicitly selected run.
                     if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:
@@ -1406,6 +1543,8 @@ def run(args):
                         await act('wos_verification_poll')
                     elif flow.state()['pubmed_source_pending']:
                         await act('pubmed_identifier_poll')
+                    elif flow.state()['pubmed_metadata_pending']:
+                        await act('pubmed_metadata_poll')
 
             ui.timer(2.0, refresh_running_verification)
 
