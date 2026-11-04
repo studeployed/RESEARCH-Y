@@ -197,5 +197,7 @@ def run_pubmed_metadata_session(
         automatically_retryable=False,
         # A failed or killed POST can have an uncertain provider outcome.
         # No attempt is automatically resent by this adapter.
-        unknown_inflight_request_possible=progress.status == "incomplete",
+        unknown_inflight_request_possible=(
+            progress.error ==
+            "PubMed metadata batch failed; previously committed records retained"),
     )
