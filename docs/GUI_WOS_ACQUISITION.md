@@ -1,0 +1,33 @@
+# P1-06g1 — Explicitly consented Starter source-acquisition sessions in the isolated GUI
+
+**Baseline:** owner-merged PR #63, main `c363b7418c6919a4a0753c49bf03314d676f5ed1`.
+**Authority:** repository `RESEARCH-Y_SPEC.md`, including SEARCH-06–14, SRC-05–08, RUN-01–07, DATA-03–06, COUNT-01/03/05, UI-04/05, SEC-01/03–05 and partial AT-08/09/19/21.
+
+## Purpose
+
+After the pilot count and journal-history increments, the existing application can display exact pending OR-only source plans, but **cannot acquire and retain source bibliographic records**. This increment exposes an explicitly authorised, tightly bounded Web of Science (WoS) Starter checkpoint session in the experimental local NiceGUI/pywebview graphical interface, reusing the existing production source checkpoint engine rather than implementing a second pagination algorithm.
+
+This is the first *actual source-record acquisition* path from the GUI. PubMed full-record execution, whole-run orchestration, automatic repeated sessions, product Windows packaging and full source/product acceptance remain future tasks.
+
+## Separate trust/consent steps
+
+1. The researcher opens a project, selects a frozen pending run and explicitly verifies its exact stored source plan. The host re-reads the same preflight and locks one Web of Science Starter Topic query. A Preview action performs **no network call**.
+2. The researcher separately confirms **local retention of provider-returned licensed metadata**, subject to the conditions of their institutional licence. The checkpoint is created **transactionally with a fresh exact-run preflight verification**. The original approved query, immutable strategy hash and preflight SHA-256 are retained in its immutable plan. No network request is performed during preparation. A lost preparation response is reconciled by querying the original checkpoint, not creating a second one.
+3. The researcher explicitly previews, then separately confirms **one bounded source-acquisition session**. Each such session sends at most **two** official Starter requests, using a fresh client with its own 2-request budget and 10-second/request timeout (bounded within the existing 35-second GUI worker supervision envelope). The first may acquire up to two 50-record pages. Later sessions normally consume a count/first-ID recheck plus one additional page, subject to actual source counts and progress.
+4. Explicit quota revalidation is a **distinct preview and confirmation choice**, never implied by time passage, user reselecting a run or a fresh Python client. Existing project-wide quota, server-directed backoff, in-flight pilot reservations, persistent Worker fencing and request pacing remain authoritative. A new source session never automatically starts on project opening, history inspection, rendering, or workbook export.
+
+A browser cannot provide a key, local directory, full source query, retention flag or arbitrary source parameters to the provider. It can only select host-validated stored source-query identifiers. The only credential is the pre-existing trusted Python-host Starter key, passed transiently to the supervised child and never included in the return status, project audit, browser state or logs. The only retained licensed records belong in the user's locally stored source-retrieval ledger after explicit retention consent, with source rights information.
+
+## Crash/restart and truthful states
+
+Only the trusted source checkpoint services may retain records, write request/audit receipts, enforce quotas and reconcile page identities. The wrapper returns safe status and counters: reported matches (unknown is distinct from zero), pages acquired/verified, source records persisted, request attempts, unknown requests, observed quota and cooldown. It does **not** return licensed record bodies, fabricate publication identities, change search terms, silently add conceptual AND/NOT or declare a whole-run search complete.
+
+The graphical flow treats a lost worker response as uncertain. The original run/query stays locked until **read-only checkpoint reinspection**. If a worker is still marked active or an attempt remains indeterminate, no new requests are sent from the interface; verified stopped-worker recovery and guarded revalidation remain future scoped work. A completed session is followed by a separate read-only checkpoint read and a refreshed run report before the interface permits another explicitly confirmed session. Once a run is no longer pending, the original preflight approval interface is invalidated rather than quietly re-used. Reopening the GUI and selecting the same saved run allows read-only inspection of its original checkpoint even without a configured API key.
+
+Important source-engine limitation: the existing WoS verification pass must fit within **one uninterrupted session**. The two-request budget in this initial GUI integration is suitable for incrementally acquiring pages, but is insufficient to finish an independent verification pass for queries requiring multiple pages. Such an acquisition remains incomplete; a future longer-running supervised execution monitor is required for whole-source reconciliation. Neither this limited GUI slice nor even a successfully reconciled Starter enumeration certifies complete abstract enrichment, a provider-frozen snapshot or completion of the combined PubMed + WoS research run. Source-reported counts are never equated with global deduplicated publications.
+
+## Offline evidence and remaining gates
+
+Normal continuous integration creates no live provider connection. Synthetic responses exercise the real SQLite project, immutably frozen strategy, exact preflight hash, existing Starter parser/client and stored checkpoint runner. GUI tests cover cancellation, wrong-source/stale-plan prevention, record-retention consent, 2-request acquisition, true licensed metadata retention in local SQLite only, no licensed/secret text in GUI results, close/reopen without credentials, lost responses and no repeat on double confirmation, no GUI adoption of a checkpoint made by a different workflow, and a strict worker command allowlist. The original source and pilot regression suites remain unchanged.
+
+No new dependency, database migration, search exclusion, background runner or substantive specification change. The native Windows physical click journey and large source-volume user experience still require acceptance. Mandatory gates before merge: all four Linux/Windows Python continuous integration configurations, applicable graphical dependency/lifecycle checks, completed exact-HEAD Codex **code review first then security review**, disposition of substantive findings and explicit project-owner authorisation.
