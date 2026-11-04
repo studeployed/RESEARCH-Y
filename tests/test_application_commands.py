@@ -92,6 +92,19 @@ def services(monkeypatch, tmp_path):
         'source_retrieval_verified':False})
     acquisition.run_wos_acquisition_session=service('wos_acquisition_tick',{
         'source_retrieval_verified':False})
+    from research_y.pubmed_source_gui import PubMedSourceError, _sha, _window
+    pubmed_source=types.ModuleType('research_y.pubmed_source_gui')
+    pubmed_source.PubMedSourceError=PubMedSourceError
+    pubmed_source._sha=_sha
+    pubmed_source._window=_window
+    pubmed_source.preview_pubmed_source=service('pubmed_identifier_preview',{
+        'no_network_requests':True,'source_retrieval_verified':False})
+    pubmed_source.inspect_pubmed_source=service('pubmed_identifier_read',{
+        'no_network_requests':True,'source_retrieval_verified':False})
+    pubmed_source.pause_pubmed_source_session=service('pubmed_identifier_pause',{
+        'no_network_requests':True,'source_retrieval_verified':False})
+    pubmed_source.run_pubmed_source_session=service('pubmed_identifier_run',{
+        'status':'incomplete','source_retrieval_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -102,6 +115,7 @@ def services(monkeypatch, tmp_path):
                         ('preflight_review',preflight),('pubmed_pilot',pilot),
                         ('wos_starter_pilot',wos),('pilot_history',history),
                         ('wos_acquisition_gui',acquisition),
+                        ('pubmed_source_gui',pubmed_source),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -145,6 +159,17 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()),
                   acquisition_confirmed=True,acquisition_revalidate_quota=False,
                   acquisition_api_key='SYNTHETIC-PRIVATE-STARTER-KEY')
+    elif operation in ('pubmed_identifier_preview','pubmed_identifier_read',
+                       'pubmed_identifier_pause'):
+        kw.update(run_id=str(uuid4()),pubmed_source_query_id=str(uuid4()))
+    elif operation=='pubmed_identifier_run':
+        kw.update(run_id=str(uuid4()),pubmed_source_query_id=str(uuid4()),
+                  pubmed_source_plan_sha256='a'*64,
+                  pubmed_coverage_start='1800-01-01',
+                  pubmed_coverage_end='2026-11-04',
+                  pubmed_source_confirmed=True,
+                  pubmed_source_contact_email='fixture@example.org',
+                  pubmed_source_api_key='PRIVATE-PUBMED-KEY')
     elif operation=='pubmed_pilot_read':
         kw.update(pilot_id=str(uuid4()))
     elif operation=='wos_pilot_read':
@@ -239,6 +264,23 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     if operation=='pilot_history':
         assert calls[0][2]['before_event_id']==123
         assert result['no_network_requests'] is True
+    if operation in ('pubmed_identifier_preview','pubmed_identifier_read',
+                     'pubmed_identifier_pause'):
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['pubmed_source_query_id']
+        assert result['no_network_requests'] is True
+    if operation=='pubmed_identifier_run':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['pubmed_source_query_id']
+        assert calls[0][2]['expected_plan_sha256']==kw['pubmed_source_plan_sha256']
+        assert calls[0][2]['coverage_start']==kw['pubmed_coverage_start']
+        assert calls[0][2]['coverage_end']==kw['pubmed_coverage_end']
+        assert calls[0][2]['confirmed'] is True
+        assert calls[0][2]['client']._email==kw['pubmed_source_contact_email']
+        assert calls[0][2]['client']._api_key==kw['pubmed_source_api_key']
+        assert calls[0][2]['client']._timeout==15
+        assert kw['pubmed_source_api_key'] not in repr(cmd)
+        assert kw['pubmed_source_contact_email'] not in repr(cmd)
     if operation=='pubmed_pilot_read':
         assert calls[0][1][1] == kw['pilot_id']
         assert result['pilot'] is None
@@ -666,4 +708,50 @@ def test_extended_verification_budget_never_routes_through_other_commands(servic
                       acquisition_api_key='SYNTHETIC-PRIVATE-STARTER-KEY')
     with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
         commands.ApplicationCommand.for_project(project,operation,**kwargs)
+    assert not calls
+
+
+
+@pytest.mark.parametrize('operation,changes',[
+    ('pubmed_identifier_read',{'pubmed_source_api_key':'SECRET'}),
+    ('pubmed_identifier_preview',{'pubmed_source_confirmed':True}),
+    ('pubmed_identifier_pause',{'pubmed_source_plan_sha256':'a'*64}),
+    ('pubmed_identifier_run',{'pubmed_source_confirmed':False}),
+    ('pubmed_identifier_run',{'pubmed_source_api_key':'BAD\nKEY'}),
+    ('pubmed_identifier_run',{'pubmed_source_plan_sha256':'invalid'}),
+    ('pubmed_identifier_run',{'pubmed_coverage_start':'2026-12-30',
+                              'pubmed_coverage_end':'2025-01-01'}),
+    ('pubmed_identifier_run',{'pubmed_coverage_start':'2026-11-4'}),
+    ('pubmed_identifier_run',{'pubmed_coverage_end':'abc'}),
+])
+def test_pubmed_source_commands_validate_own_trusted_fields_only(
+        services,operation,changes):
+    project,calls,*_=services
+    attrs=dict(run_id=str(uuid4()),pubmed_source_query_id=str(uuid4()))
+    if operation=='pubmed_identifier_run':
+        attrs.update(pubmed_source_plan_sha256='a'*64,
+                     pubmed_coverage_start='1800-01-01',
+                     pubmed_coverage_end='2026-11-04',
+                     pubmed_source_confirmed=True,
+                     pubmed_source_contact_email='fixture@example.org',
+                     pubmed_source_api_key='PRIVATE-PUBMED-KEY')
+    with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+        commands.ApplicationCommand.for_project(project,operation,**(attrs|changes))
+    assert not calls
+
+
+@pytest.mark.parametrize('operation',[
+    'inspect','pubmed_pilot_read','wos_acquisition_read',
+    'pilot_history','wos_acquisition_verify_plan',
+])
+def test_pubmed_identifier_key_cannot_be_routed_to_unrelated_commands(
+        services,operation):
+    project,calls,*_=services
+    attrs={'pubmed_source_api_key':'PRIVATE'}
+    if operation=='pubmed_pilot_read':
+        attrs['pilot_id']=str(uuid4())
+    if operation in ('wos_acquisition_read','wos_acquisition_verify_plan'):
+        attrs.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
+    with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+        commands.ApplicationCommand.for_project(project,operation,**attrs)
     assert not calls
