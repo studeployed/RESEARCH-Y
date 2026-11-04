@@ -377,6 +377,82 @@ def test_read_only_reopen_after_identifier_retrieval_no_credentials(tmp_path):
         flow.close()
 
 
+def test_late_pause_after_reconciled_identifiers_is_atomic_noop_and_worker_reconciles(
+        tmp_path):
+    project,flow,rid,qid,query=_flow(tmp_path)
+    supervisor=Supervisor()
+    flow._pubmed_source_worker.close()
+    flow._pubmed_source_worker=supervisor
+    try:
+        flow.offer_pubmed_source(qid,coverage_start=START,coverage_end=END)
+        flow.confirm_pubmed_source()
+        receipt=source.run_pubmed_source_session(
+            project,run_id=rid,query_id=qid,
+            expected_plan_sha256=supervisor.cmd.pubmed_source_plan_sha256,
+            coverage_start=START,coverage_end=END,
+            confirmed=True,client=_client(Transport(query)))
+        assert receipt['checkpoint']['status']=='identifiers_reconciled_metadata_pending'
+        before=_db(project)
+        # The supervisor may still say running briefly after the original
+        # child has committed a verified identifier checkpoint and returned.
+        assert flow.state()['pubmed_source_worker_state']=='running'
+        pause=flow.pause_pubmed_source()['pubmed_source']
+        assert pause['checkpoint']['status']=='identifiers_reconciled_metadata_pending'
+        assert _db(project)==before  # no downgraded state or spurious audit event
+        supervisor.state='returned'
+        supervisor.result=receipt
+        done=flow.reconcile_pubmed_source()
+        assert done['pubmed_source_pending'] is False
+        assert done['pubmed_source']['checkpoint']==receipt['checkpoint']
+        assert done['pubmed_source']['checkpoint']['identifiers_reconciled']
+        assert done['source_retrieval_verified'] is False
+        flow.select_run(rid)
+    finally:
+        flow.close()
+
+
+def test_late_pause_of_incomplete_receipt_permits_only_status_change(
+        tmp_path,monkeypatch):
+    project,flow,rid,qid,query=_flow(tmp_path)
+    supervisor=Supervisor()
+    flow._pubmed_source_worker.close()
+    flow._pubmed_source_worker=supervisor
+    original_budget=source.MAX_PUBMED_REQUESTS
+    monkeypatch.setattr(source,'MAX_PUBMED_REQUESTS',2)
+    try:
+        flow.offer_pubmed_source(qid,coverage_start=START,coverage_end=END)
+        flow.confirm_pubmed_source()
+        receipt=source.run_pubmed_source_session(
+            project,run_id=rid,query_id=qid,
+            expected_plan_sha256=supervisor.cmd.pubmed_source_plan_sha256,
+            coverage_start=START,coverage_end=END,
+            confirmed=True,client=_client(Transport(query)))
+        assert receipt['status']=='incomplete'
+        assert receipt['checkpoint']['status']=='incomplete'
+        paused=flow.pause_pubmed_source()['pubmed_source']
+        assert paused['checkpoint']['status']=='paused'
+        assert paused['checkpoint']['identifiers_committed']==0
+        assert RealProjectFlow._pubmed_checkpoint_receipt_consistent(
+            receipt['checkpoint'],paused['checkpoint'])
+        forged=json.loads(json.dumps(receipt))
+        forged['checkpoint']['reported_matches']=999
+        assert not RealProjectFlow._pubmed_checkpoint_receipt_consistent(
+            forged['checkpoint'],paused['checkpoint'])
+        supervisor.result=forged
+        supervisor.state='returned'
+        with pytest.raises(ProjectFlowError,match='pubmed_receipt_invalid'):
+            flow.reconcile_pubmed_source()
+        assert flow.state()['pubmed_source_pending']
+        supervisor.result=receipt
+        done=flow.reconcile_pubmed_source()
+        assert done['pubmed_source_pending'] is False
+        assert done['pubmed_source']['checkpoint']['status']=='paused'
+        assert done['pubmed_source_last_outcome']['source_retrieval_verified'] is False
+    finally:
+        monkeypatch.setattr(source,'MAX_PUBMED_REQUESTS',original_budget)
+        flow.close()
+
+
 def test_graphical_pubmed_controls_never_exposed_on_probe_automation_route():
     text=inspect.getsource(run)
     for operation in ('pubmed_identifier_offer','pubmed_identifier_confirm',
