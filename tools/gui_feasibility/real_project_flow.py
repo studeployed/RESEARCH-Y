@@ -112,6 +112,8 @@ class RealProjectFlow:
         self._pubmed_metadata_worker_state = 'idle'
         self._pubmed_metadata_worker_error = None
         self._pubmed_metadata_last_outcome = None
+        self._run_execution_board = None
+        self._run_board_error = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -337,6 +339,8 @@ class RealProjectFlow:
         self._pubmed_metadata_worker_state = 'idle'
         self._pubmed_metadata_worker_error = None
         self._pubmed_metadata_last_outcome = None
+        self._run_execution_board = None
+        self._run_board_error = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -457,6 +461,8 @@ class RealProjectFlow:
             self._pubmed_metadata_offer = None
             self._pubmed_metadata = None
             self._pubmed_metadata_last_outcome = None
+            self._run_execution_board = None
+            self._run_board_error = None
             self.snapshot = report
             return self._publish()
 
@@ -1954,6 +1960,78 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
+    # A single read-only, full-run execution view. No source HTTP calls.
+    def inspect_run_execution_board(self):
+        with self._guard:
+            self._require_open()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            try:
+                result = self._operation('run_board',run_id=self.selected_run_id)
+                if (type(result) is not dict or
+                        result.get('run_id') != self.selected_run_id or
+                        result.get('project_id') != str(self.project.identifier) or
+                        result.get('method') != 'whole-run-execution-board/1' or
+                        type(result.get('revision')) is not str or
+                        type(result.get('queries')) is not list or
+                        type(result.get('groups')) is not list or
+                        result.get('no_network_requests') is not True or
+                        result.get('global_unique_publications') is not None or
+                        result.get('source_retrieval_verified') is not False or
+                        result.get('whole_search_verified') is not False or
+                        result.get('verified_complete') is not False):
+                    raise ProjectFlowError('run_board_invalid')
+                allowed = {q['query_id'] for q in self.snapshot['report']['queries']}
+                if set(q['query_id'] for q in result['queries']) != allowed:
+                    raise ProjectFlowError('run_board_invalid')
+                self._run_execution_board = result
+                self._run_board_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._run_execution_board = None
+                self._run_board_error = 'run_board_unavailable'
+                self._publish()
+                raise
+
+    def choose_run_execution_step(self, *, query_id, revision):
+        """Select one pre-existing SAFE preview or checkpoint reader.
+
+        Never submit a source request, claim quota, prepare a worker, or mutate
+        project data. Check the whole-run evidence revision again to avoid
+        approving a preview from a stale count/progress screen.
+        """
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            board = self._run_execution_board
+            if (board is None or self.selected_run_id is None or
+                    type(query_id) is not str or type(revision) is not str or
+                    revision != board['revision']):
+                raise ProjectFlowError('run_board_stale')
+            original = [q for q in board['queries'] if q['query_id'] == query_id]
+            if len(original) != 1:
+                raise ProjectFlowError('run_board_invalid')
+            fresh = self._operation('run_board',run_id=self.selected_run_id)
+            if (fresh.get('revision') != revision or
+                    fresh.get('queries') != board['queries'] or
+                    fresh.get('no_network_requests') is not True):
+                self._run_execution_board = None
+                self._run_board_error = 'run_board_stale'
+                self._publish()
+                raise ProjectFlowError('run_board_stale')
+            step = original[0]['next_step']
+            if step == 'preview_wos':
+                return self.offer_wos_acquisition(query_id)
+            if step == 'inspect_wos':
+                return self.inspect_stored_wos_acquisition(query_id)
+            if step == 'preview_pubmed_metadata':
+                return self.offer_pubmed_metadata(query_id)
+            if step == 'inspect_pubmed_metadata':
+                return self.inspect_stored_pubmed_metadata(query_id)
+            if step == 'inspect_pubmed':
+                return self.inspect_stored_pubmed_source(query_id)
+            raise ProjectFlowError('run_board_invalid')
+
     def inspect_pilot_history(self, *, before_event_id=None):
         """Read a page of prior project-wide pilot requests, no source network."""
         with self._guard:
@@ -2376,6 +2454,8 @@ class RealProjectFlow:
                 'pubmed_metadata_worker_error': self._pubmed_metadata_worker_error,
                 'pubmed_metadata': self._pubmed_metadata,
                 'pubmed_metadata_last_outcome': self._pubmed_metadata_last_outcome,
+                'run_execution_board': self._run_execution_board,
+                'run_board_error': self._run_board_error,
                 'pilot_history': self._pilot_history,
                 'pilot_history_error': self._pilot_history_error,
                 'saved_pilot_detail': self._saved_pilot_detail,

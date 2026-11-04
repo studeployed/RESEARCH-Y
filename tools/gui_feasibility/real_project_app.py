@@ -253,6 +253,15 @@ def run(args):
                         if name == 'pubmed_metadata_reconcile':
                             # Read-only final verification of stopped worker.
                             return flow.reconcile_pubmed_metadata()
+                        if name == 'run_board_refresh':
+                            # One explicit whole-run inspection. No provider
+                            # traffic, query execution or background scheduling.
+                            return flow.inspect_run_execution_board()
+                        if name == 'run_board_select':
+                            if type(value) is not dict or set(value) != {
+                                    'query_id','revision'}:
+                                raise ProjectFlowError('run_board_invalid')
+                            return flow.choose_run_execution_step(**value)
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -558,6 +567,93 @@ def run(args):
                             ui.label('Exact query: ' + item['exact_query']).props('data-testid=exact-query')
                             ui.label('Reported matches: ' +
                                      ('unknown' if count is None else str(count))).props('data-testid=query-count')
+                if state['selected_run_id'] is not None:
+                    ui.separator()
+                    ui.label('Combined PubMed + Web of Science execution board '
+                             '— all approved OR groups, without new source calls.').props(
+                                 'data-testid=run-board-heading')
+                    ui.button('Refresh whole-run evidence (offline, no provider calls)',
+                              on_click=lambda: act('run_board_refresh')).props(
+                                  'data-testid=run-board-refresh')
+                    board = state['run_execution_board']
+                    if state['run_board_error'] is not None:
+                        ui.label('The run board could not validate the original '
+                                 'local ledger. Source status UNKNOWN; no '
+                                 'result or count is being inferred.').props(
+                                     'data-testid=run-board-error')
+                    elif board is None:
+                        ui.label('Select Refresh to read all source/group '
+                                 'checkpoints. No provider request is made.').props(
+                                     'data-testid=run-board-unread')
+                    else:
+                        ui.label('RUN INCOMPLETE — this is one read-only '
+                                 'reconciliation of saved evidence, not a source '
+                                 'query or an automatic search.').props(
+                                     'data-testid=run-board-incomplete')
+                        ui.label('Saved source records, across group unions: ' +
+                                 str(board['totals']['source_record_sum']) +
+                                 '; identifiers lacking metadata: ' +
+                                 str(board['totals']['identifiers_missing_metadata']) +
+                                 '; global UNIQUE publications: NOT ESTABLISHED.').props(
+                                     'data-testid=run-board-totals')
+                        ui.label('Primary source enumerations reconciled: ' +
+                                 str(board['primary_source_enumerations_reconciled']) +
+                                 '; available source metadata retained: ' +
+                                 str(board['available_primary_metadata_acquired']) +
+                                 '; complete research search: FALSE.').props(
+                                     'data-testid=run-board-coverage')
+                        ui.label('Provisional publication identity hypotheses: ' +
+                                 str(board['totals']['publication_identity_hypotheses']) +
+                                 ' (NOT a final deduplicated result).')
+                        for group in board['groups']:
+                            ui.label('Concept group ' + group['label'] +
+                                     ' — group unique publications: NOT ESTABLISHED.').props(
+                                         'data-testid=run-board-group')
+                            for item in group['sources']:
+                                provider = ('PubMed' if item['source_name']=='pubmed'
+                                            else 'Web of Science Starter')
+                                reported = ('UNKNOWN' if
+                                            item['reported_matches'] is None else
+                                            str(item['reported_matches']))
+                                ui.label(provider + ' • ' + item['source_stage'] +
+                                         ' • reported hits ' + reported +
+                                         ' • retrieved source IDs ' +
+                                         str(item['identifiers_retrieved']) +
+                                         ' • saved metadata ' +
+                                         str(item['metadata_records_retained']) +
+                                         ' • count check ' +
+                                         item['count_reconciliation']).props(
+                                             'data-testid=run-board-source-row')
+                                ui.label('Exact stored source expression: ' +
+                                         item['exact_query']).props(
+                                             'data-testid=run-board-exact-query')
+                                if item['warnings']:
+                                    ui.label('Pending source issues: ' +
+                                             ', '.join(item['warnings']))
+                                step = item['next_step']
+                                allowed = True
+                                if step == 'preview_wos':
+                                    allowed = state['wos_profile_configured']
+                                elif step == 'preview_pubmed_metadata':
+                                    allowed = state['pubmed_profile_configured']
+                                if allowed:
+                                    qid = item['query_id']
+                                    revision = board['revision']
+                                    ui.button('Open safe next-step preview / saved '
+                                              'checkpoint: ' + provider,
+                                              on_click=lambda qid=qid, revision=revision:
+                                                  act('run_board_select',
+                                                      {'query_id':qid,'revision':revision})).props(
+                                                          'data-testid=run-board-next-step')
+                                else:
+                                    ui.label('Provider profile not configured; '
+                                             'original local counts remain readable '
+                                             'without external requests.')
+                        ui.label('This board cannot certify full source snapshots, '
+                                 'missing abstracts, deduplication, official society '
+                                 'coverage or completed Preferred Reporting Items for '
+                                 'Systematic Reviews and Meta-Analyses searches.')
+
                 if state['selected_run_id'] is not None:
                     ui.separator()
                     ui.label('Pre-run verification — no source searches are executed.').props(
