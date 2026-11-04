@@ -46,3 +46,15 @@ UI-05,whole-run read-only progress alongside original source-specific preview ac
 UI-06,per-group and per-source honest summary,test_run_execution_board.py,partial final global unique publication count not implemented
 SEC-01,credential-free worker board and revision-fenced preview selection,test_application_commands.py and test_run_execution_board.py,partial local security acceptance ongoing
 AT-19,unfinished source cannot be promoted by equal numeric count,test_run_execution_board.py,partial no live failure mix verification
+RUN-01,run_source_coordinator previews and executes a bounded already-consented two-source stage sequence,test_run_source_coordinator.py,partial initial coordination only not full automated search job
+RUN-03,read-only whole-run board polled during separate supervised source work,test_run_source_coordinator.py,partial no persistent coordinating scheduler journal
+RUN-04,existing original transport backoff/checkpoint admission preserved by sequential source worker,test_run_source_coordinator.py,partial source-specific failure recovery and manual replanning still required
+RUN-05,orchestrated metadata and source ids remain incomplete regardless of numeric equality,test_run_source_coordinator.py,partial provider final acceptance not established
+RUN-06,foreground coordinator halts after explicit session and original stages retain checkpoints,test_run_source_coordinator.py,partial no graceful mid-stage coordinator pause or unattended work
+SRC-06,confirmed WoS checkpoint source acquisition reused without bypassing retention or provider quota,test_run_source_coordinator.py,partial longer verification and unknown requests follow original gates
+SRC-04,confirmed existing PubMed EFetch metadata stage reused in whole-run execution,test_run_source_coordinator.py,partial incomplete metadata and abstract availability remain explicit
+COUNT-05,combined coordinator cannot mark run complete or fabricate global deduplicated counts,test_run_source_coordinator.py,partial whole run acceptance outstanding
+UI-05,explicit bounded run-wide preview confirm and passive checkpoint progress,test_run_source_coordinator.py,partial experimental GUI; native click journey not accepted
+SEC-01,host-only transient contact keys passed to supervised child not browser,test_application_commands.py and test_run_source_coordinator.py,partial OS credential vault still needed
+AT-09,failed second EFetch batch stops before any other provider and retains prior rows,test_run_source_coordinator.py,partial real network failure modes outstanding
+AT-19,incomplete/unknown provider stage cannot be promoted to verified complete,test_run_source_coordinator.py,partial live verification incomplete

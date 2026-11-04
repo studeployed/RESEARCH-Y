@@ -1,0 +1,43 @@
+# P1-06i2 — Explicit, supervised coordination of already-prepared search stages
+
+**Baseline:** owner-merged PR #68, \`main\` \`2fa12bfbfc1c07c1d88fd30b4983c95b5385d324\`, 4 November 2026.
+**Authority:** \`RESEARCH-Y_SPEC.md\` (unchanged), particularly SEARCH-06/12–14, SRC-01–08, RUN-01–07, COUNT-01–05, UI-05/06, DATA-01–06, SEC-01/03–05 and partial AT-07/08/09/19/21.
+
+## Why this increment
+
+Earlier Phase 1 increments connect Web of Science (WoS) Starter accession enumeration and verification and PubMed ESearch identifiers/EFetch metadata, each behind separate consent and durable source checks. PR #68 added a truthful, read-only combined run board but did not actually coordinate any source execution. This bounded increment is the first **single-user-confirmed, sequential run-wide source stage session**. It reuses the original clients, metadata stores, quota and checkpoint logic rather than creating a second retrieval algorithm.
+
+The scope is deliberately no more than **two independent eligible source stages per confirmation**. Each is explicitly listed in a no-network preview with its original approved exact query, source group, protocol, preflight SHA-256 and hard maximum number of provider requests. The original broad OR-only query is never rewritten, and no implicit language/species/study-type/date filter is introduced. A researcher separately presses **CONFIRM** to begin. The screen shows the combined upper bound for external calls; actual usage can be lower. There are no background/periodic provider requests and no work continues after the application closes.
+
+## Eligibility and limitations
+
+An existing approved full-run strategy/plan is required. A provider stage is admitted only if its original checkpoint is already sufficiently prepared and independently verified for that action.
+
+- **PubMed identifiers:** a saved, nonterminal identifier checkpoint whose originally confirmed administrative Create Date range is persisted, with a feasible original count/leaf recheck budget. New PubMed queries **still require** their first manually reviewed coverage window and count/translation checks through the original source GUI.
+- **PubMed EFetch:** reconciled original PubMed identifier pages with missing local bibliographic metadata. One stage uses the original maximum **100 EFetch batches × 20 identifiers**. The provider may return fewer records, missing abstracts or a failed batch; these are distinct from successful complete bibliography. Subsequent work requires fresh consent.
+- **WoS acquisition:** a stored checkpoint with *prior explicit GUI-authorised local licensed-metadata retention*, no unresolved source request/active worker and an actionable status. At most **three** Starter requests. A manual/command-line checkpoint is **not** silently upgraded to GUI retention consent.
+- **WoS verification:** a fully acquired, eligible checkpoint whose original uninterrupted verification sweep fits within the more conservative coordinator budget of **24 requests** (one resume probe, required saved pages, final probe). Longer but still supported sweeps use the separately approved **512-request manual supervised verification workflow**, not a silently enlarged coordinator session.
+
+Existing source-specific quota, provider cooldown, Retry-After, unknown request fencing, stored source conflicts, client request limits and exact plan/hash rechecks stay in force. The coordinator does **not** override provider quota holds or automatically revalidate quotas. If a source is unprepared, requires explicit retention/date consent, is cancelled, reports an unknown request, needs long verification or has invalid evidence, the preview labels it as a **manual prerequisite**, not as a completed source.
+
+## Supervisor, progress, interruption and recovery
+
+Only trusted Python host settings supply the source contact email and API keys, transiently to the dedicated spawned \`ApplicationWorker\`. A browser cannot submit a source key, exact source query, filesystem path, session budget, new consent or a different query identifier to the provider. The host rechecks the entire offline original-board revision immediately before submitting the worker. The worker checks the complete proposed plan again **before its first request**, and each subsequent, previously untouched query **before its stage**. If evidence changes, the run stops rather than switching work silently.
+
+The running interface remains responsive. Its two-second timer inspects the original combined run board and supervised worker only; it cannot initiate source calls, select a new query, retry, revalidate quota or manufacture a source outcome. It displays retrieved IDs and retained metadata, never licensed record bodies, abstracts, credentials or private per-record lists.
+
+At the first detected uncertain, failed, stale, zero-transport or quota-blocked stage, **remaining planned provider calls are not issued**. A successful short stage may leave a source still incomplete; this is not treated as an error or proof of full source retrieval. The original per-query metadata, page, attempt and audit receipts are the durable evidence. A killed worker may have committed records; final reconciliation requires a terminal supervisor **and** read-only original database state, and never immediately resends any source request. A pending/unknown WoS ownership or HTTP outcome keeps the run workflow blocked for manually verified stopped-worker recovery. In the bounded PubMed collector, an HTTP POST may have reached NCBI without a committed batch; that risk is explicitly disclosed, and a new provider call requires separate renewed approval.
+
+The new coordinator has no durable *run-wide scheduler event ledger* or cooperative mid-stage global pause. It is foreground, bounded and a strictly local initial orchestration step, **not** full unattended or exhaustive all-source automation. If the researcher closes the application while a child is in flight, they must reopen and inspect original source checkpoints; the coordinator will not automatically restart or claim last-request success.
+
+## Scientific completeness remains separate
+
+Each dispatched source stage reports its own original persisted progress. Even when a saved source's ID count equals its reported matches and EFetch returned metadata for every identifier, **\`source_retrieval_verified=False\`, \`whole_search_verified=False\`, \`verified_complete=False\`** and \`global_unique_publications=null\` continue to apply. No deduplication across sources/groups, complete abstracts, provider-atomic snapshot, professional-society site coverage, publication-ready master workbook or final systematic-review quality gate is claimed. Duplicate reports within a group do not become a final distinct-publication count.
+
+## Verification and remaining work
+
+Offline tests exercise original approved two-group OR strategy versions and real SQLite, original PubMed EFetch XML parsing/commits and Starter checkpoint acquisition with synthetic official-like provider responses. Separate tests cover no-consent and no-credential paths, metadata and WoS stage sequencing, hard request limits, partial EFetch failure before another provider is contacted, stale plan detection, tampered task/refused provider inputs, read-only progress, terminal worker result authentication, worker interruption without false completion, and the GUI's absence of automated network actions.
+
+Production native Windows click-journey evidence for the coordinator, live-source quota/latency, cross-process exclusive PubMed job ownership, durable HTTP reservation for EFetch/ESearch, long-running multi-day source scheduling, global pause, automatic preparation of still-pending groups and complete combined source/deduplication acceptance remain future tasks.
+
+**Merge gate:** all current exact-HEAD Windows/Linux Python tests and applicable graphical dependency/lifecycle checks; definitively complete Codex **code review first then security review** for the exact current HEAD, including individual receipts and dispositioned findings; explicit project-owner merge approval. Never automatically merge.
