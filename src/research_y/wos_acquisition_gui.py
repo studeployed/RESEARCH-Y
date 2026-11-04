@@ -18,6 +18,9 @@ from research_y.wos_checkpoint_runner import run_wos_checkpoint
 from research_y.wos_starter_client import WoSStarterClient
 
 MAX_SESSION_REQUESTS = 3
+# Maximum ONE explicitly confirmed uninterrupted verification session.
+# Includes the resume count/identity probe and final count probe.
+MAX_VERIFY_REQUESTS = 512
 SAFE_ERRORS = frozenset((
     "pending_wos_query_required", "source_plan_unverified",
     "checkpoint_already_exists", "unknown_checkpoint",
@@ -36,6 +39,8 @@ class WoSAcquisitionError(ValueError):
             "invalid_identifier", "retention_confirmation_required",
             "session_confirmation_required", "gui_admission_missing",
             "source_execution_unavailable", "verification_requires_long_worker",
+            "verification_not_ready", "verification_budget_exceeded",
+            "verification_plan_changed", "verification_worker_recovery_required",
         } else "source_execution_unavailable"
         super().__init__(self.code)
 
@@ -199,3 +204,87 @@ def run_wos_acquisition_session(
     result['session_requests_made'] = client.requests_made
     result['session_confirmed'] = True
     return result
+
+
+
+def preview_wos_verification(project: Project, *, run_id, query_id) -> dict:
+    """Read a fully acquired checkpoint and determine the *exact* bounded sweep.
+
+    A completed multi-page verification requires an uninterrupted session:
+    count/first-identity recheck (1), all captured pages (N), final recheck (1).
+    No provider calls, new checkpoint, unlocked quota or invented completion.
+    """
+    evidence = inspect_wos_acquisition(project, run_id=run_id, query_id=query_id)
+    job = evidence["checkpoint"]
+    if not evidence["approved_gui_retention"]:
+        raise WoSAcquisitionError("gui_admission_missing")
+    if job["worker_active"] is True or job["requests_unknown"] != 0:
+        raise WoSAcquisitionError("verification_worker_recovery_required")
+    if (job["status"] in ("completed_with_warnings", "cancelled") or
+            job["stage"] not in ("verify", "final") or
+            job["pages_expected"] is None or
+            type(job["pages_expected"]) is not int or
+            job["pages_expected"] < 1 or
+            type(job["reported_matches"]) is not int or
+            job["records_committed"] != job["reported_matches"] or
+            job["pages_committed"] != job["pages_expected"]):
+        raise WoSAcquisitionError("verification_not_ready")
+    necessary = job["pages_expected"] + 2
+    if necessary > MAX_VERIFY_REQUESTS:
+        raise WoSAcquisitionError("verification_budget_exceeded")
+    return dict(run_id=run_id, query_id=query_id,
+                exact_query=evidence["exact_query"],
+                preflight_sha256=evidence["preflight_sha256"],
+                stage=job["stage"], pages_to_verify=job["pages_expected"],
+                expected_requests=necessary,
+                max_session_requests=MAX_VERIFY_REQUESTS,
+                reported_matches=job["reported_matches"],
+                source_retrieval_verified=False,
+                provider_snapshot_guaranteed=False,
+                whole_search_verified=False,
+                no_network_requests=True)
+
+
+def run_wos_verification_session(
+    project: Project, *, run_id, query_id, expected_plan_sha256,
+    expected_requests, confirmed, revalidate_quota,
+    client: WoSStarterClient,
+) -> dict:
+    """One supervised explicit verification session, with fixed maximum budget.
+
+    Every source request is still journalled/guarded by run_wos_checkpoint.
+    An unavailable quota, network error or interruption cannot be translated
+    into a success. The parent must read the original checkpoint separately.
+    """
+    _sha(expected_plan_sha256)
+    if confirmed is not True or type(revalidate_quota) is not bool:
+        raise WoSAcquisitionError("session_confirmation_required")
+    if (type(expected_requests) is not int or
+            not 3 <= expected_requests <= MAX_VERIFY_REQUESTS):
+        raise WoSAcquisitionError("session_confirmation_required")
+    if (type(client) is not WoSStarterClient or
+            client.requests_made != 0 or
+            client.requests_remaining < expected_requests):
+        raise WoSAcquisitionError("session_confirmation_required")
+    current = preview_wos_verification(
+        project, run_id=run_id, query_id=query_id)
+    if (current["preflight_sha256"] != expected_plan_sha256 or
+            current["expected_requests"] != expected_requests):
+        raise WoSAcquisitionError("verification_plan_changed")
+    try:
+        result = run_wos_checkpoint(
+            project, query_id, client, max_requests=expected_requests,
+            revalidate_quota=revalidate_quota)
+    except WoSCheckpointError as exc:
+        raise WoSAcquisitionError(str(exc)) from None
+    read = inspect_wos_acquisition(project, run_id=run_id, query_id=query_id)
+    return dict(run_id=run_id, query_id=query_id,
+                preflight_sha256=current["preflight_sha256"],
+                expected_requests=expected_requests,
+                session_requests_made=client.requests_made,
+                actual_checkpoint=read["checkpoint"],
+                enumeration_reconciled=result.enumeration_reconciled,
+                no_network_requests=client.requests_made == 0,
+                source_retrieval_verified=False,
+                whole_search_verified=False,
+                provider_snapshot_guaranteed=False)
