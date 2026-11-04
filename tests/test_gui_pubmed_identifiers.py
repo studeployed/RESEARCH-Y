@@ -418,10 +418,10 @@ def test_late_pause_of_incomplete_receipt_permits_only_status_change(
     flow._pubmed_source_worker.close()
     flow._pubmed_source_worker=supervisor
     original_budget=source.MAX_PUBMED_REQUESTS
-    monkeypatch.setattr(source,'MAX_PUBMED_REQUESTS',2)
     try:
         flow.offer_pubmed_source(qid,coverage_start=START,coverage_end=END)
         flow.confirm_pubmed_source()
+        monkeypatch.setattr(source,'MAX_PUBMED_REQUESTS',2)
         receipt=source.run_pubmed_source_session(
             project,run_id=rid,query_id=qid,
             expected_plan_sha256=supervisor.cmd.pubmed_source_plan_sha256,
