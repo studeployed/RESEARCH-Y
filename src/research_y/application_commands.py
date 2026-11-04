@@ -46,7 +46,8 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
      'query_not_in_approved_compilation', 'unknown_checkpoint',
      'checkpoint_already_exists', 'verification_requires_long_worker',
      'verification_not_ready', 'verification_budget_exceeded',
-     'verification_plan_changed', 'verification_worker_recovery_required'})
+     'verification_plan_changed', 'verification_worker_recovery_required',
+     'verification_worker_not_running'})
 
 
 class ApplicationCommandError(ValueError):

@@ -41,6 +41,7 @@ class WoSAcquisitionError(ValueError):
             "source_execution_unavailable", "verification_requires_long_worker",
             "verification_not_ready", "verification_budget_exceeded",
             "verification_plan_changed", "verification_worker_recovery_required",
+            "verification_worker_not_running",
         } else "source_execution_unavailable"
         super().__init__(self.code)
 
@@ -302,6 +303,11 @@ def pause_wos_verification_session(project: Project, *, run_id, query_id) -> dic
     evidence = inspect_wos_acquisition(project, run_id=run_id, query_id=query_id)
     if not evidence["approved_gui_retention"]:
         raise WoSAcquisitionError("gui_admission_missing")
+    # A freshly submitted child can still be before _claim(). A pause there
+    # would otherwise be overwritten by the subsequent acquisition claim.
+    # Require an established durable owner before acknowledging the request.
+    if evidence["checkpoint"]["worker_active"] is not True:
+        raise WoSAcquisitionError("verification_worker_not_running")
     from research_y.wos_checkpoint_store import pause_wos_checkpoint
     try:
         pause_wos_checkpoint(project, query_id)
