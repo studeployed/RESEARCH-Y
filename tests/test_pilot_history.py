@@ -30,7 +30,7 @@ from tools.gui_feasibility.real_project_app import run
 
 PRIVATE = 'SECRET-FIXTURE-API-KEY'
 PRIVATE_TITLE = 'LICENSED-PRIVATE-TITLE-DO-NOT-SAVE'
-STAMP = '2026-11-04T12:00:00+00:00'
+STAMP = '2026-11-04T12:00:00.000000+00:00'
 
 
 def _fixture(tmp_path):
@@ -55,6 +55,18 @@ def _audit_rows(project):
             'SELECT event_id,event_type,details_json FROM audit_events '
             'ORDER BY event_id'
         ).fetchall()
+
+
+def _insert_malformed_request(project, pilot_id):
+    """Adversarial INSERT only; never disable append-only audit triggers."""
+    duplicate_json = (
+        '{"pilot_id":"' + pilot_id + '","pilot_id":"' + pilot_id + '"}'
+    )
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute(
+            "INSERT INTO audit_events (occurred_at_utc,event_type,details_json) "
+            "VALUES (?,?,?)",
+            (STAMP, pubmed_pilot.REQUEST_EVENT, duplicate_json))
 
 
 def _source_counts(project, run_id):
@@ -211,15 +223,14 @@ def test_duplicate_request_uuid_and_duplicate_json_keys_fail_closed(tmp_path):
              pilot_id=pid,finish=False)
     with pytest.raises(PilotHistoryError,match='^pilot_evidence_invalid$'):
         read_pilot_history(project)
-    with closing(sqlite3.connect(project.database_path)) as db,db:
-        db.execute("DELETE FROM audit_events WHERE event_type=? AND event_id=("
-                   "SELECT MAX(event_id) FROM audit_events WHERE event_type=?)",
-                   (pubmed_pilot.REQUEST_EVENT,pubmed_pilot.REQUEST_EVENT))
-        db.execute("UPDATE audit_events SET details_json=? WHERE event_type=?",
-                   ('{"pilot_id":"'+pid+'","pilot_id":"'+pid+'"}',
-                    pubmed_pilot.REQUEST_EVENT))
+    # A different malformed project uses append-only INSERT; real projects
+    # prohibit UPDATE and DELETE of existing audit history.
+    malformed_parent=tmp_path / 'malformed'
+    malformed_parent.mkdir()
+    malformed,_,_,_=_fixture(malformed_parent)
+    _insert_malformed_request(malformed,str(uuid4()))
     with pytest.raises(PilotHistoryError,match='^pilot_evidence_invalid$'):
-        read_pilot_history(project)
+        read_pilot_history(malformed)
 
 
 def test_reopen_discovers_old_attempts_without_any_key_or_run_selection(tmp_path):
@@ -299,11 +310,8 @@ def test_gui_older_page_and_selected_historical_receipt(tmp_path):
 
 def test_gui_corrupt_pilot_history_is_warning_not_false_empty(tmp_path):
     project,run,plan,queries=_fixture(tmp_path)
-    pid=_journal(project,run,plan,queries['pubmed'],'pubmed',finish=False)
-    with closing(sqlite3.connect(project.database_path)) as db,db:
-        db.execute('UPDATE audit_events SET details_json=? WHERE event_type=?',
-                   ('{"pilot_id":"'+pid+'","pilot_id":"'+pid+'"}',
-                    pubmed_pilot.REQUEST_EVENT))
+    pid=str(uuid4())
+    _insert_malformed_request(project,pid)
     flow=RealProjectFlow(selected_root=project.root,selected_parent=tmp_path)
     try:
         state=flow.open_selected()
