@@ -77,6 +77,11 @@ class RealProjectFlow:
         self._wos_pilot_candidate = None
         self._pending_wos_pilot = None
         self._last_wos_pilot = None
+        self._wos_acquisition_offer = None
+        self._wos_acquisition_prepare_pending = None
+        self._wos_acquisition = None
+        self._wos_acquisition_tick_offer = None
+        self._wos_acquisition_tick_pending = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -107,6 +112,9 @@ class RealProjectFlow:
             raise ProjectFlowError('preflight_reconciliation_required')
         if self._pending_pilot is not None or self._pending_wos_pilot is not None:
             raise ProjectFlowError('pilot_reconciliation_required')
+        if (self._wos_acquisition_prepare_pending is not None or
+                self._wos_acquisition_tick_pending is not None):
+            raise ProjectFlowError('acquisition_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
                 raise ProjectFlowError('export_reconciliation_required')
@@ -268,6 +276,11 @@ class RealProjectFlow:
         self._wos_pilot_candidate = None
         self._pending_wos_pilot = None
         self._last_wos_pilot = None
+        self._wos_acquisition_offer = None
+        self._wos_acquisition_prepare_pending = None
+        self._wos_acquisition = None
+        self._wos_acquisition_tick_offer = None
+        self._wos_acquisition_tick_pending = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -377,6 +390,9 @@ class RealProjectFlow:
             self._last_pilot = None
             self._wos_pilot_candidate = None
             self._last_wos_pilot = None
+            self._wos_acquisition_offer = None
+            self._wos_acquisition = None
+            self._wos_acquisition_tick_offer = None
             self.snapshot = report
             return self._publish()
 
@@ -457,6 +473,9 @@ class RealProjectFlow:
                 raise ProjectFlowError('preflight_reconciliation_required')
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
@@ -562,7 +581,9 @@ class RealProjectFlow:
             if (self._pending_admission_id is not None or
                     self._pending_export_id is not None or
                     self._pending_pilot is not None or
-                    self._pending_wos_pilot is not None):
+                    self._pending_wos_pilot is not None or
+                    self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('operation_reconciliation_required')
             if self._pending_review is None:
                 if self._review_candidate is None or self._preflight is None:
@@ -667,6 +688,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -806,6 +830,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -884,6 +911,276 @@ class RealProjectFlow:
                 self._wos_pilot_candidate = None
                 return self._publish()
             except ProjectFlowError:
+                self._publish()
+                raise
+
+    # Explicit durable WoS retrieval, distinct from transient sample pilots.
+    def offer_wos_acquisition(self, query_id: str):
+        """Preview an untouched source even after another group has progressed.
+
+        The worker reconstructs the original complete broad-OR frozen plan
+        without treating mutable sibling counts/statuses as preflight results.
+        It checks that this particular query is still pending.
+        """
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self._wos_profile is None:
+                raise ProjectFlowError('wos_profile_unavailable')
+            if self.selected_run_id is None or self.snapshot is None:
+                raise ProjectFlowError('run_selection_required')
+            allowed = {q['query_id'] for q in self.snapshot['report']['queries']
+                       if q['source_name']=='wos' and q['status']=='pending'}
+            if type(query_id) is not str or query_id not in allowed:
+                raise ProjectFlowError('unknown_wos_query')
+            verified = self._operation(
+                'wos_acquisition_preview',run_id=self.selected_run_id,
+                acquisition_query_id=query_id)
+            if (verified.get('run_id') != self.selected_run_id or
+                    verified.get('query_id') != query_id or
+                    verified.get('source_retrieval_verified') is not False or
+                    verified.get('no_network_requests') is not True):
+                raise ProjectFlowError('source_plan_unverified')
+            if (self._preflight is not None and
+                    verified.get('plan_sha256') != self._preflight.get('plan_sha256')):
+                raise ProjectFlowError('stale_preflight')
+            if verified.get('checkpoint_exists') is True:
+                # The query may still say pending even though a different
+                # CLI/manual workflow already created a durable checkpoint.
+                # Inspect it as historical read-only evidence rather than
+                # mistakenly entering an unfinishable GUI-retention offer.
+                existing = self._operation('wos_acquisition_read',
+                    run_id=self.selected_run_id,
+                    acquisition_query_id=query_id)
+                if (existing.get('run_id') != self.selected_run_id or
+                        existing.get('query_id') != query_id or
+                        existing.get('exact_query') != verified['exact_query'] or
+                        existing.get('no_network_requests') is not True or
+                        existing.get('source_retrieval_verified') is not False):
+                    raise ProjectFlowError('acquisition_receipt_invalid')
+                self._wos_acquisition = existing
+                self._wos_acquisition_offer = None
+                self._wos_acquisition_tick_offer = None
+                return self._publish()
+            if verified.get('checkpoint_exists') is not False:
+                raise ProjectFlowError('source_plan_unverified')
+            self._wos_acquisition_offer = dict(
+                run_id=self.selected_run_id,query_id=query_id,
+                group_id=verified['group_id'],
+                exact_query=verified['exact_query'],
+                plan_sha256=verified['plan_sha256'])
+            self._wos_pilot_candidate = None
+            self._pilot_candidate = None
+            return self._publish()
+
+    def dismiss_wos_acquisition(self):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._wos_acquisition_offer = None
+            return self._publish()
+
+    def confirm_wos_acquisition(self):
+        """Commit retention consent without sending ANY provider request."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self._wos_acquisition_offer is None:
+                raise ProjectFlowError('retention_confirmation_required')
+            candidate = dict(self._wos_acquisition_offer)
+            self._wos_acquisition_prepare_pending = candidate
+            self._publish()
+            try:
+                reply = self._operation('wos_acquisition_prepare',
+                    run_id=candidate['run_id'],
+                    acquisition_query_id=candidate['query_id'],
+                    acquisition_plan_sha256=candidate['plan_sha256'],
+                    acquisition_confirmed=True,
+                    acquisition_retention_authorized=True)
+                if (reply.get('run_id') != candidate['run_id'] or
+                        reply.get('query_id') != candidate['query_id'] or
+                        reply.get('exact_query') != candidate['exact_query'] or
+                        reply.get('preflight_sha256') != candidate['plan_sha256'] or
+                        reply.get('approved_gui_retention') is not True or
+                        reply.get('no_network_requests') is not True or
+                        reply.get('source_retrieval_verified') is not False):
+                    raise ProjectFlowError('acquisition_receipt_invalid')
+            except ProjectFlowError:
+                self._publish()
+                raise
+            return self.reconcile_wos_acquisition()
+
+    def reconcile_wos_acquisition(self):
+        """Read original stored query plan, NEVER repeat the consent write."""
+        with self._guard:
+            self._require_open()
+            candidate = self._wos_acquisition_prepare_pending
+            if candidate is None:
+                raise ProjectFlowError('acquisition_reconciliation_not_required')
+            try:
+                response = self._operation('wos_acquisition_read',
+                    run_id=candidate['run_id'],
+                    acquisition_query_id=candidate['query_id'])
+                if (response.get('run_id') != candidate['run_id'] or
+                        response.get('query_id') != candidate['query_id'] or
+                        response.get('exact_query') != candidate['exact_query'] or
+                        response.get('no_network_requests') is not True or
+                        response.get('source_retrieval_verified') is not False):
+                    raise ProjectFlowError('acquisition_receipt_invalid')
+                if (response.get('approved_gui_retention') is False and
+                        response.get('preflight_sha256') is None):
+                    # A competing CLI/manual checkpoint may have appeared
+                    # after the offline GUI preview. The original immutable
+                    # ledger is now view-only, not GUI-authorised. This
+                    # safe conflict disposition clears the stale pending UI
+                    # state without creating another job or sending HTTP.
+                    self._wos_acquisition = response
+                    self._wos_acquisition_prepare_pending = None
+                    self._wos_acquisition_offer = None
+                    return self._publish()
+                if (response.get('approved_gui_retention') is not True or
+                        response.get('preflight_sha256') != candidate['plan_sha256']):
+                    raise ProjectFlowError('acquisition_receipt_invalid')
+                self._wos_acquisition = response
+                self._wos_acquisition_prepare_pending = None
+                self._wos_acquisition_offer = None
+                return self._publish()
+            except ProjectFlowError as exc:
+                if str(exc) == 'unknown_checkpoint':
+                    # No durable plan exists, and preparing never sends HTTP.
+                    # A fresh explicit consent may prepare a new checkpoint.
+                    self._wos_acquisition_prepare_pending = None
+                    self._wos_acquisition_offer = None
+                    self._wos_acquisition = None
+                    return self._publish()
+                self._publish()
+                raise
+
+    def inspect_stored_wos_acquisition(self, query_id: str):
+        """Read an existing checkpoint after restarting GUI or selecting a run."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None or type(query_id) is not str:
+                raise ProjectFlowError('run_selection_required')
+            allowed = {q['query_id'] for q in self.snapshot['report']['queries']
+                       if q['source_name'] == 'wos'}
+            if query_id not in allowed:
+                raise ProjectFlowError('unknown_wos_query')
+            read = self._operation('wos_acquisition_read',
+                run_id=self.selected_run_id, acquisition_query_id=query_id)
+            if (read.get('run_id') != self.selected_run_id or
+                    read.get('query_id') != query_id or
+                    read.get('no_network_requests') is not True or
+                    read.get('source_retrieval_verified') is not False):
+                raise ProjectFlowError('acquisition_receipt_invalid')
+            self._wos_acquisition = read
+            self._wos_acquisition_offer = None
+            self._wos_acquisition_tick_offer = None
+            return self._publish()
+
+    def offer_wos_acquisition_tick(self, *, revalidate_quota=False):
+        """Preview the maximum two provider requests; clicking does not send."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self._wos_profile is None:
+                raise ProjectFlowError('wos_profile_unavailable')
+            if type(revalidate_quota) is not bool:
+                raise ProjectFlowError('session_confirmation_required')
+            state = self._wos_acquisition
+            if (not isinstance(state, dict) or
+                    state['run_id'] != self.selected_run_id):
+                raise ProjectFlowError('acquisition_selection_required')
+            verified = self._operation('wos_acquisition_read',
+                run_id=state['run_id'],
+                acquisition_query_id=state['query_id'])
+            if (verified.get('approved_gui_retention') is not True or
+                    verified.get('preflight_sha256') != state['preflight_sha256'] or
+                    verified.get('source_retrieval_verified') is not False):
+                raise ProjectFlowError('gui_admission_missing')
+            job = verified['checkpoint']
+            if job['worker_active'] is True or job['requests_unknown'] > 0:
+                raise ProjectFlowError('acquisition_worker_recovery_required')
+            if job['enumeration_reconciled'] is True or job['status'] == 'cancelled':
+                raise ProjectFlowError('acquisition_already_terminal')
+            if (job['pages_expected'] is not None and job['pages_expected'] > 1
+                    and job['stage'] in ('verify','final')):
+                raise ProjectFlowError('verification_requires_long_worker')
+            self._wos_acquisition = verified
+            self._wos_acquisition_tick_offer = dict(
+                run_id=verified['run_id'], query_id=verified['query_id'],
+                preflight_sha256=verified['preflight_sha256'],
+                revalidate_quota=revalidate_quota)
+            return self._publish()
+
+    def dismiss_wos_acquisition_tick(self):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._wos_acquisition_tick_offer = None
+            return self._publish()
+
+    def confirm_wos_acquisition_tick(self):
+        """Single-use explicit provider session, not a background loop."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            candidate = self._wos_acquisition_tick_offer
+            if candidate is None or candidate['run_id'] != self.selected_run_id:
+                raise ProjectFlowError('session_confirmation_required')
+            self._wos_acquisition_tick_pending = dict(candidate)
+            self._wos_acquisition_tick_offer = None  # Double click cannot re-authorise.
+            self._publish()
+            try:
+                reply = self._operation('wos_acquisition_tick',
+                    run_id=candidate['run_id'],
+                    acquisition_query_id=candidate['query_id'],
+                    acquisition_confirmed=True,
+                    acquisition_revalidate_quota=candidate['revalidate_quota'],
+                    acquisition_api_key=self._wos_profile.api_key)
+                if (reply.get('run_id') != candidate['run_id'] or
+                        reply.get('query_id') != candidate['query_id'] or
+                        reply.get('preflight_sha256') != candidate['preflight_sha256'] or
+                        reply.get('source_retrieval_verified') is not False or
+                        reply.get('max_next_session_requests') != 3):
+                    raise ProjectFlowError('acquisition_receipt_invalid')
+            except ProjectFlowError:
+                self._publish()
+                raise
+            return self.reconcile_wos_acquisition_tick()
+
+    def reconcile_wos_acquisition_tick(self):
+        """Inspect original durable progress; never resend an unknown request."""
+        with self._guard:
+            self._require_open()
+            candidate = self._wos_acquisition_tick_pending
+            if candidate is None:
+                raise ProjectFlowError('acquisition_reconciliation_not_required')
+            try:
+                read = self._operation('wos_acquisition_read',
+                    run_id=candidate['run_id'],
+                    acquisition_query_id=candidate['query_id'])
+                if (read.get('run_id') != candidate['run_id'] or
+                        read.get('query_id') != candidate['query_id'] or
+                        read.get('preflight_sha256') != candidate['preflight_sha256'] or
+                        read.get('approved_gui_retention') is not True or
+                        read.get('source_retrieval_verified') is not False or
+                        read.get('no_network_requests') is not True):
+                    raise ProjectFlowError('acquisition_receipt_invalid')
+                self._wos_acquisition = read
+                if read['checkpoint']['worker_active']:
+                    raise ProjectFlowError('acquisition_worker_recovery_required')
+                self.snapshot = self._operation('inspect',
+                                                run_id=self.selected_run_id)['snapshot']
+                self._preflight = None  # Pending pre-run plan is now obsolete.
+                self._pilot_candidate = None
+                self._wos_pilot_candidate = None
+                self._wos_acquisition_tick_pending = None
+                return self._publish()
+            except ProjectFlowError:
+                # A killed worker may still have a durable reservation.
+                # Keep the original pending state; only inspect, never retry.
                 self._publish()
                 raise
 
@@ -1102,6 +1399,9 @@ class RealProjectFlow:
                 raise ProjectFlowError('preflight_reconciliation_required')
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -1155,6 +1455,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1176,6 +1479,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1196,6 +1502,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             # A previous file observation is time-specific; never display it as
@@ -1251,6 +1560,11 @@ class RealProjectFlow:
                 'wos_pilot_candidate': self._wos_pilot_candidate,
                 'wos_pilot_reconciliation_required': self._pending_wos_pilot is not None,
                 'last_wos_pilot': self._last_wos_pilot,
+                'wos_acquisition_offer': self._wos_acquisition_offer,
+                'wos_acquisition_prepare_pending': self._wos_acquisition_prepare_pending is not None,
+                'wos_acquisition': self._wos_acquisition,
+                'wos_acquisition_tick_offer': self._wos_acquisition_tick_offer,
+                'wos_acquisition_tick_pending': self._wos_acquisition_tick_pending is not None,
                 'pilot_history': self._pilot_history,
                 'pilot_history_error': self._pilot_history_error,
                 'saved_pilot_detail': self._saved_pilot_detail,

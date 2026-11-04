@@ -176,6 +176,29 @@ def run(args):
                             return flow.inspect_pilot_history(before_event_id=value)
                         if name == 'pilot_history_detail':
                             return flow.inspect_saved_pilot(value)
+                        if name == 'wos_acquisition_offer':
+                            return flow.offer_wos_acquisition(value)
+                        if name == 'wos_acquisition_dismiss':
+                            return flow.dismiss_wos_acquisition()
+                        if name == 'wos_acquisition_prepare':
+                            # No provider request: explicit retention consent only.
+                            return flow.confirm_wos_acquisition()
+                        if name == 'wos_acquisition_prepare_reconcile':
+                            return flow.reconcile_wos_acquisition()
+                        if name == 'wos_acquisition_read':
+                            return flow.inspect_stored_wos_acquisition(value)
+                        if name == 'wos_acquisition_tick_offer':
+                            return flow.offer_wos_acquisition_tick()
+                        if name == 'wos_acquisition_revalidate_offer':
+                            return flow.offer_wos_acquisition_tick(revalidate_quota=True)
+                        if name == 'wos_acquisition_tick_dismiss':
+                            return flow.dismiss_wos_acquisition_tick()
+                        if name == 'wos_acquisition_tick_confirm':
+                            # Only explicit separate consent authorises HTTPS.
+                            return flow.confirm_wos_acquisition_tick()
+                        if name == 'wos_acquisition_tick_reconcile':
+                            # Read-only checkpoint inspection; NEVER resend.
+                            return flow.reconcile_wos_acquisition_tick()
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -805,6 +828,171 @@ def run(args):
                                  'translation. This pilot neither verifies '
                                  'source retrieval nor completes PRESS review.').props(
                                      'data-testid=wos-pilot-incomplete')
+                if state['selected_run_id'] is not None:
+                    ui.separator()
+                    ui.label('Web of Science Starter — checkpointed source '
+                             'acquisition (EXPERIMENTAL).').props(
+                                 'data-testid=wos-acquisition-heading')
+                    ui.label('Unlike a pilot, this workflow can store licensed '
+                             'source metadata in the local project. Explicit '
+                             'retention consent and a separate provider-session '
+                             'confirmation are both required. Verify your '
+                             'institutional licence before using it.')
+                    ui.label('One confirmed session uses at most THREE Starter '
+                             'requests (a count/identity recheck where required '
+                             'and up to two further 50-record pages). '
+                             'Provider quota, cooldowns and interruption '
+                             'recovery are enforced by the existing checkpoint '
+                             'engine. No automatic unattended sessions.')
+                    ui.label('A reconciled Starter enumeration is NOT a '
+                             'verified whole-run search, full abstracts, '
+                             'publication deduplication or an atomic provider '
+                             'snapshot. Progress is based on durable source '
+                             'checkpoint evidence only.')
+                    if state['wos_acquisition_prepare_pending']:
+                        ui.label('Local retention plan outcome uncertain. '
+                                 'Inspect the original checkpoint — never '
+                                 'silently re-authorise or start a request.').props(
+                                     'data-testid=wos-acquisition-prepare-uncertain')
+                        ui.button('Inspect originally authorised checkpoint (no network)',
+                                  on_click=lambda: act(
+                                      'wos_acquisition_prepare_reconcile')).props(
+                                          'data-testid=wos-acquisition-prepare-reconcile')
+                    elif state['wos_acquisition_tick_pending']:
+                        ui.label('Bounded source request session outcome '
+                                 'uncertain. Do not repeat until checkpoint '
+                                 'state is reconciled. A lost worker may '
+                                 'require explicit supervised recovery.').props(
+                                     'data-testid=wos-acquisition-tick-uncertain')
+                        ui.button('Read original source checkpoint (no network)',
+                                  on_click=lambda: act(
+                                      'wos_acquisition_tick_reconcile')).props(
+                                          'data-testid=wos-acquisition-tick-reconcile')
+                    elif state['wos_acquisition_offer'] is not None:
+                        candidate = state['wos_acquisition_offer']
+                        ui.label('Locked exact Starter Topic query: ' +
+                                 candidate['exact_query']).props(
+                                     'data-testid=wos-acquisition-exact-query')
+                        ui.label('You are authorising local retention of all '
+                                 'provider-returned metadata permitted by your '
+                                 'institutional licence. This preparation '
+                                 'itself makes NO network request and does '
+                                 'not authorise future sessions automatically.')
+                        ui.button('Cancel retention consent without preparing',
+                                  on_click=lambda: act('wos_acquisition_dismiss')).props(
+                                      'data-testid=wos-acquisition-cancel')
+                        ui.button('Confirm local metadata retention and prepare checkpoint',
+                                  on_click=lambda: act('wos_acquisition_prepare')).props(
+                                      'data-testid=wos-acquisition-prepare')
+                    else:
+                        if state['report'] is not None:
+                            for row in state['report']['queries']:
+                                if row['source_name'] != 'wos':
+                                    continue
+                                qid = row['query_id']
+                                ui.label('Saved Starter group ' + row['group_id'] +
+                                         ': ' + row['exact_query']).props(
+                                             'data-testid=wos-acquisition-saved-query')
+                                ui.button('Inspect checkpoint for group ' +
+                                          row['group_id'],
+                                          on_click=lambda qid=qid: act(
+                                              'wos_acquisition_read',qid)).props(
+                                                  'data-testid=wos-acquisition-read')
+                                if (state['wos_profile_configured'] and
+                                        row['status'] == 'pending'):
+                                    ui.button('Preview full-source retention for ' +
+                                              row['group_id'],
+                                              on_click=lambda qid=qid: act(
+                                                  'wos_acquisition_offer',qid)).props(
+                                                      'data-testid=wos-acquisition-offer')
+                        if not state['wos_profile_configured']:
+                            ui.label('Source execution unavailable without the '
+                                     'trusted host-only Starter API key. Existing '
+                                     'checkpoints remain readable.')
+                    acquisition = state['wos_acquisition']
+                    if acquisition is not None:
+                        job = acquisition['checkpoint']
+                        ui.label('Selected source checkpoint: ' +
+                                 acquisition['query_id']).props(
+                                     'data-testid=wos-acquisition-selected')
+                        ui.label('Durable status: ' + job['status'] +
+                                 '; stage: ' + job['stage'] +
+                                 '; reason: ' + job['reason_code']).props(
+                                     'data-testid=wos-acquisition-status')
+                        ui.label('Provider matches: ' +
+                                 ('UNKNOWN' if job['reported_matches'] is None
+                                  else str(job['reported_matches'])) +
+                                 '; records actually stored: ' +
+                                 str(job['records_committed']) +
+                                 '; pages acquired: ' +
+                                 str(job['pages_committed']) +
+                                 '; pages verified: ' +
+                                 str(job['verification_pages'])).props(
+                                     'data-testid=wos-acquisition-progress')
+                        ui.label('Unknown attempted requests: ' +
+                                 str(job['requests_unknown']) +
+                                 '; worker reservation active: ' +
+                                 str(job['worker_active']) +
+                                 '; next allowed time: ' +
+                                 str(job['not_before_utc']))
+                        ui.label('Observed daily quota status (provider facts): ' +
+                                 str(job['quota']))
+                        if job['worker_active'] or job['requests_unknown']:
+                            ui.label('Worker/transport outcome may be unknown. '
+                                     'Do NOT automatically retry; separate '
+                                     'verified recovery is required.').props(
+                                         'data-testid=wos-acquisition-recovery-required')
+                        elif not acquisition['approved_gui_retention']:
+                            ui.label('Historical non-GUI checkpoint: no matching '
+                                     'explicit graphical retention admission; '
+                                     'view-only in this increment.')
+                        elif job['enumeration_reconciled']:
+                            ui.label('Source identifier enumeration reconciled '
+                                     'WITH WARNINGS. Full bibliography and '
+                                     'whole search remain incomplete.').props(
+                                         'data-testid=wos-acquisition-partial-complete')
+                        elif (job['pages_expected'] is not None and
+                              job['pages_expected'] > 1 and
+                              job['stage'] in ('verify','final')):
+                            ui.label('Acquisition pages retained. Multi-page '
+                                     'identity verification needs a longer '
+                                     'uninterrupted supervised worker session. '
+                                     'Short GUI sessions are DISABLED here to '
+                                     'prevent repeated quota-consuming loops.').props(
+                                         'data-testid=wos-acquisition-long-verification-required')
+                        elif job['status']=='cancelled':
+                            ui.label('Checkpoint cancelled; no further requests '
+                                     'from this interface.')
+                        elif state['wos_acquisition_tick_offer'] is None:
+                            if state['wos_profile_configured']:
+                                ui.button('Preview next bounded session (up to THREE requests)',
+                                          on_click=lambda: act(
+                                              'wos_acquisition_tick_offer')).props(
+                                                  'data-testid=wos-acquisition-tick-offer')
+                                ui.button('Preview explicit quota revalidation session',
+                                          on_click=lambda: act(
+                                              'wos_acquisition_revalidate_offer')).props(
+                                                  'data-testid=wos-acquisition-revalidate-offer')
+                        else:
+                            offered = state['wos_acquisition_tick_offer']
+                            ui.label('Unsent bounded session for source query ' +
+                                     offered['query_id'] + ', maximum THREE '
+                                     'requests. It may retain up to three pages '
+                                     'of licensed metadata, without silently '
+                                     'changing your OR-only query.').props(
+                                         'data-testid=wos-acquisition-tick-preview')
+                            if offered['revalidate_quota']:
+                                ui.label('EXPLICIT quota revalidation requested. '
+                                         'Does not bypass server cooldown or '
+                                         'indeterminate provider reservations.')
+                            ui.button('Cancel unsent source session',
+                                      on_click=lambda: act(
+                                          'wos_acquisition_tick_dismiss')).props(
+                                              'data-testid=wos-acquisition-tick-cancel')
+                            ui.button('CONFIRM bounded Starter source request session',
+                                      on_click=lambda: act(
+                                          'wos_acquisition_tick_confirm')).props(
+                                              'data-testid=wos-acquisition-tick-confirm')
                 for item in state['exports']:
                     # Only offer requests belonging to the explicitly selected run.
                     if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:

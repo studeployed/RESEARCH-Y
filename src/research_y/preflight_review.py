@@ -127,7 +127,7 @@ def _previous(db, run_id, plan_sha, requested_id=None):
     return latest, requested
 
 
-def _inspect(db, run_id, requested_id=None):
+def _inspect(db, run_id, requested_id=None, *, allow_started=False):
     row = db.execute(
         "SELECT r.strategy_version_id,r.status,v.version_number,v.snapshot_json "
         "FROM search_runs r JOIN strategy_versions v ON "
@@ -137,7 +137,11 @@ def _inspect(db, run_id, requested_id=None):
     if row is None:
         raise PreflightError("unknown_run")
     version_id, status, version_number, raw = row
-    if status != "pending":
+    # Normal pre-run review must remain STRICTLY pending. The internal
+    # execution-admission verifier instead reconstructs the same frozen hash
+    # from source identities while allowing earlier sibling groups to have
+    # progressed; it never portrays mutable counts as a pending plan.
+    if status != "pending" and (not allow_started or status not in ("incomplete", "paused")):
         raise PreflightError("run_not_pending")
     try:
         strategy = decode(raw)
@@ -168,9 +172,12 @@ def _inspect(db, run_id, requested_id=None):
         except (PreflightError, ValueError, TypeError):
             raise PreflightError("plan_unverified") from None
         key = (source, group_id)
+        from research_y.schema import RUN_STATUSES
         if (version != version_id or key in actual or key not in expected
-                or exact != expected[key] or stored_status != "pending"
-                or matches is not None or executed is not None):
+                or exact != expected[key] or stored_status not in RUN_STATUSES
+                or (not allow_started and
+                    (stored_status != "pending" or matches is not None
+                     or executed is not None))):
             raise PreflightError("plan_unverified")
         actual[key] = dict(query_id=ident, group_id=group_id, source=source,
                            exact_query=exact, parameters={},

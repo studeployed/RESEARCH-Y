@@ -74,6 +74,17 @@ def services(monkeypatch, tmp_path):
     history.read_pilot_history=service('pilot_history',{
         'entries':[], 'no_network_requests':True,
         'source_retrieval_verified':False})
+    from research_y.wos_acquisition_gui import WoSAcquisitionError
+    acquisition=types.ModuleType('research_y.wos_acquisition_gui')
+    acquisition.WoSAcquisitionError=WoSAcquisitionError
+    acquisition.preview_wos_acquisition=service('wos_acquisition_preview',{
+        'source_retrieval_verified':False})
+    acquisition.inspect_wos_acquisition=service('wos_acquisition_read',{
+        'source_retrieval_verified':False})
+    acquisition.prepare_wos_acquisition=service('wos_acquisition_prepare',{
+        'source_retrieval_verified':False})
+    acquisition.run_wos_acquisition_session=service('wos_acquisition_tick',{
+        'source_retrieval_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -83,6 +94,7 @@ def services(monkeypatch, tmp_path):
                         ('workbook_exports',exports),('strategy_admission',admission),
                         ('preflight_review',preflight),('pubmed_pilot',pilot),
                         ('wos_starter_pilot',wos),('pilot_history',history),
+                        ('wos_acquisition_gui',acquisition),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -104,6 +116,19 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
                   approval_confirmed=True)
     elif operation=='pilot_history':
         kw['history_before_event_id']=123
+    elif operation=='wos_acquisition_preview':
+        kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
+    elif operation=='wos_acquisition_read':
+        kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
+    elif operation=='wos_acquisition_prepare':
+        kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()),
+                  acquisition_plan_sha256='a'*64,
+                  acquisition_confirmed=True,
+                  acquisition_retention_authorized=True)
+    elif operation=='wos_acquisition_tick':
+        kw.update(run_id=str(uuid4()),acquisition_query_id=str(uuid4()),
+                  acquisition_confirmed=True,acquisition_revalidate_quota=False,
+                  acquisition_api_key='SYNTHETIC-PRIVATE-STARTER-KEY')
     elif operation=='pubmed_pilot_read':
         kw.update(pilot_id=str(uuid4()))
     elif operation=='wos_pilot_read':
@@ -160,6 +185,27 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][2]['client']._budget == 1
         assert calls[0][2]['revalidate_quota'] is False
         assert kw['pilot_api_key'] not in repr(cmd)
+    if operation=='wos_acquisition_preview':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['acquisition_query_id']
+    if operation=='wos_acquisition_read':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['acquisition_query_id']
+    if operation=='wos_acquisition_prepare':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['acquisition_query_id']
+        assert calls[0][2]['expected_plan_sha256']==kw['acquisition_plan_sha256']
+        assert calls[0][2]['confirmed'] is True
+        assert calls[0][2]['retention_authorized'] is True
+    if operation=='wos_acquisition_tick':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['query_id']==kw['acquisition_query_id']
+        assert calls[0][2]['confirmed'] is True
+        assert calls[0][2]['revalidate_quota'] is False
+        assert calls[0][2]['client']._key==kw['acquisition_api_key']
+        assert calls[0][2]['client']._budget==3
+        assert calls[0][2]['client']._timeout==10
+        assert kw['acquisition_api_key'] not in repr(cmd)
     if operation=='pilot_history':
         assert calls[0][2]['before_event_id']==123
         assert result['no_network_requests'] is True
@@ -513,4 +559,47 @@ def test_history_cursor_and_pilot_credentials_cannot_be_sent_on_unrelated_comman
     with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
         commands.ApplicationCommand.for_project(
             project,'inspect',history_before_event_id=1)
+    assert not calls
+
+
+@pytest.mark.parametrize('operation,patch',[
+    ('wos_acquisition_preview',{'acquisition_api_key':'SECRET'}),
+    ('wos_acquisition_read',{'acquisition_api_key':'SECRET'}),
+    ('wos_acquisition_read',{'acquisition_confirmed':True}),
+    ('wos_acquisition_read',{'acquisition_revalidate_quota':False}),
+    ('wos_acquisition_prepare',{'acquisition_api_key':'SECRET'}),
+    ('wos_acquisition_prepare',{'acquisition_confirmed':False}),
+    ('wos_acquisition_prepare',{'acquisition_retention_authorized':False}),
+    ('wos_acquisition_prepare',{'acquisition_plan_sha256':'bad'}),
+    ('wos_acquisition_tick',{'acquisition_confirmed':False}),
+    ('wos_acquisition_tick',{'acquisition_api_key':'BAD\nPRIVATE'}),
+    ('wos_acquisition_tick',{'acquisition_retention_authorized':True}),
+    ('wos_acquisition_tick',{'acquisition_revalidate_quota':None}),
+    ('wos_acquisition_tick',{'acquisition_revalidate_quota':1}),
+])
+def test_wos_acquisition_command_rejects_unapproved_or_cross_operation_fields(
+        services,operation,patch):
+    project,calls,*_=services
+    base=dict(run_id=str(uuid4()),acquisition_query_id=str(uuid4()))
+    if operation=='wos_acquisition_prepare':
+        base.update(acquisition_plan_sha256='a'*64,
+                    acquisition_retention_authorized=True,
+                    acquisition_confirmed=True)
+    if operation=='wos_acquisition_tick':
+        base.update(acquisition_api_key='SYNTHETIC-PRIVATE-STARTER-KEY',
+                    acquisition_confirmed=True,acquisition_revalidate_quota=False)
+    with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+        commands.ApplicationCommand.for_project(project,operation,**(base|patch))
+    assert not calls
+
+
+def test_acquisition_key_cannot_be_routed_to_inspection_or_pilot(services):
+    project,calls,*_=services
+    for operation in ('inspect','pubmed_pilot_read','wos_pilot_read',
+                      'pilot_history'):
+        kw={'acquisition_api_key':'SECRET'}
+        if operation.endswith('_read'):
+            kw['pilot_id']=str(uuid4())
+        with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+            commands.ApplicationCommand.for_project(project,operation,**kw)
     assert not calls

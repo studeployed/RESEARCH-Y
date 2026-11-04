@@ -115,7 +115,9 @@ def _state(db, job: dict, status: str, reason: str, stamp: str) -> None:
     _audit_job(db, job, "state", stamp, status=status, reason_code=reason)
 
 
-def create_wos_checkpoint(project: Project, query_id: str, *, retention_authorized: bool) -> None:
+def create_wos_checkpoint(project: Project, query_id: str, *, retention_authorized: bool,
+                          expected_run_id: str | None = None,
+                          expected_plan_sha256: str | None = None) -> None:
     """Bind one pending compiler-produced chunk to immutable local storage rules.
 
     Query parameters may specify database/page_size/max_query_bytes only. A
@@ -123,11 +125,46 @@ def create_wos_checkpoint(project: Project, query_id: str, *, retention_authoriz
     """
     if retention_authorized is not True:
         raise WoSCheckpointError("local_retention_not_authorized")
+    # GUI-authorised admission is bound to the exact immutable preflight.
+    # Verify it inside the SAME database write transaction as checkpoint
+    # creation: a stale preview must not authorise retained source records.
+    if (expected_run_id is None) != (expected_plan_sha256 is None):
+        raise WoSCheckpointError("source_plan_unverified")
     stamp = _stamp()
     with _db(project, write=True) as db:
+        if expected_run_id is not None:
+            from research_y.preflight_review import _inspect, PreflightError
+            try:
+                preview = _inspect(db, expected_run_id, allow_started=True)
+                if (preview["plan_sha256"] != expected_plan_sha256 or
+                        type(expected_plan_sha256) is not str or
+                        len(expected_plan_sha256) != 64 or
+                        any(char not in "0123456789abcdef"
+                            for char in expected_plan_sha256)):
+                    raise WoSCheckpointError("source_plan_unverified")
+                matched = [
+                    query for source in preview["sources"]
+                    if source["source_name"] == "wos"
+                    for query in source["queries"]
+                    if query["query_id"] == query_id and query["status"] == "pending"
+                ]
+                if len(matched) != 1:
+                    raise WoSCheckpointError("source_plan_unverified")
+            except (PreflightError, KeyError, TypeError):
+                raise WoSCheckpointError("source_plan_unverified") from None
         row = db.execute("SELECT * FROM source_queries WHERE query_id=?", (query_id,)).fetchone()
-        if row is None or row["source_name"] != "wos" or row["status"] != "pending":
+        if (row is None or row["source_name"] != "wos" or row["status"] != "pending"
+                or (expected_run_id is not None and row["run_id"] != expected_run_id)):
             raise WoSCheckpointError("pending_wos_query_required")
+        # A checkpoint prepared in another workflow can still leave its
+        # source query pending. Refuse duplicate adoption with a stable
+        # actionable code rather than leaking a raw SQLite constraint error.
+        # This runs under BEGIN IMMEDIATE so a competing admission cannot
+        # appear between the check and the INSERT below.
+        if db.execute(
+                "SELECT 1 FROM wos_checkpoint_jobs WHERE query_id=?",
+                (query_id,)).fetchone() is not None:
+            raise WoSCheckpointError("checkpoint_already_exists")
         parameters = json.loads(row["parameters_json"])
         if (not isinstance(parameters, dict)
                 or set(parameters) - {"database", "page_size", "max_query_bytes"}):
@@ -147,6 +184,8 @@ def create_wos_checkpoint(project: Project, query_id: str, *, retention_authoriz
         plan.update(project_id=str(project.identifier), database=database, page_size=size,
                     sort_field="LD+A", strategy_sha256=compiled.snapshot_sha256,
                     retention_authorized=True, format_version=1)
+        if expected_plan_sha256 is not None:
+            plan["preflight_sha256"] = expected_plan_sha256
         encoded = _json(plan)
         db.execute("INSERT INTO wos_checkpoint_jobs "
                    "(query_id,plan_json,plan_sha256,created_at_utc,updated_at_utc) VALUES (?,?,?,?,?)",
