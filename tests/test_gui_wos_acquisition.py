@@ -841,3 +841,70 @@ def test_gui_auto_progress_refresh_is_read_only_and_confirm_gated():
     probe=source.split("@app.post('/_probe/start')")[1].split(
         "@app.post('/_probe/stop')")[0]
     assert 'wos_verification' not in probe
+
+
+
+def test_graceful_pause_waits_for_durable_ownership_and_retains_pages(
+        tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch)
+    try:
+        # A pause cannot race before _claim() and then be overwritten by it.
+        with pytest.raises(acquisition.WoSAcquisitionError,
+                           match='verification_worker_not_running'):
+            acquisition.pause_wos_verification_session(
+                project,run_id=rid,query_id=q['query_id'])
+        assert len(provider.calls)==3
+        clock.sleep(2)
+        seen=[]
+        def pausing_transport(req,timeout):
+            response=provider(req,timeout)
+            if len(provider.calls)==4:
+                observed=acquisition.pause_wos_verification_session(
+                    project,run_id=rid,query_id=q['query_id'])
+                assert observed['checkpoint']['worker_active'] is True
+                assert observed['checkpoint']['status']=='paused'
+                seen.append(observed['checkpoint']['records_committed'])
+            return response
+        client=WoSStarterClient(
+            api_key=KEY,request_budget=512,timeout=10,
+            transport=pausing_transport,clock=clock.monotonic,
+            sleep=clock.sleep,utc_now=clock.now)
+        original=acquisition.preview_wos_verification(
+            project,run_id=rid,query_id=q['query_id'])
+        result=acquisition.run_wos_verification_session(
+            project,run_id=rid,query_id=q['query_id'],
+            expected_plan_sha256=original['preflight_sha256'],
+            expected_requests=original['expected_requests'],
+            confirmed=True,revalidate_quota=False,client=client)
+        checkpoint=result['actual_checkpoint']
+        assert seen==[103]
+        assert result['session_requests_made']==1
+        assert checkpoint['status']=='paused'
+        assert checkpoint['worker_active'] is False
+        assert checkpoint['requests_unknown']==0
+        assert checkpoint['records_committed']==103
+        assert checkpoint['enumeration_reconciled'] is False
+        assert result['whole_search_verified'] is False
+        assert len(provider.calls)==4
+    finally:
+        flow.close()
+
+
+def test_gui_pause_before_real_supervisor_claim_fails_safely(tmp_path,monkeypatch):
+    project,flow,rid,q,clock,provider=_ready_for_long_verification(
+        tmp_path,monkeypatch)
+    supervisor=SyntheticLongSupervisor()
+    flow._verify_worker.close()
+    flow._verify_worker=supervisor
+    try:
+        flow.offer_wos_verification()
+        flow.confirm_wos_verification()
+        with pytest.raises(ProjectFlowError,
+                           match='verification_worker_not_running'):
+            flow.pause_wos_verification()
+        assert flow.state()['wos_verification_pending'] is True
+        assert supervisor.submissions==1
+        assert len(provider.calls)==3
+    finally:
+        flow.close()
