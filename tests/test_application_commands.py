@@ -68,6 +68,12 @@ def services(monkeypatch, tmp_path):
     wos.read_wos_pilot=service('wos_pilot_read',None)
     wos.probe_wos_starter_once=service('wos_pilot_sample',{
         'status':'requested_indeterminate','source_retrieval_verified':False})
+    from research_y.pilot_history import PilotHistoryError
+    history=types.ModuleType('research_y.pilot_history')
+    history.PilotHistoryError=PilotHistoryError
+    history.read_pilot_history=service('pilot_history',{
+        'entries':[], 'no_network_requests':True,
+        'source_retrieval_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -76,7 +82,7 @@ def services(monkeypatch, tmp_path):
     for name,module in [('projects',projects),('application_inspection',inspection),
                         ('workbook_exports',exports),('strategy_admission',admission),
                         ('preflight_review',preflight),('pubmed_pilot',pilot),
-                        ('wos_starter_pilot',wos),
+                        ('wos_starter_pilot',wos),('pilot_history',history),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -96,6 +102,8 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
                   admission_groups=(StrategyGroup('rv', 'RV',
                       (ApprovedTerm('right ventricle','researcher',True),)),),
                   approval_confirmed=True)
+    elif operation=='pilot_history':
+        kw['history_before_event_id']=123
     elif operation=='pubmed_pilot_read':
         kw.update(pilot_id=str(uuid4()))
     elif operation=='wos_pilot_read':
@@ -152,6 +160,9 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][2]['client']._budget == 1
         assert calls[0][2]['revalidate_quota'] is False
         assert kw['pilot_api_key'] not in repr(cmd)
+    if operation=='pilot_history':
+        assert calls[0][2]['before_event_id']==123
+        assert result['no_network_requests'] is True
     if operation=='pubmed_pilot_read':
         assert calls[0][1][1] == kw['pilot_id']
         assert result['pilot'] is None
@@ -471,4 +482,35 @@ def test_wos_commands_reject_misrouted_secrets_and_unconfirmed_calls(services, o
     for edit in edits:
         with pytest.raises(commands.ApplicationCommandError,match='^invalid_command$'):
             commands.ApplicationCommand.for_project(project,operation,**(kwargs|edit))
+    assert not calls
+
+
+@pytest.mark.parametrize('value',[
+    True,False,0,-1,1.5,'5',[],{},2**63,None,
+])
+def test_history_cursor_rejects_unsafe_values(services,value):
+    project,calls,*_=services
+    if value is None:
+        cmd=commands.ApplicationCommand.for_project(
+            project,'pilot_history',history_before_event_id=None)
+        assert cmd.history_before_event_id is None
+    else:
+        with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+            commands.ApplicationCommand.for_project(
+                project,'pilot_history',history_before_event_id=value)
+    assert not calls
+
+
+def test_history_cursor_and_pilot_credentials_cannot_be_sent_on_unrelated_command(services):
+    project,calls,*_=services
+    kwargs=({'history_before_event_id':1,'run_id':str(uuid4())},
+            {'history_before_event_id':1,'pilot_api_key':'PRIVATE'},
+            {'history_before_event_id':1,'directory':str(project.root)},
+            {'history_before_event_id':1,'review_id':str(uuid4())})
+    for kw in kwargs:
+        with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+            commands.ApplicationCommand.for_project(project,'pilot_history',**kw)
+    with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+        commands.ApplicationCommand.for_project(
+            project,'inspect',history_before_event_id=1)
     assert not calls
