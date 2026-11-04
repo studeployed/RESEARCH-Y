@@ -391,6 +391,106 @@ def test_source_session_requires_explicit_confirmation_and_fresh_client(tmp_path
         flow.close()
 
 
+def test_single_page_acquisition_can_reconcile_with_three_request_budget(tmp_path,monkeypatch):
+    project,flow,rid,q=_flow(tmp_path)
+    try:
+        flow.offer_wos_acquisition(q['query_id'])
+        flow.confirm_wos_acquisition()
+        clock,provider=_inject_tick(monkeypatch,flow,count=1)
+        flow.offer_wos_acquisition_tick()
+        result=flow.confirm_wos_acquisition_tick()
+        saved=result['wos_acquisition']
+        assert provider.calls==[(1,50),(1,50),(1,1)]
+        assert saved['checkpoint']['status']=='completed_with_warnings'
+        assert saved['checkpoint']['stage']=='done'
+        assert saved['checkpoint']['pages_expected']==1
+        assert saved['checkpoint']['enumeration_reconciled'] is True
+        assert saved['checkpoint']['records_committed']==1
+        assert saved['source_retrieval_verified'] is False
+        assert saved['whole_search_verified'] is False
+        with pytest.raises(ProjectFlowError,match='acquisition_already_terminal'):
+            flow.offer_wos_acquisition_tick()
+    finally:
+        flow.close()
+
+
+def test_multi_page_verification_never_repeats_futile_two_request_sweeps(
+        tmp_path,monkeypatch):
+    project,flow,rid,q=_flow(tmp_path)
+    try:
+        flow.offer_wos_acquisition(q['query_id'])
+        flow.confirm_wos_acquisition()
+        clock,provider=_inject_tick(monkeypatch,flow,count=103)
+        flow.offer_wos_acquisition_tick()
+        saved=flow.confirm_wos_acquisition_tick()['wos_acquisition']
+        assert saved['checkpoint']['records_committed']==103
+        assert saved['checkpoint']['stage']=='verify'
+        assert saved['checkpoint']['pages_expected']==3
+        assert saved['checkpoint']['enumeration_reconciled'] is False
+        with pytest.raises(ProjectFlowError,match='verification_requires_long_worker'):
+            flow.offer_wos_acquisition_tick()
+        # The service boundary must agree with the GUI restriction, even if
+        # a caller constructs an otherwise legitimate new client.
+        client=WoSStarterClient(api_key=KEY,request_budget=3)
+        with pytest.raises(acquisition.WoSAcquisitionError,
+                           match='verification_requires_long_worker'):
+            acquisition.run_wos_acquisition_session(
+                project,run_id=rid,query_id=q['query_id'],confirmed=True,
+                client=client)
+        assert len(provider.calls)==3
+    finally:
+        flow.close()
+
+
+def test_untouched_group_may_be_prepared_after_sibling_retrieval_started(
+        tmp_path,monkeypatch):
+    from research_y.preflight_review import PreflightError, read_preflight
+    project=create_project(tmp_path,'Two independent OR groups')
+    admitted=commit_approved_strategy(
+        project,request_id=str(uuid4()),theme='Two broad concepts',
+        approved_by='Researcher',approval_confirmed=True,
+        groups=(
+            StrategyGroup('g-first','ECMO',(
+                ApprovedTerm('ECMO','researcher',True),)),
+            StrategyGroup('g-second','Right heart',(
+                ApprovedTerm('right ventricle','researcher',True),)),
+        ),
+    )
+    flow=RealProjectFlow(selected_root=project.root,
+                         selected_parent=tmp_path,wos_profile=WoSHostProfile(KEY))
+    try:
+        flow.open_selected()
+        flow.select_run(admitted.run_id)
+        preflight=flow.inspect_preflight()['preflight_report']
+        original_sha=preflight['plan_sha256']
+        wos=next(s for s in preflight['sources'] if s['source_name']=='wos')
+        first=next(q for q in wos['queries'] if q['group_id']=='g-first')
+        second=next(q for q in wos['queries'] if q['group_id']=='g-second')
+        flow.offer_wos_acquisition(first['query_id'])
+        flow.confirm_wos_acquisition()
+        clock,provider=_inject_tick(monkeypatch,flow,count=103)
+        flow.offer_wos_acquisition_tick()
+        flow.confirm_wos_acquisition_tick()
+        assert flow.state()['report']['run']['status']=='incomplete'
+        assert flow.state()['preflight_report'] is None
+        with pytest.raises(PreflightError,match='run_not_pending'):
+            read_preflight(project,admitted.run_id)
+        # A SOURCE-SPECIFIC, read-only reconstruction validates the original
+        # frozen broad-OR plan without resetting the executed sibling.
+        offered=flow.offer_wos_acquisition(second['query_id'])
+        assert offered['wos_acquisition_offer']['plan_sha256']==original_sha
+        assert offered['wos_acquisition_offer']['exact_query']=='TS=("right ventricle")'
+        prepared=flow.confirm_wos_acquisition()['wos_acquisition']
+        assert prepared['approved_gui_retention'] is True
+        assert prepared['preflight_sha256']==original_sha
+        assert prepared['checkpoint']['status']=='pending'
+        assert len(provider.calls)==3  # Preparing a second group is offline.
+        assert _rows(project)['jobs']==2
+        assert len(_rows(project)['metadata'])==103
+    finally:
+        flow.close()
+
+
 def test_gui_has_explicit_retention_and_session_controls_not_probe_automation():
     source=inspect.getsource(run)
     for name in ('wos_acquisition_offer','wos_acquisition_prepare',
