@@ -20,6 +20,7 @@ from tools.gui_feasibility.native_folder_selection import (
     NativeFolderError, checked_folder)
 from tools.gui_feasibility.recent_projects import RecentProjects, RecentProjectsError
 from tools.gui_feasibility.pubmed_host_profile import PubMedHostProfile
+from tools.gui_feasibility.wos_host_profile import WoSHostProfile
 from tools.gui_feasibility.strategy_setup import StrategyDraft, DraftError
 from research_y.preflight_review import (
     PreflightError, _review_payload, PRESS_ITEMS, read_preflight,
@@ -34,14 +35,18 @@ class ProjectFlowError(ValueError):
 class RealProjectFlow:
     def __init__(self, *, selected_root: Path, selected_parent: Path,
                  recent_parent: Path | None = None,
-                 pubmed_profile: PubMedHostProfile | None = None):
+                 pubmed_profile: PubMedHostProfile | None = None,
+                  wos_profile: WoSHostProfile | None = None):
         self._root = Path(selected_root)
         self._parent = Path(selected_parent)
         if not self._root.is_absolute() or not self._parent.is_absolute():
             raise ProjectFlowError('trusted_selection_required')
         if pubmed_profile is not None and type(pubmed_profile) is not PubMedHostProfile:
             raise ProjectFlowError('pubmed_profile_invalid')
+        if wos_profile is not None and type(wos_profile) is not WoSHostProfile:
+            raise ProjectFlowError('wos_profile_invalid')
         self._pubmed_profile = pubmed_profile
+        self._wos_profile = wos_profile
         self._guard = threading.RLock()
         self._worker = ApplicationWorker()
         self._closed = False
@@ -69,6 +74,9 @@ class RealProjectFlow:
         self._pilot_candidate = None
         self._pending_pilot = None
         self._last_pilot = None
+        self._wos_pilot_candidate = None
+        self._pending_wos_pilot = None
+        self._last_wos_pilot = None
         # External folders are transient, host-selected, explicitly confirmed.
         # The audit journal stores directory identity, not the path.
         self._external_candidate = None
@@ -94,7 +102,7 @@ class RealProjectFlow:
             raise ProjectFlowError('strategy_reconciliation_required')
         if self._pending_review is not None:
             raise ProjectFlowError('preflight_reconciliation_required')
-        if self._pending_pilot is not None:
+        if self._pending_pilot is not None or self._pending_wos_pilot is not None:
             raise ProjectFlowError('pilot_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
@@ -254,6 +262,9 @@ class RealProjectFlow:
         self._pilot_candidate = None
         self._pending_pilot = None
         self._last_pilot = None
+        self._wos_pilot_candidate = None
+        self._pending_wos_pilot = None
+        self._last_wos_pilot = None
         self._clear_external()
         self.last_result = inspected
         self.snapshot = snapshot
@@ -349,6 +360,8 @@ class RealProjectFlow:
             self._review_candidate = None
             self._pilot_candidate = None
             self._last_pilot = None
+            self._wos_pilot_candidate = None
+            self._last_wos_pilot = None
             self.snapshot = report
             return self._publish()
 
@@ -427,7 +440,7 @@ class RealProjectFlow:
                 raise ProjectFlowError('export_reconciliation_required')
             if self._pending_review is not None:
                 raise ProjectFlowError('preflight_reconciliation_required')
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
@@ -497,6 +510,7 @@ class RealProjectFlow:
             # A pilot confirmation always has to show the current plan, not
             # silently retain an old candidate after reinspection.
             self._pilot_candidate = None
+            self._wos_pilot_candidate = None
             return self._publish()
 
     def offer_preflight_review(self, *, reviewer_name, reviewer_role,
@@ -532,7 +546,8 @@ class RealProjectFlow:
             self._require_open()
             if (self._pending_admission_id is not None or
                     self._pending_export_id is not None or
-                    self._pending_pilot is not None):
+                    self._pending_pilot is not None or
+                    self._pending_wos_pilot is not None):
                 raise ProjectFlowError('operation_reconciliation_required')
             if self._pending_review is None:
                 if self._review_candidate is None or self._preflight is None:
@@ -616,6 +631,7 @@ class RealProjectFlow:
             )
             self._preflight = verified
             self._pilot_candidate = candidate
+            self._wos_pilot_candidate = None
             return self._publish()
 
     def revise_pubmed_pilot(self):
@@ -634,7 +650,7 @@ class RealProjectFlow:
         """
         with self._guard:
             self._require_open()
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
@@ -715,6 +731,144 @@ class RealProjectFlow:
             except ProjectFlowError:
                 # Read failures remain uncertain. Retain the original ID and
                 # prevent project/run changes until the read succeeds.
+                self._publish()
+                raise
+
+    def offer_wos_pilot(self, query_id: str, *, revalidate_quota=False):
+        """Preview a current, source-backed Starter Topic query without network."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self._wos_profile is None:
+                raise ProjectFlowError('wos_profile_unavailable')
+            if type(revalidate_quota) is not bool:
+                raise ProjectFlowError('pilot_confirmation_required')
+            if self.selected_run_id is None or self._preflight is None:
+                raise ProjectFlowError('preflight_inspection_required')
+            if type(query_id) is not str:
+                raise ProjectFlowError('unknown_wos_query')
+            verified = self._operation('preflight_read',
+                                       run_id=self.selected_run_id)
+            if (verified.get('plan_sha256') != self._preflight.get('plan_sha256')
+                    or verified.get('run_id') != self.selected_run_id
+                    or verified.get('source_retrieval_verified') is not False
+                    or verified.get('execution_authorized') is not False):
+                raise ProjectFlowError('stale_preflight')
+            matches = [q for source in verified.get('sources', [])
+                       if source.get('source_name') == 'wos'
+                       for q in source.get('queries', [])
+                       if q.get('query_id') == query_id and
+                       q.get('status') == 'pending']
+            if len(matches) != 1 or type(matches[0].get('exact_query')) is not str:
+                raise ProjectFlowError('unknown_wos_query')
+            candidate = dict(
+                pilot_id=str(uuid4()), run_id=self.selected_run_id,
+                query_id=query_id, group_id=matches[0]['group_id'],
+                plan_sha256=verified['plan_sha256'],
+                exact_query=matches[0]['exact_query'],
+                revalidate_quota=revalidate_quota,
+            )
+            self._preflight = verified
+            self._wos_pilot_candidate = candidate
+            self._pilot_candidate = None
+            return self._publish()
+
+    def revise_wos_pilot(self):
+        """Cancel an unsent offer without reserving or consuming any quota."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._wos_pilot_candidate = None
+            return self._publish()
+
+    def confirm_wos_pilot(self):
+        """The ONLY network-capable Starter GUI action.
+
+        Preserve one UUID until inspecting its immutable receipt, even when
+        the worker response is lost or the service rejects the attempt.
+        """
+        with self._guard:
+            self._require_open()
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
+                raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._pending_admission_id is not None or
+                    self._pending_review is not None or
+                    self._pending_export_id is not None):
+                raise ProjectFlowError('operation_reconciliation_required')
+            if self._wos_profile is None:
+                raise ProjectFlowError('wos_profile_unavailable')
+            candidate = self._wos_pilot_candidate
+            if (not isinstance(candidate, dict) or
+                    candidate.get('run_id') != self.selected_run_id):
+                raise ProjectFlowError('pilot_confirmation_required')
+            self._pending_wos_pilot = dict(candidate)
+            self._publish()
+            try:
+                reply = self._operation('wos_pilot_sample',
+                    run_id=candidate['run_id'], pilot_id=candidate['pilot_id'],
+                    pilot_query_id=candidate['query_id'],
+                    pilot_plan_sha256=candidate['plan_sha256'],
+                    pilot_api_key=self._wos_profile.api_key,
+                    pilot_confirmed=True,
+                    pilot_wos_revalidate_quota=candidate['revalidate_quota'])
+                if (any(reply.get(key) != candidate[key] for key in
+                        ('pilot_id','run_id','query_id','plan_sha256',
+                         'exact_query','revalidate_quota')) or
+                        reply.get('source') != 'wos' or
+                        reply.get('sample_only') is not True or
+                        reply.get('count_only') is not False or
+                        reply.get('bibliographic_records_persisted') != 0 or
+                        reply.get('source_retrieval_verified') is not False or
+                        reply.get('execution_authorized') is not False):
+                    raise ProjectFlowError('pilot_receipt_invalid')
+            except ProjectFlowError:
+                self._publish()
+                raise
+            return self.reconcile_wos_pilot()
+
+    def reconcile_wos_pilot(self):
+        """Read-only original attempt inspection; never repeat a Starter GET."""
+        with self._guard:
+            self._require_open()
+            candidate = self._pending_wos_pilot
+            if candidate is None:
+                raise ProjectFlowError('pilot_reconciliation_not_required')
+            try:
+                response = self._operation('wos_pilot_read',
+                                           pilot_id=candidate['pilot_id'])
+                if (response.get('source_retrieval_verified') is not False
+                        or 'pilot' not in response):
+                    raise ProjectFlowError('pilot_receipt_invalid')
+                observed = response['pilot']
+                if observed is None:
+                    self._last_wos_pilot = dict(
+                        pilot_id=candidate['pilot_id'],
+                        run_id=candidate['run_id'],
+                        query_id=candidate['query_id'],
+                        revalidate_quota=candidate['revalidate_quota'],
+                        status='not_recorded', reported_matches=None,
+                        source_retrieval_verified=False,
+                        execution_authorized=False, search_completed=False)
+                else:
+                    if (type(observed) is not dict or
+                            any(observed.get(key) != candidate[key] for key in
+                                ('pilot_id','run_id','query_id','plan_sha256',
+                                 'exact_query','revalidate_quota')) or
+                            observed.get('source') != 'wos' or
+                            observed.get('sample_only') is not True or
+                            observed.get('count_only') is not False or
+                            observed.get('bibliographic_records_persisted') != 0 or
+                            observed.get('source_retrieval_verified') is not False or
+                            observed.get('execution_authorized') is not False or
+                            observed.get('search_completed') is not False or
+                            observed.get('retrieval_verified') is not False or
+                            observed.get('automatically_retryable') is not False):
+                        raise ProjectFlowError('pilot_receipt_invalid')
+                    self._last_wos_pilot = observed
+                self._pending_wos_pilot = None
+                self._wos_pilot_candidate = None
+                return self._publish()
+            except ProjectFlowError:
                 self._publish()
                 raise
 
@@ -850,7 +1004,7 @@ class RealProjectFlow:
                 raise ProjectFlowError('strategy_reconciliation_required')
             if self._pending_review is not None:
                 raise ProjectFlowError('preflight_reconciliation_required')
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
@@ -903,7 +1057,7 @@ class RealProjectFlow:
     def resume(self):
         with self._guard:
             self._require_open()
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
@@ -924,7 +1078,7 @@ class RealProjectFlow:
     def cancel(self):
         with self._guard:
             self._require_open()
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
@@ -944,7 +1098,7 @@ class RealProjectFlow:
     def observe(self):
         with self._guard:
             self._require_open()
-            if self._pending_pilot is not None:
+            if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
@@ -997,6 +1151,10 @@ class RealProjectFlow:
                 'pubmed_pilot_candidate': self._pilot_candidate,
                 'pubmed_pilot_reconciliation_required': self._pending_pilot is not None,
                 'last_pubmed_pilot': self._last_pilot,
+                'wos_profile_configured': self._wos_profile is not None,
+                'wos_pilot_candidate': self._wos_pilot_candidate,
+                'wos_pilot_reconciliation_required': self._pending_wos_pilot is not None,
+                'last_wos_pilot': self._last_wos_pilot,
                 'external_destination_candidate': (
                     None if self._external_candidate is None
                     else str(self._external_candidate)),

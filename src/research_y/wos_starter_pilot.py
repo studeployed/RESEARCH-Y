@@ -201,6 +201,7 @@ def _view(request, outcome):
         pilot_id=record["pilot_id"], run_id=record["run_id"],
         query_id=record["query_id"], plan_sha256=record["plan_sha256"],
         exact_query=record["exact_query"], source="wos",
+        revalidate_quota=record["revalidate_quota"],
         database=DATABASE, status=status, reported_matches=count,
         checked_at_utc=record.get("checked_at_utc"),
         quota=quota, quota_status=record.get("quota_status", "not_observed"),
