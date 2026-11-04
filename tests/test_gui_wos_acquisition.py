@@ -738,6 +738,15 @@ def test_long_supervised_gui_explicit_consent_read_only_poll_and_reconciliation(
             flow.select_run(rid)
         with pytest.raises(ProjectFlowError,match='verification_reconciliation_required'):
             flow.confirm_wos_verification()
+        for blocked in (
+                flow.confirm_pubmed_pilot,
+                flow.confirm_wos_pilot,
+                flow.approve_setup,
+                flow.prepare):
+            with pytest.raises(ProjectFlowError,match='verification_reconciliation_required'):
+                blocked()
+        with pytest.raises(ProjectFlowError,match='operation_reconciliation_required'):
+            flow.record_preflight_review()
         refreshed=flow.poll_wos_verification()
         assert refreshed['wos_verification_pending']
         assert refreshed['wos_acquisition']['checkpoint']['records_committed']==103
