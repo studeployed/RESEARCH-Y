@@ -611,6 +611,122 @@ def run(args):
                         ui.label('Pilot results never establish final '
                                  'retrieval or PRESS peer review.').props(
                                      'data-testid=pubmed-pilot-incomplete')
+                if (state['selected_run_id'] is not None and
+                        state['preflight_report'] is not None):
+                    ui.separator()
+                    ui.label('Web of Science Starter — optional one-record '
+                             'count/quota pilot; NOT a count-only request or '
+                             'literature retrieval.').props(
+                                 'data-testid=wos-pilot-heading')
+                    ui.label('Starter Topic (TS) includes titles, abstracts '
+                             'and indexed keywords; not web-interface All Fields '
+                             'or article full text. Pilot counts do NOT '
+                             'become verified source/group counts.')
+                    if not state['wos_profile_configured']:
+                        ui.label('Pilot unavailable: no trusted host-only '
+                                 'Starter API key. Browser controls cannot '
+                                 'supply credentials.').props(
+                                     'data-testid=wos-profile-unavailable')
+                    elif state['wos_pilot_reconciliation_required']:
+                        ui.label('Uncertain original Starter request: inspect '
+                                 'the SAME audit UUID without any network call. '
+                                 'A lost outcome can leave the shared quota '
+                                 'guard blocked pending separate recovery.').props(
+                                     'data-testid=wos-pilot-uncertain')
+                        ui.button('Inspect original Starter receipt (no network)',
+                                  on_click=lambda: act('wos_pilot_reconcile')).props(
+                                      'data-testid=wos-pilot-reconcile')
+                    elif state['pubmed_pilot_reconciliation_required']:
+                        ui.label('Resolve the PubMed pilot receipt before '
+                                 'starting a Starter pilot.')
+                    elif state['wos_pilot_candidate'] is not None:
+                        candidate = state['wos_pilot_candidate']
+                        ui.label('Unsent, locked Starter group: ' +
+                                 candidate['group_id']).props(
+                                     'data-testid=wos-pilot-candidate')
+                        ui.label('Exact Topic query: ' +
+                                 candidate['exact_query']).props(
+                                     'data-testid=wos-pilot-query')
+                        if candidate['revalidate_quota']:
+                            ui.label('EXPLICIT QUOTA REVALIDATION: another '
+                                     'provider request is being authorised '
+                                     'after previously observed exhaustion. '
+                                     'This does not override server cooldowns '
+                                     'or unknown in-flight attempts.')
+                        ui.label('Confirmation sends ONE HTTPS GET to the '
+                                 'official Starter service (page 1, limit 1). '
+                                 'It can transiently return ONE licensed '
+                                 'bibliographic record; RESEARCH-Y immediately '
+                                 'discards it. Only safe count/quota/audit '
+                                 'evidence is retained. An API request is '
+                                 'consumed. This is NOT a zero-record '
+                                 'count-only operation.')
+                        ui.button('Cancel without sending a Starter request',
+                                  on_click=lambda: act('wos_pilot_revise')).props(
+                                      'data-testid=wos-pilot-cancel')
+                        ui.button('Confirm ONE Starter one-record request',
+                                  on_click=lambda: act('wos_pilot_confirm')).props(
+                                      'data-testid=wos-pilot-confirm')
+                    else:
+                        ui.label('Preview one approved pending Starter group '
+                                 'query without contacting the provider. '
+                                 'A separate confirmation authorises the '
+                                 'one-record request and quota use.')
+                        for source in state['preflight_report']['sources']:
+                            if source['source_name'] != 'wos':
+                                continue
+                            for query in source['queries']:
+                                qid = query['query_id']
+                                ui.label('Starter ' + query['group_id'] +
+                                         ': ' + query['exact_query']).props(
+                                             'data-testid=wos-pilot-saved-query')
+                                ui.button('Preview Starter one-record pilot for ' +
+                                          query['group_id'],
+                                          on_click=lambda qid=qid: act(
+                                              'wos_pilot_offer', qid)).props(
+                                                  'data-testid=wos-pilot-offer')
+                                ui.button('Preview explicit quota revalidation for ' +
+                                          query['group_id'],
+                                          on_click=lambda qid=qid: act(
+                                              'wos_pilot_revalidation_offer', qid)).props(
+                                                  'data-testid=wos-pilot-revalidation-offer')
+                    prior = state['last_wos_pilot']
+                    if prior is not None:
+                        ui.label('Last audited Starter pilot: ' +
+                                 prior['status']).props(
+                                     'data-testid=wos-pilot-status')
+                        count = prior['reported_matches']
+                        ui.label('Provisional provider-reported matches: ' +
+                                 ('UNKNOWN' if count is None else str(count)) +
+                                 '; zero records retained; not verified retrieval.').props(
+                                     'data-testid=wos-pilot-count')
+                        quota = prior.get('quota')
+                        if isinstance(quota, dict):
+                            ui.label('Observed daily quota: allowance=' +
+                                     str(quota.get('daily_limit')) +
+                                     ', remaining=' +
+                                     str(quota.get('daily_remaining')) +
+                                     ', entitlement=' +
+                                     str(prior.get('quota_status')))
+                        if prior.get('retry_after_seconds') is not None:
+                            ui.label('Server-directed retry delay recorded; '
+                                     'new provider requests remain restricted.')
+                        if prior.get('retry_after_unverifiable'):
+                            ui.label('Server retry deadline not representable; '
+                                     'further requests are blocked.')
+                        if prior['status'] in ('requested_indeterminate',
+                                               'not_recorded'):
+                            ui.label('Never resend this UUID. An indeterminate '
+                                     'provider reservation may remain blocked '
+                                     'even after a new preview.').props(
+                                         'data-testid=wos-pilot-no-auto-retry')
+                        if prior.get('error_code') is not None:
+                            ui.label('Static failure code: ' +
+                                     prior['error_code'])
+                        ui.label('Starter does not expose accepted query '
+                                 'translation. This pilot neither verifies '
+                                 'source retrieval nor completes PRESS review.').props(
+                                     'data-testid=wos-pilot-incomplete')
                 for item in state['exports']:
                     # Only offer requests belonging to the explicitly selected run.
                     if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:
