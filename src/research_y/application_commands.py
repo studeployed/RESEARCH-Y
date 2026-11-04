@@ -16,7 +16,9 @@ OPERATIONS = frozenset({'inspect', 'prepare_export', 'resume_export', 'cancel_ex
                         'observe_export', 'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
-                         'wos_pilot_sample', 'wos_pilot_read', 'pilot_history'})
+                         'wos_pilot_sample', 'wos_pilot_read', 'pilot_history',
+                         'wos_acquisition_prepare', 'wos_acquisition_read',
+                         'wos_acquisition_tick'})
 SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -31,7 +33,16 @@ SERVICE_ERRORS = frozenset({'invalid_identifier', 'invalid_evidence', 'unknown_e
     'pilot_client_invalid', 'pubmed_profile_invalid', 'wos_profile_invalid',
      'provider_cooldown', 'provider_quota_revalidation_required',
      'provider_worker_active', 'provider_pilot_cooldown',
-     'provider_pilot_outcome_unknown', 'pilot_history_cursor_invalid'})
+     'provider_pilot_outcome_unknown', 'pilot_history_cursor_invalid',
+     'source_execution_unavailable', 'source_plan_unverified',
+     'retention_confirmation_required', 'session_confirmation_required',
+     'gui_admission_missing', 'pending_wos_query_required',
+     'checkpoint_identity_mismatch', 'strategy_identity_mismatch',
+     'invalid_checkpoint_plan', 'checkpoint_write_failed',
+     'worker_busy_or_interrupted', 'another_wos_worker_active',
+     'local_retention_not_authorized', 'unsupported_query_parameters',
+     'query_not_in_approved_compilation', 'unknown_checkpoint',
+     'checkpoint_already_exists'})
 
 
 class ApplicationCommandError(ValueError):
@@ -98,6 +109,14 @@ class ApplicationCommand:
     pilot_wos_revalidate_quota: bool | None = None
     # Read-only audit cursor; NEVER a browser-supplied SQL expression.
     history_before_event_id: int | None = None
+    # Explicit WoS source-acquisition consent. NOT a pilot; up to two HTTPS
+    # requests and lawfully permitted source-metadata retention per session.
+    acquisition_query_id: str | None = None
+    acquisition_plan_sha256: str | None = None
+    acquisition_confirmed: bool | None = None
+    acquisition_retention_authorized: bool | None = None
+    acquisition_revalidate_quota: bool | None = None
+    acquisition_api_key: str | None = None
 
     def __post_init__(self):
         try:
@@ -132,6 +151,12 @@ class ApplicationCommand:
                             self.pilot_plan_sha256, self.pilot_contact_email,
                             self.pilot_api_key, self.pilot_confirmed,
                              self.pilot_wos_revalidate_quota)
+            acquisition_fields = (
+                self.acquisition_query_id, self.acquisition_plan_sha256,
+                self.acquisition_confirmed,
+                self.acquisition_retention_authorized,
+                self.acquisition_revalidate_quota, self.acquisition_api_key,
+            )
             if self.operation in ('pubmed_pilot_count', 'pubmed_pilot_read',
                                   'wos_pilot_sample', 'wos_pilot_read'):
                 if any(v is not None for v in
@@ -181,6 +206,40 @@ class ApplicationCommand:
                         PubMedESearchProbeClient(
                             email=self.pilot_contact_email,
                             api_key=self.pilot_api_key)
+            elif self.operation in (
+                    'wos_acquisition_prepare', 'wos_acquisition_read',
+                    'wos_acquisition_tick'):
+                if any(v is not None for v in (
+                        self.export_id, self.output_name, self.directory,
+                        self.expected_directory_identity)):
+                    raise ValueError
+                _uuid(self.run_id)
+                _uuid(self.acquisition_query_id)
+                if self.operation == 'wos_acquisition_read':
+                    if any(v is not None for v in acquisition_fields[1:]):
+                        raise ValueError
+                elif self.operation == 'wos_acquisition_prepare':
+                    digest = self.acquisition_plan_sha256
+                    if (type(digest) is not str or len(digest) != 64 or
+                            any(c not in '0123456789abcdef' for c in digest) or
+                            self.acquisition_confirmed is not True or
+                            self.acquisition_retention_authorized is not True or
+                            self.acquisition_api_key is not None or
+                            self.acquisition_revalidate_quota is not None):
+                        raise ValueError
+                else:
+                    if (self.acquisition_plan_sha256 is not None or
+                            self.acquisition_confirmed is not True or
+                            self.acquisition_retention_authorized is not None or
+                            type(self.acquisition_revalidate_quota) is not bool):
+                        raise ValueError
+                    from research_y.wos_starter_client import WoSStarterClient
+                    from research_y.wos_starter import WoSStarterError
+                    try:
+                        WoSStarterClient(api_key=self.acquisition_api_key,
+                                         request_budget=2, timeout=10)
+                    except WoSStarterError:
+                        raise ValueError from None
             elif self.operation == 'pilot_history':
                 if any(v is not None for v in
                        (self.run_id, self.export_id, self.output_name,
@@ -248,6 +307,10 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation not in ('wos_acquisition_prepare', 'wos_acquisition_read',
+                                       'wos_acquisition_tick') and any(
+                    value is not None for value in acquisition_fields):
+                raise ValueError
             if self.operation != 'pilot_history' and self.history_before_event_id is not None:
                 raise ValueError
             if self.operation != 'admit_strategy' and any(
@@ -295,6 +358,34 @@ def execute_command(command: ApplicationCommand) -> dict:
         if command.operation == 'inspect':
             snapshot = inspection.read_application_snapshot(project, selected_run_id=command.run_id)
             return {'snapshot': snapshot.as_dict(), 'location': str(snapshot.location)}
+        if command.operation in (
+                'wos_acquisition_prepare', 'wos_acquisition_read',
+                'wos_acquisition_tick'):
+            from research_y import wos_acquisition_gui as acquisition
+            try:
+                if command.operation == 'wos_acquisition_read':
+                    return acquisition.inspect_wos_acquisition(
+                        project, run_id=command.run_id,
+                        query_id=command.acquisition_query_id)
+                if command.operation == 'wos_acquisition_prepare':
+                    return acquisition.prepare_wos_acquisition(
+                        project, run_id=command.run_id,
+                        query_id=command.acquisition_query_id,
+                        expected_plan_sha256=command.acquisition_plan_sha256,
+                        confirmed=command.acquisition_confirmed,
+                        retention_authorized=command.acquisition_retention_authorized)
+                from research_y.wos_starter_client import WoSStarterClient
+                client = WoSStarterClient(
+                    api_key=command.acquisition_api_key,
+                    request_budget=2, timeout=10)
+                return acquisition.run_wos_acquisition_session(
+                    project, run_id=command.run_id,
+                    query_id=command.acquisition_query_id,
+                    confirmed=command.acquisition_confirmed,
+                    revalidate_quota=command.acquisition_revalidate_quota,
+                    client=client)
+            except acquisition.WoSAcquisitionError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation == 'pilot_history':
             from research_y.pilot_history import read_pilot_history, PilotHistoryError
             try:
