@@ -62,6 +62,12 @@ def services(monkeypatch, tmp_path):
     pilot.read_pubmed_pilot=service('pubmed_pilot_read',None)
     pilot.probe_pubmed_count_once=service('pubmed_pilot_count',{
         'status':'requested_indeterminate','source_retrieval_verified':False})
+    from research_y.wos_starter_pilot import WoSPilotError
+    wos=types.ModuleType('research_y.wos_starter_pilot')
+    wos.WoSPilotError=WoSPilotError
+    wos.read_wos_pilot=service('wos_pilot_read',None)
+    wos.probe_wos_starter_once=service('wos_pilot_sample',{
+        'status':'requested_indeterminate','source_retrieval_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -70,6 +76,7 @@ def services(monkeypatch, tmp_path):
     for name,module in [('projects',projects),('application_inspection',inspection),
                         ('workbook_exports',exports),('strategy_admission',admission),
                         ('preflight_review',preflight),('pubmed_pilot',pilot),
+                        ('wos_starter_pilot',wos),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -91,6 +98,13 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
                   approval_confirmed=True)
     elif operation=='pubmed_pilot_read':
         kw.update(pilot_id=str(uuid4()))
+    elif operation=='wos_pilot_read':
+        kw.update(pilot_id=str(uuid4()))
+    elif operation=='wos_pilot_sample':
+        kw.update(run_id=str(uuid4()),pilot_id=str(uuid4()),
+                  pilot_query_id=str(uuid4()),pilot_plan_sha256='a'*64,
+                  pilot_api_key='fixture-private-wos-key-123',
+                  pilot_confirmed=True,pilot_wos_revalidate_quota=False)
     elif operation=='pubmed_pilot_count':
         kw.update(run_id=str(uuid4()),pilot_id=str(uuid4()),
                   pilot_query_id=str(uuid4()),pilot_plan_sha256='a'*64,
@@ -126,6 +140,18 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert result['snapshot']['reported'] is None and result['snapshot']['retrieved']==0
     if operation=='preflight_read':
         assert calls[0][1][1] == kw['run_id']
+    if operation=='wos_pilot_read':
+        assert calls[0][1][1] == kw['pilot_id']
+        assert result['pilot'] is None
+    if operation=='wos_pilot_sample':
+        assert calls[0][2]['pilot_id'] == kw['pilot_id']
+        assert calls[0][2]['expected_plan_sha256'] == kw['pilot_plan_sha256']
+        assert calls[0][2]['query_id'] == kw['pilot_query_id']
+        assert calls[0][2]['confirmed'] is True
+        assert calls[0][2]['client']._key == kw['pilot_api_key']
+        assert calls[0][2]['client']._budget == 1
+        assert calls[0][2]['revalidate_quota'] is False
+        assert kw['pilot_api_key'] not in repr(cmd)
     if operation=='pubmed_pilot_read':
         assert calls[0][1][1] == kw['pilot_id']
         assert result['pilot'] is None
@@ -422,3 +448,27 @@ def test_non_pilot_commands_reject_pilot_credentials_and_no_repr_echo(services):
     assert 'synthetic@example.org' not in repr(valid)
     assert 'fixture-private-key' not in repr(valid)
     assert calls==[]
+
+
+@pytest.mark.parametrize('operation', ['wos_pilot_sample','wos_pilot_read'])
+def test_wos_commands_reject_misrouted_secrets_and_unconfirmed_calls(services, operation):
+    project,calls,*_=services
+    kwargs={'pilot_id':str(uuid4())}
+    if operation=='wos_pilot_sample':
+        kwargs.update(run_id=str(uuid4()),pilot_query_id=str(uuid4()),
+            pilot_plan_sha256='a'*64,pilot_api_key='PRIVATE-TEST-KEY',
+            pilot_confirmed=True,pilot_wos_revalidate_quota=False)
+        edits=({'pilot_contact_email':'private@example.org'},
+               {'pilot_wos_revalidate_quota':None},
+               {'pilot_wos_revalidate_quota':1},
+               {'pilot_confirmed':False},
+               {'pilot_api_key':None},
+               {'pilot_api_key':'unsafe\nvalue'})
+    else:
+        edits=({'pilot_api_key':'PRIVATE-TEST-KEY'},
+               {'pilot_wos_revalidate_quota':False},
+               {'pilot_query_id':str(uuid4())})
+    for edit in edits:
+        with pytest.raises(commands.ApplicationCommandError,match='^invalid_command$'):
+            commands.ApplicationCommand.for_project(project,operation,**(kwargs|edit))
+    assert not calls
