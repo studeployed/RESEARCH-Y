@@ -12,7 +12,7 @@ import time
 from uuid import uuid4
 
 from research_y.application_commands import ApplicationCommand
-from research_y.application_worker import ApplicationWorker
+from research_y.application_worker import ApplicationWorker, ApplicationWorkerError
 from research_y.projects import (MANIFEST_FILENAME, ProjectFormatError, ProjectVersionError,
                                   _parse_manifest, create_project, open_project)
 from research_y.export_files import Directory, ExportFileError
@@ -49,6 +49,10 @@ class RealProjectFlow:
         self._wos_profile = wos_profile
         self._guard = threading.RLock()
         self._worker = ApplicationWorker()
+        # Separate supervised process: verification may run longer than
+        # ordinary 35-second inspection operations. Durable checkpoint
+        # progress remains readable via the independent ordinary worker.
+        self._verify_worker = ApplicationWorker()
         self._closed = False
         self.project = None
         self.snapshot = None
@@ -82,6 +86,12 @@ class RealProjectFlow:
         self._wos_acquisition = None
         self._wos_acquisition_tick_offer = None
         self._wos_acquisition_tick_pending = None
+        self._verify_operation_id = None
+        self._verify_offer = None
+        self._verify_pending = None
+        self._verify_worker_state = 'idle'
+        self._verify_error = None
+        self._verify_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -115,6 +125,8 @@ class RealProjectFlow:
         if (self._wos_acquisition_prepare_pending is not None or
                 self._wos_acquisition_tick_pending is not None):
             raise ProjectFlowError('acquisition_reconciliation_required')
+        if self._verify_pending is not None:
+            raise ProjectFlowError('verification_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
                 raise ProjectFlowError('export_reconciliation_required')
@@ -281,6 +293,12 @@ class RealProjectFlow:
         self._wos_acquisition = None
         self._wos_acquisition_tick_offer = None
         self._wos_acquisition_tick_pending = None
+        self._verify_operation_id = None
+        self._verify_offer = None
+        self._verify_pending = None
+        self._verify_worker_state = 'idle'
+        self._verify_error = None
+        self._verify_last_outcome = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -393,6 +411,8 @@ class RealProjectFlow:
             self._wos_acquisition_offer = None
             self._wos_acquisition = None
             self._wos_acquisition_tick_offer = None
+            self._verify_offer = None
+            self._verify_last_outcome = None
             self.snapshot = report
             return self._publish()
 
@@ -1565,6 +1585,11 @@ class RealProjectFlow:
                 'wos_acquisition': self._wos_acquisition,
                 'wos_acquisition_tick_offer': self._wos_acquisition_tick_offer,
                 'wos_acquisition_tick_pending': self._wos_acquisition_tick_pending is not None,
+                'wos_verification_offer': self._verify_offer,
+                'wos_verification_pending': self._verify_pending is not None,
+                'wos_verification_worker_state': self._verify_worker_state,
+                'wos_verification_worker_error': self._verify_error,
+                'wos_verification_last_outcome': self._verify_last_outcome,
                 'pilot_history': self._pilot_history,
                 'pilot_history_error': self._pilot_history_error,
                 'saved_pilot_detail': self._saved_pilot_detail,
@@ -1594,4 +1619,9 @@ class RealProjectFlow:
         with self._guard:
             if not self._closed:
                 self._closed = True
-                self._worker.close(grace_seconds=0, kill_seconds=2)
+                # Shutdown cannot fabricate completion or automatically clear
+                # a durable provider reservation; recovery requires inspection.
+                try:
+                    self._verify_worker.close(grace_seconds=0, kill_seconds=2)
+                finally:
+                    self._worker.close(grace_seconds=0, kill_seconds=2)
