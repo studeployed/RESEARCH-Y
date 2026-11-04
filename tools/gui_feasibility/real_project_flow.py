@@ -77,6 +77,11 @@ class RealProjectFlow:
         self._wos_pilot_candidate = None
         self._pending_wos_pilot = None
         self._last_wos_pilot = None
+        self._wos_acquisition_offer = None
+        self._wos_acquisition_prepare_pending = None
+        self._wos_acquisition = None
+        self._wos_acquisition_tick_offer = None
+        self._wos_acquisition_tick_pending = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -107,6 +112,9 @@ class RealProjectFlow:
             raise ProjectFlowError('preflight_reconciliation_required')
         if self._pending_pilot is not None or self._pending_wos_pilot is not None:
             raise ProjectFlowError('pilot_reconciliation_required')
+        if (self._wos_acquisition_prepare_pending is not None or
+                self._wos_acquisition_tick_pending is not None):
+            raise ProjectFlowError('acquisition_reconciliation_required')
         if self._pending_export_id is not None:
             if not for_external_choice:
                 raise ProjectFlowError('export_reconciliation_required')
@@ -268,6 +276,11 @@ class RealProjectFlow:
         self._wos_pilot_candidate = None
         self._pending_wos_pilot = None
         self._last_wos_pilot = None
+        self._wos_acquisition_offer = None
+        self._wos_acquisition_prepare_pending = None
+        self._wos_acquisition = None
+        self._wos_acquisition_tick_offer = None
+        self._wos_acquisition_tick_pending = None
         self._pilot_history = None
         self._pilot_history_error = None
         self._saved_pilot_detail = None
@@ -377,6 +390,9 @@ class RealProjectFlow:
             self._last_pilot = None
             self._wos_pilot_candidate = None
             self._last_wos_pilot = None
+            self._wos_acquisition_offer = None
+            self._wos_acquisition = None
+            self._wos_acquisition_tick_offer = None
             self.snapshot = report
             return self._publish()
 
@@ -457,6 +473,9 @@ class RealProjectFlow:
                 raise ProjectFlowError('preflight_reconciliation_required')
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if self._pending_admission_id is None:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
@@ -562,7 +581,9 @@ class RealProjectFlow:
             if (self._pending_admission_id is not None or
                     self._pending_export_id is not None or
                     self._pending_pilot is not None or
-                    self._pending_wos_pilot is not None):
+                    self._pending_wos_pilot is not None or
+                    self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
                 raise ProjectFlowError('operation_reconciliation_required')
             if self._pending_review is None:
                 if self._review_candidate is None or self._preflight is None:
@@ -667,6 +688,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -806,6 +830,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if (self._pending_admission_id is not None or
                     self._pending_review is not None or
                     self._pending_export_id is not None):
@@ -1102,6 +1129,9 @@ class RealProjectFlow:
                 raise ProjectFlowError('preflight_reconciliation_required')
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
             if filename is None:
@@ -1155,6 +1185,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1176,6 +1209,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             self.observation = None
@@ -1196,6 +1232,9 @@ class RealProjectFlow:
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
+            if (self._wos_acquisition_prepare_pending is not None or
+                    self._wos_acquisition_tick_pending is not None):
+                raise ProjectFlowError('acquisition_reconciliation_required')
             if self.selected_export_id is None:
                 raise ProjectFlowError('export_selection_required')
             # A previous file observation is time-specific; never display it as
@@ -1251,6 +1290,11 @@ class RealProjectFlow:
                 'wos_pilot_candidate': self._wos_pilot_candidate,
                 'wos_pilot_reconciliation_required': self._pending_wos_pilot is not None,
                 'last_wos_pilot': self._last_wos_pilot,
+                'wos_acquisition_offer': self._wos_acquisition_offer,
+                'wos_acquisition_prepare_pending': self._wos_acquisition_prepare_pending is not None,
+                'wos_acquisition': self._wos_acquisition,
+                'wos_acquisition_tick_offer': self._wos_acquisition_tick_offer,
+                'wos_acquisition_tick_pending': self._wos_acquisition_tick_pending is not None,
                 'pilot_history': self._pilot_history,
                 'pilot_history_error': self._pilot_history_error,
                 'saved_pilot_detail': self._saved_pilot_detail,
