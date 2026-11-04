@@ -105,6 +105,24 @@ def _client(transport):
         timeout=15,clock=clock.now,sleep=lambda _:None)
 
 
+def _limit_synthetic_esearch_attempts(monkeypatch, *, limit):
+    """Cap only synthetic request dispatch, never the production/GUI budget.
+
+    A real spawned read worker still sees MAX_PUBMED_REQUESTS=512; changing
+    that constant in one process would fabricate contradictory checkpoint
+    presentation fields and invalidate late-pause reconciliation.
+    """
+    original = source._BudgetedESearch._reserve
+
+    def capped_reserve(self):
+        if self.requests_made >= limit:
+            raise source.PubMedProbeError("Synthetic local transport budget exhausted")
+        return original(self)
+
+    monkeypatch.setattr(source._BudgetedESearch, "_reserve", capped_reserve)
+    return original
+
+
 def _db(project):
     with closing(sqlite3.connect(project.database_path)) as db:
         return {
@@ -254,7 +272,7 @@ def test_request_budget_exhaustion_keeps_root_count_but_no_fictional_ids(
     provider=Transport(query)
     plan=source.preview_pubmed_source(project,run_id=rid,query_id=qid)
     before=_db(project)
-    monkeypatch.setattr(source,'MAX_PUBMED_REQUESTS',2)
+    original_reserve=_limit_synthetic_esearch_attempts(monkeypatch,limit=2)
     result=source.run_pubmed_source_session(
         project,run_id=rid,query_id=qid,
         expected_plan_sha256=plan['plan_sha256'],
@@ -268,7 +286,7 @@ def test_request_budget_exhaustion_keeps_root_count_but_no_fictional_ids(
     assert result['checkpoint']['pages_committed']==0
     assert not result['checkpoint']['identifiers_reconciled']
     assert _db(project)['metadata']==0
-    monkeypatch.setattr(source,'MAX_PUBMED_REQUESTS',128)
+    monkeypatch.setattr(source._BudgetedESearch,'_reserve',original_reserve)
     resumed=source.run_pubmed_source_session(
         project,run_id=rid,query_id=qid,
         expected_plan_sha256=plan['plan_sha256'],
@@ -417,11 +435,10 @@ def test_late_pause_of_incomplete_receipt_permits_only_status_change(
     supervisor=Supervisor()
     flow._pubmed_source_worker.close()
     flow._pubmed_source_worker=supervisor
-    original_budget=source.MAX_PUBMED_REQUESTS
     try:
         flow.offer_pubmed_source(qid,coverage_start=START,coverage_end=END)
         flow.confirm_pubmed_source()
-        monkeypatch.setattr(source,'MAX_PUBMED_REQUESTS',2)
+        _limit_synthetic_esearch_attempts(monkeypatch,limit=2)
         receipt=source.run_pubmed_source_session(
             project,run_id=rid,query_id=qid,
             expected_plan_sha256=supervisor.cmd.pubmed_source_plan_sha256,
@@ -449,7 +466,6 @@ def test_late_pause_of_incomplete_receipt_permits_only_status_change(
         assert done['pubmed_source']['checkpoint']['status']=='paused'
         assert done['pubmed_source_last_outcome']['source_retrieval_verified'] is False
     finally:
-        monkeypatch.setattr(source,'MAX_PUBMED_REQUESTS',original_budget)
         flow.close()
 
 
