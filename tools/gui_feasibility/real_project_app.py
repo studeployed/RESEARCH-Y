@@ -169,6 +169,13 @@ def run(args):
                         if name == 'wos_pilot_reconcile':
                             # No network; read original UUID's immutable journal.
                             return flow.reconcile_wos_pilot()
+                        if name == 'pilot_history_refresh':
+                            # Read-only; never reconstruct or resend a pilot.
+                            return flow.inspect_pilot_history()
+                        if name == 'pilot_history_older':
+                            return flow.inspect_pilot_history(before_event_id=value)
+                        if name == 'pilot_history_detail':
+                            return flow.inspect_saved_pilot(value)
                         if name == 'select_export':
                             return flow.select_export(value)
                         if name == 'prepare':
@@ -246,6 +253,77 @@ def run(args):
             else:
                 ui.label('Project: ' + project['name']).props('data-testid=project-name')
                 ui.label('Location: ' + project['location']).props('data-testid=project-location')
+                ui.separator()
+                ui.label('Saved source-pilot audit history — read-only, including '
+                         'earlier sessions and runs. Not verified source retrieval.').props(
+                             'data-testid=pilot-history-heading')
+                ui.button('Refresh saved pilot history (no network)',
+                          on_click=lambda: act('pilot_history_refresh')).props(
+                              'data-testid=pilot-history-refresh')
+                history = state['pilot_history']
+                if state['pilot_history_error'] is not None:
+                    ui.label('Pilot audit could NOT be verified. Historical '
+                             'attempts may exist; do not assume zero prior '
+                             'requests. No provider call was made.').props(
+                                 'data-testid=pilot-history-error')
+                elif history is None:
+                    ui.label('Pilot history not yet inspected; previous attempts '
+                             'may exist.').props('data-testid=pilot-history-unread')
+                else:
+                    ui.label('Total saved request EVENTS (not publication '
+                             'matches): ' + str(history['request_events_total']) +
+                             '; newest ' + str(len(history['entries'])) +
+                             ' on this page.').props('data-testid=pilot-history-total')
+                    if not history['entries']:
+                        ui.label('No pilot requests on this page.').props(
+                            'data-testid=pilot-history-empty')
+                    for row in history['entries']:
+                        ui.label(
+                            row['source'] + ' • ' + row['requested_at_utc'] +
+                            ' • run ' + row['run_id'] + ' • status ' + row['status'] +
+                            ' • provisional matches ' +
+                            ('UNKNOWN' if row['reported_matches'] is None
+                             else str(row['reported_matches']))).props(
+                                 'data-testid=pilot-history-entry')
+                        if row['status']=='requested_indeterminate':
+                            ui.label('OUTCOME UNKNOWN: request may have reached '
+                                     'the provider. Do NOT automatically retry. '
+                                     'Starter quota may remain blocked until '
+                                     'separately authorised recovery.').props(
+                                         'data-testid=pilot-history-indeterminate')
+                        pid = row['pilot_id']
+                        ui.button('Inspect original saved receipt ' + pid,
+                                  on_click=lambda pid=pid: act(
+                                      'pilot_history_detail', pid)).props(
+                                          'data-testid=pilot-history-detail')
+                    if history['next_before_event_id'] is not None:
+                        older = history['next_before_event_id']
+                        ui.label('Older requests not displayed on this page; '
+                                 'absence of an entry here is not proof that '
+                                 'a prior attempt never occurred.')
+                        ui.button('Inspect older pilot requests (no network)',
+                                  on_click=lambda older=older: act(
+                                      'pilot_history_older', older)).props(
+                                          'data-testid=pilot-history-older')
+                    detail = state['saved_pilot_detail']
+                    if detail is not None:
+                        ui.label('Selected ORIGINAL audited receipt: ' +
+                                 detail['pilot_id'] + ' — ' + detail['status']).props(
+                                     'data-testid=pilot-history-selected')
+                        ui.label('Original exact source query: ' +
+                                 detail['exact_query']).props(
+                                     'data-testid=pilot-history-query')
+                        ui.label('Pilot-only reported matches: ' +
+                                 ('UNKNOWN' if detail['reported_matches'] is None
+                                  else str(detail['reported_matches'])) +
+                                 '; search execution remains unverified.').props(
+                                     'data-testid=pilot-history-provisional')
+                        if detail.get('accepted_translation') is not None:
+                            ui.label('Source translation: ' +
+                                     detail['accepted_translation'])
+                        if detail.get('quota_status') is not None:
+                            ui.label('Observed provider quota status: ' +
+                                     detail['quota_status'])
                 # The source text enters only NiceGUI text widgets, not HTML.
                 # All draft edits are host-memory mutations. A new preview is
                 # mandatory after any edit, before the separate approval click.
