@@ -916,31 +916,38 @@ class RealProjectFlow:
 
     # Explicit durable WoS retrieval, distinct from transient sample pilots.
     def offer_wos_acquisition(self, query_id: str):
-        """Lock one exact, still-pending plan before local-retention consent."""
+        """Preview an untouched source even after another group has progressed.
+
+        The worker reconstructs the original complete broad-OR frozen plan
+        without treating mutable sibling counts/statuses as preflight results.
+        It checks that this particular query is still pending.
+        """
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
             if self._wos_profile is None:
                 raise ProjectFlowError('wos_profile_unavailable')
-            if self.selected_run_id is None or self._preflight is None:
-                raise ProjectFlowError('preflight_inspection_required')
-            verified = self._operation('preflight_read', run_id=self.selected_run_id)
-            if (verified.get('run_id') != self.selected_run_id or
-                    verified.get('plan_sha256') != self._preflight.get('plan_sha256') or
-                    verified.get('source_retrieval_verified') is not False or
-                    verified.get('execution_authorized') is not False):
-                raise ProjectFlowError('stale_preflight')
-            matches = [q for source in verified.get('sources', [])
-                       if source.get('source_name') == 'wos'
-                       for q in source.get('queries', [])
-                       if q.get('query_id') == query_id and
-                       q.get('status') == 'pending']
-            if len(matches) != 1 or type(matches[0].get('exact_query')) is not str:
+            if self.selected_run_id is None or self.snapshot is None:
+                raise ProjectFlowError('run_selection_required')
+            allowed = {q['query_id'] for q in self.snapshot['report']['queries']
+                       if q['source_name']=='wos' and q['status']=='pending'}
+            if type(query_id) is not str or query_id not in allowed:
                 raise ProjectFlowError('unknown_wos_query')
+            verified = self._operation(
+                'wos_acquisition_preview',run_id=self.selected_run_id,
+                acquisition_query_id=query_id)
+            if (verified.get('run_id') != self.selected_run_id or
+                    verified.get('query_id') != query_id or
+                    verified.get('source_retrieval_verified') is not False or
+                    verified.get('no_network_requests') is not True):
+                raise ProjectFlowError('source_plan_unverified')
+            if (self._preflight is not None and
+                    verified.get('plan_sha256') != self._preflight.get('plan_sha256')):
+                raise ProjectFlowError('stale_preflight')
             self._wos_acquisition_offer = dict(
-                run_id=self.selected_run_id, query_id=query_id,
-                group_id=matches[0]['group_id'],
-                exact_query=matches[0]['exact_query'],
+                run_id=self.selected_run_id,query_id=query_id,
+                group_id=verified['group_id'],
+                exact_query=verified['exact_query'],
                 plan_sha256=verified['plan_sha256'])
             self._wos_pilot_candidate = None
             self._pilot_candidate = None
@@ -1065,6 +1072,9 @@ class RealProjectFlow:
                 raise ProjectFlowError('acquisition_worker_recovery_required')
             if job['enumeration_reconciled'] is True or job['status'] == 'cancelled':
                 raise ProjectFlowError('acquisition_already_terminal')
+            if (job['pages_expected'] is not None and job['pages_expected'] > 1
+                    and job['stage'] in ('verify','final')):
+                raise ProjectFlowError('verification_requires_long_worker')
             self._wos_acquisition = verified
             self._wos_acquisition_tick_offer = dict(
                 run_id=verified['run_id'], query_id=verified['query_id'],
@@ -1101,7 +1111,7 @@ class RealProjectFlow:
                         reply.get('query_id') != candidate['query_id'] or
                         reply.get('preflight_sha256') != candidate['preflight_sha256'] or
                         reply.get('source_retrieval_verified') is not False or
-                        reply.get('max_next_session_requests') != 2):
+                        reply.get('max_next_session_requests') != 3):
                     raise ProjectFlowError('acquisition_receipt_invalid')
             except ProjectFlowError:
                 self._publish()
