@@ -2058,6 +2058,247 @@ class RealProjectFlow:
                 return self.inspect_stored_pubmed_source(query_id)
             raise ProjectFlowError('run_board_invalid')
 
+    def offer_run_coordination(self):
+        """Offline preview of at most TWO already-authorised source stages.
+
+        No new WoS retention consent or PubMed ESearch Create Date assumption
+        is implied. Every blocked query and the per-step maximum is displayed.
+        """
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            preview = self._operation('run_coord_preview',
+                run_id=self.selected_run_id)
+            if (type(preview) is not dict or
+                    preview.get('method') !=
+                        'supervised-run-source-coordination/1' or
+                    preview.get('project_id') != str(self.project.identifier) or
+                    preview.get('run_id') != self.selected_run_id or
+                    type(preview.get('plan_sha256')) is not str or
+                    len(preview['plan_sha256']) != 64 or
+                    type(preview.get('eligible_tasks')) is not list or
+                    type(preview.get('blocked_tasks')) is not list or
+                    preview.get('max_session_steps') != 2 or
+                    preview.get('no_network_requests') is not True or
+                    preview.get('source_retrieval_verified') is not False or
+                    preview.get('whole_search_verified') is not False):
+                raise ProjectFlowError('run_coordination_invalid')
+            tasks = []
+            unavailable = []
+            for task in preview['eligible_tasks']:
+                if type(task) is not dict or task.get('source_name') not in (
+                        'wos','pubmed'):
+                    raise ProjectFlowError('run_coordination_invalid')
+                has_profile = (self._wos_profile is not None if
+                    task['source_name'] == 'wos'
+                    else self._pubmed_profile is not None)
+                if not has_profile:
+                    unavailable.append(dict(query_id=task['query_id'],
+                        source_name=task['source_name'],
+                        blocker='host_source_credentials_unavailable'))
+                elif len(tasks) < 2:
+                    tasks.append(task)
+            self._coord_offer = dict(
+                preview=preview,tasks=tasks,
+                unavailable=unavailable,
+                max_external_requests=sum(x['max_requests'] for x in tasks),
+                no_network_requests=True)
+            # Prevent a previously previewed independent source action from
+            # misleading users into double-authorising the same query.
+            self._wos_acquisition_offer = None
+            self._wos_acquisition_tick_offer = None
+            self._verify_offer = None
+            self._pubmed_source_offer = None
+            self._pubmed_metadata_offer = None
+            return self._publish()
+
+    def dismiss_run_coordination(self):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._coord_offer = None
+            return self._publish()
+
+    def confirm_run_coordination(self):
+        """Explicit one-session consent, then immediate nonblocking return."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            candidate = self._coord_offer
+            if (candidate is None or not candidate['tasks'] or
+                    candidate['preview']['run_id'] != self.selected_run_id):
+                raise ProjectFlowError('run_coordination_confirmation_required')
+            latest = self._operation('run_coord_preview',
+                run_id=self.selected_run_id)
+            if latest != candidate['preview']:
+                raise ProjectFlowError('run_coordination_stale')
+            for task in candidate['tasks']:
+                if task not in latest['eligible_tasks']:
+                    raise ProjectFlowError('run_coordination_stale')
+            command = ApplicationCommand.for_project(
+                self.project,'run_coord_run',
+                run_id=self.selected_run_id,
+                coord_plan_sha256=candidate['preview']['plan_sha256'],
+                coord_tasks=tuple(dict(t) for t in candidate['tasks']),
+                coord_confirmed=True,
+                coord_wos_key=(None if self._wos_profile is None
+                               else self._wos_profile.api_key),
+                coord_pubmed_email=(None if self._pubmed_profile is None
+                                    else self._pubmed_profile.contact_email),
+                coord_pubmed_key=(None if self._pubmed_profile is None
+                                  else self._pubmed_profile.api_key))
+            try:
+                operation_id = self._coord_worker.submit(command)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            self._coord_pending = dict(candidate)
+            self._coord_operation_id = operation_id
+            self._coord_offer = None
+            self._coord_worker_state = 'running'
+            self._coord_worker_error = None
+            self._coord_last_outcome = None
+            return self._publish()
+
+    def poll_run_coordination(self):
+        """Passive original-board and child-state inspection. No source HTTP."""
+        with self._guard:
+            self._require_open()
+            if self._coord_pending is None or self._coord_operation_id is None:
+                raise ProjectFlowError('run_coordination_reconciliation_not_required')
+            try:
+                status = self._coord_worker.poll(self._coord_operation_id)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            self._coord_worker_state = status.state
+            self._coord_worker_error = status.error
+            board = self._operation('run_board',run_id=self.selected_run_id)
+            if (board.get('run_id') != self._coord_pending['preview']['run_id'] or
+                    board.get('project_id') != str(self.project.identifier) or
+                    board.get('no_network_requests') is not True or
+                    board.get('whole_search_verified') is not False or
+                    board.get('global_unique_publications') is not None):
+                raise ProjectFlowError('run_coordination_invalid')
+            self._run_execution_board = board
+            return self._publish()
+
+    def reconcile_run_coordination(self):
+        """Reconcile terminal worker with original current SQLite source ledger.
+
+        An interrupted or unknown source attempt cannot become success. No
+        implicit repeat request is made, and previous source commits survive.
+        """
+        with self._guard:
+            self._require_open()
+            pending = self._coord_pending
+            if pending is None or self._coord_operation_id is None:
+                raise ProjectFlowError('run_coordination_reconciliation_not_required')
+            try:
+                status = self._coord_worker.poll(self._coord_operation_id)
+            except ApplicationWorkerError as exc:
+                raise ProjectFlowError(exc.code) from None
+            if status.state == 'running':
+                raise ProjectFlowError('run_coordination_worker_still_running')
+            self._coord_worker_state = status.state
+            self._coord_worker_error = status.error
+            try:
+                board = self._operation('run_board',run_id=self.selected_run_id)
+                if (board.get('run_id') != pending['preview']['run_id'] or
+                        board.get('project_id') != str(self.project.identifier) or
+                        board.get('no_network_requests') is not True or
+                        board.get('whole_search_verified') is not False or
+                        board.get('verified_complete') is not False or
+                        board.get('global_unique_publications') is not None):
+                    raise ProjectFlowError('run_coordination_invalid')
+                selected = {t['query_id']:t for t in pending['tasks']}
+                rows = {q['query_id']:q for q in board['queries']}
+                for qid, task in selected.items():
+                    if qid not in rows or rows[qid]['source_name'] != task['source_name']:
+                        raise ProjectFlowError('run_coordination_invalid')
+                    if rows[qid]['source_stage'] in (
+                            'wos_worker_or_recovery_active',
+                            'wos_request_outcome_unknown'):
+                        raise ProjectFlowError('run_coordination_source_recovery_required')
+                if status.state == 'returned':
+                    receipt = status.result()
+                    if (type(receipt) is not dict or
+                            receipt.get('method') !=
+                                'supervised-run-source-coordination/1' or
+                            receipt.get('run_id') != pending['preview']['run_id'] or
+                            receipt.get('project_id') != str(self.project.identifier) or
+                            receipt.get('plan_sha256') != pending['preview']['plan_sha256'] or
+                            receipt.get('new_board_revision') != board['revision'] or
+                            receipt.get('planned_step_count') != len(pending['tasks']) or
+                            receipt.get('no_automatic_retry') is not True or
+                            receipt.get('source_retrieval_verified') is not False or
+                            receipt.get('whole_search_verified') is not False or
+                            receipt.get('verified_complete') is not False or
+                            receipt.get('global_unique_publications') is not None or
+                            type(receipt.get('steps')) is not list or
+                            len(receipt['steps']) > len(pending['tasks']) or
+                            receipt.get('dispatched_step_count') != len(receipt['steps']) or
+                            receipt.get('stopped_reason') not in (
+                                None,'source_outcome_uncertain',
+                                'source_step_requires_review','source_step_refused',
+                                'target_source_changed','source_step_failed_or_uncertain')):
+                        raise ProjectFlowError('run_coordination_receipt_invalid')
+                    for index, entry in enumerate(receipt['steps']):
+                        task = pending['tasks'][index]
+                        row = rows[task['query_id']]
+                        if (type(entry) is not dict or
+                                entry.get('query_id') != task['query_id'] or
+                                entry.get('action') != task['action'] or
+                                entry.get('source_name') != task['source_name'] or
+                                type(entry.get('requests_made')) is not int or
+                                not 0 <= entry['requests_made'] <= task['max_requests'] or
+                                type(entry.get('stop_required')) is not bool or
+                                type(entry.get('outcome_uncertain')) is not bool):
+                            raise ProjectFlowError('run_coordination_receipt_invalid')
+                        if task['source_name'] == 'wos':
+                            if (entry.get('records_committed') !=
+                                    row['metadata_records_retained'] or
+                                    entry.get('identifiers_reconciled') is not
+                                    (row['source_stage'] ==
+                                     'wos_enumeration_reconciled_with_warnings')):
+                                raise ProjectFlowError('run_coordination_receipt_invalid')
+                        elif task['action'] == 'pubmed_metadata':
+                            if (entry.get('metadata_records_committed') !=
+                                    row['metadata_records_retained'] or
+                                    entry.get('metadata_records_pending') !=
+                                    row['metadata_records_missing']):
+                                raise ProjectFlowError('run_coordination_receipt_invalid')
+                        else:
+                            if entry.get('identifiers_committed') != row['identifiers_retrieved']:
+                                raise ProjectFlowError('run_coordination_receipt_invalid')
+                    if (receipt['stopped_reason'] is None and
+                            len(receipt['steps']) != len(pending['tasks'])):
+                        raise ProjectFlowError('run_coordination_receipt_invalid')
+                    completed = len(receipt['steps'])
+                    reason = receipt['stopped_reason']
+                elif status.state in ('failed','interrupted'):
+                    completed = None
+                    reason = 'worker_interrupted_outcome_unknown'
+                else:
+                    raise ProjectFlowError('run_coordination_receipt_invalid')
+                self._run_execution_board = board
+                self.snapshot = self._operation(
+                    'inspect',run_id=self.selected_run_id)['snapshot']
+                self._coord_last_outcome = dict(
+                    worker_state=status.state,worker_error=status.error,
+                    planned_step_count=len(pending['tasks']),
+                    dispatched_step_count=completed,
+                    stopped_reason=reason,
+                    source_retrieval_verified=False,
+                    whole_search_verified=False,
+                    no_automatic_retry=True)
+                self._coord_pending = None
+                self._coord_operation_id = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publish()
+                raise
+
     def inspect_pilot_history(self, *, before_event_id=None):
         """Read a page of prior project-wide pilot requests, no source network."""
         with self._guard:
