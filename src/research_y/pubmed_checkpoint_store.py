@@ -497,6 +497,15 @@ def _set_checkpoint_status(
     with _validated_project_connection(project) as con:
         con.execute("BEGIN IMMEDIATE")
         previous = _snapshot_from_db(con, query_id)
+        # The completed identifier stage is immutable as a source checkpoint
+        # status. A late GUI pause can race with the worker's buffered final
+        # receipt while its supervisor still appears 'running'. Never
+        # downgrade a completed identifier checkpoint to paused; no work
+        # remains to pause at this stage. This check is under BEGIN IMMEDIATE
+        # so it cannot race a simultaneous final-status transaction.
+        if (status == "paused" and
+                previous.stored_status == "identifiers_reconciled_metadata_pending"):
+            return
         # The write lock is held. A user pause cannot be lost to a later
         # failure transition even if the pause arrived after a caller read.
         if preserve_pause and previous.stored_status == "paused":
