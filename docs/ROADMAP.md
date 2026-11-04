@@ -22,7 +22,7 @@ The scope and gates are fixed in section 20 of the approved specification. Track
   - **P1-06a–e — bounded merged foundations:** PRs #32–#55 introduced reviewable publication identities/provenance, read-only count projections, audited Excel strategy/count workbooks and an isolated supervised graphical project/export experiment. This is not full deduplication, all-sheet export or production GUI acceptance.
   - **P1-06f1–f7 — merged PRs #56–#62:** approved broad-OR strategy, frozen preflight and PRESS self-review, audited one-shot PubMed and WoS Starter pilots and explicit host-confirmed graphical consent. Pilot counts remain provisional and distinct from full retrieval.
   - **P1-06f8 — merged PR #63:** audited, paginated pilot history survives GUI restart, including unknown request outcomes. The shared quota guard is not silently released.
-  - **P1-06g1 — current bounded increment:** experimental GUI explicit local-record retention admission and bounded two-request Web of Science Starter checkpointed source-acquisition sessions via the supervised worker. Reuses the existing quota-aware checkpoint engine. Multi-page verification requires a future longer-lived worker monitor; this increment does not claim complete source or combined-run retrieval.
+  - **P1-06g1 — current bounded increment:** experimental GUI explicit local-record retention admission and bounded three-request Web of Science Starter checkpointed source-acquisition sessions via the supervised worker. Reuses the existing quota-aware checkpoint engine. Multi-page verification requires a future longer-lived worker monitor; this increment does not claim complete source or combined-run retrieval.
 
 ## Milestone M2 — Specialist processing (Phase 2)
 

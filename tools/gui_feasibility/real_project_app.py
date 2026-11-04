@@ -840,7 +840,7 @@ def run(args):
                              'institutional licence before using it.')
                     ui.label('One confirmed session uses at most THREE Starter '
                              'requests (a count/identity recheck where required '
-                             'and up to one additional 50-record page). '
+                             'and up to two further 50-record pages). '
                              'Provider quota, cooldowns and interruption '
                              'recovery are enforced by the existing checkpoint '
                              'engine. No automatic unattended sessions.')
