@@ -115,6 +115,13 @@ def services(monkeypatch, tmp_path):
     metadata.run_pubmed_metadata_session=service('pubmed_metadata_run',{
         'status':'incomplete','source_retrieval_verified':False,
         'whole_search_verified':False})
+    from research_y.run_execution_board import ExecutionBoardError
+    board=types.ModuleType('research_y.run_execution_board')
+    board.ExecutionBoardError=ExecutionBoardError
+    board.read_run_execution_board=service('run_board',{
+        'method':'whole-run-execution-board/1','no_network_requests':True,
+        'source_retrieval_verified':False,'whole_search_verified':False,
+        'verified_complete':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -127,6 +134,7 @@ def services(monkeypatch, tmp_path):
                         ('wos_acquisition_gui',acquisition),
                         ('pubmed_source_gui',pubmed_source),
                         ('pubmed_metadata_gui',metadata),
+                        ('run_execution_board',board),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -138,7 +146,7 @@ def services(monkeypatch, tmp_path):
 def test_only_named_service_called_identity_arguments_unchanged(services,operation,tmp_path):
     project,calls,_,_,_=services
     kw={}
-    if operation=='inspect':
+    if operation in ('inspect','run_board'):
         kw['run_id']=str(uuid4())
     elif operation=='admit_strategy':
         kw.update(admission_request_id=str(uuid4()), admission_theme='Right ventricle',
@@ -228,6 +236,10 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][1][1:]==(kw['run_id'],'report.xlsx')
         assert calls[0][2]['export_id']==kw['export_id']
     if 'directory' in kw: assert calls[0][2]['directory']==kw['directory']
+    if operation=='run_board':
+        assert calls[0][1][1]==kw['run_id']
+        assert result['whole_search_verified'] is False
+        assert result['no_network_requests'] is True
     if operation=='inspect':
         assert calls[0][2]['selected_run_id']==kw['run_id']
         assert result['snapshot']['reported'] is None and result['snapshot']['retrieved']==0
@@ -808,3 +820,21 @@ def test_pubmed_metadata_command_rejects_cross_operation_credentials_and_fields(
     with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
         commands.ApplicationCommand.for_project(project,op,**(values|extra))
     assert not calls
+
+
+
+@pytest.mark.parametrize('fields',[
+    {'pubmed_source_api_key':'secret'},
+    {'acquisition_api_key':'secret'},
+    {'pilot_contact_email':'private@example.org'},
+    {'export_id':str(uuid4())},
+    {'output_name':'fake.xlsx'},
+    {'directory':'/some/secret/path'},
+    {'run_id':None},
+])
+def test_run_board_allowlist_rejects_credentials_paths_and_missing_run(services,fields):
+    project,calls,*_=services
+    with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+        commands.ApplicationCommand.for_project(
+            project,'run_board',**(dict(run_id=str(uuid4()))|fields))
+    assert calls==[]
