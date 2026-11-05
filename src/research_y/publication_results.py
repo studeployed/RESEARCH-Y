@@ -18,7 +18,7 @@ DETAIL_FIELDS = ("title", "doi", "pmid", "accession", "authors", "year",
                  "journal", "pages", "document_types", "source_document_types")
 
 
-class PublicationViewError(ValueError):
+class PublicationViewError(RuntimeError):
     """Fixed, browser-safe error codes (no private source text or paths)."""
 
     def __init__(self, code="publication_view_unavailable"):
@@ -58,9 +58,36 @@ def _source_title(source: dict) -> str | None:
     return found["value"] if found["status"] == "present" else None
 
 
+def _citation_chosen_source(snapshot, field: str):
+    """Only a canonical, source-backed citation path may be shown in the GUI.
+
+    The general choice service intentionally permits arbitrary research fields
+    and paths, including abstracts. A saved researcher 'title' choice is NOT
+    proof that its source path is a title; recheck its exact source/path here.
+    """
+    if field not in DETAIL_FIELDS:
+        return None
+    selection = snapshot.chosen_fields.get(field)
+    if selection is None:
+        return None
+    event = selection["provenance"]
+    source = next((s for s in snapshot.retrievals
+                   if s["retrieval_id"] == event["retrieval_id"]), None)
+    if source is None:
+        return None
+    mapped = project_source(source)["fields"].get(field)
+    if (mapped is None or mapped["status"] != "present" or
+            mapped["path"] != event["path"] or
+            mapped["value"] != selection["value"]):
+        return None
+    return source
+
+
 def _chosen_title(snapshot) -> tuple[str | None, str]:
     if "title" not in snapshot.chosen_fields:
         return None, "not_chosen"
+    if _citation_chosen_source(snapshot, "title") is None:
+        return None, "chosen_title_not_citation_path"
     raw = snapshot.chosen_fields["title"]["value"]
     if type(raw) is not str or not raw.strip():
         return None, "chosen_source_value_not_text"
@@ -233,7 +260,15 @@ def read_publication_detail(project, run_id: str, publication_id: str, *,
                     fields=fields,
                 ))
             chosen = []
+            suppressed = []
             for field, record in sorted(snapshot.chosen_fields.items()):
+                # Field names alone are not a licence or a source-field type:
+                # a user can save 'title' pointing at abstract text. Validate
+                # the exact canonical citation path before emitting bytes.
+                if _citation_chosen_source(snapshot, field) is None:
+                    suppressed.append(dict(
+                        field=field, reason="not_permitted_citation_source_path"))
+                    continue
                 display = _value(dict(status="present", value=record["value"]))
                 event = record["provenance"]
                 chosen.append(dict(field=field, status=display["status"],
@@ -243,7 +278,8 @@ def read_publication_detail(project, run_id: str, publication_id: str, *,
             return dict(
                 method=METHOD, project_id=str(project.identifier), run_id=run_id,
                 revision=counts.revision, publication=summary,
-                chosen_source_fields=chosen, source_retrievals=retrievals,
+                chosen_source_fields=chosen, suppressed_chosen_fields=suppressed,
+                source_retrievals=retrievals,
                 abstract_text_displayed=False,
                 redistribution_permission_established=False,
                 global_unique_publications=None, deduplication_complete=False,
