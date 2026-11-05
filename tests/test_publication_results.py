@@ -175,7 +175,35 @@ def test_local_detail_exposes_metadata_status_rights_but_not_abstract(fixture):
     assert source["memberships"][0]["group_label"]=="Clinical g1"
     assert "SENSITIVE ABSTRACT LOCAL ONLY" not in str(detail)
     assert not detail["redistribution_permission_established"]
+    assert detail["suppressed_chosen_fields"] == []
     assert detail["no_network_requests"]
+
+
+@pytest.mark.parametrize("field", ["abstract", "title"])
+def test_arbitrary_chosen_source_path_cannot_leak_abstract_as_citation(fixture, field):
+    project, run, _, _ = fixture
+    original = insert(fixture, title="Safe citation title",
+                      abstract="STRICTLY PRIVATE ABSTRACT CHOICE")
+    materialise(fixture)
+    before = read_publication_page(project, run)
+    publication_id = before["rows"][0]["publication_id"]
+    from research_y.publication_fields import select_source_field
+    snapshot = identity.read_publication(project, publication_id)
+    select_source_field(project, publication_id, field, retrieval_id=original,
+        path=("record", "abstract_sections", 0, "text"),
+        expected_revision=snapshot.revision, actor="Fixture",
+        reason="Demonstrate that a field label cannot redefine a source path")
+    page = read_publication_page(project, run)
+    detail = read_publication_detail(project, run, publication_id,
+                                     expected_revision=page["revision"])
+    assert "STRICTLY PRIVATE ABSTRACT CHOICE" not in str(page)
+    assert "STRICTLY PRIVATE ABSTRACT CHOICE" not in str(detail)
+    assert detail["chosen_source_fields"] == []
+    assert detail["suppressed_chosen_fields"] == [
+        dict(field=field, reason="not_permitted_citation_source_path")]
+    if field == "title":
+        assert page["rows"][0]["title"] is None
+        assert page["rows"][0]["title_status"] == "chosen_title_not_citation_path"
 
 
 def test_keyset_paging_20_then_three_without_hidden_truncation(fixture):
