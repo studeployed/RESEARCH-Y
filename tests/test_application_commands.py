@@ -122,6 +122,15 @@ def services(monkeypatch, tmp_path):
         'method':'whole-run-execution-board/1','no_network_requests':True,
         'source_retrieval_verified':False,'whole_search_verified':False,
         'verified_complete':False})
+    from research_y.run_source_coordinator import RunCoordinationError, ELIGIBLE_ACTIONS
+    coordination=types.ModuleType('research_y.run_source_coordinator')
+    coordination.RunCoordinationError=RunCoordinationError
+    coordination.ELIGIBLE_ACTIONS=ELIGIBLE_ACTIONS
+    coordination.preview_run_coordination=service('run_coord_preview',{
+        'no_network_requests':True,'source_retrieval_verified':False,
+        'whole_search_verified':False})
+    coordination.run_coordinated_source_session=service('run_coord_run',{
+        'source_retrieval_verified':False,'whole_search_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -135,6 +144,7 @@ def services(monkeypatch, tmp_path):
                         ('pubmed_source_gui',pubmed_source),
                         ('pubmed_metadata_gui',metadata),
                         ('run_execution_board',board),
+                        ('run_source_coordinator',coordination),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -146,8 +156,18 @@ def services(monkeypatch, tmp_path):
 def test_only_named_service_called_identity_arguments_unchanged(services,operation,tmp_path):
     project,calls,_,_,_=services
     kw={}
-    if operation in ('inspect','run_board'):
+    if operation in ('inspect','run_board','run_coord_preview'):
         kw['run_id']=str(uuid4())
+    elif operation=='run_coord_run':
+        kw.update(run_id=str(uuid4()),coord_plan_sha256='a'*64,
+                  coord_tasks=(dict(
+                      query_id=str(uuid4()),source_name='pubmed',
+                      group_id='g-one',exact_query='"ECMO"[All Fields]',
+                      action='pubmed_metadata',preflight_sha256='b'*64,
+                      records_to_fetch=1,max_requests=100),),
+                  coord_confirmed=True,
+                  coord_pubmed_email='fixture@example.org',
+                  coord_pubmed_key='PRIVATE-PUBMED-KEY')
     elif operation=='admit_strategy':
         kw.update(admission_request_id=str(uuid4()), admission_theme='Right ventricle',
                   admission_approved_by='Researcher',
@@ -236,6 +256,17 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][1][1:]==(kw['run_id'],'report.xlsx')
         assert calls[0][2]['export_id']==kw['export_id']
     if 'directory' in kw: assert calls[0][2]['directory']==kw['directory']
+    if operation=='run_coord_preview':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert result['no_network_requests'] is True
+    if operation=='run_coord_run':
+        assert calls[0][2]['run_id']==kw['run_id']
+        assert calls[0][2]['expected_plan_sha256']==kw['coord_plan_sha256']
+        assert calls[0][2]['tasks']==kw['coord_tasks']
+        assert calls[0][2]['confirmed'] is True
+        assert calls[0][2]['pubmed_email']==kw['coord_pubmed_email']
+        assert calls[0][2]['pubmed_key']==kw['coord_pubmed_key']
+        assert 'PRIVATE-PUBMED-KEY' not in repr(cmd)
     if operation=='run_board':
         assert calls[0][1][1]==kw['run_id']
         assert result['whole_search_verified'] is False
@@ -838,3 +869,51 @@ def test_run_board_allowlist_rejects_credentials_paths_and_missing_run(services,
         commands.ApplicationCommand.for_project(
             project,'run_board',**(dict(run_id=str(uuid4()))|fields))
     assert calls==[]
+
+
+
+@pytest.mark.parametrize('operation, changes', [
+    ('run_coord_preview',{'coord_confirmed':True}),
+    ('run_coord_preview',{'coord_wos_key':'SECRET'}),
+    ('run_coord_preview',{'coord_tasks':()}),
+    ('run_coord_run',{'coord_confirmed':False}),
+    ('run_coord_run',{'coord_plan_sha256':'not-sha'}),
+    ('run_coord_run',{'coord_tasks':()}),
+    ('run_coord_run',{'coord_tasks':({'action':'wos_acquire'},)}),
+    ('run_coord_run',{'coord_tasks':(dict(
+        query_id=str(uuid4()),source_name='wos',group_id='g-one',
+        exact_query='TS=("ECMO")',action='wos_acquire',
+        preflight_sha256='a'*64,max_requests=True),)}),
+    ('run_coord_run',{'coord_wos_key':'BAD\nKEY'}),
+    ('run_coord_run',{'coord_pubmed_key':'BAD\nKEY'}),
+    ('run_coord_run',{'directory':'/private/credential-location'}),
+])
+def test_run_coordinator_worker_rejects_cross_operation_secrets_and_invalid_consent(
+        services,operation,changes):
+    project,calls,*_=services
+    task=dict(query_id=str(uuid4()),source_name='pubmed',group_id='g-one',
+              exact_query='"ECMO"[All Fields]',action='pubmed_metadata',
+              preflight_sha256='a'*64,records_to_fetch=2,max_requests=100)
+    base=dict(run_id=str(uuid4()))
+    if operation=='run_coord_run':
+        base.update(coord_plan_sha256='a'*64,coord_tasks=(task,),
+                    coord_confirmed=True,coord_pubmed_email='fixture@example.org',
+                    coord_pubmed_key='PRIVATE-PUBMED-KEY')
+    with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+        commands.ApplicationCommand.for_project(project,operation,
+                                                **(base|changes))
+    assert not calls
+
+
+def test_coordinator_secrets_never_route_to_unrelated_commands(services):
+    project,calls,*_=services
+    for operation in ('inspect','run_board','pubmed_metadata_read',
+                      'wos_acquisition_read'):
+        kw=dict(run_id=str(uuid4()),coord_wos_key='PRIVATE-STARTER-KEY')
+        if operation in ('pubmed_metadata_read','wos_acquisition_read'):
+            key=('pubmed_source_query_id' if operation=='pubmed_metadata_read'
+                 else 'acquisition_query_id')
+            kw[key]=str(uuid4())
+        with pytest.raises(commands.ApplicationCommandError,match='invalid_command'):
+            commands.ApplicationCommand.for_project(project,operation,**kw)
+    assert not calls

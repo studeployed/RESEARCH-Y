@@ -12,7 +12,7 @@ from pathlib import Path
 import sqlite3
 from uuid import UUID
 
-OPERATIONS = frozenset({'inspect', 'run_board', 'prepare_export', 'resume_export', 'cancel_export',
+OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_run', 'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
@@ -25,6 +25,9 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'prepare_export', 'resume_export
                          'pubmed_identifier_pause', 'pubmed_metadata_read',
                          'pubmed_metadata_preview', 'pubmed_metadata_run'})
 SERVICE_ERRORS = frozenset({'run_board_unavailable', 'run_board_invalid',
+    'run_coordination_unavailable', 'run_coordination_stale',
+    'run_coordination_invalid', 'run_coordination_confirmation_required',
+    'run_coordination_credentials_required', 'run_coordination_no_work',
     'run_board_unknown_run', 'run_board_stale', 'invalid_identifier', 'invalid_evidence', 'unknown_export',
     'unknown_run', 'unsupported_export_journal', 'project_busy', 'project_unavailable',
     'render_failed', 'storage_failed', 'destination_conflict', 'artifact_changed',
@@ -150,6 +153,14 @@ class ApplicationCommand:
     pubmed_source_confirmed: bool | None = None
     pubmed_source_contact_email: str | None = None
     pubmed_source_api_key: str | None = None
+    # Run-wide explicit one-session coordination. Host-only fields, never
+    # populated from untrusted browser form values.
+    coord_plan_sha256: str | None = None
+    coord_tasks: tuple | None = None
+    coord_confirmed: bool | None = None
+    coord_wos_key: str | None = None
+    coord_pubmed_email: str | None = None
+    coord_pubmed_key: str | None = None
 
     def __post_init__(self):
         try:
@@ -196,6 +207,74 @@ class ApplicationCommand:
                 self.pubmed_source_confirmed, self.pubmed_source_contact_email,
                 self.pubmed_source_api_key,
             )
+            coordination_fields = (
+                self.coord_plan_sha256, self.coord_tasks,
+                self.coord_confirmed, self.coord_wos_key,
+                self.coord_pubmed_email, self.coord_pubmed_key)
+            if self.operation in ('run_coord_preview', 'run_coord_run'):
+                if (self.run_id is None or any(v is not None for v in (
+                        self.export_id, self.output_name, self.directory,
+                        self.expected_directory_identity))):
+                    raise ValueError
+                _uuid(self.run_id)
+                if self.operation == 'run_coord_preview':
+                    if any(v is not None for v in coordination_fields):
+                        raise ValueError
+                else:
+                    digest = self.coord_plan_sha256
+                    if (type(digest) is not str or len(digest) != 64 or
+                            any(c not in '0123456789abcdef' for c in digest) or
+                            self.coord_confirmed is not True or
+                            type(self.coord_tasks) is not tuple or
+                            not 1 <= len(self.coord_tasks) <= 2):
+                        raise ValueError
+                    from research_y.run_source_coordinator import ELIGIBLE_ACTIONS
+                    keys = {'query_id', 'source_name', 'group_id',
+                            'exact_query', 'action', 'preflight_sha256',
+                            'max_requests', 'coverage_start', 'coverage_end',
+                            'records_to_fetch'}
+                    for task in self.coord_tasks:
+                        if (type(task) is not dict or
+                                set(task) - keys or
+                                task.get('action') not in ELIGIBLE_ACTIONS or
+                                type(task.get('max_requests')) is not int or
+                                not 1 <= task['max_requests'] <= 512 or
+                                type(task.get('exact_query')) is not str or
+                                not 1 <= len(task['exact_query']) <= 8192 or
+                                type(task.get('preflight_sha256')) is not str or
+                                len(task['preflight_sha256']) != 64 or
+                                any(c not in '0123456789abcdef'
+                                    for c in task['preflight_sha256'])):
+                            raise ValueError
+                        _uuid(task.get('query_id'))
+                        if (type(task.get('group_id')) is not str or
+                                not 1 <= len(task['group_id']) <= 200 or
+                                task.get('source_name') not in ('pubmed','wos')):
+                            raise ValueError
+                    if self.coord_wos_key is not None:
+                        from research_y.wos_starter_client import WoSStarterClient
+                        from research_y.wos_starter import WoSStarterError
+                        try:
+                            WoSStarterClient(api_key=self.coord_wos_key,
+                                             request_budget=3,timeout=10)
+                        except WoSStarterError:
+                            raise ValueError from None
+                    if self.coord_pubmed_email is not None:
+                        if (type(self.coord_pubmed_email) is not str or
+                                not self.coord_pubmed_email.isascii() or
+                                not 1 <= len(self.coord_pubmed_email) <= 254 or
+                                (self.coord_pubmed_key is not None and
+                                 (type(self.coord_pubmed_key) is not str or
+                                  not self.coord_pubmed_key.isascii() or
+                                  not 1 <= len(self.coord_pubmed_key) <= 4096 or
+                                  any(ord(char) < 33 or ord(char) > 126
+                                      for char in self.coord_pubmed_key)))):
+                            raise ValueError
+                        from research_y.pubmed_probe import PubMedESearchProbeClient
+                        PubMedESearchProbeClient(email=self.coord_pubmed_email,
+                            api_key=self.coord_pubmed_key,timeout=15)
+                    elif self.coord_pubmed_key is not None:
+                        raise ValueError
             if self.operation in ('pubmed_identifier_preview',
                                   'pubmed_identifier_read',
                                   'pubmed_identifier_run', 'pubmed_identifier_pause',
@@ -393,6 +472,8 @@ class ApplicationCommand:
                               approved_by=self.admission_approved_by,
                               groups=_groups_snapshot(self.admission_groups))
                 compile_both(frozen)
+            elif self.operation in ('run_coord_preview','run_coord_run'):
+                pass  # Validated above; not an export operation.
             elif self.operation == 'run_board':
                 if (self.run_id is None or any(v is not None for v in
                         (self.export_id, self.output_name, self.directory,
@@ -413,6 +494,9 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation not in ('run_coord_preview','run_coord_run') and any(
+                    v is not None for v in coordination_fields):
+                raise ValueError
             if self.operation not in ('pubmed_identifier_preview',
                                         'pubmed_identifier_read',
                                         'pubmed_identifier_run',
@@ -472,6 +556,22 @@ def execute_command(command: ApplicationCommand) -> dict:
     project = Project(Path(command.project_root), UUID(command.project_id),
                       command.project_name, command.project_created_at)
     try:
+        if command.operation in ('run_coord_preview', 'run_coord_run'):
+            from research_y import run_source_coordinator as coordinator
+            try:
+                if command.operation == 'run_coord_preview':
+                    return coordinator.preview_run_coordination(
+                        project,run_id=command.run_id)
+                return coordinator.run_coordinated_source_session(
+                    project,run_id=command.run_id,
+                    expected_plan_sha256=command.coord_plan_sha256,
+                    tasks=command.coord_tasks,
+                    confirmed=command.coord_confirmed,
+                    wos_key=command.coord_wos_key,
+                    pubmed_email=command.coord_pubmed_email,
+                    pubmed_key=command.coord_pubmed_key)
+            except coordinator.RunCoordinationError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation == 'run_board':
             from research_y.run_execution_board import (
                 read_run_execution_board, ExecutionBoardError)
