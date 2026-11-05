@@ -162,6 +162,8 @@ def read_publication_page(project, run_id: str, *, after_publication_id: str | N
         identity._identifier(run_id)
         _revision(expected_revision, optional=True)
         if after_publication_id is not None:
+            if expected_revision is None:
+                raise PublicationViewError("publication_view_invalid")
             identity._identifier(after_publication_id)
         with _read(project) as db:
             counts = _checked(db, project, run_id, expected_revision)
