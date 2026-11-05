@@ -289,7 +289,7 @@ def _source_step(project, run_id, task, *, wos_key, pubmed_client):
     raise RunCoordinationError("run_coordination_invalid")
 
 
-def _await_ordinary_wos_pacing(project: Project) -> bool:
+def _await_ordinary_wos_pacing(project: Project, previous_query_id: str) -> bool:
     """Bounded 1.05s Starter spacing, NOT automatic quota revalidation.
 
     The original project-wide source guard owns deadlines from all Starter
@@ -303,9 +303,19 @@ def _await_ordinary_wos_pacing(project: Project) -> bool:
             hold, deadline = _wos_provider_hold(
                 db, _wos_stamp(datetime.now(timezone.utc)),
                 revalidate_quota=False)
+            prior = db.execute(
+                "SELECT not_before_utc, reason_code "
+                "FROM wos_checkpoint_jobs WHERE query_id=?",
+                (previous_query_id,)).fetchone()
         if hold is None:
             return True
-        if hold != "provider_cooldown" or deadline is None:
+        if (hold != "provider_cooldown" or deadline is None or
+                prior is None or prior[0] != deadline or
+                prior[1] not in ("session_budget_reached",
+                                 "enumeration_reconciled_snapshot_unavailable")):
+            # A different source's rate hold, Retry-After or explicit
+            # revalidation requirement is NOT the prior stage's ordinary
+            # pacing allowance; do not wait/revalidate it automatically.
             return False
         delta = (datetime.fromisoformat(deadline) -
                  datetime.now(timezone.utc)).total_seconds()
@@ -363,7 +373,8 @@ def run_coordinated_source_session(
         if (previous_task is not None and
                 previous_task["source_name"] == "wos" and
                 task["source_name"] == "wos" and
-                not _await_ordinary_wos_pacing(project)):
+                not _await_ordinary_wos_pacing(project,
+                                               previous_task['query_id'])):
             stopped_reason = "provider_cooldown_requires_later_session"
             break
         # The previous source changed the board revision, by design. Check
