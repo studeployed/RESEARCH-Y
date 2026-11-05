@@ -262,6 +262,25 @@ def run(args):
                                     'query_id','revision'}:
                                 raise ProjectFlowError('run_board_invalid')
                             return flow.choose_run_execution_step(**value)
+                        if name == 'publication_refresh':
+                            return flow.inspect_publications()
+                        if name == 'publication_next':
+                            if type(value) is not dict or set(value) != {'cursor', 'revision'}:
+                                raise ProjectFlowError('publication_view_invalid')
+                            return flow.inspect_publications(
+                                after_publication_id=value['cursor'], revision=value['revision'])
+                        if name == 'publication_detail':
+                            if type(value) is not dict or set(value) != {'publication_id', 'revision'}:
+                                raise ProjectFlowError('publication_view_invalid')
+                            return flow.inspect_publication_detail(**value)
+                        if name == 'publication_materialise_offer':
+                            # No write. The next CONFIRM is a separate, bounded,
+                            # deliberately initiated local SQLite transaction.
+                            return flow.offer_publication_materialisation()
+                        if name == 'publication_materialise_dismiss':
+                            return flow.dismiss_publication_materialisation()
+                        if name == 'publication_materialise_confirm':
+                            return flow.confirm_publication_materialisation(value)
                         if name == 'run_coord_offer':
                             return flow.offer_run_coordination()
                         if name == 'run_coord_dismiss':
@@ -666,6 +685,175 @@ def run(args):
                                  'missing abstracts, deduplication, official society '
                                  'coverage or completed Preferred Reporting Items for '
                                  'Systematic Reviews and Meta-Analyses searches.')
+
+                if state['selected_run_id'] is not None:
+                    ui.separator()
+                    ui.label('Provisional publication results — local, paginated, '
+                             'and NOT a verified deduplicated master list.').props(
+                                 'data-testid=publication-heading')
+                    ui.label('Each saved source record initially represents a '
+                             'separate REVIEW-REQUIRED publication identity. '
+                             'Identical titles, digital object identifiers or '
+                             'supplement references are NOT merged automatically. '
+                             'Original provider records, counts and memberships '
+                             'remain unchanged. No abstracts or source metadata '
+                             'are exported by this view.').props(
+                                 'data-testid=publication-scope')
+                    ui.button('Refresh provisional results from first page (OFFLINE)',
+                              on_click=lambda: act('publication_refresh')).props(
+                                  'data-testid=publication-refresh')
+                    if state['publication_error'] is not None:
+                        ui.label('Publication results or preparation cannot be '
+                                 'verified against the current local source/identity '
+                                 'evidence. Refresh and inspect original records; '
+                                 'do not claim success or retry a stale confirmation.').props(
+                                     'data-testid=publication-error')
+                    offer = state['publication_materialisation_offer']
+                    if offer is not None:
+                        ui.label('Unsent local preparation: ' +
+                                 str(offer['batch_count']) +
+                                 ' individual source records, out of ' +
+                                 str(offer['unmaterialised_retrievals']) +
+                                 ' still without publication identities. '
+                                 'This creates only provisional REVIEW-REQUIRED '
+                                 'identities; it sends ZERO provider requests and '
+                                 'makes NO deduplication decision.').props(
+                                     'data-testid=publication-materialise-preview')
+                        if offer['batch_count']:
+                            researcher = ui.input('Researcher recording provisional '
+                                                  'materialisation',value='Researcher')
+                            ui.button('CONFIRM one bounded local identity batch',
+                                      on_click=lambda box=researcher:
+                                          act('publication_materialise_confirm',box.value)).props(
+                                              'data-testid=publication-materialise-confirm')
+                        else:
+                            ui.label('All currently saved source records in this '
+                                     'run already have identity links. This does NOT '
+                                     'mean duplicates have been resolved.').props(
+                                         'data-testid=publication-materialise-none')
+                        ui.button('Dismiss unsent preparation',on_click=lambda:
+                                  act('publication_materialise_dismiss')).props(
+                                      'data-testid=publication-materialise-dismiss')
+                    else:
+                        ui.button('Preview creation of up to 64 review-required '
+                                  'identities from saved records (NO NETWORK)',
+                                  on_click=lambda: act('publication_materialise_offer')).props(
+                                      'data-testid=publication-materialise-offer')
+                    last = state['publication_materialisation_last_outcome']
+                    if last is not None:
+                        ui.label('Last confirmed local batch: ' +
+                                 str(last['materialised_in_batch']) +
+                                 ' identity hypotheses committed; unmaterialised '
+                                 'source records remaining at receipt: ' +
+                                 str(last['unmaterialised_retrievals_remaining']) +
+                                 '. Refresh to read CURRENT results. Verified '
+                                 'global unique publications: UNKNOWN.').props(
+                                     'data-testid=publication-materialise-outcome')
+                    view = state['publication_page']
+                    if view is None:
+                        ui.label('No CURRENT results snapshot displayed. Choose '
+                                 'Refresh; a saved record without an identity '
+                                 'is reported separately, never silently omitted.')
+                    else:
+                        ui.label('Current run: saved source-record metadata ' +
+                                 str(view['retrieved_source_records']) +
+                                 '; provisional linked publication identities ' +
+                                 str(view['provisional_publication_identities']) +
+                                 '; still unmaterialised ' +
+                                 str(view['unmaterialised_source_records']) +
+                                 '; VERIFIED global unique publications: UNKNOWN.').props(
+                                     'data-testid=publication-counts')
+                        ui.label('This page has ' + str(len(view['rows'])) +
+                                 ' entries, maximum 20. All remain provisional; '
+                                 'unseen later pages are not zero results.').props(
+                                     'data-testid=publication-page-status')
+                        if not view['rows']:
+                            ui.label('No provisional identities on this page. '
+                                     'Inspect any unmaterialised records before '
+                                     'interpreting an empty view.').props(
+                                         'data-testid=publication-page-empty')
+                        for row in view['rows']:
+                            with ui.card():
+                                ui.label('Publication hypothesis: ' +
+                                         row['publication_id']).props(
+                                             'data-testid=publication-row')
+                                ui.label('Title: ' +
+                                         (row['title'] if row['title'] is not None
+                                          else '(not resolved from original sources)') +
+                                         ' • title evidence: ' + row['title_status']).props(
+                                             'data-testid=publication-title')
+                                ui.label('Sources: ' + ', '.join(row['source_names']) +
+                                         '; source records ' +
+                                         str(row['original_source_records_in_run']) +
+                                         '; review-required links ' +
+                                         str(row['review_required_links']) +
+                                         '; confirmed individual links ' +
+                                         str(row['confirmed_links']) +
+                                         '; final identity NOT VERIFIED.').props(
+                                             'data-testid=publication-provisional')
+                                for membership in row['group_memberships']:
+                                    ui.label('Original group membership: ' +
+                                             membership['group_label'] +
+                                             ' • ' + membership['source_name']).props(
+                                                 'data-testid=publication-membership')
+                                pid = row['publication_id']
+                                revision = view['revision']
+                                ui.button('Inspect original source evidence',
+                                          on_click=lambda pid=pid, revision=revision:
+                                              act('publication_detail',
+                                                  {'publication_id':pid,'revision':revision})).props(
+                                                      'data-testid=publication-detail-open')
+                        if view['next_after_publication_id'] is not None:
+                            cursor = view['next_after_publication_id']
+                            revision = view['revision']
+                            ui.button('Next 20 provisional publications (OFFLINE)',
+                                      on_click=lambda cursor=cursor, revision=revision:
+                                          act('publication_next',
+                                              {'cursor':cursor,'revision':revision})).props(
+                                                  'data-testid=publication-next')
+                        detail = state['publication_detail']
+                        if detail is not None:
+                            ui.separator()
+                            ui.label('LOCAL SOURCE PROVENANCE — ' +
+                                     detail['publication']['publication_id'] +
+                                     '. A displayed value is not validation of '
+                                     'bibliographic identity or export rights.').props(
+                                         'data-testid=publication-detail-heading')
+                            for chosen in detail['chosen_source_fields']:
+                                ui.label('Researcher-chosen ' + chosen['field'] +
+                                         ' = ' + str(chosen['value']) +
+                                         ' • state ' + chosen['status'] +
+                                         ' • source retrieval ' +
+                                         chosen['retrieval_id']).props(
+                                             'data-testid=publication-chosen-field')
+                            for source in detail['source_retrievals']:
+                                ui.label('Original source: ' + source['source_name'] +
+                                         ' • provider identifier ' + source['source_record_id'] +
+                                         ' • link status ' + source['decision_status'] +
+                                         ' • abstract availability ' +
+                                         source['abstract_status'] +
+                                         ' • rights ' + source['rights_status']).props(
+                                             'data-testid=publication-source-detail')
+                                for field in source['fields']:
+                                    ui.label(field['field'] + ': ' +
+                                             ('(unavailable)' if field['value'] is None
+                                              else field['value']) +
+                                             ' • original field status ' +
+                                             field['status'] +
+                                             ' • source path ' +
+                                             str(field['source_path'])).props(
+                                                 'data-testid=publication-field-detail')
+                                for membership in source['memberships']:
+                                    ui.label('Source/group provenance: ' +
+                                             membership['group_label'] +
+                                             ' • original query state ' +
+                                             membership['query_status']).props(
+                                                 'data-testid=publication-source-membership')
+                            ui.label('Full abstract display and permission-aware '
+                                     'bibliography export remain future work. '
+                                     'No duplicate-candidate decision has been '
+                                     'made by reading this page.').props(
+                                         'data-testid=publication-not-exported')
 
                 if state['selected_run_id'] is not None:
                     ui.separator()
