@@ -117,6 +117,11 @@ class RealProjectFlow:
         self._pubmed_metadata_last_outcome = None
         self._run_execution_board = None
         self._run_board_error = None
+        self._publication_page = None
+        self._publication_detail = None
+        self._publication_error = None
+        self._publication_materialisation_offer = None
+        self._publication_materialisation_last_outcome = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -352,6 +357,11 @@ class RealProjectFlow:
         self._pubmed_metadata_last_outcome = None
         self._run_execution_board = None
         self._run_board_error = None
+        self._publication_page = None
+        self._publication_detail = None
+        self._publication_error = None
+        self._publication_materialisation_offer = None
+        self._publication_materialisation_last_outcome = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -480,6 +490,11 @@ class RealProjectFlow:
             self._pubmed_metadata_last_outcome = None
             self._run_execution_board = None
             self._run_board_error = None
+            self._publication_page = None
+            self._publication_detail = None
+            self._publication_error = None
+            self._publication_materialisation_offer = None
+            self._publication_materialisation_last_outcome = None
             self._coord_offer = None
             self._coord_last_outcome = None
             self.snapshot = report
@@ -1986,6 +2001,155 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
+    # The trusted host selects a run. Browser values may select only a
+    # displayed result ID/revision or a validated next-page cursor. They are
+    # never SQL, source text, external paths, or source API request inputs.
+    def inspect_publications(self, *, after_publication_id=None, revision=None):
+        with self._guard:
+            self._require_open()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            current = self._publication_page
+            if after_publication_id is not None and (
+                    current is None or
+                    after_publication_id != current['next_after_publication_id'] or
+                    revision != current['revision']):
+                raise ProjectFlowError('publication_view_stale')
+            try:
+                data = self._operation(
+                    'publication_page', run_id=self.selected_run_id,
+                    publication_view_cursor=after_publication_id,
+                    publication_view_revision=revision)
+                if (type(data) is not dict or
+                        data.get('method') != 'provisional-publication-results/1' or
+                        data.get('run_id') != self.selected_run_id or
+                        data.get('project_id') != str(self.project.identifier) or
+                        type(data.get('rows')) is not list or
+                        len(data['rows']) > 20 or
+                        type(data.get('revision')) is not str or
+                        data.get('page_size') != 20 or
+                        data.get('after_publication_id') != after_publication_id or
+                        data.get('no_network_requests') is not True or
+                        data.get('verified_complete') is not False or
+                        data.get('deduplication_complete') is not False or
+                        data.get('global_unique_publications') is not None):
+                    raise ProjectFlowError('publication_view_invalid')
+                self._publication_page = data
+                self._publication_detail = None
+                self._publication_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publication_page = None
+                self._publication_detail = None
+                self._publication_error = 'publication_view_unavailable'
+                self._publish()
+                raise
+
+    def inspect_publication_detail(self, *, publication_id, revision):
+        with self._guard:
+            self._require_open()
+            current = self._publication_page
+            if (self.selected_run_id is None or current is None or
+                    type(publication_id) is not str or
+                    type(revision) is not str or
+                    revision != current['revision'] or
+                    publication_id not in {r['publication_id'] for r in current['rows']}):
+                raise ProjectFlowError('publication_view_stale')
+            try:
+                # A stale display is never an authorisation to inspect another
+                # identity after a concurrent review/source status change.
+                fresh = self._operation('publication_page',
+                    run_id=self.selected_run_id,
+                    publication_view_cursor=current['after_publication_id'],
+                    publication_view_revision=revision)
+                if (fresh.get('revision') != revision or
+                        fresh.get('rows') != current['rows'] or
+                        fresh.get('no_network_requests') is not True):
+                    raise ProjectFlowError('publication_view_stale')
+                detail = self._operation('publication_detail',
+                    run_id=self.selected_run_id, publication_view_id=publication_id,
+                    publication_view_revision=revision)
+                if (type(detail) is not dict or detail.get('run_id') != self.selected_run_id or
+                        detail.get('project_id') != str(self.project.identifier) or
+                        detail.get('revision') != revision or
+                        detail.get('publication', {}).get('publication_id') != publication_id or
+                        type(detail.get('source_retrievals')) is not list or
+                        detail.get('no_network_requests') is not True or
+                        detail.get('abstract_text_displayed') is not False or
+                        detail.get('global_unique_publications') is not None or
+                        detail.get('deduplication_complete') is not False):
+                    raise ProjectFlowError('publication_view_invalid')
+                self._publication_detail = detail
+                self._publication_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publication_detail = None
+                self._publication_error = 'publication_view_unavailable'
+                self._publish()
+                raise
+
+    def offer_publication_materialisation(self):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            proposal = self._operation('publication_materialisation_preview',
+                                       run_id=self.selected_run_id)
+            if (proposal.get('run_id') != self.selected_run_id or
+                    proposal.get('project_id') != str(self.project.identifier) or
+                    proposal.get('method') != 'run-publication-materialisation/1' or
+                    type(proposal.get('revision')) is not str or
+                    type(proposal.get('batch_count')) is not int or
+                    not 0 <= proposal['batch_count'] <= 64 or
+                    proposal.get('no_network_requests') is not True or
+                    proposal.get('deduplication_complete') is not False or
+                    proposal.get('global_unique_publications') is not None):
+                raise ProjectFlowError('publication_view_invalid')
+            self._publication_materialisation_offer = proposal
+            return self._publish()
+
+    def dismiss_publication_materialisation(self):
+        with self._guard:
+            self._publication_materialisation_offer = None
+            return self._publish()
+
+    def confirm_publication_materialisation(self, actor):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer = self._publication_materialisation_offer
+            if (self.selected_run_id is None or offer is None or
+                    offer['run_id'] != self.selected_run_id or
+                    offer['batch_count'] < 1):
+                raise ProjectFlowError('publication_materialisation_no_work')
+            # Clear the offer before dispatch. A lost reply may have committed
+            # the batch; re-preview durable evidence, NEVER replay old consent.
+            self._publication_materialisation_offer = None
+            try:
+                result = self._operation('publication_materialisation_confirm',
+                    run_id=self.selected_run_id,
+                    publication_view_revision=offer['revision'],
+                    publication_actor=actor, publication_confirmed=True)
+                if (result.get('run_id') != self.selected_run_id or
+                        result.get('project_id') != str(self.project.identifier) or
+                        result.get('materialised_in_batch') != offer['batch_count'] or
+                        result.get('no_network_requests') is not True or
+                        result.get('global_unique_publications') is not None or
+                        result.get('verified_complete') is not False):
+                    raise ProjectFlowError('publication_view_invalid')
+                self._publication_materialisation_last_outcome = result
+                self._publication_page = None
+                self._publication_detail = None
+                self._publication_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publication_page = None
+                self._publication_detail = None
+                self._publication_error = 'publication_materialisation_reinspect_required'
+                self._publish()
+                raise
+
     # A single read-only, full-run execution view. No source HTTP calls.
     def inspect_run_execution_board(self):
         with self._guard:
@@ -2739,6 +2903,11 @@ class RealProjectFlow:
                 'pubmed_metadata': self._pubmed_metadata,
                 'pubmed_metadata_last_outcome': self._pubmed_metadata_last_outcome,
                 'run_execution_board': self._run_execution_board,
+                'publication_page': self._publication_page,
+                'publication_detail': self._publication_detail,
+                'publication_error': self._publication_error,
+                'publication_materialisation_offer': self._publication_materialisation_offer,
+                'publication_materialisation_last_outcome': self._publication_materialisation_last_outcome,
                 'run_board_error': self._run_board_error,
                 'run_coordination_offer': self._coord_offer,
                 'run_coordination_pending': self._coord_pending is not None,
