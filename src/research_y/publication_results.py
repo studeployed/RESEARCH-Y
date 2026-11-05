@@ -238,10 +238,10 @@ def read_publication_detail(project, run_id: str, publication_id: str, *,
                 metadata = source["original_metadata"]
                 record = metadata.get("record") if isinstance(metadata.get("record"), dict) else {}
                 abstract_state = record.get("abstract_status", metadata.get("abstract_status"))
-                if abstract_state not in ABSTRACT_STATES:
+                if type(abstract_state) is not str or abstract_state not in ABSTRACT_STATES:
                     abstract_state = "not_recorded_or_malformed"
                 rights = metadata.get("rights_status")
-                if rights not in RIGHTS_STATES:
+                if type(rights) is not str or rights not in RIGHTS_STATES:
                     rights = ("abstract_redistribution_review_required"
                               if metadata.get("rights_review_required_for_abstract_redistribution") is True
                               else "rights_not_verified")
