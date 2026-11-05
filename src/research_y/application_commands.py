@@ -253,8 +253,23 @@ class ApplicationCommand:
                             raise ValueError
                     if self.coord_wos_key is not None:
                         from research_y.wos_starter_client import WoSStarterClient
-                        WoSStarterClient(api_key=self.coord_wos_key,request_budget=3,timeout=10)
+                        from research_y.wos_starter import WoSStarterError
+                        try:
+                            WoSStarterClient(api_key=self.coord_wos_key,
+                                             request_budget=3,timeout=10)
+                        except WoSStarterError:
+                            raise ValueError from None
                     if self.coord_pubmed_email is not None:
+                        if (type(self.coord_pubmed_email) is not str or
+                                not self.coord_pubmed_email.isascii() or
+                                not 1 <= len(self.coord_pubmed_email) <= 254 or
+                                (self.coord_pubmed_key is not None and
+                                 (type(self.coord_pubmed_key) is not str or
+                                  not self.coord_pubmed_key.isascii() or
+                                  not 1 <= len(self.coord_pubmed_key) <= 4096 or
+                                  any(ord(char) < 33 or ord(char) > 126
+                                      for char in self.coord_pubmed_key)))):
+                            raise ValueError
                         from research_y.pubmed_probe import PubMedESearchProbeClient
                         PubMedESearchProbeClient(email=self.coord_pubmed_email,
                             api_key=self.coord_pubmed_key,timeout=15)
