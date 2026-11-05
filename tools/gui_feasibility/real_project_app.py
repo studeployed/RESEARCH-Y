@@ -819,6 +819,13 @@ def run(args):
                                      '. A displayed value is not validation of '
                                      'bibliographic identity or export rights.').props(
                                          'data-testid=publication-detail-heading')
+                            for omitted in detail['suppressed_chosen_fields']:
+                                ui.label('Saved field ' + omitted['field'] +
+                                         ' deliberately WITHHELD: its source path '
+                                         'is not a validated citation-only path; '
+                                         'it may refer to protected abstract '
+                                         'or other non-display content.').props(
+                                             'data-testid=publication-field-withheld')
                             for chosen in detail['chosen_source_fields']:
                                 ui.label('Researcher-chosen ' + chosen['field'] +
                                          ' = ' + str(chosen['value']) +
