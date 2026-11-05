@@ -2138,9 +2138,34 @@ class RealProjectFlow:
                         result.get('global_unique_publications') is not None or
                         result.get('verified_complete') is not False):
                     raise ProjectFlowError('publication_view_invalid')
+                # A returned worker payload is not a durable success receipt.
+                # Re-read the PR70 canonical store AND the original run
+                # inspection after commit, before publishing success. A lost
+                # child reply or failed read requires an explicit re-preview.
+                stored = self._operation('publication_materialisation_preview',
+                                         run_id=self.selected_run_id)
+                if (stored.get('run_id') != self.selected_run_id or
+                        stored.get('unmaterialised_retrievals') !=
+                            result['unmaterialised_retrievals_remaining'] or
+                        stored.get('existing_publication_hypotheses') !=
+                            offer['existing_publication_hypotheses'] +
+                            result['materialised_in_batch'] or
+                        stored.get('no_network_requests') is not True or
+                        stored.get('global_unique_publications') is not None):
+                    raise ProjectFlowError('publication_materialisation_reinspect_required')
+                inspected = self._operation('inspect',
+                                            run_id=self.selected_run_id)['snapshot']
+                if (type(inspected) is not dict or
+                        inspected.get('selected_run_id') != self.selected_run_id or
+                        inspected.get('report') is None):
+                    raise ProjectFlowError('publication_materialisation_reinspect_required')
+                self.snapshot = inspected
                 self._publication_materialisation_last_outcome = result
                 self._publication_page = None
                 self._publication_detail = None
+                self._run_execution_board = None
+                self._run_board_error = None
+                self._coord_offer = None
                 self._publication_error = None
                 return self._publish()
             except ProjectFlowError:
