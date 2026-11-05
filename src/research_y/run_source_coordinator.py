@@ -8,8 +8,10 @@ backoff, and incompleteness. No new provider or publication-count algorithm.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import time
 
 from research_y.projects import Project
 from research_y.run_execution_board import read_run_execution_board, ExecutionBoardError
@@ -19,6 +21,10 @@ from research_y import wos_acquisition_gui as wos
 from research_y.pubmed_probe import PubMedESearchProbeClient
 from research_y.pubmed_metadata import PubMedEFetchClient
 from research_y.wos_starter_client import WoSStarterClient
+from research_y.wos_checkpoint_store import (
+    _db as _wos_db, _provider_hold as _wos_provider_hold,
+    _stamp as _wos_stamp, WoSCheckpointError,
+)
 
 METHOD = "supervised-run-source-coordination/1"
 MAX_COORDINATED_STEPS = 2
@@ -102,8 +108,17 @@ def _task(project: Project, run_id: str, row: dict) -> tuple[dict | None, str | 
                     checkpoint["reason_code"] in (
                         "quota_revalidation_required",
                         "entitlement_unverified", "server_retry_after",
-                        "provider_quota_revalidation_required", "provider_cooldown")):
+                        "provider_quota_revalidation_required")):
                 return None, "manual_wos_recovery_or_quota_review_required"
+            if checkpoint["reason_code"] == "provider_cooldown":
+                deadline = checkpoint["not_before_utc"]
+                try:
+                    if (deadline is None or
+                            datetime.fromisoformat(deadline) >
+                            datetime.now(timezone.utc)):
+                        return None, "manual_wos_recovery_or_quota_review_required"
+                except (ValueError, TypeError):
+                    return None, "manual_wos_recovery_or_quota_review_required"
             if stage == "wos_acquisition_incomplete":
                 return dict(common, action="wos_acquire",
                             preflight_sha256=evidence["preflight_sha256"],
@@ -274,6 +289,39 @@ def _source_step(project, run_id, task, *, wos_key, pubmed_client):
     raise RunCoordinationError("run_coordination_invalid")
 
 
+def _await_ordinary_wos_pacing(project: Project) -> bool:
+    """Bounded 1.05s Starter spacing, NOT automatic quota revalidation.
+
+    The original project-wide source guard owns deadlines from all Starter
+    queries and pilots. Only a short ordinary inter-request delay (<=2s)
+    may be waited automatically inside an already confirmed session. A
+    longer server Retry-After, daily quota hold or unknown attempt MUST stop
+    the coordinator without sending another request.
+    """
+    try:
+        with _wos_db(project) as db:
+            hold, deadline = _wos_provider_hold(
+                db, _wos_stamp(datetime.now(timezone.utc)),
+                revalidate_quota=False)
+        if hold is None:
+            return True
+        if hold != "provider_cooldown" or deadline is None:
+            return False
+        delta = (datetime.fromisoformat(deadline) -
+                 datetime.now(timezone.utc)).total_seconds()
+        if not 0 < delta <= 2.0:
+            return False
+        time.sleep(delta + 0.08)
+        with _wos_db(project) as db:
+            hold, _ = _wos_provider_hold(
+                db, _wos_stamp(datetime.now(timezone.utc)),
+                revalidate_quota=False)
+        return hold is None
+    except (WoSCheckpointError, ValueError, TypeError, OverflowError):
+        # A damaged provider clock or unknown quota is not clearance.
+        return False
+
+
 def run_coordinated_source_session(
     project: Project, *, run_id: str, expected_plan_sha256: str,
     tasks: tuple[dict, ...], confirmed: bool, wos_key: str | None,
@@ -310,7 +358,14 @@ def run_coordinated_source_session(
             email=pubmed_email, api_key=pubmed_key, timeout=15)
     receipts = []
     stopped_reason = None
+    previous_task = None
     for task in tasks:
+        if (previous_task is not None and
+                previous_task["source_name"] == "wos" and
+                task["source_name"] == "wos" and
+                not _await_ordinary_wos_pacing(project)):
+            stopped_reason = "provider_cooldown_requires_later_session"
+            break
         # The previous source changed the board revision, by design. Check
         # THIS untouched target instead of rejecting a legitimate next step.
         try:
@@ -336,6 +391,7 @@ def run_coordinated_source_session(
             stopped_reason = "source_step_failed_or_uncertain"
             break
         receipts.append(result)
+        previous_task = task
         if result["stop_required"]:
             stopped_reason = ("source_outcome_uncertain" if
                               result["outcome_uncertain"] else
