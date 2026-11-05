@@ -16,6 +16,12 @@ PAGE_SIZE = 20
 FIELD_LIMIT = 2048
 DETAIL_FIELDS = ("title", "doi", "pmid", "accession", "authors", "year",
                  "journal", "pages", "document_types", "source_document_types")
+# Only engine-defined status labels may cross into the citation-only GUI.
+ABSTRACT_STATES = frozenset(("present", "not_supplied_in_response",
+                             "not_returned_by_source", "not_recorded"))
+RIGHTS_STATES = frozenset(("licence_review_required",
+                          "abstract_redistribution_review_required",
+                          "rights_not_verified"))
 
 
 class PublicationViewError(RuntimeError):
@@ -232,10 +238,10 @@ def read_publication_detail(project, run_id: str, publication_id: str, *,
                 metadata = source["original_metadata"]
                 record = metadata.get("record") if isinstance(metadata.get("record"), dict) else {}
                 abstract_state = record.get("abstract_status", metadata.get("abstract_status"))
-                if type(abstract_state) is not str:
+                if abstract_state not in ABSTRACT_STATES:
                     abstract_state = "not_recorded_or_malformed"
                 rights = metadata.get("rights_status")
-                if not isinstance(rights, str):
+                if rights not in RIGHTS_STATES:
                     rights = ("abstract_redistribution_review_required"
                               if metadata.get("rights_review_required_for_abstract_redistribution") is True
                               else "rights_not_verified")
