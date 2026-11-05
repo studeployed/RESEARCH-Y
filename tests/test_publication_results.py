@@ -360,6 +360,48 @@ def test_command_routing_requires_exact_run_and_does_not_accept_forged_privilege
             pilot_api_key="FORGED")
 
 
+def test_trusted_host_flow_requires_preview_and_reconciles_committed_batch(fixture):
+    project, run, _, _ = fixture
+    insert(fixture, number=123)
+    from tools.gui_feasibility.real_project_flow import RealProjectFlow, ProjectFlowError
+    flow = RealProjectFlow(selected_root=project.root, selected_parent=project.root.parent)
+    flow.project = project
+    flow.selected_run_id = run
+    flow.snapshot = {"runs": [], "report": None, "exports": []}
+
+    def original_service(name, **kwargs):
+        if name == "inspect":
+            return {"snapshot":{
+                "selected_run_id": run, "report":{"status":"incomplete"},
+                "runs": [], "exports": []}}
+        return execute_command(ApplicationCommand.for_project(project, name, **kwargs))
+
+    flow._operation = original_service
+    try:
+        with pytest.raises(ProjectFlowError, match="publication_materialisation_no_work"):
+            flow.confirm_publication_materialisation("Researcher")
+        preview = flow.offer_publication_materialisation()
+        offer = preview["publication_materialisation_offer"]
+        assert offer["batch_count"] == 1
+        committed = flow.confirm_publication_materialisation("Researcher")
+        assert committed["publication_materialisation_last_outcome"]["materialised_in_batch"] == 1
+        assert committed["publication_materialisation_offer"] is None
+        assert committed["publication_page"] is None
+        assert committed["report"]["status"] == "incomplete"
+        page_state = flow.inspect_publications()
+        page = page_state["publication_page"]
+        assert len(page["rows"]) == 1 and not page["verified_complete"]
+        record = page["rows"][0]
+        opened = flow.inspect_publication_detail(
+            publication_id=record["publication_id"], revision=page["revision"])
+        assert opened["publication_detail"]["publication"]["publication_id"] == record["publication_id"]
+        with pytest.raises(ProjectFlowError, match="publication_view_stale"):
+            flow.inspect_publication_detail(publication_id=uid(), revision=page["revision"])
+        assert flow.state()["publication_materialisation_last_outcome"] is not None
+    finally:
+        flow.close()
+
+
 def test_read_and_navigation_are_unchanged_on_disk(fixture):
     project,run,_,_=fixture
     insert(fixture)
