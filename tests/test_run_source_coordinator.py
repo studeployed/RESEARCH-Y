@@ -245,7 +245,8 @@ def test_incomplete_efetch_stops_before_any_second_provider_request(
     assert result['steps'][0]['requests_made'] is None
     assert result['stopped_reason']=='source_outcome_uncertain'
     assert len(pubmed.calls)==2 and not wos.calls
-    assert read_run_execution_board(p,rid)['totals']['metadata_source_records']==20
+    assert _row(read_run_execution_board(p,rid),'g-ecmo','pubmed')[
+        'metadata_records_retained']==20
     assert result['verified_complete'] is False
     assert 'PRIVATE-PROVIDER-ERROR' not in json.dumps(result)
 
@@ -406,3 +407,46 @@ def test_probe_route_never_automatically_executes_or_retries_run_coordination():
         "@app.post('/_probe/stop')")[0]
     assert "run_coord" not in automated
     assert "ui.html(" not in source
+
+
+
+def test_consecutive_pubmed_stages_share_one_efetch_pacing_deadline(
+        tmp_path,monkeypatch):
+    p,rid,queries=_project(tmp_path)
+    for group,ids in (
+        ('g-ecmo',('111','222')),('g-rv',('333','444'))):
+        qid,query=queries[group,'pubmed']
+        _pubmed(p,qid,query,pmids=ids)
+    pubmed=PubMedTransport()
+    clock=[0.0]
+    timestamps=[]
+    def now():
+        return clock[0]
+    def sleep(seconds):
+        clock[0]+=seconds
+    def observed(request,timeout):
+        timestamps.append(now())
+        return pubmed(request,timeout)
+    real_esearch=PubMedESearchProbeClient
+    real_efetch=PubMedEFetchClient
+    monkeypatch.setattr(coordinator,'PubMedESearchProbeClient',
+        lambda **kw: real_esearch(
+            **kw,clock=now,sleep=sleep,
+            transport=lambda request,timeout:b'NO-ESearch-HTTP'))
+    monkeypatch.setattr(coordinator,'PubMedEFetchClient',
+        lambda client:real_efetch(client,transport=observed))
+    work=coordinator.preview_run_coordination(p,run_id=rid)
+    assert [x['action'] for x in work['eligible_tasks']]==[
+        'pubmed_metadata','pubmed_metadata']
+    result=coordinator.run_coordinated_source_session(
+        p,run_id=rid,expected_plan_sha256=work['plan_sha256'],
+        tasks=tuple(work['eligible_tasks']),confirmed=True,
+        pubmed_email=EMAIL,pubmed_key=KEY,wos_key=None)
+    assert result['dispatched_step_count']==2
+    assert result['stopped_reason'] is None
+    assert timestamps==pytest.approx([0.0,0.4])
+    assert [x['requests_made'] for x in result['steps']]==[1,1]
+    assert all(_row(read_run_execution_board(p,rid),group,'pubmed')[
+        'metadata_records_retained']==2 for group in ('g-ecmo','g-rv'))
+    assert result['global_unique_publications'] is None
+    assert KEY not in json.dumps(result)

@@ -184,8 +184,7 @@ def _validate_approved_steps(preview: dict, tasks: tuple) -> None:
         index = next_index
 
 
-def _source_step(project, run_id, task, *, wos_key, pubmed_email,
-                 pubmed_key):
+def _source_step(project, run_id, task, *, wos_key, pubmed_client):
     """Execute the ORIGINAL bounded service; do not catch provider content."""
     qid, action = task["query_id"], task["action"]
     if action.startswith("wos_"):
@@ -227,10 +226,9 @@ def _source_step(project, run_id, task, *, wos_key, pubmed_email,
                     stop_required=uncertain or spent == 0 or
                         not state["enumeration_reconciled"],
                     outcome_uncertain=uncertain)
-    if pubmed_email is None:
+    if pubmed_client is None:
         raise RunCoordinationError("run_coordination_credentials_required")
-    esearch = PubMedESearchProbeClient(
-        email=pubmed_email, api_key=pubmed_key, timeout=15)
+    esearch = pubmed_client
     if action == "pubmed_identifiers_resume":
         receipt = pubmed_ids.run_pubmed_source_session(
             project, run_id=run_id, query_id=qid,
@@ -300,11 +298,15 @@ def run_coordinated_source_session(
             raise RunCoordinationError("run_coordination_credentials_required")
         # Validate the original client without making requests.
         WoSStarterClient(api_key=wos_key, request_budget=3, timeout=10)
+    # One ESearch client for the whole confirmed session: ESearch and EFetch
+    # share the same per-account pacing deadline ACROSS coordinated stages.
+    # Constructing a fresh client for each query would reset its limiter.
+    pubmed_client = None
     if any(t["source_name"] == "pubmed" for t in tasks):
         if type(pubmed_email) is not str or (
                 pubmed_key is not None and type(pubmed_key) is not str):
             raise RunCoordinationError("run_coordination_credentials_required")
-        PubMedESearchProbeClient(
+        pubmed_client = PubMedESearchProbeClient(
             email=pubmed_email, api_key=pubmed_key, timeout=15)
     receipts = []
     stopped_reason = None
@@ -324,7 +326,7 @@ def run_coordinated_source_session(
                 break
             result = _source_step(
                 project, run_id, task, wos_key=wos_key,
-                pubmed_email=pubmed_email, pubmed_key=pubmed_key)
+                pubmed_client=pubmed_client)
         except RunCoordinationError:
             stopped_reason = "source_step_refused"
             break
