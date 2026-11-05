@@ -239,6 +239,13 @@ def test_keyset_paging_20_then_three_without_hidden_truncation(fixture):
     assert PAGE_SIZE==20
     assert len(first["rows"])==20 and first["has_more"]
     assert first["next_after_publication_id"] is not None
+    with pytest.raises(PublicationViewError) as missing_revision:
+        read_publication_page(project, run,
+            after_publication_id=first["next_after_publication_id"])
+    assert missing_revision.value.code == "publication_view_invalid"
+    with pytest.raises(ApplicationCommandError):
+        ApplicationCommand.for_project(project, "publication_page",
+            run_id=run, publication_view_cursor=first["next_after_publication_id"])
     second=read_publication_page(open_project(project.root),run,
         after_publication_id=first["next_after_publication_id"],
         expected_revision=first["revision"])
