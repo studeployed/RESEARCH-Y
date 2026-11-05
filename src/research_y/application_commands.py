@@ -238,6 +238,8 @@ class ApplicationCommand:
                 if self.operation == 'publication_page':
                     if self.publication_view_cursor is not None:
                         _uuid(self.publication_view_cursor)
+                        if self.publication_view_revision is None:
+                            raise ValueError
                     if any(v is not None for v in (
                             self.publication_view_id, self.publication_actor,
                             self.publication_confirmed)):
