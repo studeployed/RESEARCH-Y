@@ -12,7 +12,10 @@ from pathlib import Path
 import sqlite3
 from uuid import UUID
 
-OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_run', 'prepare_export', 'resume_export', 'cancel_export',
+OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_run',
+                        'publication_page', 'publication_detail',
+                        'publication_materialisation_preview', 'publication_materialisation_confirm',
+                        'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
@@ -24,7 +27,10 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                          'pubmed_identifier_read', 'pubmed_identifier_run',
                          'pubmed_identifier_pause', 'pubmed_metadata_read',
                          'pubmed_metadata_preview', 'pubmed_metadata_run'})
-SERVICE_ERRORS = frozenset({'run_board_unavailable', 'run_board_invalid',
+SERVICE_ERRORS = frozenset({'publication_view_unavailable', 'publication_view_invalid',
+    'publication_view_stale', 'publication_view_not_in_run',
+    'publication_materialisation_unavailable', 'publication_materialisation_stale',
+    'publication_materialisation_no_work', 'run_board_unavailable', 'run_board_invalid',
     'run_coordination_unavailable', 'run_coordination_stale',
     'run_coordination_invalid', 'run_coordination_confirmation_required',
     'run_coordination_credentials_required', 'run_coordination_no_work',
@@ -161,6 +167,14 @@ class ApplicationCommand:
     coord_wos_key: str | None = None
     coord_pubmed_email: str | None = None
     coord_pubmed_key: str | None = None
+    # Local publication browsing and explicit provisional-identity preparation.
+    # No metadata, SQL expression, source content or project path is accepted
+    # from the browser through these fields.
+    publication_view_cursor: str | None = None
+    publication_view_id: str | None = None
+    publication_view_revision: str | None = None
+    publication_actor: str | None = None
+    publication_confirmed: bool | None = None
 
     def __post_init__(self):
         try:
@@ -211,6 +225,52 @@ class ApplicationCommand:
                 self.coord_plan_sha256, self.coord_tasks,
                 self.coord_confirmed, self.coord_wos_key,
                 self.coord_pubmed_email, self.coord_pubmed_key)
+            publication_fields = (
+                self.publication_view_cursor, self.publication_view_id,
+                self.publication_view_revision, self.publication_actor,
+                self.publication_confirmed)
+            if self.operation in ('publication_page', 'publication_detail',
+                    'publication_materialisation_preview', 'publication_materialisation_confirm'):
+                if (self.run_id is None or self.export_id is not None or
+                        self.output_name is not None or self.directory is not None or
+                        self.expected_directory_identity is not None):
+                    raise ValueError
+                if self.operation == 'publication_page':
+                    if self.publication_view_cursor is not None:
+                        _uuid(self.publication_view_cursor)
+                    if any(v is not None for v in (
+                            self.publication_view_id, self.publication_actor,
+                            self.publication_confirmed)):
+                        raise ValueError
+                    digest = self.publication_view_revision
+                    if digest is not None and (type(digest) is not str or
+                            len(digest) != 64 or
+                            any(c not in '0123456789abcdef' for c in digest)):
+                        raise ValueError
+                elif self.operation == 'publication_detail':
+                    _uuid(self.publication_view_id)
+                    if (self.publication_view_cursor is not None or
+                            self.publication_actor is not None or
+                            self.publication_confirmed is not None):
+                        raise ValueError
+                    digest = self.publication_view_revision
+                    if (type(digest) is not str or len(digest) != 64 or
+                            any(c not in '0123456789abcdef' for c in digest)):
+                        raise ValueError
+                elif self.operation == 'publication_materialisation_preview':
+                    if any(v is not None for v in publication_fields):
+                        raise ValueError
+                else:
+                    if (self.publication_view_cursor is not None or
+                            self.publication_view_id is not None or
+                            self.publication_confirmed is not True):
+                        raise ValueError
+                    digest = self.publication_view_revision
+                    if (type(digest) is not str or len(digest) != 64 or
+                            any(c not in '0123456789abcdef' for c in digest)):
+                        raise ValueError
+                    from research_y.publication_identity import _text
+                    _text(self.publication_actor, 200)
             if self.operation in ('run_coord_preview', 'run_coord_run'):
                 if (self.run_id is None or any(v is not None for v in (
                         self.export_id, self.output_name, self.directory,
@@ -472,6 +532,9 @@ class ApplicationCommand:
                               approved_by=self.admission_approved_by,
                               groups=_groups_snapshot(self.admission_groups))
                 compile_both(frozen)
+            elif self.operation in ('publication_page', 'publication_detail',
+                    'publication_materialisation_preview', 'publication_materialisation_confirm'):
+                pass  # Validated above; no provider request or export authority.
             elif self.operation in ('run_coord_preview','run_coord_run'):
                 pass  # Validated above; not an export operation.
             elif self.operation == 'run_board':
@@ -494,6 +557,10 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation not in ('publication_page', 'publication_detail',
+                    'publication_materialisation_preview', 'publication_materialisation_confirm') and any(
+                    value is not None for value in publication_fields):
+                raise ValueError
             if self.operation not in ('run_coord_preview','run_coord_run') and any(
                     v is not None for v in coordination_fields):
                 raise ValueError
@@ -555,6 +622,39 @@ def execute_command(command: ApplicationCommand) -> dict:
     from research_y import workbook_exports as exports
     project = Project(Path(command.project_root), UUID(command.project_id),
                       command.project_name, command.project_created_at)
+    try:
+        if command.operation in ('publication_page', 'publication_detail'):
+            from research_y.publication_results import (
+                read_publication_page, read_publication_detail, PublicationViewError)
+            try:
+                if command.operation == 'publication_page':
+                    return read_publication_page(
+                        project, command.run_id,
+                        after_publication_id=command.publication_view_cursor,
+                        expected_revision=command.publication_view_revision)
+                return read_publication_detail(
+                    project, command.run_id, command.publication_view_id,
+                    expected_revision=command.publication_view_revision)
+            except PublicationViewError as exc:
+                raise ApplicationCommandError(exc.code) from None
+        if command.operation in ('publication_materialisation_preview',
+                                 'publication_materialisation_confirm'):
+            from research_y.publication_run_materialisation import (
+                preview_run_materialisation, materialise_run_batch, MaterialisationConflict)
+            try:
+                if command.operation == 'publication_materialisation_preview':
+                    return preview_run_materialisation(project, command.run_id)
+                return materialise_run_batch(
+                    project, command.run_id,
+                    expected_revision=command.publication_view_revision,
+                    actor=command.publication_actor,
+                    confirmed=command.publication_confirmed)
+            except MaterialisationConflict:
+                raise ApplicationCommandError('publication_materialisation_stale') from None
+            except ValueError:
+                raise ApplicationCommandError('publication_materialisation_no_work') from None
+            except Exception:
+                raise ApplicationCommandError('publication_materialisation_unavailable') from None
     try:
         if command.operation in ('run_coord_preview', 'run_coord_run'):
             from research_y import run_source_coordinator as coordinator
