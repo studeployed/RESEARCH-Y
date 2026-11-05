@@ -655,7 +655,6 @@ def execute_command(command: ApplicationCommand) -> dict:
                 raise ApplicationCommandError('publication_materialisation_no_work') from None
             except Exception:
                 raise ApplicationCommandError('publication_materialisation_unavailable') from None
-    try:
         if command.operation in ('run_coord_preview', 'run_coord_run'):
             from research_y import run_source_coordinator as coordinator
             try:
