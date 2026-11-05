@@ -450,3 +450,41 @@ def test_consecutive_pubmed_stages_share_one_efetch_pacing_deadline(
         'metadata_records_retained']==2 for group in ('g-ecmo','g-rv'))
     assert result['global_unique_publications'] is None
     assert KEY not in json.dumps(result)
+
+
+
+def test_two_prepared_wos_queries_observe_short_original_provider_spacing(
+        tmp_path,monkeypatch):
+    project,rid,queries=_project(tmp_path)
+    for group in ("g-ecmo","g-rv"):
+        qid,exact=queries[group,"wos"]
+        p=wos_gui.preview_wos_acquisition(
+            project,run_id=rid,query_id=qid)
+        wos_gui.prepare_wos_acquisition(
+            project,run_id=rid,query_id=qid,
+            expected_plan_sha256=p['plan_sha256'],
+            confirmed=True,retention_authorized=True)
+    pubmed,wos=PubMedTransport(),WoSTransport()
+    inject_synthetic_clients(monkeypatch,pubmed,wos)
+    proposal=coordinator.preview_run_coordination(project,run_id=rid)
+    assert [(t['group_id'],t['action']) for t in proposal['eligible_tasks']]==[
+        ('g-ecmo','wos_acquire'),('g-rv','wos_acquire')]
+    outcome=coordinator.run_coordinated_source_session(
+        project,run_id=rid,expected_plan_sha256=proposal['plan_sha256'],
+        tasks=tuple(proposal['eligible_tasks']),confirmed=True,
+        wos_key=KEY,pubmed_email=None,pubmed_key=None)
+    assert outcome['planned_step_count']==2
+    assert outcome['dispatched_step_count']==2
+    assert outcome['stopped_reason'] is None
+    assert [x['requests_made'] for x in outcome['steps']]==[3,3]
+    assert len(wos.calls)==6
+    assert not pubmed.calls
+    final=read_run_execution_board(project,rid)
+    for group in ('g-ecmo','g-rv'):
+        row=_row(final,group,'wos')
+        assert row['source_stage']=='wos_enumeration_reconciled_with_warnings'
+        assert row['reported_matches']==1
+        assert row['metadata_records_retained']==1
+    # The same source ID in two groups is not two different publications.
+    assert final['totals']['source_records_by_provider']['wos']==1
+    assert outcome['source_retrieval_verified'] is False

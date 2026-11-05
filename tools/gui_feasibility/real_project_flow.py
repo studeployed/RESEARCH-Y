@@ -2244,7 +2244,8 @@ class RealProjectFlow:
                             receipt.get('stopped_reason') not in (
                                 None,'source_outcome_uncertain',
                                 'source_step_requires_review','source_step_refused',
-                                'target_source_changed','source_step_failed_or_uncertain')):
+                                'target_source_changed','source_step_failed_or_uncertain',
+                                'provider_cooldown_requires_later_session')):
                         raise ProjectFlowError('run_coordination_receipt_invalid')
                     for index, entry in enumerate(receipt['steps']):
                         task = pending['tasks'][index]
