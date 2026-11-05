@@ -73,6 +73,14 @@ def add(case, *, source="pubmed", name="123", groups=("g1",), run=None):
 
 def rows(project, table):
     with closing(sqlite3.connect(project.database_path)) as db:
+        if table == "audit_events":
+            # A newly created project already has its required project_created
+            # audit receipt. These assertions count only publication-identity
+            # events introduced by the operation under test.
+            return db.execute(
+                "SELECT * FROM audit_events WHERE event_type=? ORDER BY event_id",
+                (identity.IDENTITY_EVENT,),
+            ).fetchall()
         return db.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()
 
 
