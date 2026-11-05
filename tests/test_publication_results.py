@@ -206,6 +206,30 @@ def test_arbitrary_chosen_source_path_cannot_leak_abstract_as_citation(fixture, 
         assert page["rows"][0]["title_status"] == "chosen_title_not_citation_path"
 
 
+@pytest.mark.parametrize("source", ["pubmed", "wos"])
+def test_untrusted_status_strings_cannot_disclose_text_through_detail(fixture, source):
+    project, run, _, _ = fixture
+    rid = insert(fixture, source=source)
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        metadata = identity._object(db.execute(
+            "SELECT original_metadata_json FROM source_retrievals WHERE retrieval_id=?",
+            (rid,)).fetchone()[0])
+        metadata["rights_status"] = "PRIVATE RIGHTS FIELD DATA"
+        metadata["record"]["abstract_status"] = "PRIVATE ABSTRACT AS STATUS"
+        db.execute("UPDATE source_retrievals SET original_metadata_json=? "
+                   "WHERE retrieval_id=?", (identity._json(metadata), rid))
+    materialise(fixture)
+    page = read_publication_page(project, run)
+    detail = read_publication_detail(project, run, page["rows"][0]["publication_id"],
+                                     expected_revision=page["revision"])
+    assert "PRIVATE RIGHTS FIELD DATA" not in str(detail)
+    assert "PRIVATE ABSTRACT AS STATUS" not in str(detail)
+    assert detail["source_retrievals"][0]["abstract_status"] == "not_recorded_or_malformed"
+    expected = ("abstract_redistribution_review_required" if source == "pubmed"
+                else "rights_not_verified")
+    assert detail["source_retrievals"][0]["rights_status"] == expected
+
+
 def test_keyset_paging_20_then_three_without_hidden_truncation(fixture):
     project,run,_,_=fixture
     for n in range(1,24):
