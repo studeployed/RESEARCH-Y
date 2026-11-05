@@ -32,7 +32,7 @@ def _batch_size(value: int) -> int:
     return value
 
 
-def _plan(db, project: Project, run_id: str, batch_size: int) -> dict:
+def _plan(db, project: Project, run_id: str, batch_size: int) -> tuple[dict, tuple[str, ...]]:
     # The canonical count projection validates the complete run evidence and
     # every existing association. Never use a second, competing source count.
     projection = result_counts._snapshot(db, project, run_id)
