@@ -775,6 +775,10 @@ def run(args):
                                          ' • recorded pair decisions ' +
                                          str(entry['prior_decisions_recorded'])).props(
                                              'data-testid=candidate-queue-evidence')
+                                for warning in entry['warnings']:
+                                    ui.label('Candidate review warning: ' +
+                                             warning).props(
+                                                 'data-testid=candidate-queue-warning')
                                 if entry['both_in_selected_run']:
                                     first, second = entry['retrieval_ids']
                                     queue_revision = candidate_queue['revision']
