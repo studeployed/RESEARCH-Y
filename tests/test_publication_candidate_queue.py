@@ -359,3 +359,37 @@ def test_trusted_host_refuses_cross_run_review_and_invalidates_page_on_change(pr
                 revision=first["revision"])
     finally:
         flow.close()
+
+
+def test_large_historical_only_key_bucket_never_enumerates_historical_pairs():
+    """3,000 identical older titles must not lead to 4.5 million comparisons."""
+    selected=uid()
+    old=uid()
+    bucket=[f"historical-{n:05d}" for n in range(3000)]
+    sources={rid:{"run_id":old} for rid in bucket}
+    assert list(queue._bucket_pairs(bucket,sources,selected))==[]
+
+
+def test_bucket_emits_only_selected_selected_and_selected_historical():
+    selected, old=uid(), uid()
+    current=["a","b"]
+    historical=[f"old-{n:05d}" for n in range(100)]
+    data={rid:{"run_id":selected} for rid in current}
+    data.update({rid:{"run_id":old} for rid in historical})
+    candidates_found=set(queue._bucket_pairs(current+historical,data,selected))
+    assert len(candidates_found)==201
+    assert ("a","b") in candidates_found
+    assert all(any(data[rid]["run_id"]==selected for rid in pair)
+               for pair in candidates_found)
+
+
+def test_cross_run_dense_bucket_fails_at_explicit_pair_cap(project_runs,monkeypatch):
+    project,run,historical=project_runs
+    insert(project_runs,number=1199,title="Same",doi="10.8888/same")
+    for n in range(1200,1203):
+        insert(project_runs,source="wos",number=n,run=historical,
+               title="Same",doi="10.8888/same")
+    monkeypatch.setattr(queue,"MAX_PAIR_CANDIDATES",2)
+    with pytest.raises(queue.CandidateQueueError) as exc:
+        read(project_runs)
+    assert exc.value.code=="candidate_queue_over_limit"
