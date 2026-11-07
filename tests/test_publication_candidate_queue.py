@@ -282,3 +282,80 @@ def test_command_rejects_forged_query_fields_and_bad_cursor(project_runs):
     nextpage=execute_command(valid)
     assert nextpage["rows"]==[] and not nextpage["has_more"]
     assert "SECRET" not in repr(out)
+
+
+def test_trusted_host_queue_selection_routes_only_current_run_pair(project_runs):
+    project,run,historical=project_runs
+    a=insert(project_runs,source="pubmed",number=1001,
+             title="Same title",doi="10.9000/one")
+    b=insert(project_runs,source="wos",number=1002,
+             title="Same title",doi="10.9000/one")
+    from tools.gui_feasibility.real_project_flow import RealProjectFlow, ProjectFlowError
+    flow=RealProjectFlow(selected_root=project.root,
+                         selected_parent=project.root.parent)
+    flow.project=project
+    flow.selected_run_id=run
+    flow.snapshot={"runs":[],"report":None,"exports":[]}
+    flow._operation=lambda name,**kwargs: execute_command(
+        ApplicationCommand.for_project(project,name,**kwargs))
+    try:
+        with pytest.raises(ProjectFlowError):
+            flow.inspect_queue_candidate_pair(left=a,right=b,revision="a"*64)
+        state=flow.inspect_candidate_queue()
+        listing=state["candidate_queue"]
+        assert listing["candidate_pair_total"]==1
+        with pytest.raises(ProjectFlowError):
+            flow.inspect_queue_candidate_pair(
+                left=uid(),right=b,revision=listing["revision"])
+        chosen=flow.inspect_queue_candidate_pair(
+            left=a,right=b,revision=listing["revision"])
+        offer=chosen["candidate_offer"]
+        assert set(offer["retrieval_ids"])=={a,b}
+        assert offer["automatic_match_allowed"] is False
+        assert chosen["publication_page"] is not None
+        with pytest.raises(ProjectFlowError):
+            flow.confirm_candidate_decision(
+                decision="confirmed_match",move_retrieval_id=a,
+                actor="Researcher",evidence="Reviewed both metadata",
+                acknowledged=False)
+        resolved=flow.confirm_candidate_decision(
+            decision="rejected_match",move_retrieval_id=None,
+            actor="Researcher",evidence="Two distinct conference abstracts",
+            acknowledged=True)
+        assert resolved["candidate_last_outcome"]["action"]=="rejected_match"
+        assert resolved["candidate_last_outcome"]["verified_audit_event_id"]>0
+        assert resolved["candidate_queue"] is None
+        assert read(project_runs)["rows"][0]["candidate_status"]=="rejected_match"
+    finally:
+        flow.close()
+
+
+def test_trusted_host_refuses_cross_run_review_and_invalidates_page_on_change(project_runs):
+    project,run,historical=project_runs
+    a=insert(project_runs,number=1101,title="Across all runs",
+             doi="10.9000/both")
+    old=insert(project_runs,source="wos",number=1102,
+               title="Across all runs",doi="10.9000/both",run=historical)
+    from tools.gui_feasibility.real_project_flow import RealProjectFlow,ProjectFlowError
+    flow=RealProjectFlow(selected_root=project.root,
+                         selected_parent=project.root.parent)
+    flow.project=project
+    flow.selected_run_id=run
+    flow.snapshot={"runs":[],"report":None,"exports":[]}
+    flow._operation=lambda name,**kwargs: execute_command(
+        ApplicationCommand.for_project(project,name,**kwargs))
+    try:
+        first=flow.inspect_candidate_queue()["candidate_queue"]
+        assert first["rows"][0]["both_in_selected_run"] is False
+        with pytest.raises(ProjectFlowError):
+            flow.inspect_queue_candidate_pair(
+                left=a,right=old,revision=first["revision"])
+        with closing(sqlite3.connect(project.database_path)) as db, db:
+            db.execute("UPDATE search_runs SET status='failed' WHERE run_id=?",
+                       (historical,))
+        with pytest.raises(ProjectFlowError):
+            flow.inspect_candidate_queue(
+                cursor=tuple(first["rows"][0]["retrieval_ids"]),
+                revision=first["revision"])
+    finally:
+        flow.close()
