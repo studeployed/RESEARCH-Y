@@ -17,6 +17,7 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                         'publication_materialisation_preview', 'publication_materialisation_confirm',
                         'candidate_review_preview', 'candidate_review_decide',
                         'candidate_reversal_preview', 'candidate_reversal_confirm',
+                        'candidate_link_status',
                         'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
@@ -256,7 +257,8 @@ class ApplicationCommand:
                 self.candidate_warnings_acknowledged)
             candidate_ops = (
                 'candidate_review_preview', 'candidate_review_decide',
-                'candidate_reversal_preview', 'candidate_reversal_confirm')
+                'candidate_reversal_preview', 'candidate_reversal_confirm',
+                'candidate_link_status')
             if self.operation in candidate_ops:
                 if (self.run_id is None or any(v is not None for v in (
                         self.export_id, self.output_name, self.directory,
@@ -276,7 +278,8 @@ class ApplicationCommand:
                     _uuid(self.candidate_retrieval_id)
                     if self.candidate_left_id is not None or self.candidate_right_id is not None:
                         raise ValueError
-                if self.operation in ('candidate_review_preview', 'candidate_reversal_preview'):
+                if self.operation in ('candidate_review_preview', 'candidate_reversal_preview',
+                                      'candidate_link_status'):
                     if any(v is not None for v in (
                             self.candidate_revision, self.candidate_decision,
                             self.candidate_move_id, self.candidate_actor,
@@ -707,7 +710,8 @@ def execute_command(command: ApplicationCommand) -> dict:
     try:
         if command.operation in (
                 'candidate_review_preview', 'candidate_review_decide',
-                'candidate_reversal_preview', 'candidate_reversal_confirm'):
+                'candidate_reversal_preview', 'candidate_reversal_confirm',
+                'candidate_link_status'):
             from research_y import publication_review_gui as candidate
             try:
                 if command.operation == 'candidate_review_preview':
@@ -727,6 +731,10 @@ def execute_command(command: ApplicationCommand) -> dict:
                         evidence=command.candidate_evidence,
                         warnings_acknowledged=command.candidate_warnings_acknowledged,
                         confirmed=command.candidate_confirmed)
+                if command.operation == 'candidate_link_status':
+                    return candidate.read_current_retrieval_link(
+                        project, command.run_id, command.candidate_retrieval_id,
+                        run_revision=command.candidate_run_revision)
                 if command.operation == 'candidate_reversal_preview':
                     return candidate.preview_candidate_reversal(
                         project, command.run_id, command.candidate_retrieval_id,
