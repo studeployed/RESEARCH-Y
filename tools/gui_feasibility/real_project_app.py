@@ -281,6 +281,23 @@ def run(args):
                             return flow.dismiss_publication_materialisation()
                         if name == 'publication_materialise_confirm':
                             return flow.confirm_publication_materialisation(value)
+                        if name == 'candidate_choose_source':
+                            return flow.choose_candidate_source(value)
+                        if name == 'candidate_review_dismiss':
+                            return flow.dismiss_candidate_review()
+                        if name == 'candidate_reversal_offer':
+                            return flow.offer_candidate_reversal(value)
+                        if name == 'candidate_review_decide':
+                            if type(value) is not dict or set(value) != {
+                                    'decision', 'move_retrieval_id', 'actor',
+                                    'evidence', 'acknowledged'}:
+                                raise ProjectFlowError('publication_review_invalid')
+                            return flow.confirm_candidate_decision(**value)
+                        if name == 'candidate_reversal_confirm':
+                            if type(value) is not dict or set(value) != {
+                                    'actor', 'evidence'}:
+                                raise ProjectFlowError('publication_review_invalid')
+                            return flow.confirm_candidate_reversal(**value)
                         if name == 'run_coord_offer':
                             return flow.offer_run_coordination()
                         if name == 'run_coord_dismiss':
@@ -856,11 +873,154 @@ def run(args):
                                              ' • original query state ' +
                                              membership['query_status']).props(
                                                  'data-testid=publication-source-membership')
+                                if source['included_in_selected_run']:
+                                    current_retrieval = source['retrieval_id']
+                                    ui.button(
+                                        'Select this exact source record for duplicate comparison',
+                                        on_click=lambda rid=current_retrieval:
+                                            act('candidate_choose_source', rid)).props(
+                                                'data-testid=candidate-choose-source')
+                                    if source['decision_status'] == 'confirmed_match':
+                                        ui.button(
+                                            'Preview reversal of CURRENT association (OFFLINE)',
+                                            on_click=lambda rid=current_retrieval:
+                                                act('candidate_reversal_offer', rid)).props(
+                                                    'data-testid=candidate-reversal-offer')
                             ui.label('Full abstract display and permission-aware '
                                      'bibliography export remain future work. '
                                      'No duplicate-candidate decision has been '
                                      'made by reading this page.').props(
                                          'data-testid=publication-not-exported')
+                        if state['candidate_error'] is not None:
+                            ui.label('Candidate decision outcome cannot be verified. '
+                                     'Reopen the current source receipts and audit '
+                                     'history; do NOT resend an old confirmation.').props(
+                                         'data-testid=candidate-error')
+                        if state['candidate_first'] is not None:
+                            ui.label('First selected exact source retrieval: ' +
+                                     state['candidate_first']['retrieval_id'] +
+                                     '. Open another publication source detail '
+                                     'on THIS page and select a second record.').props(
+                                         'data-testid=candidate-first')
+                        pair = state['candidate_offer']
+                        if pair is not None:
+                            ui.separator()
+                            ui.label('Publication comparison — explicit HUMAN REVIEW. '
+                                     'No automatic DOI/title/supplement merge. '
+                                     'Every matching field is only evidence.').props(
+                                         'data-testid=candidate-heading')
+                            for source in pair['sources']:
+                                ui.label('Reviewed source: ' + source['source_name'] +
+                                         ' • ' + source['source_record_id'] +
+                                         ' • retrieval ' + source['retrieval_id']).props(
+                                             'data-testid=candidate-source')
+                            for field in pair['comparison']:
+                                ui.label(field['field'] + ': ' +
+                                         field['comparison'] +
+                                         ' • source A ' + str(field['left']['value']) +
+                                         ' (' + field['left']['status'] + ')' +
+                                         ' • source B ' + str(field['right']['value']) +
+                                         ' (' + field['right']['status'] + ')').props(
+                                             'data-testid=candidate-comparison')
+                            for warning in pair['warnings']:
+                                ui.label('WARNING — ' + warning).props(
+                                    'data-testid=candidate-warning')
+                            ui.label('Pair status: ' + pair['status'] +
+                                     '; previous decision receipts: ' +
+                                     str(pair['prior_decision_count']) +
+                                     '; earlier receipts not shown here: ' +
+                                     str(pair['prior_decisions_omitted']) +
+                                     '. The full immutable history remains in the project.')
+                            for previous in pair['recent_decisions']:
+                                ui.label('Previous audit ' + str(previous['event_id']) +
+                                         ': ' + previous['status'] + ' • ' +
+                                         previous['actor'] + ' • ' +
+                                         previous['evidence']).props(
+                                             'data-testid=candidate-audit')
+                            reviewer = ui.input('Researcher recording this decision',
+                                                value='Researcher')
+                            rationale = ui.input(
+                                'Specific bibliographic evidence or reason '
+                                'for this decision', value='')
+                            acknowledge = ui.checkbox(
+                                'I reviewed and acknowledge every displayed '
+                                'comparison warning', value=False)
+                            if not pair['pair_already_associated']:
+                                first_source, second_source = pair['retrieval_ids']
+                                ui.button('CONFIRM MATCH: associate first source '
+                                          'with second publication', on_click=
+                                          lambda rid=first_source, box=reviewer,
+                                          note=rationale, ack=acknowledge:
+                                          act('candidate_review_decide', {
+                                              'decision':'confirmed_match',
+                                              'move_retrieval_id':rid,
+                                              'actor':box.value,'evidence':note.value,
+                                              'acknowledged':ack.value})).props(
+                                                  'data-testid=candidate-match-first')
+                                ui.button('CONFIRM MATCH: associate second source '
+                                          'with first publication', on_click=
+                                          lambda rid=second_source, box=reviewer,
+                                          note=rationale, ack=acknowledge:
+                                          act('candidate_review_decide', {
+                                              'decision':'confirmed_match',
+                                              'move_retrieval_id':rid,
+                                              'actor':box.value,'evidence':note.value,
+                                              'acknowledged':ack.value})).props(
+                                                  'data-testid=candidate-match-second')
+                                ui.button('CONFIRM NOT THE SAME PUBLICATION '
+                                          '(no source record moved)', on_click=
+                                          lambda box=reviewer, note=rationale,
+                                          ack=acknowledge:
+                                          act('candidate_review_decide', {
+                                              'decision':'rejected_match',
+                                              'move_retrieval_id':None,
+                                              'actor':box.value,'evidence':note.value,
+                                              'acknowledged':ack.value})).props(
+                                                  'data-testid=candidate-reject')
+                            else:
+                                ui.label('Both records currently share one '
+                                         'publication identity. Rejection requires '
+                                         'a separate review of the CURRENT reversible '
+                                         'association first.')
+                            ui.button('Dismiss this uncommitted comparison',
+                                      on_click=lambda:
+                                      act('candidate_review_dismiss')).props(
+                                          'data-testid=candidate-dismiss')
+                        undo = state['reversal_offer']
+                        if undo is not None:
+                            ui.separator()
+                            ui.label('Reversal PREVIEW only — retrieval ' +
+                                     undo['retrieval_id'] +
+                                     ', current association audit event ' +
+                                     str(undo['association_event_id']) +
+                                     '. Restores its original publication identity. '
+                                     'No source metadata or audit event is deleted.').props(
+                                         'data-testid=candidate-reversal-preview')
+                            ui.label('Original association evidence: ' +
+                                     undo['original_decision_evidence']).props(
+                                         'data-testid=candidate-reversal-evidence')
+                            reverser = ui.input(
+                                'Researcher recording reversal', value='Researcher')
+                            reason = ui.input(
+                                'Reason for reversing current association', value='')
+                            ui.button('CONFIRM reverse CURRENT association',
+                                      on_click=lambda a=reverser, e=reason:
+                                      act('candidate_reversal_confirm', {
+                                          'actor':a.value,
+                                          'evidence':e.value})).props(
+                                              'data-testid=candidate-reversal-confirm')
+                            ui.button('Dismiss unsent reversal', on_click=lambda:
+                                      act('candidate_review_dismiss')).props(
+                                          'data-testid=candidate-reversal-dismiss')
+                        outcome = state['candidate_last_outcome']
+                        if outcome is not None:
+                            ui.label('Last decision independently reconciled '
+                                     'against original SQLite audit event ' +
+                                     str(outcome['verified_audit_event_id']) +
+                                     ' • action ' + outcome['action'] +
+                                     '. Final unique-publication count remains '
+                                     'UNKNOWN; refresh source evidence for next review.').props(
+                                         'data-testid=candidate-result')
 
                 if state['selected_run_id'] is not None:
                     ui.separator()
