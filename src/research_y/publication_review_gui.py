@@ -235,3 +235,36 @@ def confirm_candidate_reversal(project, run_id, retrieval_id, *, run_revision,
         raise PublicationReviewError("publication_review_invalid") from None
     except Exception:
         raise PublicationReviewError() from None
+
+
+def read_current_retrieval_link(project, run_id, retrieval_id, *, run_revision):
+    """Check the current identity receipt without exposing original metadata.
+
+    Used after a possible lost reversal reply: only a current reverse event
+    referencing the exact original association proves that undo was committed.
+    """
+    try:
+        identity._identifier(run_id); identity._identifier(retrieval_id)
+        _digest(run_revision)
+        with _read(project) as db:
+            _context(db, project, run_id, run_revision)
+            if identity._source(db, retrieval_id)["run_id"] != run_id:
+                raise PublicationReviewError("publication_review_wrong_run")
+            link = identity._link(db, retrieval_id)
+            if link is None:
+                raise PublicationReviewError("publication_review_unavailable")
+            return dict(
+                method=METHOD, project_id=str(project.identifier),
+                run_id=run_id, run_revision=run_revision,
+                retrieval_id=retrieval_id, publication_id=link[0],
+                event_id=link[1], action=link[2].get("action"),
+                reverses_event_id=link[2].get("reverses_event_id"),
+                decision_status=link[2].get("status"),
+                actor=link[2].get("actor"), evidence=link[2].get("evidence"),
+                no_network_requests=True, global_unique_publications=None,
+                deduplication_complete=False, verified_complete=False,
+            )
+    except PublicationReviewError:
+        raise
+    except Exception:
+        raise PublicationReviewError() from None
