@@ -127,6 +127,10 @@ class RealProjectFlow:
         self._reversal_offer = None
         self._candidate_last_outcome = None
         self._candidate_error = None
+        self._candidate_queue = None
+        self._candidate_queue_error = None
+        self._candidate_queue = None
+        self._candidate_queue_error = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -510,6 +514,8 @@ class RealProjectFlow:
             self._reversal_offer = None
             self._candidate_last_outcome = None
             self._candidate_error = None
+            self._candidate_queue = None
+            self._candidate_queue_error = None
             self._coord_offer = None
             self._coord_last_outcome = None
             self.snapshot = report
@@ -2187,6 +2193,7 @@ class RealProjectFlow:
                 self._candidate_first = None
                 self._candidate_offer = None
                 self._reversal_offer = None
+                self._candidate_queue = None
                 self._run_execution_board = None
                 self._run_board_error = None
                 self._coord_offer = None
@@ -2196,6 +2203,121 @@ class RealProjectFlow:
                 self._publication_page = None
                 self._publication_detail = None
                 self._publication_error = 'publication_materialisation_reinspect_required'
+                self._publish()
+                raise
+
+
+    def inspect_candidate_queue(self, *, cursor=None, revision=None):
+        """Read-only project-spanning evidence, not full duplicate screening."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            existing = self._candidate_queue
+            if cursor is not None and (
+                    type(cursor) is not tuple or len(cursor) != 2 or
+                    existing is None or
+                    existing.get('next_after_pair') != list(cursor) or
+                    revision != existing.get('revision')):
+                raise ProjectFlowError('candidate_queue_stale')
+            try:
+                data = self._operation(
+                    'candidate_queue_page', run_id=self.selected_run_id,
+                    candidate_queue_cursor=cursor,
+                    candidate_queue_revision=revision)
+                if (type(data) is not dict or
+                        data.get('method') != 'project-candidate-queue/1' or
+                        data.get('project_id') != str(self.project.identifier) or
+                        data.get('run_id') != self.selected_run_id or
+                        type(data.get('rows')) is not list or
+                        len(data['rows']) > 20 or
+                        data.get('page_size') != 20 or
+                        data.get('after_pair') !=
+                            (None if cursor is None else list(cursor)) or
+                        type(data.get('revision')) is not str or
+                        len(data['revision']) != 64 or
+                        type(data.get('selected_run_revision')) is not str or
+                        len(data['selected_run_revision']) != 64 or
+                        data.get('no_network_requests') is not True or
+                        data.get('candidate_discovery_complete') is not False or
+                        data.get('deduplication_complete') is not False or
+                        data.get('verified_complete') is not False or
+                        data.get('global_unique_publications') is not None):
+                    raise ProjectFlowError('candidate_queue_invalid')
+                self._candidate_queue = data
+                self._candidate_queue_error = None
+                self._candidate_first = None
+                self._candidate_offer = None
+                self._reversal_offer = None
+                return self._publish()
+            except ProjectFlowError:
+                self._candidate_queue = None
+                self._candidate_queue_error = 'candidate_queue_reinspect_required'
+                self._candidate_first = None
+                self._candidate_offer = None
+                self._reversal_offer = None
+                self._publish()
+                raise
+
+    def inspect_queue_candidate_pair(self, *, left, right, revision):
+        """Open an explicitly listed same-run pair with the original review engine."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            shown = self._candidate_queue
+            if (self.selected_run_id is None or shown is None or
+                    revision != shown['revision'] or
+                    type(left) is not str or type(right) is not str or
+                    not any(r['retrieval_ids'] == sorted((left, right))
+                            and r['both_in_selected_run'] is True
+                            for r in shown['rows'])):
+                raise ProjectFlowError('candidate_queue_stale')
+            try:
+                current = self._operation(
+                    'candidate_queue_page', run_id=self.selected_run_id,
+                    candidate_queue_cursor=(
+                        None if shown['after_pair'] is None
+                        else tuple(shown['after_pair'])),
+                    candidate_queue_revision=revision)
+                if (current.get('revision') != revision or
+                        current.get('rows') != shown['rows'] or
+                        current.get('no_network_requests') is not True):
+                    raise ProjectFlowError('candidate_queue_stale')
+                offer = self._operation(
+                    'candidate_review_preview', run_id=self.selected_run_id,
+                    candidate_left_id=left, candidate_right_id=right,
+                    candidate_run_revision=shown['selected_run_revision'])
+                if (offer.get('method') != 'local-publication-review/1' or
+                        offer.get('project_id') != str(self.project.identifier) or
+                        offer.get('run_id') != self.selected_run_id or
+                        offer.get('run_revision') != shown['selected_run_revision'] or
+                        set(offer.get('retrieval_ids', [])) != {left, right} or
+                        type(offer.get('warnings')) is not list or
+                        offer.get('automatic_match_allowed') is not False or
+                        offer.get('abstract_text_displayed') is not False or
+                        offer.get('no_network_requests') is not True or
+                        offer.get('global_unique_publications') is not None):
+                    raise ProjectFlowError('candidate_queue_invalid')
+                # The existing manual decision form explicitly requires the
+                # current canonical run read-model. Loading the first page does
+                # not fabricate a source-specific review or change the queue.
+                first_page = self._operation(
+                    'publication_page', run_id=self.selected_run_id)
+                if (first_page.get('revision') != shown['selected_run_revision'] or
+                        first_page.get('no_network_requests') is not True):
+                    raise ProjectFlowError('candidate_queue_stale')
+                self._publication_page = first_page
+                self._publication_detail = None
+                self._candidate_first = None
+                self._candidate_offer = offer
+                self._reversal_offer = None
+                self._candidate_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._candidate_offer = None
+                self._candidate_first = None
+                self._candidate_queue_error = 'candidate_queue_reinspect_required'
                 self._publish()
                 raise
 
@@ -2358,6 +2480,7 @@ class RealProjectFlow:
                             result['resulting_candidate_revision'] or
                         checked.get('no_network_requests') is not True):
                     raise ProjectFlowError('publication_review_reinspect_required')
+                self._candidate_queue = None
                 self._candidate_last_outcome = dict(
                     action=decision, verified_audit_event_id=recent[-1]['event_id'],
                     source_count_revision=fresh['revision'])
@@ -2411,6 +2534,7 @@ class RealProjectFlow:
                         receipt.get('evidence') != evidence or
                         receipt.get('no_network_requests') is not True):
                     raise ProjectFlowError('publication_review_reinspect_required')
+                self._candidate_queue = None
                 self._candidate_last_outcome = dict(
                     action='reverse', verified_audit_event_id=receipt['event_id'],
                     source_count_revision=fresh['revision'])
@@ -3188,6 +3312,8 @@ class RealProjectFlow:
                 'reversal_offer': self._reversal_offer,
                 'candidate_last_outcome': self._candidate_last_outcome,
                 'candidate_error': self._candidate_error,
+                'candidate_queue': self._candidate_queue,
+                'candidate_queue_error': self._candidate_queue_error,
                 'run_board_error': self._run_board_error,
                 'run_coordination_offer': self._coord_offer,
                 'run_coordination_pending': self._coord_pending is not None,
