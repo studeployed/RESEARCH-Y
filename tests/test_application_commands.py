@@ -149,6 +149,24 @@ def services(monkeypatch, tmp_path):
     preparation.materialise_run_batch=service('publication_materialisation_confirm',{
         'no_network_requests':True,'source_retrieval_verified':False,
         'global_unique_publications':None})
+    review_gui=types.ModuleType('research_y.publication_review_gui')
+    from research_y.publication_review_gui import PublicationReviewError
+    review_gui.PublicationReviewError=PublicationReviewError
+    review_gui.preview_candidate_review=service('candidate_review_preview',{
+        'method':'local-publication-review/1','global_unique_publications':None,
+        'no_network_requests':True,'source_retrieval_verified':False})
+    review_gui.record_candidate_review=service('candidate_review_decide',{
+        'method':'local-publication-review/1','global_unique_publications':None,
+        'source_retrieval_verified':False})
+    review_gui.preview_candidate_reversal=service('candidate_reversal_preview',{
+        'method':'local-publication-review/1','global_unique_publications':None,
+        'no_network_requests':True,'source_retrieval_verified':False})
+    review_gui.confirm_candidate_reversal=service('candidate_reversal_confirm',{
+        'method':'local-publication-review/1','global_unique_publications':None,
+        'source_retrieval_verified':False})
+    review_gui.read_current_retrieval_link=service('candidate_link_status',{
+        'method':'local-publication-review/1','global_unique_publications':None,
+        'no_network_requests':True,'source_retrieval_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -165,6 +183,7 @@ def services(monkeypatch, tmp_path):
                         ('run_source_coordinator',coordination),
                         ('publication_results',publication),
                         ('publication_run_materialisation',preparation),
+                        ('publication_review_gui',review_gui),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -185,6 +204,27 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     elif operation=='publication_materialisation_confirm':
         kw.update(run_id=str(uuid4()),publication_view_revision='a'*64,
                   publication_actor='Fixture Researcher',publication_confirmed=True)
+    elif operation in ('candidate_review_preview','candidate_review_decide'):
+        kw.update(run_id=str(uuid4()),candidate_left_id=str(uuid4()),
+                  candidate_right_id=str(uuid4()),
+                  candidate_run_revision='a'*64)
+        if operation=='candidate_review_decide':
+            kw.update(candidate_revision='b'*64,
+                      candidate_decision='confirmed_match',
+                      candidate_move_id=kw['candidate_left_id'],
+                      candidate_actor='Fixture Researcher',
+                      candidate_evidence='Original source comparison checked',
+                      candidate_confirmed=True,
+                      candidate_warnings_acknowledged=True)
+    elif operation in ('candidate_reversal_preview','candidate_reversal_confirm',
+                       'candidate_link_status'):
+        kw.update(run_id=str(uuid4()),candidate_retrieval_id=str(uuid4()),
+                  candidate_run_revision='a'*64)
+        if operation=='candidate_reversal_confirm':
+            kw.update(candidate_revision='b'*64,
+                      candidate_actor='Fixture Researcher',
+                      candidate_evidence='Corrected evidence after review',
+                      candidate_confirmed=True)
     elif operation=='run_coord_run':
         kw.update(run_id=str(uuid4()),coord_plan_sha256='a'*64,
                   coord_tasks=(dict(
@@ -298,6 +338,24 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][2]['actor']==kw['publication_actor']
         assert calls[0][2]['confirmed'] is True
         assert 'Fixture Researcher' not in repr(cmd)
+    if operation in ('candidate_review_preview','candidate_review_decide'):
+        assert calls[0][1] == (project,kw['run_id'],
+                                kw['candidate_left_id'],kw['candidate_right_id'])
+        assert calls[0][2]['run_revision']==kw['candidate_run_revision']
+        assert result['global_unique_publications'] is None
+    if operation=='candidate_review_decide':
+        assert calls[0][2]['expected_revision']==kw['candidate_revision']
+        assert calls[0][2]['decision']=='confirmed_match'
+        assert calls[0][2]['move_retrieval_id']==kw['candidate_left_id']
+        assert calls[0][2]['warnings_acknowledged'] is True
+        assert calls[0][2]['confirmed'] is True
+    if operation in ('candidate_reversal_preview','candidate_reversal_confirm',
+                     'candidate_link_status'):
+        assert calls[0][1]==(project,kw['run_id'],kw['candidate_retrieval_id'])
+        assert calls[0][2]['run_revision']==kw['candidate_run_revision']
+    if operation=='candidate_reversal_confirm':
+        assert calls[0][2]['expected_revision']==kw['candidate_revision']
+        assert calls[0][2]['confirmed'] is True
     if operation=='run_coord_preview':
         assert calls[0][2]['run_id']==kw['run_id']
         assert result['no_network_requests'] is True
