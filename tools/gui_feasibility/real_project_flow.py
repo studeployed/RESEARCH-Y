@@ -129,8 +129,6 @@ class RealProjectFlow:
         self._candidate_error = None
         self._candidate_queue = None
         self._candidate_queue_error = None
-        self._candidate_queue = None
-        self._candidate_queue_error = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -376,6 +374,8 @@ class RealProjectFlow:
         self._reversal_offer = None
         self._candidate_last_outcome = None
         self._candidate_error = None
+        self._candidate_queue = None
+        self._candidate_queue_error = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
