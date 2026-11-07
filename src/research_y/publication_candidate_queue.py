@@ -12,7 +12,7 @@ fails explicitly instead of silently truncating the queue.
 from __future__ import annotations
 
 from collections import defaultdict
-from itertools import combinations
+from itertools import chain, combinations, product
 
 from research_y.application_inspection import _read
 from research_y import publication_identity as identity
@@ -59,6 +59,23 @@ def _cursor(value):
     if pair != value:
         raise CandidateQueueError("candidate_queue_invalid")
     return pair
+
+
+def _bucket_pairs(bucket, records, run_id):
+    """Generate ONLY pairs touching the selected run, never historical-only.
+
+    Partitioning before enumeration avoids quadratic work in a large bucket
+    made entirely of older sources. The caller applies its overall explicit
+    candidate-pair budget to emitted pairs, including dense cross-run keys.
+    """
+    ordered = sorted(bucket)
+    selected = [rid for rid in ordered if records[rid]["run_id"] == run_id]
+    if not selected:
+        return
+    historical = [rid for rid in ordered if records[rid]["run_id"] != run_id]
+    for left, right in chain(combinations(selected, 2),
+                             product(selected, historical)):
+        yield (left, right) if left < right else (right, left)
 
 
 def _index(db, project, run_id):
@@ -131,9 +148,7 @@ def _index(db, project, run_id):
     for (field, _value), bucket in sorted(index.items()):
         if len(bucket) < 2:
             continue
-        for pair in combinations(sorted(bucket), 2):
-            if not any(records[rid]["run_id"] == run_id for rid in pair):
-                continue
+        for pair in _bucket_pairs(bucket, records, run_id):
             fields = pairs.setdefault(pair, set())
             fields.add(field)
             if len(pairs) > MAX_PAIR_CANDIDATES:
