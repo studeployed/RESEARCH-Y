@@ -281,6 +281,23 @@ def run(args):
                             return flow.dismiss_publication_materialisation()
                         if name == 'publication_materialise_confirm':
                             return flow.confirm_publication_materialisation(value)
+                        if name == 'candidate_queue_refresh':
+                            # Full project candidate index, original SQLite only.
+                            return flow.inspect_candidate_queue()
+                        if name == 'candidate_queue_next':
+                            if (type(value) is not dict or
+                                    set(value) != {'cursor','revision'} or
+                                    type(value['cursor']) is not list or
+                                    len(value['cursor']) != 2):
+                                raise ProjectFlowError('candidate_queue_invalid')
+                            return flow.inspect_candidate_queue(
+                                cursor=tuple(value['cursor']),
+                                revision=value['revision'])
+                        if name == 'candidate_queue_review':
+                            if (type(value) is not dict or
+                                    set(value) != {'left','right','revision'}):
+                                raise ProjectFlowError('candidate_queue_invalid')
+                            return flow.inspect_queue_candidate_pair(**value)
                         if name == 'candidate_choose_source':
                             return flow.choose_candidate_source(value)
                         if name == 'candidate_review_dismiss':
@@ -703,6 +720,84 @@ def run(args):
                                  'coverage or completed Preferred Reporting Items for '
                                  'Systematic Reviews and Meta-Analyses searches.')
 
+                if state['selected_run_id'] is not None:
+                    ui.separator()
+                    ui.label('Project-wide POTENTIAL DUPLICATE queue — exact '
+                             'citation-key hints and historical reviewer receipts, '
+                             'NOT automatically merged publications.').props(
+                                 'data-testid=candidate-queue-heading')
+                    ui.label('Every retained project run contributes to detection; '
+                             'only pairs touching the current run are listed. '
+                             'Title, Digital Object Identifier (DOI), PubMed '
+                             'identifier and accession matches are not proof. '
+                             'Unmaterialised/unsupported records and excessive '
+                             'candidate volumes are disclosed or refused, never '
+                             'silently skipped. No fuzzy discovery yet.').props(
+                                 'data-testid=candidate-queue-scope')
+                    ui.button('Refresh potential duplicates (READ-ONLY, OFFLINE)',
+                              on_click=lambda: act('candidate_queue_refresh')).props(
+                                  'data-testid=candidate-queue-refresh')
+                    if state['candidate_queue_error'] is not None:
+                        ui.label('The project candidate queue could not be '
+                                 'validated. Reinspect current source, identity '
+                                 'and audit evidence before making decisions.').props(
+                                     'data-testid=candidate-queue-error')
+                    candidate_queue = state['candidate_queue']
+                    if candidate_queue is not None:
+                        ui.label('Potential source-record pairs touching this run: ' +
+                                 str(candidate_queue['candidate_pair_total']) +
+                                 '; total project records: ' +
+                                 str(candidate_queue['project_source_records']) +
+                                 '; not yet materialised: ' +
+                                 str(candidate_queue['unmaterialised_project_records']) +
+                                 '; unsupported layouts: ' +
+                                 str(candidate_queue['unsupported_project_records']) +
+                                 '. Final unique publications: UNKNOWN.').props(
+                                     'data-testid=candidate-queue-counts')
+                        ui.label('Showing ' + str(len(candidate_queue['rows'])) +
+                                 ' candidate pairs (up to 20). This is exact-key '
+                                 'or previous-receipt discovery, NOT exhaustive '
+                                 'biomedical deduplication.').props(
+                                     'data-testid=candidate-queue-page')
+                        for entry in candidate_queue['rows']:
+                            with ui.card():
+                                ui.label('Possible source pair • ' +
+                                         ' / '.join(s['source_name'] + ':' +
+                                                   s['source_record_id']
+                                                   for s in entry['sources'])).props(
+                                                       'data-testid=candidate-queue-row')
+                                ui.label('Matching original fields: ' +
+                                         (', '.join(entry['matched_exact_fields'])
+                                          if entry['matched_exact_fields'] else
+                                          '(previous reviewer receipt only)') +
+                                         ' • decision state ' +
+                                         entry['candidate_status'] +
+                                         ' • recorded pair decisions ' +
+                                         str(entry['prior_decisions_recorded'])).props(
+                                             'data-testid=candidate-queue-evidence')
+                                if entry['both_in_selected_run']:
+                                    first, second = entry['retrieval_ids']
+                                    queue_revision = candidate_queue['revision']
+                                    ui.button(
+                                        'Review this exact pair using existing safeguards',
+                                        on_click=lambda a=first,b=second,r=queue_revision:
+                                            act('candidate_queue_review',{
+                                                'left':a,'right':b,'revision':r})).props(
+                                                    'data-testid=candidate-queue-review')
+                                else:
+                                    ui.label('Cross-run possible match. Currently '
+                                             'READ-ONLY: a separately validated '
+                                             'cross-run decision workflow is still '
+                                             'required.').props(
+                                                 'data-testid=candidate-queue-crossrun')
+                        if candidate_queue['next_after_pair'] is not None:
+                            next_pair = candidate_queue['next_after_pair']
+                            queue_revision = candidate_queue['revision']
+                            ui.button('Next 20 project candidate pairs (OFFLINE)',
+                                      on_click=lambda p=next_pair,r=queue_revision:
+                                          act('candidate_queue_next',{
+                                              'cursor':p,'revision':r})).props(
+                                                  'data-testid=candidate-queue-next')
                 if state['selected_run_id'] is not None:
                     ui.separator()
                     ui.label('Provisional publication results — local, paginated, '
