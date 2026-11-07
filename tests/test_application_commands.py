@@ -167,6 +167,13 @@ def services(monkeypatch, tmp_path):
     review_gui.read_current_retrieval_link=service('candidate_link_status',{
         'method':'local-publication-review/1','global_unique_publications':None,
         'no_network_requests':True,'source_retrieval_verified':False})
+    queue=types.ModuleType('research_y.publication_candidate_queue')
+    from research_y.publication_candidate_queue import CandidateQueueError
+    queue.CandidateQueueError=CandidateQueueError
+    queue.read_candidate_queue=service('candidate_queue_page',{
+        'method':'project-candidate-queue/1',
+        'no_network_requests':True,'global_unique_publications':None,
+        'candidate_discovery_complete':False,'source_retrieval_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -184,6 +191,7 @@ def services(monkeypatch, tmp_path):
                         ('publication_results',publication),
                         ('publication_run_materialisation',preparation),
                         ('publication_review_gui',review_gui),
+                        ('publication_candidate_queue',queue),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -198,6 +206,8 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     if operation in ('inspect','run_board','run_coord_preview',
                      'publication_page','publication_materialisation_preview'):
         kw['run_id']=str(uuid4())
+    elif operation=='candidate_queue_page':
+        kw.update(run_id=str(uuid4()),candidate_queue_revision='a'*64)
     elif operation=='publication_detail':
         kw.update(run_id=str(uuid4()),publication_view_id=str(uuid4()),
                   publication_view_revision='a'*64)
@@ -327,6 +337,13 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][1][0]==project
         assert calls[0][1][1]==kw['run_id']
         assert result['no_network_requests'] is True
+        assert result['global_unique_publications'] is None
+    if operation=='candidate_queue_page':
+        assert calls[0][1]==(project,kw['run_id'])
+        assert calls[0][2]['expected_revision']==kw['candidate_queue_revision']
+        assert calls[0][2]['after_pair'] is None
+        assert result['no_network_requests'] is True
+        assert result['candidate_discovery_complete'] is False
         assert result['global_unique_publications'] is None
     if operation=='publication_detail':
         assert calls[0][1]==(project,kw['run_id'],kw['publication_view_id'])
