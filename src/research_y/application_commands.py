@@ -17,7 +17,7 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                         'publication_materialisation_preview', 'publication_materialisation_confirm',
                         'candidate_review_preview', 'candidate_review_decide',
                         'candidate_reversal_preview', 'candidate_reversal_confirm',
-                        'candidate_link_status',
+                        'candidate_link_status', 'candidate_queue_page',
                         'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
@@ -30,7 +30,8 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                          'pubmed_identifier_read', 'pubmed_identifier_run',
                          'pubmed_identifier_pause', 'pubmed_metadata_read',
                          'pubmed_metadata_preview', 'pubmed_metadata_run'})
-SERVICE_ERRORS = frozenset({'publication_review_unavailable', 'publication_review_invalid',
+SERVICE_ERRORS = frozenset({'candidate_queue_unavailable', 'candidate_queue_invalid',
+    'candidate_queue_stale', 'candidate_queue_over_limit', 'publication_review_unavailable', 'publication_review_invalid',
     'publication_review_stale', 'publication_review_wrong_run',
     'publication_review_no_reversal', 'publication_review_confirmation_required',
     'publication_view_unavailable', 'publication_view_invalid',
@@ -194,6 +195,9 @@ class ApplicationCommand:
     candidate_evidence: str | None = None
     candidate_confirmed: bool | None = None
     candidate_warnings_acknowledged: bool | None = None
+    # Host-selected, validated two-source cursor. No untrusted database query.
+    candidate_queue_cursor: tuple[str, str] | None = None
+    candidate_queue_revision: str | None = None
 
     def __post_init__(self):
         try:
@@ -255,6 +259,25 @@ class ApplicationCommand:
                 self.candidate_move_id, self.candidate_actor,
                 self.candidate_evidence, self.candidate_confirmed,
                 self.candidate_warnings_acknowledged)
+            queue_fields = (self.candidate_queue_cursor, self.candidate_queue_revision)
+            if self.operation == 'candidate_queue_page':
+                if (self.run_id is None or any(v is not None for v in (
+                        self.export_id, self.output_name, self.directory,
+                        self.expected_directory_identity)) or
+                        any(v is not None for v in publication_fields + candidate_fields)):
+                    raise ValueError
+                if self.candidate_queue_cursor is not None:
+                    pair = self.candidate_queue_cursor
+                    if type(pair) is not tuple or len(pair) != 2:
+                        raise ValueError
+                    _uuid(pair[0]); _uuid(pair[1])
+                    if pair[0] >= pair[1] or self.candidate_queue_revision is None:
+                        raise ValueError
+                digest = self.candidate_queue_revision
+                if digest is not None and (type(digest) is not str or
+                        len(digest) != 64 or
+                        any(ch not in '0123456789abcdef' for ch in digest)):
+                    raise ValueError
             candidate_ops = (
                 'candidate_review_preview', 'candidate_review_decide',
                 'candidate_reversal_preview', 'candidate_reversal_confirm',
@@ -613,6 +636,8 @@ class ApplicationCommand:
                               approved_by=self.admission_approved_by,
                               groups=_groups_snapshot(self.admission_groups))
                 compile_both(frozen)
+            elif self.operation == 'candidate_queue_page':
+                pass  # Exact source-pair cursor; no provider/export authority.
             elif self.operation in candidate_ops:
                 pass  # All source IDs and evidence-bound decisions validated above.
             elif self.operation in ('publication_page', 'publication_detail',
@@ -640,6 +665,8 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation != 'candidate_queue_page' and any(v is not None for v in queue_fields):
+                raise ValueError
             if self.operation not in candidate_ops and any(v is not None for v in candidate_fields):
                 raise ValueError
             if self.operation not in ('publication_page', 'publication_detail',
@@ -708,6 +735,15 @@ def execute_command(command: ApplicationCommand) -> dict:
     project = Project(Path(command.project_root), UUID(command.project_id),
                       command.project_name, command.project_created_at)
     try:
+        if command.operation == 'candidate_queue_page':
+            from research_y.publication_candidate_queue import (
+                read_candidate_queue, CandidateQueueError)
+            try:
+                return read_candidate_queue(
+                    project, command.run_id, after_pair=command.candidate_queue_cursor,
+                    expected_revision=command.candidate_queue_revision)
+            except CandidateQueueError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation in (
                 'candidate_review_preview', 'candidate_review_decide',
                 'candidate_reversal_preview', 'candidate_reversal_confirm',
