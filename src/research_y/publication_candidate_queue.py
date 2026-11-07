@@ -143,9 +143,23 @@ def _index(db, project, run_id):
         if len(pairs) > MAX_PAIR_CANDIDATES:
             raise CandidateQueueError("candidate_queue_over_limit")
 
+    # A historical run or source query can change after a first-page preview.
+    # Bind its context as well: current identity/review evidence depends on the
+    # source's run/query statuses and memberships, not only its metadata JSON.
+    project_run_context = list(db.execute(
+        "SELECT run_id,strategy_version_id,status,completed_at_utc "
+        "FROM search_runs ORDER BY run_id"))
+    project_query_context = list(db.execute(
+        "SELECT query_id,run_id,group_id,source_name,exact_query,"
+        "parameters_json,reported_matches,status,executed_at_utc "
+        "FROM source_queries ORDER BY query_id"))
+    project_memberships = list(db.execute(
+        "SELECT query_id,retrieval_id,run_id,source_name "
+        "FROM query_retrievals ORDER BY query_id,retrieval_id"))
     revision = identity._hash([
         METHOD, str(project.identifier), run_id, counts.revision,
-        fingerprints,
+        fingerprints, project_run_context, project_query_context,
+        project_memberships,
         [(r["event_id"], r["pair"], r["post_state_sha256"],
           r["comparison_sha256"], r["status"]) for r in receipts],
     ])
