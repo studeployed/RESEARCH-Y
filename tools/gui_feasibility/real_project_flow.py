@@ -122,6 +122,11 @@ class RealProjectFlow:
         self._publication_error = None
         self._publication_materialisation_offer = None
         self._publication_materialisation_last_outcome = None
+        self._candidate_first = None
+        self._candidate_offer = None
+        self._reversal_offer = None
+        self._candidate_last_outcome = None
+        self._candidate_error = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -362,6 +367,11 @@ class RealProjectFlow:
         self._publication_error = None
         self._publication_materialisation_offer = None
         self._publication_materialisation_last_outcome = None
+        self._candidate_first = None
+        self._candidate_offer = None
+        self._reversal_offer = None
+        self._candidate_last_outcome = None
+        self._candidate_error = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -495,6 +505,11 @@ class RealProjectFlow:
             self._publication_error = None
             self._publication_materialisation_offer = None
             self._publication_materialisation_last_outcome = None
+            self._candidate_first = None
+            self._candidate_offer = None
+            self._reversal_offer = None
+            self._candidate_last_outcome = None
+            self._candidate_error = None
             self._coord_offer = None
             self._coord_last_outcome = None
             self.snapshot = report
@@ -2036,11 +2051,17 @@ class RealProjectFlow:
                     raise ProjectFlowError('publication_view_invalid')
                 self._publication_page = data
                 self._publication_detail = None
+                self._candidate_first = None
+                self._candidate_offer = None
+                self._reversal_offer = None
                 self._publication_error = None
                 return self._publish()
             except ProjectFlowError:
                 self._publication_page = None
                 self._publication_detail = None
+                self._candidate_first = None
+                self._candidate_offer = None
+                self._reversal_offer = None
                 self._publication_error = 'publication_view_unavailable'
                 self._publish()
                 raise
@@ -2163,6 +2184,9 @@ class RealProjectFlow:
                 self._publication_materialisation_last_outcome = result
                 self._publication_page = None
                 self._publication_detail = None
+                self._candidate_first = None
+                self._candidate_offer = None
+                self._reversal_offer = None
                 self._run_execution_board = None
                 self._run_board_error = None
                 self._coord_offer = None
@@ -2172,6 +2196,232 @@ class RealProjectFlow:
                 self._publication_page = None
                 self._publication_detail = None
                 self._publication_error = 'publication_materialisation_reinspect_required'
+                self._publish()
+                raise
+
+    def _visible_candidate_source(self, retrieval_id):
+        """Only the currently displayed, run-associated detail may select work."""
+        page, detail = self._publication_page, self._publication_detail
+        if (self.selected_run_id is None or page is None or detail is None or
+                type(retrieval_id) is not str or
+                detail.get('run_id') != self.selected_run_id or
+                detail.get('revision') != page['revision'] or
+                detail.get('publication', {}).get('publication_id') not in
+                    {r['publication_id'] for r in page['rows']} or
+                retrieval_id not in {r['retrieval_id'] for r in
+                                     detail['source_retrievals']
+                                     if r['included_in_selected_run']}):
+            raise ProjectFlowError('publication_review_invalid')
+        # This is a navigation/consent gate, not a substitute for the
+        # candidate service's transaction-time source and revision checks.
+        refreshed = self._operation(
+            'publication_detail', run_id=self.selected_run_id,
+            publication_view_id=detail['publication']['publication_id'],
+            publication_view_revision=page['revision'])
+        if (refreshed != detail or refreshed.get('no_network_requests') is not True):
+            raise ProjectFlowError('publication_review_stale')
+        return detail['publication']['publication_id'], page['revision']
+
+    def choose_candidate_source(self, retrieval_id):
+        """First click selects a source; second previews a pair, never merges."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            pub_id, revision = self._visible_candidate_source(retrieval_id)
+            first = self._candidate_first
+            if first is None:
+                self._candidate_first = dict(
+                    retrieval_id=retrieval_id, publication_id=pub_id,
+                    run_revision=revision)
+                self._candidate_offer = None
+                self._reversal_offer = None
+                self._candidate_error = None
+                return self._publish()
+            if (first['run_revision'] != revision or
+                    first['publication_id'] not in
+                        {r['publication_id'] for r in self._publication_page['rows']} or
+                    first['retrieval_id'] == retrieval_id):
+                self._candidate_first = None
+                self._candidate_offer = None
+                raise ProjectFlowError('publication_review_stale')
+            # The first item must remain in the original displayed page and
+            # be verified against its original source detail.
+            previous = self._operation(
+                'publication_detail', run_id=self.selected_run_id,
+                publication_view_id=first['publication_id'],
+                publication_view_revision=revision)
+            if (first['retrieval_id'] not in
+                    {s['retrieval_id'] for s in previous['source_retrievals']
+                     if s['included_in_selected_run']} or
+                    previous.get('no_network_requests') is not True):
+                raise ProjectFlowError('publication_review_stale')
+            offer = self._operation(
+                'candidate_review_preview', run_id=self.selected_run_id,
+                candidate_left_id=first['retrieval_id'],
+                candidate_right_id=retrieval_id,
+                candidate_run_revision=revision)
+            if (offer.get('method') != 'local-publication-review/1' or
+                    offer.get('project_id') != str(self.project.identifier) or
+                    offer.get('run_id') != self.selected_run_id or
+                    offer.get('run_revision') != revision or
+                    set(offer.get('retrieval_ids', [])) !=
+                        {first['retrieval_id'], retrieval_id} or
+                    type(offer.get('warnings')) is not list or
+                    offer.get('automatic_match_allowed') is not False or
+                    offer.get('abstract_text_displayed') is not False or
+                    offer.get('no_network_requests') is not True or
+                    offer.get('global_unique_publications') is not None or
+                    offer.get('deduplication_complete') is not False):
+                raise ProjectFlowError('publication_review_invalid')
+            self._candidate_offer = offer
+            self._reversal_offer = None
+            self._candidate_error = None
+            return self._publish()
+
+    def dismiss_candidate_review(self):
+        with self._guard:
+            self._candidate_first = None
+            self._candidate_offer = None
+            self._reversal_offer = None
+            return self._publish()
+
+    def offer_candidate_reversal(self, retrieval_id):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            _, revision = self._visible_candidate_source(retrieval_id)
+            offer = self._operation(
+                'candidate_reversal_preview', run_id=self.selected_run_id,
+                candidate_retrieval_id=retrieval_id,
+                candidate_run_revision=revision)
+            if (offer.get('method') != 'local-publication-review/1' or
+                    offer.get('run_id') != self.selected_run_id or
+                    offer.get('project_id') != str(self.project.identifier) or
+                    offer.get('run_revision') != revision or
+                    offer.get('retrieval_id') != retrieval_id or
+                    offer.get('explicit_confirmation_required') is not True or
+                    offer.get('no_network_requests') is not True):
+                raise ProjectFlowError('publication_review_invalid')
+            self._candidate_first = None
+            self._candidate_offer = None
+            self._reversal_offer = offer
+            self._candidate_error = None
+            return self._publish()
+
+    def confirm_candidate_decision(self, *, decision, move_retrieval_id,
+                                   actor, evidence, acknowledged):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer = self._candidate_offer
+            page = self._publication_page
+            if (offer is None or self.selected_run_id is None or
+                    page is None or page['revision'] != offer['run_revision'] or
+                    acknowledged is not True or
+                    decision not in ('confirmed_match', 'rejected_match') or
+                    (decision == 'confirmed_match' and
+                     move_retrieval_id not in offer['retrieval_ids']) or
+                    (decision == 'rejected_match' and move_retrieval_id is not None)):
+                raise ProjectFlowError('publication_review_confirmation_required')
+            # Never replay a possibly committed decision after worker loss.
+            self._candidate_offer = None
+            self._candidate_first = None
+            try:
+                result = self._operation(
+                    'candidate_review_decide', run_id=self.selected_run_id,
+                    candidate_left_id=offer['retrieval_ids'][0],
+                    candidate_right_id=offer['retrieval_ids'][1],
+                    candidate_run_revision=offer['run_revision'],
+                    candidate_revision=offer['revision'],
+                    candidate_decision=decision, candidate_move_id=move_retrieval_id,
+                    candidate_actor=actor, candidate_evidence=evidence,
+                    candidate_confirmed=True,
+                    candidate_warnings_acknowledged=True)
+                if (result.get('method') != 'local-publication-review/1' or
+                        result.get('run_id') != self.selected_run_id or
+                        result.get('decision') != decision or
+                        result.get('requires_reinspection') is not True or
+                        result.get('global_unique_publications') is not None):
+                    raise ProjectFlowError('publication_review_unavailable')
+                fresh = self._operation('publication_page', run_id=self.selected_run_id)
+                checked = self._operation(
+                    'candidate_review_preview', run_id=self.selected_run_id,
+                    candidate_left_id=offer['retrieval_ids'][0],
+                    candidate_right_id=offer['retrieval_ids'][1],
+                    candidate_run_revision=fresh['revision'])
+                recent = checked.get('recent_decisions', [])
+                if (checked.get('status') != decision or not recent or
+                        recent[-1]['status'] != decision or
+                        recent[-1]['actor'] != actor or
+                        recent[-1]['evidence'] != evidence or
+                        checked.get('revision') !=
+                            result['resulting_candidate_revision'] or
+                        checked.get('no_network_requests') is not True):
+                    raise ProjectFlowError('publication_review_reinspect_required')
+                self._candidate_last_outcome = dict(
+                    action=decision, verified_audit_event_id=recent[-1]['event_id'],
+                    source_count_revision=fresh['revision'])
+                self._publication_page = fresh
+                self._publication_detail = None
+                self._candidate_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publication_page = None
+                self._publication_detail = None
+                self._candidate_error = 'publication_review_reinspect_required'
+                self._publish()
+                raise
+
+    def confirm_candidate_reversal(self, *, actor, evidence):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer = self._reversal_offer
+            page = self._publication_page
+            if (offer is None or self.selected_run_id is None or page is None
+                    or page['revision'] != offer['run_revision']):
+                raise ProjectFlowError('publication_review_confirmation_required')
+            self._reversal_offer = None
+            try:
+                result = self._operation(
+                    'candidate_reversal_confirm', run_id=self.selected_run_id,
+                    candidate_retrieval_id=offer['retrieval_id'],
+                    candidate_run_revision=offer['run_revision'],
+                    candidate_revision=offer['revision'],
+                    candidate_actor=actor, candidate_evidence=evidence,
+                    candidate_confirmed=True)
+                if (result.get('method') != 'local-publication-review/1' or
+                        result.get('run_id') != self.selected_run_id or
+                        result.get('reversal_of_event_id') !=
+                            offer['association_event_id'] or
+                        result.get('restored_publication_id') !=
+                            offer['restored_publication_id'] or
+                        result.get('requires_reinspection') is not True or
+                        result.get('global_unique_publications') is not None):
+                    raise ProjectFlowError('publication_review_unavailable')
+                fresh = self._operation('publication_page', run_id=self.selected_run_id)
+                receipt = self._operation(
+                    'candidate_link_status', run_id=self.selected_run_id,
+                    candidate_retrieval_id=offer['retrieval_id'],
+                    candidate_run_revision=fresh['revision'])
+                if (receipt.get('action') != 'reverse' or
+                        receipt.get('reverses_event_id') != offer['association_event_id'] or
+                        receipt.get('publication_id') != offer['restored_publication_id'] or
+                        receipt.get('actor') != actor or
+                        receipt.get('evidence') != evidence or
+                        receipt.get('no_network_requests') is not True):
+                    raise ProjectFlowError('publication_review_reinspect_required')
+                self._candidate_last_outcome = dict(
+                    action='reverse', verified_audit_event_id=receipt['event_id'],
+                    source_count_revision=fresh['revision'])
+                self._publication_page = fresh
+                self._publication_detail = None
+                self._candidate_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publication_page = None
+                self._publication_detail = None
+                self._candidate_error = 'publication_review_reinspect_required'
                 self._publish()
                 raise
 
@@ -2933,6 +3183,11 @@ class RealProjectFlow:
                 'publication_error': self._publication_error,
                 'publication_materialisation_offer': self._publication_materialisation_offer,
                 'publication_materialisation_last_outcome': self._publication_materialisation_last_outcome,
+                'candidate_first': self._candidate_first,
+                'candidate_offer': self._candidate_offer,
+                'reversal_offer': self._reversal_offer,
+                'candidate_last_outcome': self._candidate_last_outcome,
+                'candidate_error': self._candidate_error,
                 'run_board_error': self._run_board_error,
                 'run_coordination_offer': self._coord_offer,
                 'run_coordination_pending': self._coord_pending is not None,

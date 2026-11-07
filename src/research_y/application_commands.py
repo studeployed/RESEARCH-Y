@@ -15,6 +15,9 @@ from uuid import UUID
 OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_run',
                         'publication_page', 'publication_detail',
                         'publication_materialisation_preview', 'publication_materialisation_confirm',
+                        'candidate_review_preview', 'candidate_review_decide',
+                        'candidate_reversal_preview', 'candidate_reversal_confirm',
+                        'candidate_link_status',
                         'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
@@ -27,7 +30,10 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                          'pubmed_identifier_read', 'pubmed_identifier_run',
                          'pubmed_identifier_pause', 'pubmed_metadata_read',
                          'pubmed_metadata_preview', 'pubmed_metadata_run'})
-SERVICE_ERRORS = frozenset({'publication_view_unavailable', 'publication_view_invalid',
+SERVICE_ERRORS = frozenset({'publication_review_unavailable', 'publication_review_invalid',
+    'publication_review_stale', 'publication_review_wrong_run',
+    'publication_review_no_reversal', 'publication_review_confirmation_required',
+    'publication_view_unavailable', 'publication_view_invalid',
     'publication_view_stale', 'publication_view_not_in_run',
     'publication_materialisation_unavailable', 'publication_materialisation_stale',
     'publication_materialisation_no_work', 'run_board_unavailable', 'run_board_invalid',
@@ -175,6 +181,19 @@ class ApplicationCommand:
     publication_view_revision: str | None = None
     publication_actor: str | None = None
     publication_confirmed: bool | None = None
+    # Exact candidate-review identities/tokens. Browser selection is checked
+    # again against a currently displayed, trusted-host page/detail.
+    candidate_left_id: str | None = None
+    candidate_right_id: str | None = None
+    candidate_retrieval_id: str | None = None
+    candidate_run_revision: str | None = None
+    candidate_revision: str | None = None
+    candidate_decision: str | None = None
+    candidate_move_id: str | None = None
+    candidate_actor: str | None = None
+    candidate_evidence: str | None = None
+    candidate_confirmed: bool | None = None
+    candidate_warnings_acknowledged: bool | None = None
 
     def __post_init__(self):
         try:
@@ -229,6 +248,66 @@ class ApplicationCommand:
                 self.publication_view_cursor, self.publication_view_id,
                 self.publication_view_revision, self.publication_actor,
                 self.publication_confirmed)
+            candidate_fields = (
+                self.candidate_left_id, self.candidate_right_id,
+                self.candidate_retrieval_id, self.candidate_run_revision,
+                self.candidate_revision, self.candidate_decision,
+                self.candidate_move_id, self.candidate_actor,
+                self.candidate_evidence, self.candidate_confirmed,
+                self.candidate_warnings_acknowledged)
+            candidate_ops = (
+                'candidate_review_preview', 'candidate_review_decide',
+                'candidate_reversal_preview', 'candidate_reversal_confirm',
+                'candidate_link_status')
+            if self.operation in candidate_ops:
+                if (self.run_id is None or any(v is not None for v in (
+                        self.export_id, self.output_name, self.directory,
+                        self.expected_directory_identity)) or
+                        any(v is not None for v in publication_fields)):
+                    raise ValueError
+                digest = self.candidate_run_revision
+                if (type(digest) is not str or len(digest) != 64 or
+                        any(ch not in '0123456789abcdef' for ch in digest)):
+                    raise ValueError
+                if self.operation in ('candidate_review_preview', 'candidate_review_decide'):
+                    _uuid(self.candidate_left_id); _uuid(self.candidate_right_id)
+                    if (self.candidate_left_id == self.candidate_right_id or
+                            self.candidate_retrieval_id is not None):
+                        raise ValueError
+                else:
+                    _uuid(self.candidate_retrieval_id)
+                    if self.candidate_left_id is not None or self.candidate_right_id is not None:
+                        raise ValueError
+                if self.operation in ('candidate_review_preview', 'candidate_reversal_preview',
+                                      'candidate_link_status'):
+                    if any(v is not None for v in (
+                            self.candidate_revision, self.candidate_decision,
+                            self.candidate_move_id, self.candidate_actor,
+                            self.candidate_evidence, self.candidate_confirmed,
+                            self.candidate_warnings_acknowledged)):
+                        raise ValueError
+                else:
+                    digest = self.candidate_revision
+                    if (type(digest) is not str or len(digest) != 64 or
+                            any(ch not in '0123456789abcdef' for ch in digest) or
+                            self.candidate_confirmed is not True):
+                        raise ValueError
+                    from research_y.publication_identity import _text
+                    _text(self.candidate_actor, 200)
+                    _text(self.candidate_evidence)
+                    if self.operation == 'candidate_review_decide':
+                        if (self.candidate_decision not in ('confirmed_match', 'rejected_match')
+                                or self.candidate_warnings_acknowledged is not True or
+                                (self.candidate_decision == 'confirmed_match'
+                                 and self.candidate_move_id not in
+                                 (self.candidate_left_id, self.candidate_right_id)) or
+                                (self.candidate_decision == 'rejected_match'
+                                 and self.candidate_move_id is not None)):
+                            raise ValueError
+                    elif (self.candidate_decision is not None or
+                          self.candidate_move_id is not None or
+                          self.candidate_warnings_acknowledged is not None):
+                        raise ValueError
             if self.operation in ('publication_page', 'publication_detail',
                     'publication_materialisation_preview', 'publication_materialisation_confirm'):
                 if (self.run_id is None or self.export_id is not None or
@@ -534,6 +613,8 @@ class ApplicationCommand:
                               approved_by=self.admission_approved_by,
                               groups=_groups_snapshot(self.admission_groups))
                 compile_both(frozen)
+            elif self.operation in candidate_ops:
+                pass  # All source IDs and evidence-bound decisions validated above.
             elif self.operation in ('publication_page', 'publication_detail',
                     'publication_materialisation_preview', 'publication_materialisation_confirm'):
                 pass  # Validated above; no provider request or export authority.
@@ -559,6 +640,8 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation not in candidate_ops and any(v is not None for v in candidate_fields):
+                raise ValueError
             if self.operation not in ('publication_page', 'publication_detail',
                     'publication_materialisation_preview', 'publication_materialisation_confirm') and any(
                     value is not None for value in publication_fields):
@@ -625,6 +708,45 @@ def execute_command(command: ApplicationCommand) -> dict:
     project = Project(Path(command.project_root), UUID(command.project_id),
                       command.project_name, command.project_created_at)
     try:
+        if command.operation in (
+                'candidate_review_preview', 'candidate_review_decide',
+                'candidate_reversal_preview', 'candidate_reversal_confirm',
+                'candidate_link_status'):
+            from research_y import publication_review_gui as candidate
+            try:
+                if command.operation == 'candidate_review_preview':
+                    return candidate.preview_candidate_review(
+                        project, command.run_id, command.candidate_left_id,
+                        command.candidate_right_id,
+                        run_revision=command.candidate_run_revision)
+                if command.operation == 'candidate_review_decide':
+                    return candidate.record_candidate_review(
+                        project, command.run_id, command.candidate_left_id,
+                        command.candidate_right_id,
+                        run_revision=command.candidate_run_revision,
+                        expected_revision=command.candidate_revision,
+                        decision=command.candidate_decision,
+                        move_retrieval_id=command.candidate_move_id,
+                        actor=command.candidate_actor,
+                        evidence=command.candidate_evidence,
+                        warnings_acknowledged=command.candidate_warnings_acknowledged,
+                        confirmed=command.candidate_confirmed)
+                if command.operation == 'candidate_link_status':
+                    return candidate.read_current_retrieval_link(
+                        project, command.run_id, command.candidate_retrieval_id,
+                        run_revision=command.candidate_run_revision)
+                if command.operation == 'candidate_reversal_preview':
+                    return candidate.preview_candidate_reversal(
+                        project, command.run_id, command.candidate_retrieval_id,
+                        run_revision=command.candidate_run_revision)
+                return candidate.confirm_candidate_reversal(
+                    project, command.run_id, command.candidate_retrieval_id,
+                    run_revision=command.candidate_run_revision,
+                    expected_revision=command.candidate_revision,
+                    actor=command.candidate_actor, evidence=command.candidate_evidence,
+                    confirmed=command.candidate_confirmed)
+            except candidate.PublicationReviewError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation in ('publication_page', 'publication_detail'):
             from research_y.publication_results import (
                 read_publication_page, read_publication_detail, PublicationViewError)
