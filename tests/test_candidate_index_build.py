@@ -355,3 +355,16 @@ def test_failed_source_write_does_not_invalidate_completed_cache(project_fixture
     now=preview_candidate_index(project)
     assert now["revision"]==ready["revision"]
     assert now["status"]=="ready"
+
+
+def test_resumed_batch_and_more_probe_seek_by_primary_key(project_fixture):
+    """Do not regress to nullable-cursor OR that rescans historical records."""
+    from research_y import candidate_index_build as index
+    project,_,_=project_fixture
+    with closing(sqlite3.connect(project.database_path)) as db:
+        for sql, args in ((index._RESUME_SQL, (uid(),128)),
+                          (index._MORE_SQL,(uid(),))):
+            plans=[row[3].upper() for row in db.execute(
+                "EXPLAIN QUERY PLAN "+sql,args)]
+            assert any("SEARCH" in detail for detail in plans), plans
+            assert not any("SCAN SOURCE_RETRIEVALS" in detail for detail in plans), plans
