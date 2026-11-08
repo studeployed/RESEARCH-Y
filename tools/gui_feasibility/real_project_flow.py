@@ -2233,7 +2233,9 @@ class RealProjectFlow:
                 type(data.get('source_records')) is not int or
                 type(data.get('processed_records')) is not int or
                 type(data.get('indexed_keys')) is not int or
-                not 0 <= data['processed_records'] <= data['source_records'] or
+                (data['processed_records'] < 0 or
+                 (data['status'] != 'stale' and
+                  data['processed_records'] > data['source_records'])) or
                 not 0 <= data['indexed_keys'] or
                 data.get('index_ready') is not (data['status'] == 'ready') or
                 data.get('no_network_requests') is not True or
