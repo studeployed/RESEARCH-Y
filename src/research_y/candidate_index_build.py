@@ -21,6 +21,11 @@ MAX_BATCH = 128
 MAX_VALUE_CHARS = 10000
 BEGIN_EVENT = "candidate_index_generation_started"
 BATCH_EVENT = "candidate_index_batch_committed"
+# These literal non-null predicates are independently EXPLAIN-tested to
+# prevent unbounded rescans of earlier keyset checkpoints.
+_RESUME_SQL = ("SELECT retrieval_id FROM source_retrievals "
+               "WHERE retrieval_id>? ORDER BY retrieval_id LIMIT ?")
+_MORE_SQL = ("SELECT 1 FROM source_retrievals WHERE retrieval_id>? LIMIT 1")
 
 
 class CandidateIndexError(RuntimeError):
@@ -252,9 +257,7 @@ def advance_candidate_index(project: Project, *, expected_revision: str,
                 ).fetchall()
             else:
                 selected = db.execute(
-                    "SELECT retrieval_id FROM source_retrievals "
-                    "WHERE retrieval_id>? ORDER BY retrieval_id LIMIT ?",
-                    (cursor, max_records),
+                    _RESUME_SQL, (cursor, max_records),
                 ).fetchall()
             next_cursor = cursor
             digest = before["running_sha256"]
@@ -289,9 +292,7 @@ def advance_candidate_index(project: Project, *, expected_revision: str,
                 ).fetchone() is not None
             else:
                 more = db.execute(
-                    "SELECT 1 FROM source_retrievals "
-                    "WHERE retrieval_id>? LIMIT 1",
-                    (next_cursor,),
+                    _MORE_SQL, (next_cursor,),
                 ).fetchone() is not None
             finished = not more
             new_count = before["processed_records"] + len(selected)
