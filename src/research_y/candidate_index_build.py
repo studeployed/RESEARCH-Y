@@ -77,12 +77,17 @@ def _state(db):
         raise CandidateIndexError()
     if processed and cursor is None:
         raise CandidateIndexError()
-    if db.execute("SELECT COUNT(*) FROM candidate_index_records").fetchone()[0] != processed:
-        raise CandidateIndexError()
-    if db.execute("SELECT COUNT(*) FROM candidate_index_keys").fetchone()[0] != keys:
-        raise CandidateIndexError()
-    if db.execute("SELECT COUNT(*) FROM candidate_index_records WHERE supported=0").fetchone()[0] != unsupported:
-        raise CandidateIndexError()
+    # After a source deletion SQLite cascades ONLY disposable cache rows.
+    # A stale generation is explicitly unusable; permit its partial cached
+    # counts so it can still be inspected and explicitly rebuilt. For any
+    # ACTIVE generation, a missing or extra row is an integrity failure.
+    if status != "stale":
+        if db.execute("SELECT COUNT(*) FROM candidate_index_records").fetchone()[0] != processed:
+            raise CandidateIndexError()
+        if db.execute("SELECT COUNT(*) FROM candidate_index_keys").fetchone()[0] != keys:
+            raise CandidateIndexError()
+        if db.execute("SELECT COUNT(*) FROM candidate_index_records WHERE supported=0").fetchone()[0] != unsupported:
+            raise CandidateIndexError()
     if generation is not None and db.execute(
         "SELECT 1 FROM candidate_index_records WHERE generation_id<>? LIMIT 1",
         (generation,),
