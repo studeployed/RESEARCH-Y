@@ -322,7 +322,7 @@ def _index(db, project, run_id):
     return original
 
 
-def read_candidate_queue(project, run_id: str, *
+def read_candidate_queue(project, run_id: str, *,
                          after_pair: tuple[str, str] | None = None,
                          expected_revision: str | None = None) -> dict:
     """Keyset page of exact-key/prior-receipt hints touching the selected run.
