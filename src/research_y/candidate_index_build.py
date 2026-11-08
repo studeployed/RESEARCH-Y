@@ -46,7 +46,7 @@ def _digest(value):
         raise CandidateIndexError("candidate_index_invalid")
 
 
-def _state(db):
+def _state(db, *, full_cache_check=False):
     row = db.execute(
         "SELECT status,source_epoch,generation_id,baseline_epoch,"
         "cursor_retrieval_id,processed_records,indexed_keys,unsupported_records,"
@@ -83,21 +83,37 @@ def _state(db):
     if processed and cursor is None:
         raise CandidateIndexError()
     # After a source deletion SQLite cascades ONLY disposable cache rows.
-    # A stale generation is explicitly unusable; permit its partial cached
-    # counts so it can still be inspected and explicitly rebuilt. For any
-    # ACTIVE generation, a missing or extra row is an integrity failure.
+    # A stale generation is unusable; permit its partial cached counts so it
+    # remains inspectable and may be explicitly rebuilt.
     if status != "stale":
+        # Unfiltered COUNT(*) reads table B-tree metadata. Do not add WHERE
+        # predicates that scan all prior batches under BEGIN IMMEDIATE.
         if db.execute("SELECT COUNT(*) FROM candidate_index_records").fetchone()[0] != processed:
             raise CandidateIndexError()
         if db.execute("SELECT COUNT(*) FROM candidate_index_keys").fetchone()[0] != keys:
             raise CandidateIndexError()
-        if db.execute("SELECT COUNT(*) FROM candidate_index_records WHERE supported=0").fetchone()[0] != unsupported:
-            raise CandidateIndexError()
-    if generation is not None and db.execute(
-        "SELECT 1 FROM candidate_index_records WHERE generation_id<>? LIMIT 1",
-        (generation,),
-    ).fetchone() is not None:
-        raise CandidateIndexError()
+        if processed:
+            # Constant indexed point lookup fences the durable keyset cursor
+            # to the generation without rescanning all historical entries.
+            last = db.execute(
+                "SELECT generation_id FROM candidate_index_records "
+                "WHERE retrieval_id=?", (cursor,),
+            ).fetchone()
+            if last != (generation,):
+                raise CandidateIndexError()
+        # Full audit checks are needed on an explicit read/initial rebuild,
+        # not twice per 128-record transaction. They do not certify the
+        # original source completeness or cryptographic authenticity.
+        if full_cache_check:
+            if db.execute(
+                "SELECT COUNT(*) FROM candidate_index_records WHERE supported=0"
+            ).fetchone()[0] != unsupported:
+                raise CandidateIndexError()
+            if generation is not None and db.execute(
+                "SELECT 1 FROM candidate_index_records "
+                "WHERE generation_id<>? LIMIT 1", (generation,),
+            ).fetchone() is not None:
+                raise CandidateIndexError()
     source_total = db.execute("SELECT COUNT(*) FROM source_retrievals").fetchone()[0]
     if status == "ready" and processed != source_total:
         raise CandidateIndexError()
@@ -111,8 +127,8 @@ def _state(db):
     )
 
 
-def _public(db, project):
-    raw = _state(db)
+def _public(db, project, *, full_cache_check=False):
+    raw = _state(db, full_cache_check=full_cache_check)
     revision = identity._hash([METHOD, str(project.identifier), raw])
     return dict(
         method=METHOD, project_id=str(project.identifier),
@@ -134,7 +150,7 @@ def preview_candidate_index(project: Project) -> dict:
     """Read one validated project snapshot; index preview never writes."""
     try:
         with _read(project) as db:
-            return _public(db, project)
+            return _public(db, project, full_cache_check=True)
     except CandidateIndexError:
         raise
     except Exception:
@@ -156,7 +172,7 @@ def start_candidate_index(project: Project, *, expected_revision: str,
         identity._text(actor, 200)
         with _validated_project_connection(project) as db:
             db.execute("BEGIN IMMEDIATE")
-            before = _public(db, project)
+            before = _public(db, project, full_cache_check=True)
             if before["revision"] != expected_revision:
                 raise CandidateIndexError("candidate_index_stale")
             gen = str(uuid4())
