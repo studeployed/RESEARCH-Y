@@ -242,12 +242,20 @@ def advance_candidate_index(project: Project, *, expected_revision: str,
                     else "candidate_index_no_work"
                 )
             cursor = before["cursor_retrieval_id"]
-            selected = db.execute(
-                "SELECT retrieval_id FROM source_retrievals "
-                "WHERE (? IS NULL OR retrieval_id>?) "
-                "ORDER BY retrieval_id LIMIT ?",
-                (cursor, cursor, max_records),
-            ).fetchall()
+            # An explicit non-null range predicate is essential here.
+            # A nullable-cursor OR forces a full index SCAN in SQLite when
+            # resuming near the end of a large project.
+            if cursor is None:
+                selected = db.execute(
+                    "SELECT retrieval_id FROM source_retrievals "
+                    "ORDER BY retrieval_id LIMIT ?", (max_records,),
+                ).fetchall()
+            else:
+                selected = db.execute(
+                    "SELECT retrieval_id FROM source_retrievals "
+                    "WHERE retrieval_id>? ORDER BY retrieval_id LIMIT ?",
+                    (cursor, max_records),
+                ).fetchall()
             next_cursor = cursor
             digest = before["running_sha256"]
             total_keys = unsupported = 0
@@ -275,10 +283,16 @@ def advance_candidate_index(project: Project, *, expected_revision: str,
                     source["run_id"], supported, values,
                 ])
                 next_cursor = rid
-            more = db.execute(
-                "SELECT 1 FROM source_retrievals WHERE (? IS NULL OR retrieval_id>?) LIMIT 1",
-                (next_cursor, next_cursor),
-            ).fetchone() is not None
+            if next_cursor is None:
+                more = db.execute(
+                    "SELECT 1 FROM source_retrievals LIMIT 1"
+                ).fetchone() is not None
+            else:
+                more = db.execute(
+                    "SELECT 1 FROM source_retrievals "
+                    "WHERE retrieval_id>? LIMIT 1",
+                    (next_cursor,),
+                ).fetchone() is not None
             finished = not more
             new_count = before["processed_records"] + len(selected)
             if finished and new_count != before["source_records"]:
