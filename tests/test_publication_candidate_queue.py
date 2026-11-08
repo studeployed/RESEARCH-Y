@@ -393,3 +393,160 @@ def test_cross_run_dense_bucket_fails_at_explicit_pair_cap(project_runs,monkeypa
     with pytest.raises(queue.CandidateQueueError) as exc:
         read(project_runs)
     assert exc.value.code=="candidate_queue_over_limit"
+
+
+def build_ready_index(ctx):
+    """Explicitly construct the original durable v5 index in bounded batches."""
+    from research_y.candidate_index_build import (
+        preview_candidate_index, start_candidate_index, advance_candidate_index)
+    project=ctx[0]
+    preview=preview_candidate_index(project)
+    running=start_candidate_index(
+        project, expected_revision=preview["revision"],
+        actor="Synthetic researcher",confirmed=True)
+    for _ in range(1000):
+        if running["status"]=="ready":
+            break
+        running=advance_candidate_index(
+            project, expected_revision=running["revision"],
+            generation_id=running["generation_id"],
+            actor="Synthetic researcher",confirmed=True)
+    assert running["status"]=="ready"
+    return running
+
+
+def test_ready_cache_preserves_exact_original_candidate_evidence(project_runs):
+    project,run,historical=project_runs
+    a=insert(project_runs,source="pubmed",number=1501,
+             title="Two matching conference reports",doi="10.3333/shared")
+    b=insert(project_runs,source="wos",number=1502,
+             title="Two matching conference reports",doi="10.3333/shared")
+    old=insert(project_runs,source="wos",number=1503,
+               title="Two matching conference reports",doi="10.3333/shared",
+               run=historical)
+    insert(project_runs,number=1504,title="No matches",doi="10.3333/nope")
+    original=read(project_runs)
+    assert original["index_backend"]=="original_source_projection"
+    assert original["candidate_pair_total"]==3
+    ready=build_ready_index(project_runs)
+    cached=read(project_runs)
+    assert ready["source_records"]==4
+    assert cached["index_backend"]=="verified_derived_keys_v5"
+    assert cached["index_status"]=="ready"
+    assert cached["index_generation_id"]==ready["generation_id"]
+    assert cached["candidate_pair_total"]==original["candidate_pair_total"]
+    for current, previous in zip(cached["rows"],original["rows"]):
+        assert current==previous
+    assert cached["global_unique_publications"] is None
+    assert cached["candidate_discovery_complete"] is False
+    assert cached["exact_rule_coverage_complete"] is True
+    assert "SECRET ABSTRACT" not in repr(cached)
+
+
+def test_ready_cache_preserves_historical_rejection_and_resume_page(project_runs):
+    project,run,historical=project_runs
+    a=insert(project_runs,number=1601,title="Alpha",doi="10.7777/alpha")
+    b=insert(project_runs,source="wos",number=1602,title="Beta",doi="10.7777/beta")
+    offer=pair(project_runs,a,b)
+    candidates.decide_candidate(
+        project,a,b,expected_revision=offer.revision,
+        decision="rejected_match",actor="Researcher",
+        evidence="Separate abstracts",
+        acknowledged_warnings=offer.warnings,decision_confirmed=True)
+    for i in range(21):
+        insert(project_runs,number=1700+i,title="Exact "+str(i),
+               doi="10.7777/exact"+str(i))
+        insert(project_runs,source="wos",number=1800+i,title="Exact "+str(i),
+               doi="10.7777/exact"+str(i))
+    original=read(project_runs)
+    assert original["candidate_pair_total"]==22
+    build_ready_index(project_runs)
+    first=read(project_runs)
+    assert first["candidate_pair_total"]==22
+    assert len(first["rows"])==20 and first["next_after_pair"] is not None
+    later=queue.read_candidate_queue(
+        open_project(project.root),run,
+        after_pair=tuple(first["next_after_pair"]),
+        expected_revision=first["revision"])
+    assert len(later["rows"])==2 and not later["has_more"]
+    current=first["rows"]+later["rows"]
+    original_pairs=original["rows"]
+    assert len({tuple(x["retrieval_ids"]) for x in current})==22
+    assert any(x["candidate_status"]=="rejected_match"
+               and x["matched_exact_fields"]==[] for x in current)
+    assert first["revision"]==later["revision"]
+    assert first["index_backend"]==later["index_backend"]=="verified_derived_keys_v5"
+
+
+def test_source_mutation_downgrades_cache_and_rejects_old_cursor(project_runs):
+    project,run,_=project_runs
+    a=insert(project_runs,number=1901,title="One",doi="10.2222/same")
+    b=insert(project_runs,source="wos",number=1902,
+             title="Two",doi="10.2222/same")
+    build_ready_index(project_runs)
+    old=read(project_runs)
+    assert old["index_status"]=="ready"
+    insert(project_runs,number=1903,title="Three",doi="10.2222/same")
+    current=read(project_runs)
+    assert current["index_status"]=="stale"
+    assert current["index_backend"]=="original_source_projection"
+    assert current["candidate_pair_total"]==3
+    assert "derived_source_key_cache_not_ready_original_scan_used" in current["warnings"]
+    with pytest.raises(queue.CandidateQueueError) as exc:
+        read(project_runs,after_pair=tuple(old["rows"][0]["retrieval_ids"]),
+             expected_revision=old["revision"])
+    assert exc.value.code=="candidate_queue_stale"
+    build_ready_index(project_runs)
+    newer=read(project_runs)
+    assert newer["index_status"]=="ready"
+    assert newer["candidate_pair_total"]==3
+
+
+def test_unfinished_cache_never_suppresses_original_candidate_queue(project_runs):
+    project,run,_=project_runs
+    insert(project_runs,number=2001,title="Same title",doi="10.22/same")
+    insert(project_runs,source="wos",number=2002,
+           title="Same title",doi="10.22/same")
+    from research_y.candidate_index_build import (
+        preview_candidate_index,start_candidate_index,advance_candidate_index)
+    first=preview_candidate_index(project)
+    building=start_candidate_index(
+        project,expected_revision=first["revision"],
+        actor="Synthetic researcher",confirmed=True)
+    assert read(project_runs)["index_status"]=="building"
+    intermediate=advance_candidate_index(
+        project,expected_revision=building["revision"],
+        generation_id=building["generation_id"],
+        actor="Synthetic researcher",confirmed=True,max_records=1)
+    assert intermediate["status"]=="building"
+    fallback=read(project_runs)
+    assert fallback["candidate_pair_total"]==1
+    assert fallback["index_backend"]=="original_source_projection"
+    assert fallback["index_status"]=="building"
+
+
+def test_cache_corruption_fails_closed_not_stale_fallback(project_runs):
+    project,run,_=project_runs
+    rid=insert(project_runs,number=2101)
+    build_ready_index(project_runs)
+    with closing(sqlite3.connect(project.database_path)) as db,db:
+        db.execute("DELETE FROM candidate_index_keys WHERE retrieval_id=?",(rid,))
+    with pytest.raises(queue.CandidateQueueError) as exc:
+        read(project_runs)
+    assert exc.value.code=="candidate_queue_unavailable"
+
+
+def test_cached_queue_source_keys_are_not_automatic_match_permissions(project_runs):
+    project,run,_=project_runs
+    a=insert(project_runs,number=2201,title="Abstract one",
+             doi="10.3333/conference")
+    b=insert(project_runs,source="wos",number=2202,
+             title="Abstract two",doi="10.3333/conference")
+    build_ready_index(project_runs)
+    response=read(project_runs)
+    assert response["candidate_pair_total"]==1
+    assert response["rows"][0]["matched_exact_fields"]==["doi"]
+    assert response["rows"][0]["auto_merge_allowed"] is False
+    assert response["rows"][0]["pair_already_associated"] is False
+    assert {x["publication_id"] for x in response["rows"][0]["sources"]}.__len__()==2
+    assert response["global_unique_publications"] is None
