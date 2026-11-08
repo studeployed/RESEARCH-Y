@@ -665,3 +665,82 @@ def test_index_command_allowlist_requires_single_use_revision_and_no_credentials
             candidate_index_actor="Researcher",
             candidate_index_confirmed=True)
     assert "SECRET" not in repr(started)
+
+
+def test_cached_index_skips_original_whole_project_field_reprojection(project_runs,monkeypatch):
+    insert(project_runs,number=2601,title="Same cache field",doi="10.26/shared")
+    insert(project_runs,source="wos",number=2602,
+           title="Same cache field",doi="10.26/shared")
+    build_ready_index(project_runs)
+    def must_not_reproject_all_sources(*args,**kwargs):
+        raise AssertionError("Whole-project original-field projection not used")
+    monkeypatch.setattr(queue,"project_source",must_not_reproject_all_sources)
+    answer=read(project_runs)
+    assert answer["candidate_pair_total"]==1
+    assert answer["index_backend"]=="verified_derived_keys_v5"
+
+
+def test_cache_original_run_and_group_evidence_invalidates_navigation(project_runs):
+    project,run,historical=project_runs
+    insert(project_runs,number=2701,title="Same",doi="10.27/shared")
+    insert(project_runs,source="wos",number=2702,
+           title="Same",doi="10.27/shared")
+    build_ready_index(project_runs)
+    initial=read(project_runs)
+    assert initial["index_backend"]=="verified_derived_keys_v5"
+    with closing(sqlite3.connect(project.database_path)) as db,db:
+        db.execute("UPDATE search_runs SET status='failed' WHERE run_id=?",
+                   (historical,))
+    updated=read(project_runs)
+    assert updated["index_backend"]=="verified_derived_keys_v5"
+    assert updated["index_generation_id"]==initial["index_generation_id"]
+    assert updated["revision"]!=initial["revision"]
+    with pytest.raises(queue.CandidateQueueError) as exc:
+        read(project_runs,after_pair=tuple(initial["rows"][0]["retrieval_ids"]),
+             expected_revision=initial["revision"])
+    assert exc.value.code=="candidate_queue_stale"
+
+
+def test_forged_cached_pair_key_cannot_claim_false_exact_match(project_runs):
+    project,run,_=project_runs
+    a=insert(project_runs,number=2801,title="Study one",doi="10.28/first")
+    b=insert(project_runs,source="wos",number=2802,
+             title="Study two",doi="10.28/second")
+    build_ready_index(project_runs)
+    assert read(project_runs)["candidate_pair_total"]==0
+    with closing(sqlite3.connect(project.database_path)) as db,db:
+        copied=db.execute(
+            "SELECT value_sha256 FROM candidate_index_keys "
+            "WHERE retrieval_id=? AND field='doi'",(a,)).fetchone()[0]
+        db.execute("UPDATE candidate_index_keys SET value_sha256=? "
+                   "WHERE retrieval_id=? AND field='doi'",(copied,b))
+    with pytest.raises(queue.CandidateQueueError) as exc:
+        read(project_runs)
+    assert exc.value.code=="candidate_queue_unavailable"
+
+
+def test_host_resets_unsent_index_offer_when_selected_run_changes(project_runs):
+    project,run,historical=project_runs
+    from tools.gui_feasibility.real_project_flow import RealProjectFlow,ProjectFlowError
+    flow=RealProjectFlow(selected_root=project.root,
+                         selected_parent=project.root.parent)
+    flow.project=project
+    flow.selected_run_id=run
+    flow.snapshot={"runs":[{"run_id":run},{"run_id":historical}],
+                   "report":None,"exports":[]}
+    def dispatch(name,**kwargs):
+        if name=="inspect":
+            return {"snapshot":{"selected_run_id":kwargs.get("run_id"),
+                                "runs":[{"run_id":run},{"run_id":historical}],
+                                "report":{"status":"incomplete"},"exports":[]}}
+        return execute_command(ApplicationCommand.for_project(project,name,**kwargs))
+    flow._operation=dispatch
+    try:
+        flow.offer_candidate_index("start")
+        assert flow.state()["candidate_index_offer"] is not None
+        after=flow.select_run(historical)
+        assert after["candidate_index_offer"] is None
+        with pytest.raises(ProjectFlowError,match="candidate_index_confirmation_required"):
+            flow.confirm_candidate_index("Researcher")
+    finally:
+        flow.close()
