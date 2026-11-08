@@ -318,3 +318,40 @@ def test_cache_state_is_hash_bound_to_consent_and_cannot_be_replayed(project_fix
     done=step(project,gen)
     assert done["generation_id"]==gen["generation_id"]
     assert done["revision"]!=gen["revision"]
+
+
+def test_derived_index_never_prevents_original_source_deletion(project_fixture):
+    """Source changes remain authoritative; cache is disposable, not a blocker."""
+    project,_,_=project_fixture
+    rid=source(project_fixture,number=1011)
+    ready=step(project,begin(project))
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute("PRAGMA foreign_keys=ON")
+        db.execute("DELETE FROM source_retrievals WHERE retrieval_id=?",(rid,))
+    stale=preview_candidate_index(project)
+    assert stale["status"]=="stale"
+    assert stale["source_epoch"]==ready["source_epoch"]+1
+    assert stale["index_ready"] is False
+    assert stale["source_records"]==0
+    assert table(project,"SELECT COUNT(*) FROM candidate_index_records")==[(0,)]
+    assert table(project,"SELECT COUNT(*) FROM candidate_index_keys")==[(0,)]
+    restarted=begin(project)
+    assert step(project,restarted)["status"]=="ready"
+
+
+def test_failed_source_write_does_not_invalidate_completed_cache(project_fixture):
+    """The source trigger epoch belongs to the original source transaction."""
+    project,_,_=project_fixture
+    rid=source(project_fixture,number=1)
+    ready=step(project,begin(project))
+    with pytest.raises(sqlite3.IntegrityError):
+        with closing(sqlite3.connect(project.database_path)) as db,db:
+            db.execute("PRAGMA foreign_keys=ON")
+            # Reject a duplicate original provider identity, not an index write.
+            db.execute("INSERT INTO source_retrievals "
+                       "SELECT ?,run_id,source_name,source_record_id,"
+                       "retrieved_at_utc,original_metadata_json "
+                       "FROM source_retrievals WHERE retrieval_id=?",(uid(),rid))
+    now=preview_candidate_index(project)
+    assert now["revision"]==ready["revision"]
+    assert now["status"]=="ready"
