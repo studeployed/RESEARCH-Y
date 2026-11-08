@@ -12,13 +12,14 @@ fails explicitly instead of silently truncating the queue.
 from __future__ import annotations
 
 from collections import defaultdict
-from itertools import chain, combinations, product
+from itertools import chain, combinations, product, groupby
 
 from research_y.application_inspection import _read
 from research_y import publication_identity as identity
 from research_y import publication_candidates as candidates
 from research_y import result_counts
 from research_y.publication_match_evidence import project_source
+from research_y import candidate_index_build
 
 METHOD = "project-candidate-queue/1"
 FIELDS = ("doi", "pmid", "accession", "title")
@@ -78,7 +79,7 @@ def _bucket_pairs(bucket, records, run_id):
         yield (left, right) if left < right else (right, left)
 
 
-def _index(db, project, run_id):
+def _original_index(db, project, run_id):
     """One read-only SQLite snapshot; no cache, schema migration or temp writes.
 
     The original run-count validator and candidate receipt validator remain the
@@ -182,10 +183,139 @@ def _index(db, project, run_id):
         projection=counts, revision=revision, records=records,
         pairs=pairs, by_pair=by_pair, total=total,
         unsupported=unsupported, unmaterialised=unmaterialised,
+        index_backend="original_source_projection",
+        index_status="not_built",
+        index_generation_id=None,
     )
 
 
-def read_candidate_queue(project, run_id: str, *,
+
+# The cache is a *derivative*. Its keys are only used once its transactional
+# original-source mutation epoch, generation, table counters and cursor have
+# been verified. A normal source insert/update/delete invalidates it inside
+# that source transaction. Match/reject/reverse decisions are always resolved
+# anew from canonical audit/identity records, never from cached decisions.
+_CACHE_KEYS_SQL = (
+    "SELECT k.field,k.value_sha256,k.retrieval_id "
+    "FROM candidate_index_keys k "
+    "JOIN candidate_index_records i ON i.retrieval_id=k.retrieval_id "
+    "JOIN publication_retrievals l ON l.retrieval_id=k.retrieval_id "
+    "WHERE i.supported=1 "
+    "ORDER BY k.field,k.value_sha256,k.retrieval_id"
+)
+
+
+def _cached_index(db, project, run_id, cache):
+    """Index-backed exact-key matching without rereading all provider payloads.
+
+    Source-only cache keys are checked against canonical candidate details on
+    the returned page. Historical decisions, statuses and memberships are
+    always read from original project SQLite; a ready cache never establishes
+    a verified publication or complete retrieval.
+    """
+    counts = result_counts._snapshot(db, project, run_id)
+    total = cache["source_records"]
+    if total > MAX_PROJECT_RECORDS:
+        raise CandidateQueueError("candidate_queue_over_limit")
+    supported = {}
+    for rid, rid_run, source, external_id, pub in db.execute(
+        "SELECT r.retrieval_id,r.run_id,r.source_name,r.source_record_id,"
+        "l.publication_id FROM candidate_index_records i "
+        "JOIN source_retrievals r ON r.retrieval_id=i.retrieval_id "
+        "JOIN publication_retrievals l ON l.retrieval_id=i.retrieval_id "
+        "WHERE i.supported=1 ORDER BY i.retrieval_id"
+    ):
+        identity._identifier(rid); identity._identifier(rid_run)
+        supported[rid] = dict(
+            retrieval_id=rid, run_id=rid_run, source_name=source,
+            source_record_id=external_id, publication_id=pub,
+        )
+    # An unmaterialised source is still in the durable cache's total, but
+    # cannot be a candidate without a provisional publication identity.
+    unmaterialised = db.execute(
+        "SELECT COUNT(*) FROM source_retrievals r LEFT JOIN "
+        "publication_retrievals l ON l.retrieval_id=r.retrieval_id "
+        "WHERE l.retrieval_id IS NULL"
+    ).fetchone()[0]
+    receipts = candidates._receipts(db, None)
+    by_pair = {}
+    for receipt in receipts:
+        pair = tuple(receipt["pair"])
+        if (all(rid in supported for rid in pair)
+                and any(supported[rid]["run_id"] == run_id for rid in pair)):
+            by_pair[pair] = receipt
+    pairs = {}
+    # Streaming original SQLite index order, not building a Python dictionary
+    # of every raw title/DOI or examining the licensed metadata again.
+    for _, rows in groupby(db.execute(_CACHE_KEYS_SQL),
+                           key=lambda row: (row[0], row[1])):
+        bucket = []
+        field = None
+        for key_name, _, rid in rows:
+            field = key_name
+            if rid not in supported:
+                raise CandidateQueueError()
+            bucket.append(rid)
+        if len(bucket) < 2:
+            continue
+        for pair in _bucket_pairs(bucket, supported, run_id):
+            pairs.setdefault(pair, set()).add(field)
+            if len(pairs) > MAX_PAIR_CANDIDATES:
+                raise CandidateQueueError("candidate_queue_over_limit")
+    for pair in by_pair:
+        pairs.setdefault(pair, set())
+        if len(pairs) > MAX_PAIR_CANDIDATES:
+            raise CandidateQueueError("candidate_queue_over_limit")
+    # A source mutation is fenced by SQLite triggers and the source epoch.
+    # Changes to *other run* status, query/group context or publication links
+    # still invalidate pagination even though source-only keys remain valid.
+    run_context = list(db.execute(
+        "SELECT run_id,strategy_version_id,status,completed_at_utc "
+        "FROM search_runs ORDER BY run_id"))
+    query_context = list(db.execute(
+        "SELECT query_id,run_id,group_id,source_name,exact_query,"
+        "parameters_json,reported_matches,status,executed_at_utc "
+        "FROM source_queries ORDER BY query_id"))
+    memberships = list(db.execute(
+        "SELECT query_id,retrieval_id,run_id,source_name "
+        "FROM query_retrievals ORDER BY query_id,retrieval_id"))
+    link_context = list(db.execute(
+        "SELECT retrieval_id,publication_id,decision_provenance_json "
+        "FROM publication_retrievals ORDER BY retrieval_id"))
+    revision = identity._hash([
+        METHOD, "indexed-cache-v5", str(project.identifier), run_id,
+        counts.revision,
+        (cache["generation_id"], cache["source_epoch"],
+         cache["running_sha256"], cache["processed_records"],
+         cache["indexed_keys"], cache["unsupported_records"]),
+        run_context, query_context, memberships, link_context,
+        [(r["event_id"], r["pair"], r["post_state_sha256"],
+          r["comparison_sha256"], r["status"]) for r in receipts],
+    ])
+    return dict(
+        projection=counts, revision=revision, records=supported,
+        pairs=pairs, by_pair=by_pair, total=total,
+        unsupported=cache["unsupported_records"],
+        unmaterialised=unmaterialised,
+        index_backend="verified_derived_keys_v5",
+        index_status="ready",
+        index_generation_id=cache["generation_id"],
+    )
+
+
+def _index(db, project, run_id):
+    cache = candidate_index_build._state(db, full_cache_check=True)
+    if cache["status"] == "ready":
+        return _cached_index(db, project, run_id, cache)
+    # An empty, building or stale cache is NEVER consumed. The PR73 original
+    # source projection remains available offline and retains its own budget.
+    original = _original_index(db, project, run_id)
+    original["index_status"] = cache["status"]
+    original["index_generation_id"] = cache["generation_id"]
+    return original
+
+
+def read_candidate_queue(project, run_id: str, *
                          after_pair: tuple[str, str] | None = None,
                          expected_revision: str | None = None) -> dict:
     """Keyset page of exact-key/prior-receipt hints touching the selected run.
@@ -242,6 +372,9 @@ def read_candidate_queue(project, run_id: str, *,
                 has_more=len(remaining) > PAGE_SIZE,
                 candidate_pair_total=len(ordered),
                 project_source_records=found["total"],
+                index_backend=found["index_backend"],
+                index_status=found["index_status"],
+                index_generation_id=found["index_generation_id"],
                 unmaterialised_project_records=found["unmaterialised"],
                 unsupported_project_records=found["unsupported"],
                 prior_receipt_pairs=len(found["by_pair"]),
@@ -259,6 +392,8 @@ def read_candidate_queue(project, run_id: str, *,
                     "no_fuzzy_or_full_text_duplicate_discovery",
                     "historical_cross_run_pairs_require_separate_review",
                     "not_a_verified_global_unique_publication_count",
+                    *([] if found["index_status"] == "ready"
+                      else ["derived_source_key_cache_not_ready_original_scan_used"]),
                 ],
             )
     except CandidateQueueError:
