@@ -368,3 +368,36 @@ def test_resumed_batch_and_more_probe_seek_by_primary_key(project_fixture):
                 "EXPLAIN QUERY PLAN "+sql,args)]
             assert any("SEARCH" in detail for detail in plans), plans
             assert not any("SCAN SOURCE_RETRIEVALS" in detail for detail in plans), plans
+
+
+def test_batch_progress_validation_does_not_rescan_all_cached_supported_rows(project_fixture):
+    from research_y import candidate_index_build as index
+    project,_,_=project_fixture
+    for n in range(1301,1304):
+        source(project_fixture,number=n)
+    ready=step(project,begin(project))
+    observed=[]
+    with closing(sqlite3.connect(project.database_path)) as db:
+        db.set_trace_callback(observed.append)
+        raw=index._state(db)
+        assert raw["processed_records"]==3
+        assert not any("WHERE supported=0" in sql for sql in observed)
+        assert not any("generation_id<>" in sql for sql in observed)
+        assert any("WHERE retrieval_id=" in sql for sql in observed)
+        observed.clear()
+        fully_checked=index._state(db,full_cache_check=True)
+        assert fully_checked["running_sha256"]==ready["running_sha256"]
+        assert any("WHERE supported=0" in sql for sql in observed)
+    assert preview_candidate_index(project)["index_ready"]
+
+
+def test_full_status_check_detects_tampered_cached_support_count(project_fixture):
+    project,_,_=project_fixture
+    rid=source(project_fixture,number=1401)
+    ready=step(project,begin(project))
+    with closing(sqlite3.connect(project.database_path)) as db,db:
+        db.execute("UPDATE candidate_index_records SET supported=0 "
+                   "WHERE retrieval_id=?",(rid,))
+    with pytest.raises(CandidateIndexError) as exc:
+        preview_candidate_index(project)
+    assert exc.value.code=="candidate_index_unavailable"
