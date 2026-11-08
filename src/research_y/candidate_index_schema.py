@@ -15,8 +15,7 @@ V5_TRIGGERS = (
 
 V5_STATEMENTS = (
     """CREATE TABLE candidate_index_state (
-        singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1)
-            REFERENCES project_metadata(singleton_id) ON DELETE RESTRICT,
+        singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1),
         status TEXT NOT NULL CHECK(status IN ('empty','building','ready','stale')),
         source_epoch INTEGER NOT NULL DEFAULT 0 CHECK(source_epoch >= 0),
         generation_id TEXT,
