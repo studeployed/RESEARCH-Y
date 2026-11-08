@@ -95,6 +95,7 @@ def _legacy_database(path, project):
         projects.apply_v2_schema(db)
         projects.apply_v3_schema(db)
         projects.apply_v4_schema(db)
+        projects.apply_v5_schema(db)
         db.execute(f"PRAGMA user_version={projects.SCHEMA_VERSION}")
         db.execute("INSERT INTO project_metadata "
                    "(singleton_id, project_uuid, name, created_at_utc) VALUES (1, ?, ?, ?)",
@@ -119,7 +120,7 @@ def test_logical_schema_and_contents_match_previous_initialiser(tmp_path):
             ).fetchone()
 
 
-@pytest.mark.parametrize("stage", ["apply_v2_schema", "apply_v3_schema", "apply_v4_schema"])
+@pytest.mark.parametrize("stage", ["apply_v2_schema", "apply_v3_schema", "apply_v4_schema", "apply_v5_schema"])
 @pytest.mark.parametrize("error_type", [sqlite3.OperationalError, KeyboardInterrupt],
                          ids=["database-error", "interruption"])
 def test_schema_stage_failure_rolls_back_all_creation(tmp_path, monkeypatch, stage, error_type):

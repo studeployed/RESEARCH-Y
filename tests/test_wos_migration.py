@@ -6,6 +6,7 @@ import pytest
 import research_y.projects as projects
 from research_y.storage import ApprovedTerm, StrategyGroup, approve_strategy, create_search_run, plan_source_query
 from research_y.wos_checkpoint_schema import WOS_TABLES, V4_STATEMENTS
+from research_y.candidate_index_schema import V5_TABLES, V5_TRIGGERS
 from research_y.wos_checkpoint_store import create_wos_checkpoint
 
 
@@ -16,6 +17,8 @@ def v3_project(tmp_path):
     q=plan_source_query(p,run_id=run.run_id,group_id='g',source_name='wos',exact_query='TS=("ECMO")')
     with closing(sqlite3.connect(p.database_path)) as db:
         db.execute('PRAGMA foreign_keys=OFF')
+        for trigger in V5_TRIGGERS:db.execute(f'DROP TRIGGER {trigger}')
+        for name in V5_TABLES:db.execute(f'DROP TABLE {name}')
         db.execute('DROP TRIGGER immutable_wos_query_identity')
         for name in WOS_TABLES:db.execute(f'DROP TABLE {name}')
         db.execute('PRAGMA user_version=3')
@@ -36,11 +39,11 @@ def test_v3_migration_once_preserves_original_query_and_consistent_snapshot(tmp_
         assert db.execute('SELECT * FROM audit_events ORDER BY event_id').fetchall()==old_audit
         assert db.execute("SELECT name FROM sqlite_master WHERE name='wos_checkpoint_jobs'").fetchone() is None
     with closing(sqlite3.connect(p.database_path)) as db:
-        assert db.execute('PRAGMA user_version').fetchone()[0]==4
+        assert db.execute('PRAGMA user_version').fetchone()[0]==projects.SCHEMA_VERSION
         assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
         assert db.execute('SELECT * FROM audit_events ORDER BY event_id').fetchall()[:-1]==old_audit
         event=json.loads(db.execute('SELECT details_json FROM audit_events ORDER BY event_id DESC LIMIT 1').fetchone()[0])
-        assert event=={'from_version':3,'to_version':4,'backup':backups[0].name}
+        assert event=={'from_version':3,'to_version':projects.SCHEMA_VERSION,'backup':backups[0].name}
     create_wos_checkpoint(p,q.query_id,retention_authorized=True)
 
 

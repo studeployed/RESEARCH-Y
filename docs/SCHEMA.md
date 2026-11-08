@@ -1,4 +1,4 @@
-# SQLite schema v4 — P1-05b (additive to v3)
+# SQLite schema v5 — P1-06k2a (additive to v4)
 
 The approved [specification](../RESEARCH-Y_SPEC.md) remains authoritative. The current implementation stores reproducible local evidence; it is not a declaration of a completed search product.
 
@@ -27,13 +27,23 @@ A page, source records, group/query memberships and audit commit together in `BE
 
 Validated acquisition metadata uses the existing `source_retrievals` / `query_retrievals` tables. Identical source records may belong to more than one query; conflicting original metadata is not overwritten. Retention requires explicit confirmation of source permissions. No secret, publication deduplication or inferred abstract is added.
 
+## Version 5 additions: derived candidate-key indexing
+
+See [candidate index checkpoints](CANDIDATE_INDEX_CHECKPOINTS.md) for its explicit, bounded source-only build contract. This version adds:
+- `candidate_index_state`: singleton generation status (`empty`, `building`, `ready`, `stale`), source-mutation epoch, cursor, rolling evidence hash and progress;
+- `candidate_index_records`: source-retrieval references and original source hashes for each committed generation;
+- `candidate_index_keys`: indexed **project-salted digests only** for canonical exact title/DOI/PMID/accession fields; source values and abstracts are not duplicated into this cache;
+- Source insertion/update/deletion triggers that atomically invalidate a building or ready generation.
+
+These structures have no effect on original source queries, publication-identity matching decisions or search completeness. A ready derived index is not a completed search or verified publication count.
+
 ## Recoverable migration
 
-New projects initialise schema **4**. Opening an older supported project validates its identity before creating a consistent, independently checked backup. Names reflect the old version's next step: `researchy-before-v2-*` for v1, `researchy-before-v3-*` for v2, and `researchy-before-v4-*` for v3. The actual migration audit records the old version and target **4**, with all needed additive definitions applied in one transaction.
+New projects initialise schema **5**. Opening an older supported project validates its identity before creating a consistent, independently checked backup. Names reflect the old version's next step: `researchy-before-v2-*` for v1, `researchy-before-v3-*` for v2, `researchy-before-v4-*` for v3, and `researchy-before-v5-*` for v4. The actual migration audit records the old version and target **5**, with all needed additive definitions applied in one transaction.
 
-Schema changes, `PRAGMA user_version=4` and the migration audit are atomic. A failed backup prevents migration; failed DDL or audit rolls back the original database, leaving the pre-upgrade backup intact. Reopening a current project creates no repeated backup. Unknown future versions and identity mismatches are rejected without migration. Existing source records, PubMed checkpoints and research setup are preserved.
+Schema changes, `PRAGMA user_version=5` and the migration audit are atomic. A failed backup prevents migration; failed DDL or audit rolls back the original database, leaving the pre-upgrade backup intact. Reopening a current project creates no repeated backup. Unknown future versions and identity mismatches are rejected without migration. Existing source records, PubMed checkpoints and research setup are preserved.
 
-Tests: `tests/test_schema_migrations.py`, `tests/test_wos_migration.py`, `tests/test_wos_checkpoints.py`. These are fixtures until execution evidence is recorded; schema presence alone never proves data retrieval.
+Tests: `tests/test_schema_migrations.py`, `tests/test_wos_migration.py`, `tests/test_candidate_index_migration.py`, `tests/test_candidate_index_build.py`, `tests/test_wos_checkpoints.py`. These are fixtures until execution evidence is recorded; schema presence alone never proves data retrieval.
 
 ## Acceptance and security boundary
 
