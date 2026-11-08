@@ -504,9 +504,9 @@ def test_source_mutation_downgrades_cache_and_rejects_old_cursor(project_runs):
 
 def test_unfinished_cache_never_suppresses_original_candidate_queue(project_runs):
     project,run,_=project_runs
-    insert(project_runs,number=2001,title="Same title",doi="10.22/same")
+    insert(project_runs,number=2001,title="Same title",doi="10.2222/same")
     insert(project_runs,source="wos",number=2002,
-           title="Same title",doi="10.22/same")
+           title="Same title",doi="10.2222/same")
     from research_y.candidate_index_build import (
         preview_candidate_index,start_candidate_index,advance_candidate_index)
     first=preview_candidate_index(project)
@@ -554,8 +554,8 @@ def test_cached_queue_source_keys_are_not_automatic_match_permissions(project_ru
 
 def test_trusted_host_index_consent_previews_and_reconciles_one_batch(project_runs):
     project,run,_=project_runs
-    insert(project_runs,number=2301,title="Shared",doi="10.23/one")
-    insert(project_runs,source="wos",number=2302,title="Shared",doi="10.23/one")
+    insert(project_runs,number=2301,title="Shared",doi="10.2323/one")
+    insert(project_runs,source="wos",number=2302,title="Shared",doi="10.2323/one")
     from tools.gui_feasibility.real_project_flow import RealProjectFlow,ProjectFlowError
     flow=RealProjectFlow(selected_root=project.root,
                          selected_parent=project.root.parent)
@@ -668,9 +668,9 @@ def test_index_command_allowlist_requires_single_use_revision_and_no_credentials
 
 
 def test_cached_index_skips_original_whole_project_field_reprojection(project_runs,monkeypatch):
-    insert(project_runs,number=2601,title="Same cache field",doi="10.26/shared")
+    insert(project_runs,number=2601,title="Same cache field",doi="10.2626/shared")
     insert(project_runs,source="wos",number=2602,
-           title="Same cache field",doi="10.26/shared")
+           title="Same cache field",doi="10.2626/shared")
     build_ready_index(project_runs)
     def must_not_reproject_all_sources(*args,**kwargs):
         raise AssertionError("Whole-project original-field projection not used")
@@ -682,9 +682,9 @@ def test_cached_index_skips_original_whole_project_field_reprojection(project_ru
 
 def test_cache_original_run_and_group_evidence_invalidates_navigation(project_runs):
     project,run,historical=project_runs
-    insert(project_runs,number=2701,title="Same",doi="10.27/shared")
+    insert(project_runs,number=2701,title="Same",doi="10.2727/shared")
     insert(project_runs,source="wos",number=2702,
-           title="Same",doi="10.27/shared")
+           title="Same",doi="10.2727/shared")
     build_ready_index(project_runs)
     initial=read(project_runs)
     assert initial["index_backend"]=="verified_derived_keys_v5"
@@ -703,9 +703,9 @@ def test_cache_original_run_and_group_evidence_invalidates_navigation(project_ru
 
 def test_forged_cached_pair_key_cannot_claim_false_exact_match(project_runs):
     project,run,_=project_runs
-    a=insert(project_runs,number=2801,title="Study one",doi="10.28/first")
+    a=insert(project_runs,number=2801,title="Study one",doi="10.2828/first")
     b=insert(project_runs,source="wos",number=2802,
-             title="Study two",doi="10.28/second")
+             title="Study two",doi="10.2828/second")
     build_ready_index(project_runs)
     assert read(project_runs)["candidate_pair_total"]==0
     with closing(sqlite3.connect(project.database_path)) as db,db:
