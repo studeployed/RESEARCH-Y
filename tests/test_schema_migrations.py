@@ -78,7 +78,7 @@ def test_new_projects_start_on_v2_and_have_distinct_entities(tmp_path: Path) -> 
         "organisations", "publication_organisations", "classifications", "documents",
     }
     with closing(_connection(project)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 4
+        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 5
         tables = {
             row[0] for row in db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
@@ -288,6 +288,11 @@ def _simulate_existing_v2(project: project_module.Project) -> None:
     with closing(sqlite3.connect(project.database_path)) as db:
         db.execute("PRAGMA foreign_keys=OFF")
         from research_y.wos_checkpoint_schema import WOS_TABLES
+        from research_y.candidate_index_schema import V5_TABLES, V5_TRIGGERS
+        for trigger in V5_TRIGGERS:
+            db.execute(f"DROP TRIGGER {trigger}")
+        for table in V5_TABLES:
+            db.execute(f"DROP TABLE {table}")
         db.execute("DROP TRIGGER immutable_wos_query_identity")
         for table in WOS_TABLES:
             db.execute(f"DROP TABLE {table}")
