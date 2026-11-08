@@ -237,6 +237,13 @@ def _cached_index(db, project, run_id, cache):
         "publication_retrievals l ON l.retrieval_id=r.retrieval_id "
         "WHERE l.retrieval_id IS NULL"
     ).fetchone()[0]
+    # Match the PR73 denominator: unsupported but LINKED source retrievals
+    # are reported here; unmaterialised sources have their own denominator.
+    unsupported_linked = db.execute(
+        "SELECT COUNT(*) FROM candidate_index_records i "
+        "JOIN publication_retrievals l ON l.retrieval_id=i.retrieval_id "
+        "WHERE i.supported=0"
+    ).fetchone()[0]
     receipts = candidates._receipts(db, None)
     by_pair = {}
     for receipt in receipts:
@@ -295,7 +302,7 @@ def _cached_index(db, project, run_id, cache):
     return dict(
         projection=counts, revision=revision, records=supported,
         pairs=pairs, by_pair=by_pair, total=total,
-        unsupported=cache["unsupported_records"],
+        unsupported=unsupported_linked,
         unmaterialised=unmaterialised,
         index_backend="verified_derived_keys_v5",
         index_status="ready",
@@ -343,6 +350,14 @@ def read_candidate_queue(project, run_id: str, *
             rows = []
             for pair in shown:
                 candidate, _ = candidates._view(db, pair)
+                # Refuse a forged/out-of-date cached hint: the original
+                # canonical citation comparison must still substantiate each
+                # field shown as an exact match. A prior-only decision pair
+                # legitimately has no matching current key.
+                if (found["index_backend"] == "verified_derived_keys_v5" and
+                        any(candidate.comparison["comparisons"].get(field) != "equal"
+                            for field in found["pairs"][pair])):
+                    raise CandidateQueueError()
                 # The detailed comparison may contain restricted source values.
                 # Do not return it through the queue; preserve only reason codes.
                 records = [found["records"][rid] for rid in pair]
