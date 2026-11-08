@@ -224,6 +224,8 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         kw['run_id']=str(uuid4())
     elif operation=='candidate_queue_page':
         kw.update(run_id=str(uuid4()),candidate_queue_revision='a'*64)
+    elif operation=='candidate_index_preview':
+        pass  # Project-wide read-only inspection takes no run/export arguments.
     elif operation in ('candidate_index_start','candidate_index_advance'):
         kw.update(candidate_index_revision='a'*64,
                   candidate_index_actor='Synthetic researcher',
