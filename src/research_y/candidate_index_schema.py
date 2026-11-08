@@ -33,7 +33,7 @@ V5_STATEMENTS = (
         VALUES(1,'empty')""",
     """CREATE TABLE candidate_index_records (
         retrieval_id TEXT PRIMARY KEY REFERENCES source_retrievals(retrieval_id)
-            ON DELETE RESTRICT,
+            ON DELETE CASCADE,
         generation_id TEXT NOT NULL,
         run_id TEXT NOT NULL REFERENCES search_runs(run_id) ON DELETE RESTRICT,
         source_sha256 TEXT NOT NULL,
@@ -43,7 +43,7 @@ V5_STATEMENTS = (
         ON candidate_index_records(run_id,retrieval_id)""",
     """CREATE TABLE candidate_index_keys (
         retrieval_id TEXT NOT NULL REFERENCES candidate_index_records(retrieval_id)
-            ON DELETE RESTRICT,
+            ON DELETE CASCADE,
         field TEXT NOT NULL CHECK(field IN ('doi','pmid','accession','title')),
         value_sha256 TEXT NOT NULL CHECK(length(value_sha256)=64),
         PRIMARY KEY(retrieval_id,field)
