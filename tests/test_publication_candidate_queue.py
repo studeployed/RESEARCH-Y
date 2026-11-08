@@ -550,3 +550,118 @@ def test_cached_queue_source_keys_are_not_automatic_match_permissions(project_ru
     assert response["rows"][0]["pair_already_associated"] is False
     assert {x["publication_id"] for x in response["rows"][0]["sources"]}.__len__()==2
     assert response["global_unique_publications"] is None
+
+
+def test_trusted_host_index_consent_previews_and_reconciles_one_batch(project_runs):
+    project,run,_=project_runs
+    insert(project_runs,number=2301,title="Shared",doi="10.23/one")
+    insert(project_runs,source="wos",number=2302,title="Shared",doi="10.23/one")
+    from tools.gui_feasibility.real_project_flow import RealProjectFlow,ProjectFlowError
+    flow=RealProjectFlow(selected_root=project.root,
+                         selected_parent=project.root.parent)
+    flow.project=project
+    flow.selected_run_id=run
+    flow.snapshot={"runs":[],"report":None,"exports":[]}
+    flow._operation=lambda name,**kwargs: execute_command(
+        ApplicationCommand.for_project(project,name,**kwargs))
+    try:
+        with pytest.raises(ProjectFlowError,match="candidate_index_confirmation_required"):
+            flow.confirm_candidate_index("Researcher")
+        status=flow.inspect_candidate_index()
+        assert status["candidate_index_state"]["status"]=="empty"
+        assert status["candidate_index_offer"] is None
+        offer=flow.offer_candidate_index("start")
+        assert offer["candidate_index_offer"]["action"]=="start"
+        begin=flow.confirm_candidate_index("Researcher")
+        assert begin["candidate_index_offer"] is None
+        assert begin["candidate_index_state"]["status"]=="building"
+        assert begin["candidate_index_last_receipt"]["action"]=="start"
+        offered=flow.offer_candidate_index("advance")
+        assert offered["candidate_index_offer"]["processed_records"]==0
+        completed=flow.confirm_candidate_index("Researcher")
+        assert completed["candidate_index_state"]["status"]=="ready"
+        assert completed["candidate_index_state"]["processed_records"]==2
+        assert completed["candidate_index_last_receipt"]["action"]=="advance"
+        refreshed=flow.inspect_candidate_queue()["candidate_queue"]
+        assert refreshed["index_backend"]=="verified_derived_keys_v5"
+        assert refreshed["candidate_pair_total"]==1
+        with pytest.raises(ProjectFlowError,match="candidate_index_no_work"):
+            flow.offer_candidate_index("advance")
+        assert flow.state()["candidate_index_offer"] is None
+    finally:
+        flow.close()
+
+
+def test_host_does_not_replay_lost_index_write_result(project_runs):
+    project,run,_=project_runs
+    insert(project_runs,number=2401)
+    from tools.gui_feasibility.real_project_flow import RealProjectFlow,ProjectFlowError
+    flow=RealProjectFlow(selected_root=project.root,
+                         selected_parent=project.root.parent)
+    flow.project=project
+    flow.selected_run_id=run
+    flow.snapshot={"runs":[],"report":None,"exports":[]}
+    call_count={"start":0}
+    def intermittent(name,**kwargs):
+        result=execute_command(ApplicationCommand.for_project(project,name,**kwargs))
+        if name=="candidate_index_start":
+            call_count["start"]+=1
+            raise ProjectFlowError("worker_reply_lost_after_commit")
+        return result
+    flow._operation=intermittent
+    try:
+        flow.offer_candidate_index("start")
+        with pytest.raises(ProjectFlowError,match="worker_reply_lost_after_commit"):
+            flow.confirm_candidate_index("Researcher")
+        assert call_count["start"]==1
+        assert flow.state()["candidate_index_offer"] is None
+        assert flow.state()["candidate_index_error"] is not None
+        with pytest.raises(ProjectFlowError,match="candidate_index_confirmation_required"):
+            flow.confirm_candidate_index("Researcher")
+        state=flow.inspect_candidate_index()["candidate_index_state"]
+        assert state["status"]=="building"
+        assert state["generation_id"] is not None
+        assert call_count["start"]==1
+    finally:
+        flow.close()
+
+
+def test_index_command_allowlist_requires_single_use_revision_and_no_credentials(project_runs):
+    project,run,_=project_runs
+    insert(project_runs,number=2501)
+    original=execute_command(ApplicationCommand.for_project(
+        project,"candidate_index_preview"))
+    for forged in (dict(run_id=run),
+                   dict(candidate_index_confirmed=True),
+                   dict(candidate_index_revision="a"*64),
+                   dict(pilot_api_key="SECRET"),
+                   dict(candidate_queue_cursor=(uid(),uid()))):
+        with pytest.raises(ApplicationCommandError):
+            ApplicationCommand.for_project(
+                project,"candidate_index_preview",**forged)
+    for forged in (dict(candidate_index_confirmed=False),
+                   dict(candidate_index_generation=uid()),
+                   dict(pilot_api_key="SECRET")):
+        payload=dict(candidate_index_revision=original["revision"],
+                     candidate_index_actor="Researcher",
+                     candidate_index_confirmed=True)
+        payload.update(forged)
+        with pytest.raises(ApplicationCommandError):
+            ApplicationCommand.for_project(
+                project,"candidate_index_start",**payload)
+    started=execute_command(ApplicationCommand.for_project(
+        project,"candidate_index_start",
+        candidate_index_revision=original["revision"],
+        candidate_index_actor="Researcher",candidate_index_confirmed=True))
+    with pytest.raises(ApplicationCommandError):
+        execute_command(ApplicationCommand.for_project(
+            project,"candidate_index_start",
+            candidate_index_revision=original["revision"],
+            candidate_index_actor="Researcher",candidate_index_confirmed=True))
+    with pytest.raises(ApplicationCommandError):
+        ApplicationCommand.for_project(
+            project,"candidate_index_advance",
+            candidate_index_revision=started["revision"],
+            candidate_index_actor="Researcher",
+            candidate_index_confirmed=True)
+    assert "SECRET" not in repr(started)
