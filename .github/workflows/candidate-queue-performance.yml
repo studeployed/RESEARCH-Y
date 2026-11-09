@@ -10,6 +10,7 @@ on:
       - 'src/research_y/publication_candidate_queue.py'
       - 'src/research_y/candidate_pair_checkpoints.py'
       - 'tests/test_candidate_queue_performance_probe.py'
+      - 'docs/CANDIDATE_QUEUE_PERFORMANCE.md'
   workflow_dispatch:
 
 permissions:
