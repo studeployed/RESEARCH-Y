@@ -14,14 +14,12 @@ No provider access, user data, credentials or permanent source records.
 from __future__ import annotations
 
 import argparse
-from collections import deque
 from hashlib import sha256
 import json
 from pathlib import Path
 import platform
 import sqlite3
 from statistics import median
-import sys
 from tempfile import TemporaryDirectory
 from time import perf_counter
 import tracemalloc
@@ -193,15 +191,24 @@ def run(records, pair_count, receipt_count, repetitions):
             assert db.execute("SELECT COUNT(*) FROM source_retrievals").fetchone()==(records,)
             assert db.execute("SELECT COUNT(*) FROM candidate_index_keys").fetchone()==(records,)
             assert db.execute("SELECT COUNT(*) FROM candidate_pair_hints").fetchone()==(pair_count,)
-            first_id,last_id=rid(1),rid(records)
+            first_id=rid(1)
             first_pair=("", "")
-            last_pair=tuple(sorted((rid(pair_count),rid(pair_count+1 if pair_count<records else 1))))
+            near_tail=db.execute(
+                "SELECT left_retrieval_id,right_retrieval_id "
+                "FROM candidate_pair_hints WHERE run_id=? "
+                "ORDER BY left_retrieval_id DESC,right_retrieval_id DESC LIMIT 26",
+                (SELECTED,),
+            ).fetchall()
+            # Use a late cursor with up to 25 later pairs: this tests
+            # *deep* pagination and the 21st-row lookahead, not the empty
+            # page after the final entry.
+            late_cursor=near_tail[-1] if len(near_tail)==26 else first_pair
             page_first=_observed(
                 db,queue._PAIR_PAGE_SQL,
                 (SELECTED,first_pair[0],first_pair[1],21),repetitions)
             page_near_tail=_observed(
                 db,queue._PAIR_PAGE_SQL,
-                (SELECTED,*last_pair,21),repetitions)
+                (SELECTED,*late_cursor,21),repetitions)
             peer=_observed(
                 db,pairs.PEERS_SQL,
                 ("doi",_digest("dense"),"",first_id,SELECTED,first_id,129),
@@ -212,7 +219,7 @@ def run(records, pair_count, receipt_count, repetitions):
                 "candidate_pair_page":_plan(
                     db,queue._PAIR_PAGE_SQL,(SELECTED,"","",21)),
                 "candidate_pair_near_tail":_plan(
-                    db,queue._PAIR_PAGE_SQL,(SELECTED,*last_pair,21)),
+                    db,queue._PAIR_PAGE_SQL,(SELECTED,*late_cursor,21)),
                 "peer_hash_seek":_plan(
                     db,pairs.PEERS_SQL,
                     ("doi",_digest("dense"),"",first_id,SELECTED,first_id,129)),
@@ -248,7 +255,7 @@ def run(records, pair_count, receipt_count, repetitions):
         "sqlite_fixture_size_bytes":db_size,
         "reopened_integrity_check":"ok",
         "first_page":page_first,
-        "last_page_after_final_pair":page_near_tail,
+        "page_near_tail":page_near_tail,
         "dense_key_peer_seek":peer,
         "source_key_resume":resume,
         "receipt_lookup":receipts,
