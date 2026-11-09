@@ -425,10 +425,10 @@ def _pair_checkpoint_page(db, project, run_id, snapshot, cursor, expected_revisi
     for left,right,mask in stored:
         if type(mask) is not int or mask < 1 or mask > 15:
             raise CandidateQueueError()
-        evidence[left,right] = [
+        evidence[left,right] = sorted(
             name for name,bit in pair_checkpoints.FIELDS_MASK.items()
             if mask & bit
-        ]
+        )
     for pair in additional:
         if pair in evidence:
             raise CandidateQueueError()  # Receipt-only must not duplicate key.
