@@ -32,6 +32,23 @@ python scripts/benchmark_candidate_queue.py --records 100000 --pairs 100000 --re
 
 The new GitHub Actions performance workflow executes the same **100,000-record synthetic SQL-kernel workload on Linux and Windows with Python 3.12**, retaining one JSON evidence artifact per platform. The existing four-configuration Python suite runs lightweight (101- and 1,000-record) smoke tests, actual full-journal-once regressions and original evidence-integrity tests. Do not invent/assume an elapsed time or claim a measured result before the relevant workflow finishes.
 
+## First observed full-size component results
+
+The [GitHub Actions performance run #42724235103](https://github.com/studeployed/RESEARCH-Y/actions/runs/42724235103) completed both **Linux Python 3.12.16** and **Windows Python 3.12.10** synthetic 100,000-record jobs successfully on **9 November 2026**. The evaluated code commit was `e51499c33b3cc5069ba2a298ef3a0adc98e8db55`. The original JSON artifacts are named `candidate-queue-query-evidence-ubuntu-latest-py312` and `candidate-queue-query-evidence-windows-latest-py312`; each includes detailed query plans and 95th-percentile timings.
+
+| Measured component (40 repetitions per SQL query) | Linux median | Windows median |
+|---|---:|---:|
+| First 21-row candidate-pair page | **0.020 ms** | **0.066 ms** |
+| Deep 21-row candidate-pair page | **0.020 ms** | **0.066 ms** |
+| Dense identifier peer lookup (129 rows) | **0.126 ms** | **0.251 ms** |
+| Source-record keyset resume (128 rows) | **0.039 ms** | **0.085 ms** |
+| Build Python lookup groups for 10,000 synthetic receipts | **34.298 ms** | **42.133 ms** |
+| Synthetic SQLite fixture construction (100,000 keys and pairs) | **1,876.467 ms** | **3,799.823 ms** |
+
+Both platforms reopened the database and recorded `PRAGMA integrity_check=ok` with exactly 100,000 original synthetic source-key rows and 100,000 pair-hint rows. The SQLite file was approximately **108.4 MiB**. Query plans on both platforms reported indexed seeks, including the production `candidate_index_keys_by_field` index for dense peers and the composite primary-key index for deep pair pagination.
+
+**Do not interpret these milliseconds as end-to-end queue latency.** The synthetic workload does not include actual original audit validation, bibliographic-source decoding, the whole-run result-count projection, 100,000 independent publication identity receipts, graphical rendering or worker-process transport. Absolute targets have not yet been approved; these values are a baseline for identifying regressions, not a pass verdict on full **AT-22**.
+
 ### Interpretation
 
 The large fixture is explicitly **query/component-level**, not a realistic full project containing 100,000 independently audited publications. The synthetic receipt lookup assumes receipt dictionaries have already passed validation; it **does not measure the full original audit validator**, publication metadata decoding, full run count reconciliation, GUI painting, user input responsiveness, Excel export, or eventual classification. Python `tracemalloc` records Python-managed allocation for the grouping stage, **not** total native SQLite memory or whole-process peak resident memory.
