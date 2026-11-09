@@ -229,9 +229,18 @@ def run(records, pair_count, receipt_count, repetitions):
             if not any("SEARCH candidate_pair_hints" in s
                        for s in plans["candidate_pair_page"]):
                 raise AssertionError("Pair pagination lost its indexed seek")
-            if not any("SEARCH candidate_index_keys" in s
-                       for s in plans["peer_hash_seek"]):
-                raise AssertionError("Dense-key peers lost their indexed seek")
+            if not any(
+                "SEARCH" in step and
+                "candidate_index_keys_by_field" in step
+                for step in plans["peer_hash_seek"]
+            ):
+                # EXPLAIN reports the SQL alias ('k'), not necessarily the
+                # full table name. Require the actual named production index
+                # *and* a seek; do not mistake a covering-index scan for one.
+                raise AssertionError(
+                    "Dense-key peers lost their indexed seek: "+
+                    repr(plans["peer_hash_seek"])
+                )
             db_size=dbpath.stat().st_size
         finally:
             db.close()
