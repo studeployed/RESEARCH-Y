@@ -149,9 +149,33 @@ def _receipts(db: sqlite3.Connection, keys: list[list[str]] | None) -> list[dict
     return related
 
 
-def _view(db: sqlite3.Connection, pair: tuple[str, str]) -> tuple[CandidateSnapshot, str]:
+def _index_validated_receipts(receipts: list[dict]) -> dict[tuple, list[dict]]:
+    """Group a *previously validated complete* audit stream by source keys.
+
+    Only internal callers that have already invoked `_receipts(db, None)`
+    on this same original SQLite snapshot may supply this derivative. The
+    order of receipts within each group is unchanged. This index cannot
+    replace canonical validation or confer match/merge authority.
+    """
+    grouped: dict[tuple, list[dict]] = {}
+    for receipt in receipts:
+        key = tuple(tuple(part) for part in receipt["source_keys"])
+        grouped.setdefault(key, []).append(receipt)
+    return grouped
+
+
+def _view(db: sqlite3.Connection, pair: tuple[str, str], *,
+          validated_receipts_by_keys: dict[tuple, list[dict]] | None = None
+          ) -> tuple[CandidateSnapshot, str]:
     snapshots, sources, comparison, keys, state = _state(db, pair)
-    receipts = _receipts(db, keys)
+    if validated_receipts_by_keys is None:
+        # Standalone review/write paths always validate their complete journal.
+        receipts = _receipts(db, keys)
+    else:
+        # The queue has already validated *all* original decisions once
+        # within this read transaction; do not validate N times for N rows.
+        key = tuple(tuple(part) for part in keys)
+        receipts = list(validated_receipts_by_keys.get(key, ()))
     current = next((r for r in reversed(receipts) if r["pair"] == list(pair)), None)
     status = "review_required"
     warnings = set(comparison["warnings"])
