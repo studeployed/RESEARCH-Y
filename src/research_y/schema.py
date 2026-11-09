@@ -6,7 +6,7 @@ are separate future increments. A reported hit count cannot be inferred from
 these tables.
 """
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 RUN_STATUSES = (
     "pending", "running", "paused", "completed_verified",
