@@ -187,6 +187,7 @@ def _original_index(db, project, run_id):
         index_backend="original_source_projection",
         index_status="not_built",
         index_generation_id=None,
+        validated_receipts_by_keys=candidates._index_validated_receipts(receipts),
     )
 
 
@@ -308,6 +309,7 @@ def _cached_index(db, project, run_id, cache):
         index_backend="verified_derived_keys_v5",
         index_status="ready",
         index_generation_id=cache["generation_id"],
+        validated_receipts_by_keys=candidates._index_validated_receipts(receipts),
     )
 
 
@@ -352,6 +354,7 @@ def _pair_checkpoint_page(db, project, run_id, snapshot, cursor, expected_revisi
     if source["source_records"] > MAX_PROJECT_RECORDS:
         raise CandidateQueueError("candidate_queue_over_limit")
     receipts = candidates._receipts(db, None)
+    validated_receipts_by_keys = candidates._index_validated_receipts(receipts)
     receipt_pairs = {}
     # Validate every decision with the existing canonical receipt service.
     # Use original supported/materialised source identities, never assume
@@ -439,7 +442,8 @@ def _pair_checkpoint_page(db, project, run_id, snapshot, cursor, expected_revisi
     for pair in shown:
         left,right=pair
         field_names = evidence[pair]
-        candidate, _ = candidates._view(db, pair)
+        candidate, _ = candidates._view(
+            db, pair, validated_receipts_by_keys=validated_receipts_by_keys)
         if any(candidate.comparison["comparisons"].get(name) != "equal"
                for name in field_names):
             # Never display a forged/contradictory cached equality.
@@ -570,7 +574,9 @@ def read_candidate_queue(project, run_id: str, *,
             shown = remaining[:PAGE_SIZE]
             rows = []
             for pair in shown:
-                candidate, _ = candidates._view(db, pair)
+                candidate, _ = candidates._view(
+                    db, pair,
+                    validated_receipts_by_keys=found["validated_receipts_by_keys"])
                 # Refuse a forged/out-of-date cached hint: the original
                 # canonical citation comparison must still substantiate each
                 # field shown as an exact match. A prior-only decision pair
