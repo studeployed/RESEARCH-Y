@@ -189,6 +189,19 @@ def services(monkeypatch, tmp_path):
         'method':'derived-candidate-key-index/1',
         'no_network_requests':True,'global_unique_publications':None,
         'source_retrieval_verified':False})
+    pair_index=types.ModuleType('research_y.candidate_pair_checkpoints')
+    from research_y.candidate_pair_checkpoints import CandidatePairError
+    pair_index.CandidatePairError=CandidatePairError
+    pair_index.preview_pair_checkpoint=service('candidate_pair_preview',{
+        'method':'candidate-pair-hint-checkpoints/1','no_network_requests':True,
+        'historical_receipt_only_pairs_included':False,
+        'global_unique_publications':None,'source_retrieval_verified':False})
+    pair_index.start_pair_checkpoint=service('candidate_pair_start',{
+        'method':'candidate-pair-hint-checkpoints/1','no_network_requests':True,
+        'global_unique_publications':None,'source_retrieval_verified':False})
+    pair_index.advance_pair_checkpoint=service('candidate_pair_advance',{
+        'method':'candidate-pair-hint-checkpoints/1','no_network_requests':True,
+        'global_unique_publications':None,'source_retrieval_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -208,6 +221,7 @@ def services(monkeypatch, tmp_path):
                         ('publication_review_gui',review_gui),
                         ('publication_candidate_queue',queue),
                         ('candidate_index_build',indexed),
+                        ('candidate_pair_checkpoints',pair_index),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -224,6 +238,14 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         kw['run_id']=str(uuid4())
     elif operation=='candidate_queue_page':
         kw.update(run_id=str(uuid4()),candidate_queue_revision='a'*64)
+    elif operation=='candidate_pair_preview':
+        kw.update(run_id=str(uuid4()))
+    elif operation in ('candidate_pair_start','candidate_pair_advance'):
+        kw.update(run_id=str(uuid4()),candidate_pair_revision='c'*64,
+                  candidate_pair_actor='Synthetic researcher',
+                  candidate_pair_confirmed=True)
+        if operation=='candidate_pair_advance':
+            kw['candidate_pair_generation']=str(uuid4())
     elif operation=='candidate_index_preview':
         pass  # Project-wide read-only inspection takes no run/export arguments.
     elif operation in ('candidate_index_start','candidate_index_advance'):
@@ -362,6 +384,17 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][1][1]==kw['run_id']
         assert result['no_network_requests'] is True
         assert result['global_unique_publications'] is None
+    if operation in ('candidate_pair_preview','candidate_pair_start',
+                     'candidate_pair_advance'):
+        assert calls[0][1]==(project,kw['run_id'])
+        assert result['global_unique_publications'] is None
+        assert result['no_network_requests'] is True
+    if operation in ('candidate_pair_start','candidate_pair_advance'):
+        assert calls[0][2]['expected_revision']==kw['candidate_pair_revision']
+        assert calls[0][2]['actor']=='Synthetic researcher'
+        assert calls[0][2]['confirmed'] is True
+    if operation=='candidate_pair_advance':
+        assert calls[0][2]['generation_id']==kw['candidate_pair_generation']
     if operation in ('candidate_index_preview','candidate_index_start',
                      'candidate_index_advance'):
         assert calls[0][1]==(project,)

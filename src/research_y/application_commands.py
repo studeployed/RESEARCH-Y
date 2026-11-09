@@ -20,6 +20,8 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                         'candidate_link_status', 'candidate_queue_page',
                         'candidate_index_preview', 'candidate_index_start',
                         'candidate_index_advance',
+                        'candidate_pair_preview', 'candidate_pair_start',
+                        'candidate_pair_advance',
                         'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
@@ -32,7 +34,11 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                          'pubmed_identifier_read', 'pubmed_identifier_run',
                          'pubmed_identifier_pause', 'pubmed_metadata_read',
                          'pubmed_metadata_preview', 'pubmed_metadata_run'})
-SERVICE_ERRORS = frozenset({'candidate_index_unavailable', 'candidate_index_invalid',
+SERVICE_ERRORS = frozenset({'candidate_pair_unavailable',
+    'candidate_pair_invalid', 'candidate_pair_stale',
+    'candidate_pair_index_not_ready', 'candidate_pair_confirmation_required',
+    'candidate_pair_no_work', 'candidate_pair_over_limit',
+    'candidate_index_unavailable', 'candidate_index_invalid',
     'candidate_index_stale', 'candidate_index_confirmation_required',
     'candidate_index_no_work', 'candidate_index_field_over_limit',
     'candidate_queue_unavailable', 'candidate_queue_invalid',
@@ -209,6 +215,13 @@ class ApplicationCommand:
     candidate_index_generation: str | None = None
     candidate_index_actor: str | None = None
     candidate_index_confirmed: bool | None = None
+    # Run-scoped, original-SQLite-only pair hint checkpoint authorisation.
+    # The caller may not set per-batch work budgets, SQL, source metadata or
+    # provider credentials; core services enforce at most 64 keys/128 hints.
+    candidate_pair_revision: str | None = None
+    candidate_pair_generation: str | None = None
+    candidate_pair_actor: str | None = None
+    candidate_pair_confirmed: bool | None = None
 
     def __post_init__(self):
         try:
@@ -275,6 +288,37 @@ class ApplicationCommand:
                             self.candidate_index_generation,
                             self.candidate_index_actor,
                             self.candidate_index_confirmed)
+            pair_fields = (self.candidate_pair_revision,
+                           self.candidate_pair_generation,
+                           self.candidate_pair_actor,
+                           self.candidate_pair_confirmed)
+            pair_ops = ('candidate_pair_preview','candidate_pair_start',
+                        'candidate_pair_advance')
+            if self.operation in pair_ops:
+                if (self.run_id is None or
+                        any(v is not None for v in (
+                            self.export_id,self.output_name,self.directory,
+                            self.expected_directory_identity)) or
+                        any(v is not None for v in (
+                            publication_fields+candidate_fields+queue_fields+
+                            index_fields))):
+                    raise ValueError
+                if self.operation == 'candidate_pair_preview':
+                    if any(v is not None for v in pair_fields):
+                        raise ValueError
+                else:
+                    digest = self.candidate_pair_revision
+                    if (type(digest) is not str or len(digest)!=64 or
+                            any(ch not in '0123456789abcdef' for ch in digest)
+                            or self.candidate_pair_confirmed is not True):
+                        raise ValueError
+                    from research_y.publication_identity import _text
+                    _text(self.candidate_pair_actor,200)
+                    if self.operation == 'candidate_pair_start':
+                        if self.candidate_pair_generation is not None:
+                            raise ValueError
+                    else:
+                        _uuid(self.candidate_pair_generation)
             if self.operation in ('candidate_index_preview','candidate_index_start',
                                   'candidate_index_advance'):
                 if (self.run_id is not None or any(v is not None for v in (
@@ -675,6 +719,8 @@ class ApplicationCommand:
                               approved_by=self.admission_approved_by,
                               groups=_groups_snapshot(self.admission_groups))
                 compile_both(frozen)
+            elif self.operation in pair_ops:
+                pass  # Explicit local pair checkpoint; no export/provider access.
             elif self.operation in ('candidate_index_preview','candidate_index_start',
                                    'candidate_index_advance'):
                 pass  # Project-level derived index, no source/export authority.
@@ -707,6 +753,9 @@ class ApplicationCommand:
                     raise ValueError
                 if self.operation == 'export_report' and self.directory is not None:
                     raise ValueError
+            if self.operation not in pair_ops and any(
+                    v is not None for v in pair_fields):
+                raise ValueError
             if self.operation not in ('candidate_index_preview','candidate_index_start',
                                       'candidate_index_advance') and any(
                     v is not None for v in index_fields):
@@ -781,6 +830,28 @@ def execute_command(command: ApplicationCommand) -> dict:
     project = Project(Path(command.project_root), UUID(command.project_id),
                       command.project_name, command.project_created_at)
     try:
+        if command.operation in (
+                'candidate_pair_preview','candidate_pair_start',
+                'candidate_pair_advance'):
+            from research_y import candidate_pair_checkpoints as pair_service
+            try:
+                if command.operation == 'candidate_pair_preview':
+                    return pair_service.preview_pair_checkpoint(
+                        project,command.run_id)
+                if command.operation == 'candidate_pair_start':
+                    return pair_service.start_pair_checkpoint(
+                        project,command.run_id,
+                        expected_revision=command.candidate_pair_revision,
+                        actor=command.candidate_pair_actor,
+                        confirmed=command.candidate_pair_confirmed)
+                return pair_service.advance_pair_checkpoint(
+                    project,command.run_id,
+                    expected_revision=command.candidate_pair_revision,
+                    generation_id=command.candidate_pair_generation,
+                    actor=command.candidate_pair_actor,
+                    confirmed=command.candidate_pair_confirmed)
+            except pair_service.CandidatePairError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation in (
                 'candidate_index_preview','candidate_index_start',
                 'candidate_index_advance'):

@@ -988,3 +988,223 @@ def test_pair_checkpoint_queue_preserves_confirmed_match_without_equal_fields(pr
     assert after["rows"][0]["pair_already_associated"] is True
     assert after["rows"][0]["last_decision_event_id"] is not None
     assert after["global_unique_publications"] is None
+
+
+def _pair_gui(ctx, *, inspect_override=None):
+    """Host fixture uses actual worker command validation and original SQLite."""
+    from tools.gui_feasibility.real_project_flow import RealProjectFlow,ProjectFlowError
+    project,run,historical=ctx
+    flow=RealProjectFlow(selected_root=project.root,
+                         selected_parent=project.root.parent)
+    flow.project=project
+    flow.selected_run_id=run
+    flow.snapshot={
+        "runs":[{"run_id":run},{"run_id":historical}],
+        "report":{"status":"incomplete"},"exports":[]}
+    def dispatch(name,**kwargs):
+        if name=="inspect" and inspect_override is not None:
+            return inspect_override(kwargs)
+        try:
+            return execute_command(
+                ApplicationCommand.for_project(project,name,**kwargs))
+        except ApplicationCommandError as exc:
+            raise ProjectFlowError(exc.code) from None
+    flow._operation=dispatch
+    return flow
+
+
+def test_gui_pair_index_uses_separate_preview_and_confirmation(project_runs):
+    project,run,_=project_runs
+    a=insert(project_runs,number=5101,title="Separate supplement abstract A",
+             doi="10.5101/container")
+    b=insert(project_runs,source="wos",number=5102,
+             title="Separate supplement abstract B",doi="10.5101/container")
+    build_ready_index(project_runs)
+    before=read(project_runs)
+    assert before["index_backend"]=="verified_derived_keys_v5"
+    source_events=audit(project)
+    flow=_pair_gui(project_runs)
+    try:
+        state=flow.inspect_candidate_pairs()
+        assert state["candidate_pair_state"]["status"]=="not_started"
+        assert state["candidate_pair_state"]["index_ready"] is True
+        assert audit(project)==source_events
+        with pytest.raises(Exception,match="candidate_pair_confirmation_required"):
+            flow.confirm_candidate_pairs("Researcher")
+        offered=flow.offer_candidate_pairs("start")
+        assert offered["candidate_pair_offer"]["run_id"]==run
+        assert offered["candidate_pair_offer"]["action"]=="start"
+        assert audit(project)==source_events
+        started=flow.confirm_candidate_pairs("Researcher")
+        assert started["candidate_pair_offer"] is None
+        assert started["candidate_pair_state"]["status"]=="building"
+        assert started["candidate_pair_state"]["processed_source_keys"]==0
+        assert started["candidate_pair_last_receipt"]["action"]=="start"
+        assert started["candidate_pair_error"] is None
+        offered=flow.offer_candidate_pairs("advance")
+        assert offered["candidate_pair_offer"]["action"]=="advance"
+        advanced=flow.confirm_candidate_pairs("Researcher")
+        assert advanced["candidate_pair_state"]["status"]=="ready_keys_only"
+        assert advanced["candidate_pair_state"]["unique_pairs"]==1
+        assert advanced["candidate_pair_state"]["historical_receipt_only_pairs_included"] is False
+        assert advanced["candidate_pair_last_receipt"]["action"]=="advance"
+        assert advanced["candidate_pair_last_receipt"]["status"]=="ready_keys_only"
+        assert advanced["candidate_pair_offer"] is None
+        assert advanced["candidate_queue"] is None
+        current=flow.inspect_candidate_queue()["candidate_queue"]
+        assert current["index_backend"]=="verified_pair_checkpoint_v6"
+        assert current["rows"][0]["auto_merge_allowed"] is False
+        assert current["candidate_pair_total"]==1
+        assert current["global_unique_publications"] is None
+        assert len({s["publication_id"] for s in current["rows"][0]["sources"]})==2
+        with pytest.raises(Exception,match="candidate_pair_no_work"):
+            flow.offer_candidate_pairs("advance")
+    finally:
+        flow.close()
+
+
+def test_gui_pair_index_rejects_missing_source_key_cache(project_runs):
+    project,run,_=project_runs
+    insert(project_runs,number=5201)
+    flow=_pair_gui(project_runs)
+    events=audit(project)
+    try:
+        first=flow.inspect_candidate_pairs()["candidate_pair_state"]
+        assert first["status"]=="not_started"
+        assert first["index_ready"] is False
+        with pytest.raises(Exception,match="candidate_pair_index_not_ready"):
+            flow.offer_candidate_pairs("start")
+        assert flow.state()["candidate_pair_offer"] is None
+        assert audit(project)==events
+        assert read(project_runs)["candidate_pair_total"]==0
+    finally:
+        flow.close()
+
+
+def test_gui_pair_index_worker_reply_lost_requires_original_reinspect(project_runs):
+    project,run,_=project_runs
+    insert(project_runs,number=5301,title="Common",doi="10.5301/shared")
+    insert(project_runs,source="wos",number=5302,
+           title="Common",doi="10.5301/shared")
+    build_ready_index(project_runs)
+    flow=_pair_gui(project_runs)
+    from tools.gui_feasibility.real_project_flow import ProjectFlowError
+    try:
+        flow.offer_candidate_pairs("start")
+        flow.confirm_candidate_pairs("Researcher")
+        flow.offer_candidate_pairs("advance")
+        actual=flow._operation
+        dispatched={"advance":0}
+        def lost_reply(name,**kwargs):
+            result=actual(name,**kwargs)
+            if name=="candidate_pair_advance":
+                dispatched["advance"]+=1
+                raise ProjectFlowError("worker_reply_lost_after_commit")
+            return result
+        flow._operation=lost_reply
+        with pytest.raises(ProjectFlowError,match="worker_reply_lost_after_commit"):
+            flow.confirm_candidate_pairs("Researcher")
+        after=flow.state()
+        assert after["candidate_pair_offer"] is None
+        assert after["candidate_pair_state"] is None
+        assert after["candidate_pair_error"]=="candidate_pair_reinspect_required"
+        with pytest.raises(ProjectFlowError,match="candidate_pair_confirmation_required"):
+            flow.confirm_candidate_pairs("Researcher")
+        restored=flow.inspect_candidate_pairs()["candidate_pair_state"]
+        assert restored["status"]=="ready_keys_only"
+        assert restored["unique_pairs"]==1
+        assert dispatched["advance"]==1
+        assert len([e for e in audit(project)
+                    if e[1]=="candidate_pair_batch_committed_v1"])==1
+    finally:
+        flow.close()
+
+
+def test_gui_pair_index_refuses_stale_evidence_after_offered_step(project_runs):
+    project,run,_=project_runs
+    insert(project_runs,number=5401)
+    build_ready_index(project_runs)
+    flow=_pair_gui(project_runs)
+    from tools.gui_feasibility.real_project_flow import ProjectFlowError
+    try:
+        flow.offer_candidate_pairs("start")
+        flow.confirm_candidate_pairs("Researcher")
+        flow.offer_candidate_pairs("advance")
+        insert(project_runs,number=5402)
+        with pytest.raises(ProjectFlowError,match="candidate_pair_stale"):
+            flow.confirm_candidate_pairs("Researcher")
+        assert flow.state()["candidate_pair_offer"] is None
+        assert flow.state()["candidate_pair_state"] is None
+        assert flow.state()["candidate_pair_error"] is not None
+        saved=flow.inspect_candidate_pairs()["candidate_pair_state"]
+        assert saved["status"]=="stale"
+        assert saved["index_ready"] is False
+    finally:
+        flow.close()
+
+
+def test_gui_pair_index_run_switch_discards_unsubmitted_consent(project_runs):
+    project,run,historical=project_runs
+    insert(project_runs,number=5501)
+    build_ready_index(project_runs)
+    def inspect(kwargs):
+        return {"snapshot":{
+            "selected_run_id":kwargs["run_id"],
+            "runs":[{"run_id":run},{"run_id":historical}],
+            "report":{"status":"incomplete"},"exports":[]}}
+    flow=_pair_gui(project_runs,inspect_override=inspect)
+    from tools.gui_feasibility.real_project_flow import ProjectFlowError
+    try:
+        flow.offer_candidate_pairs("start")
+        assert flow.state()["candidate_pair_offer"]["run_id"]==run
+        switched=flow.select_run(historical)
+        assert switched["selected_run_id"]==historical
+        assert switched["candidate_pair_state"] is None
+        assert switched["candidate_pair_offer"] is None
+        assert switched["candidate_pair_last_receipt"] is None
+        with pytest.raises(ProjectFlowError,match="candidate_pair_confirmation_required"):
+            flow.confirm_candidate_pairs("Researcher")
+        assert flow.inspect_candidate_pairs()["candidate_pair_state"]["status"]=="not_started"
+    finally:
+        flow.close()
+
+
+def test_pair_checkpoint_command_fields_are_strictly_allowlisted(project_runs):
+    project,run,_=project_runs
+    initial=execute_command(ApplicationCommand.for_project(
+        project,"candidate_pair_preview",run_id=run))
+    assert initial["method"]=="candidate-pair-hint-checkpoints/1"
+    assert initial["global_unique_publications"] is None
+    assert initial["candidate_discovery_complete"] is False
+    for fields in (
+        {"run_id":None},
+        {"run_id":run,"pilot_api_key":"SECRET"},
+        {"run_id":run,"candidate_pair_generation":uid()},
+        {"run_id":run,"candidate_pair_revision":"a"*64},
+        {"run_id":run,"candidate_index_revision":"a"*64},
+        {"run_id":run,"candidate_queue_revision":"a"*64},
+        {"run_id":run,"publication_view_id":uid()},
+        {"run_id":run,"export_id":uid()},
+    ):
+        with pytest.raises(ApplicationCommandError,match="invalid_command"):
+            ApplicationCommand.for_project(project,"candidate_pair_preview",**fields)
+    valid=dict(run_id=run,candidate_pair_revision=initial["revision"],
+               candidate_pair_actor="Researcher",candidate_pair_confirmed=True)
+    for fields in (
+        {"candidate_pair_confirmed":False},
+        {"candidate_pair_revision":"not-a-digest"},
+        {"candidate_pair_generation":uid()},
+        {"pilot_api_key":"SECRET"},
+        {"directory":"/tmp/forged"},
+    ):
+        with pytest.raises(ApplicationCommandError,match="invalid_command"):
+            ApplicationCommand.for_project(
+                project,"candidate_pair_start",**(valid|fields))
+    for generation in (None,"forged",[]):
+        with pytest.raises(ApplicationCommandError,match="invalid_command"):
+            ApplicationCommand.for_project(
+                project,"candidate_pair_advance",
+                **(valid|{"candidate_pair_generation":generation}))
+    with pytest.raises(ApplicationCommandError,match="candidate_pair_index_not_ready"):
+        execute_command(ApplicationCommand.for_project(
+            project,"candidate_pair_start",**valid))

@@ -294,6 +294,19 @@ def run(args):
                             # Only a separate confirmation click authorises one
                             # transaction of at most 128 original source records.
                             return flow.confirm_candidate_index(value)
+                        if name == 'candidate_pairs_inspect':
+                            # Read-only saved pair checkpoint for selected run.
+                            return flow.inspect_candidate_pairs()
+                        if name == 'candidate_pairs_offer':
+                            if type(value) is not str or value not in ('start','advance'):
+                                raise ProjectFlowError('candidate_pair_invalid')
+                            return flow.offer_candidate_pairs(value)
+                        if name == 'candidate_pairs_dismiss':
+                            return flow.dismiss_candidate_pairs()
+                        if name == 'candidate_pairs_confirm':
+                            # Separate explicit click, one bounded transaction
+                            # and independent saved-state reconciliation.
+                            return flow.confirm_candidate_pairs(value)
                         if name == 'candidate_queue_refresh':
                             # Full project candidate index, original SQLite only.
                             return flow.inspect_candidate_queue()
@@ -815,6 +828,107 @@ def run(args):
                                  str(last['processed_records']) +
                                  '. This does not establish deduplication.').props(
                                      'data-testid=candidate-index-outcome')
+
+                if state['selected_run_id'] is not None:
+                    ui.separator()
+                    ui.label('Run-specific durable potential-duplicate PAIR '
+                             'index — local candidate hints, never a unique '
+                             'publication count or automatic merge.').props(
+                                 'data-testid=candidate-pairs-heading')
+                    ui.button('Inspect selected-run pair checkpoint '
+                              '(READ-ONLY, OFFLINE)',on_click=lambda:
+                              act('candidate_pairs_inspect')).props(
+                                  'data-testid=candidate-pairs-inspect')
+                    if state['candidate_pair_error'] is not None:
+                        ui.label('Pair index outcome must be re-inspected from '
+                                 'the original project database. An interrupted '
+                                 'writer may already have committed. No prior '
+                                 'confirmation can be replayed.').props(
+                                     'data-testid=candidate-pairs-error')
+                    pair_state=state['candidate_pair_state']
+                    if pair_state is None:
+                        ui.label('No pair-index checkpoint inspected for this '
+                                 'run in the current session. The original '
+                                 'source-backed review queue remains usable.')
+                    else:
+                        ui.label('Pair index: '+pair_state['status']+
+                                 ' • processed source/field keys: '+
+                                 str(pair_state['processed_source_keys'])+
+                                 ' • matching-key hints examined: '+
+                                 str(pair_state['emitted_hints'])+
+                                 ' • distinct candidate pairs: '+
+                                 str(pair_state['unique_pairs'])+
+                                 ' • source-key cache ready: '+
+                                 ('YES' if pair_state['index_ready'] else 'NO')+
+                                 '. All numbers are provisional evidence '
+                                 'counts, not verified publications.').props(
+                                     'data-testid=candidate-pairs-status')
+                        if not pair_state['index_ready']:
+                            ui.label('PREREQUISITE: Complete the project-wide '
+                                     'source-key index above first. An empty, '
+                                     'building or stale source-key index cannot '
+                                     'be used to build pair hints.').props(
+                                         'data-testid=candidate-pairs-prerequisite')
+                        if pair_state['status']=='stale':
+                            ui.label('Original source/index/association/review '
+                                     'evidence has changed. This pair generation '
+                                     'cannot be used; an explicit rebuild is '
+                                     'required.').props(
+                                         'data-testid=candidate-pairs-stale')
+                        if pair_state['status']=='ready_keys_only':
+                            ui.label('Exact-key pair hints are indexed. The '
+                                     'researcher review queue separately joins '
+                                     'all original audited match/rejection '
+                                     'receipts; the pair cache alone is not '
+                                     'the complete reviewer history.').props(
+                                         'data-testid=candidate-pairs-ready')
+                        pair_offer=state['candidate_pair_offer']
+                        if pair_offer is None:
+                            if pair_state['index_ready']:
+                                ui.button(
+                                    'Preview a NEW pair-index generation '
+                                    '(replaces derived hints for THIS run only)',
+                                    on_click=lambda:
+                                        act('candidate_pairs_offer','start')
+                                ).props('data-testid=candidate-pairs-start-offer')
+                            if (pair_state['index_ready'] and
+                                    pair_state['status']=='building'):
+                                ui.button(
+                                    'Preview ONE bounded pair-index batch '
+                                    '(up to 64 keys / 128 matching hints)',
+                                    on_click=lambda:
+                                        act('candidate_pairs_offer','advance')
+                                ).props('data-testid=candidate-pairs-advance-offer')
+                        else:
+                            ui.label('Uncommitted '+pair_offer['action']+
+                                     ' • selected run '+pair_offer['run_id']+
+                                     ' • previously emitted matching hints '+
+                                     str(pair_offer['emitted_hints'])+
+                                     '. Exactly ONE confirmed local transaction '
+                                     'will run. Start may clear only derived '
+                                     'pair hints; original sources and reviewer '
+                                     'decisions remain unchanged.').props(
+                                         'data-testid=candidate-pairs-offer')
+                            researcher=ui.input('Researcher confirming '
+                                                'pair-index work',value='Researcher')
+                            ui.button('CONFIRM '+pair_offer['action']+
+                                      ' — ONE bounded, audited transaction',
+                                      on_click=lambda box=researcher:
+                                          act('candidate_pairs_confirm',box.value)
+                            ).props('data-testid=candidate-pairs-confirm')
+                            ui.button('Dismiss uncommitted pair-index action',
+                                      on_click=lambda:
+                                          act('candidate_pairs_dismiss')).props(
+                                              'data-testid=candidate-pairs-dismiss')
+                    last_pair=state['candidate_pair_last_receipt']
+                    if last_pair is not None:
+                        ui.label('Last independently reconciled pair-index '
+                                 'receipt: '+last_pair['action']+
+                                 ' • state '+last_pair['status']+
+                                 ' • distinct candidate pairs '+
+                                 str(last_pair['unique_pairs'])+
+                                 '. This does not establish deduplication.').props(
+                                     'data-testid=candidate-pairs-outcome')
 
                 if state['selected_run_id'] is not None:
                     ui.separator()

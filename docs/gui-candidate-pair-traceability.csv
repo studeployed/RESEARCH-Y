@@ -1,0 +1,21 @@
+requirement,scenario,evidence,status_or_boundary
+RUN-04,explicit bounded recoverable pair indexing,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+RUN-05,source-only keys/pairs not verified publications,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+RUN-06,unknown worker outcome cannot replay committed write,tests/test_publication_candidate_queue.py::test_gui_pair_index_worker_reply_lost_requires_original_reinspect,partial
+PROJ-04,original SQLite checkpoints survive interruption and reads,tests/test_publication_candidate_queue.py::test_gui_pair_index_worker_reply_lost_requires_original_reinspect,partial
+DATA-01,distinct source retrieval identities retained after candidate build,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+DUP-01,run-scoped candidate discovery with original source evidence,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+DUP-02,shared conference supplement DOI not auto-merged,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+DUP-03,matching still requires original independent reviewer decision,docs/GUI_CANDIDATE_PAIR_CHECKPOINTS.md,not_fully_accepted
+DUP-04,reviewer decisions preserved outside derived cache,docs/GUI_CANDIDATE_PAIR_CHECKPOINTS.md,partial
+DUP-05,pair hints do not merge distinct abstracts,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+AUDIT-03,confirmed pair-index transaction reconciles saved audit state,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+COUNT-05,verified global unique publication count remains unknown,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+UI-09,GUI exposes explicit read/preview/confirm and work bounds,docs/GUI_CANDIDATE_PAIR_CHECKPOINTS.md,partial
+AT-09,source key prerequisite and lost worker reply handled,tests/test_publication_candidate_queue.py::test_gui_pair_index_worker_reply_lost_requires_original_reinspect,partial
+AT-10,shared source candidate indexed not automatically merged,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+AT-11,distinct conference abstracts share container DOI safely,tests/test_publication_candidate_queue.py::test_gui_pair_index_uses_separate_preview_and_confirmation,partial
+AT-17,stale sources invalidate a reserved continuation,tests/test_publication_candidate_queue.py::test_gui_pair_index_refuses_stale_evidence_after_offered_step,partial
+AT-19,run switching clears prior pair consent,tests/test_publication_candidate_queue.py::test_gui_pair_index_run_switch_discards_unsubmitted_consent,partial
+AT-21,forged provider credential and run/pair arguments refused,tests/test_publication_candidate_queue.py::test_pair_checkpoint_command_fields_are_strictly_allowlisted,partial
+AT-22,100000-record performance and Windows product-level gate,docs/GUI_CANDIDATE_PAIR_CHECKPOINTS.md,unverified
