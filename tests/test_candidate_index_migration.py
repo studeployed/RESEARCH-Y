@@ -11,6 +11,7 @@ from research_y import projects
 from research_y.candidate_index_schema import (
     V5_STATEMENTS, V5_TABLES, V5_TRIGGERS,
 )
+from research_y.candidate_pair_schema import V6_TABLES, V6_TRIGGERS
 from research_y.candidate_index_build import preview_candidate_index
 
 
@@ -18,6 +19,10 @@ def historical_v4_project(tmp_path):
     project=projects.create_project(tmp_path,"Historical v4")
     with closing(sqlite3.connect(project.database_path)) as db:
         db.execute("PRAGMA foreign_keys=OFF")
+        for trigger in V6_TRIGGERS:
+            db.execute(f"DROP TRIGGER {trigger}")
+        for name in V6_TABLES:
+            db.execute(f"DROP TABLE {name}")
         for trigger in V5_TRIGGERS:
             db.execute(f"DROP TRIGGER {trigger}")
         for table in V5_TABLES:
@@ -30,7 +35,7 @@ def historical_v4_project(tmp_path):
 def test_new_project_starts_with_v5_and_source_change_invalidation(tmp_path):
     p=projects.create_project(tmp_path,"Direct v5")
     with closing(sqlite3.connect(p.database_path)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0]==5
+        assert db.execute("PRAGMA user_version").fetchone()[0]==projects.SCHEMA_VERSION
         names={x[0] for x in db.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         assert set(V5_TABLES)<=names
@@ -58,13 +63,13 @@ def test_v4_upgrade_creates_separate_verified_backup_and_retains_original_rows(t
         assert db.execute("SELECT name FROM sqlite_master "
                           "WHERE name='candidate_index_state'").fetchone() is None
     with closing(sqlite3.connect(p.database_path)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0]==5
+        assert db.execute("PRAGMA user_version").fetchone()[0]==projects.SCHEMA_VERSION
         assert db.execute("PRAGMA foreign_key_check").fetchall()==[]
         assert db.execute("SELECT * FROM audit_events ORDER BY event_id").fetchall()[:-1]==original
         event=json.loads(db.execute(
             "SELECT details_json FROM audit_events ORDER BY event_id DESC LIMIT 1"
         ).fetchone()[0])
-        assert event=={"from_version":4,"to_version":5,"backup":backups[0].name}
+        assert event=={"from_version":4,"to_version":projects.SCHEMA_VERSION,"backup":backups[0].name}
     assert preview_candidate_index(p)["status"]=="empty"
     for _ in range(2):
         assert projects.open_project(p.root)==p
