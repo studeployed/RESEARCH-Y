@@ -376,7 +376,8 @@ def test_bad_cursor_and_old_revision_fail_closed(study):
     b=add(study,source_name="wos",number=1302)
     source_index(p)
     ready=complete(study)
-    for cursor in ((b,a),("bad",uid()),[a,b]):
+    ordered=tuple(sorted((a,b)))
+    for cursor in (tuple(reversed(ordered)),("bad",uid()),list(ordered)):
         with pytest.raises(pairs.CandidatePairError):
             pairs.read_pair_hint_page(
                 p,run,after_pair=cursor,expected_revision=ready["revision"])
