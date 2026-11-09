@@ -744,3 +744,217 @@ def test_host_resets_unsent_index_offer_when_selected_run_changes(project_runs):
             flow.confirm_candidate_index("Researcher")
     finally:
         flow.close()
+
+
+def build_ready_pairs(ctx):
+    """Explicitly build the PR76 exact-key pair checkpoint to its safe boundary."""
+    from research_y import candidate_pair_checkpoints as checkpoint
+    project,run,_=ctx
+    state=checkpoint.preview_pair_checkpoint(project,run)
+    if not state["index_ready"]:
+        build_ready_index(ctx)
+        state=checkpoint.preview_pair_checkpoint(project,run)
+    current=checkpoint.start_pair_checkpoint(
+        project,run,expected_revision=state["revision"],
+        actor="Fixture researcher",confirmed=True)
+    for _ in range(1000):
+        if current["status"]=="ready_keys_only":
+            break
+        current=checkpoint.advance_pair_checkpoint(
+            project,run,generation_id=current["generation_id"],
+            expected_revision=current["revision"],actor="Fixture researcher",
+            confirmed=True)
+    assert current["status"]=="ready_keys_only"
+    return current
+
+
+def reject_pair(ctx,a,b,*,evidence="Distinct abstract item, not a duplicate"):
+    first=pair(ctx,a,b)
+    result=candidates.decide_candidate(
+        ctx[0],a,b,expected_revision=first.revision,
+        decision="rejected_match",actor="Fixture researcher",evidence=evidence,
+        acknowledged_warnings=first.warnings,decision_confirmed=True)
+    assert result.status=="rejected_match"
+    return result
+
+
+def test_pair_checkpoint_queue_reconciles_receipt_only_and_key_pairs(project_runs):
+    project,run,historical=project_runs
+    same1=insert(project_runs,number=3101,title="Container alpha",
+                 doi="10.3101/container")
+    same2=insert(project_runs,source="wos",number=3102,
+                 title="Container beta",doi="10.3101/container")
+    distinct1=insert(project_runs,number=3103,title="Different abstract A",
+                     doi="10.3103/first")
+    distinct2=insert(project_runs,source="wos",number=3104,
+                     title="Different abstract B",doi="10.3104/second")
+    reject_pair(project_runs,distinct1,distinct2)
+    # Neither matching metadata nor current publication identity can be
+    # inferred from a prior explicit human decision.
+    before=read(project_runs)
+    assert before["candidate_pair_total"]==2
+    expected={tuple(x["retrieval_ids"]):x for x in before["rows"]}
+    assert expected[tuple(sorted((distinct1,distinct2)))]["matched_exact_fields"]==[]
+    ready=build_ready_pairs(project_runs)
+    assert ready["unique_pairs"]==1
+    after=read(project_runs)
+    assert after["index_backend"]=="verified_pair_checkpoint_v6"
+    assert after["pair_index_status"]=="ready_keys_only"
+    assert after["pair_index_generation_id"]==ready["generation_id"]
+    assert after["receipt_only_pair_total"]==1
+    assert after["prior_receipt_pairs"]==1
+    assert after["candidate_pair_total"]==2
+    assert {tuple(x["retrieval_ids"]):x for x in after["rows"]}==expected
+    assert after["global_unique_publications"] is None
+    assert after["candidate_discovery_complete"] is False
+    assert after["deduplication_complete"] is False
+    assert "SECRET ABSTRACT" not in repr(after)
+    assert len({x["publication_id"] for x in after["rows"][0]["sources"]})==2
+
+
+def test_pair_checkpoint_queue_fences_receipt_only_keyset_20_plus_five(project_runs):
+    project,run,_=project_runs
+    receipt_pairs=[]
+    for n in range(2):
+        a=insert(project_runs,number=3200+n,title="Unique reviewer A "+str(n),
+                 doi="10.3200/left"+str(n))
+        b=insert(project_runs,source="wos",number=3300+n,
+                 title="Unique reviewer B "+str(n),doi="10.3300/right"+str(n))
+        reject_pair(project_runs,a,b,evidence="Two different meeting presentations")
+        receipt_pairs.append(tuple(sorted((a,b))))
+    for n in range(23):
+        insert(project_runs,number=3400+n,title="Matching abstract "+str(n),
+               doi="10.3400/shared"+str(n))
+        insert(project_runs,source="wos",number=3500+n,
+               title="Matching abstract "+str(n),doi="10.3400/shared"+str(n))
+    first_old=read(project_runs)
+    assert first_old["candidate_pair_total"]==25
+    built=build_ready_pairs(project_runs)
+    assert built["unique_pairs"]==23
+    first=read(project_runs)
+    assert first["candidate_pair_total"]==25
+    assert first["receipt_only_pair_total"]==2
+    assert len(first["rows"])==20 and first["has_more"] is True
+    second=queue.read_candidate_queue(
+        open_project(project.root),run,
+        after_pair=tuple(first["next_after_pair"]),
+        expected_revision=first["revision"])
+    assert len(second["rows"])==5 and second["has_more"] is False
+    assert second["revision"]==first["revision"]
+    all_pairs=[tuple(x["retrieval_ids"]) for x in first["rows"]+second["rows"]]
+    assert len(all_pairs)==len(set(all_pairs))==25
+    assert set(receipt_pairs)<=set(all_pairs)
+    assert all_pairs==sorted(all_pairs)
+    assert first["global_unique_publications"] is None
+
+
+def test_pair_checkpoint_queue_stale_after_reviewer_decision_falls_back(project_runs):
+    project,run,_=project_runs
+    a=insert(project_runs,number=3601,title="Same exact",doi="10.3601/exact")
+    b=insert(project_runs,source="wos",number=3602,
+             title="Same exact",doi="10.3601/exact")
+    build_ready_pairs(project_runs)
+    before=read(project_runs)
+    assert before["index_backend"]=="verified_pair_checkpoint_v6"
+    reject_pair(project_runs,a,b)
+    fallback=read(project_runs)
+    assert fallback["index_backend"]=="verified_derived_keys_v5"
+    assert fallback["candidate_pair_total"]==1
+    assert fallback["rows"][0]["candidate_status"]=="rejected_match"
+    with pytest.raises(queue.CandidateQueueError) as err:
+        read(project_runs,after_pair=tuple(before["rows"][0]["retrieval_ids"]),
+             expected_revision=before["revision"])
+    assert err.value.code=="candidate_queue_stale"
+
+
+def test_pair_checkpoint_queue_old_cursor_stale_after_historical_run_change(project_runs):
+    project,run,historical=project_runs
+    insert(project_runs,number=3701,title="Same",doi="10.3701/same")
+    insert(project_runs,source="wos",number=3702,
+           title="Same",doi="10.3701/same",run=historical)
+    build_ready_pairs(project_runs)
+    before=read(project_runs)
+    assert before["index_backend"]=="verified_pair_checkpoint_v6"
+    with closing(sqlite3.connect(project.database_path)) as db,db:
+        db.execute("UPDATE search_runs SET status='failed' WHERE run_id=?",
+                   (historical,))
+    after=read(project_runs)
+    assert after["index_backend"]=="verified_pair_checkpoint_v6"
+    assert after["pair_index_generation_id"]==before["pair_index_generation_id"]
+    assert after["revision"]!=before["revision"]
+    with pytest.raises(queue.CandidateQueueError) as err:
+        read(project_runs,after_pair=tuple(before["rows"][0]["retrieval_ids"]),
+             expected_revision=before["revision"])
+    assert err.value.code=="candidate_queue_stale"
+
+
+def test_pair_checkpoint_queue_corrupt_exact_fields_fail_closed(project_runs):
+    project,run,_=project_runs
+    a=insert(project_runs,number=3801,title="Alpha",doi="10.3801/shared")
+    b=insert(project_runs,source="wos",number=3802,
+             title="Beta",doi="10.3801/shared")
+    build_ready_pairs(project_runs)
+    original=read(project_runs)
+    assert original["rows"][0]["matched_exact_fields"]==["doi"]
+    with closing(sqlite3.connect(project.database_path)) as db,db:
+        db.execute("UPDATE candidate_pair_hints SET fields_mask=fields_mask|8 "
+                   "WHERE run_id=?",(run,))
+    with pytest.raises(queue.CandidateQueueError) as err:
+        read(project_runs)
+    assert err.value.code=="candidate_queue_unavailable"
+
+
+def test_pair_checkpoint_queue_never_reenumerates_source_key_buckets(project_runs,monkeypatch):
+    project,run,_=project_runs
+    insert(project_runs,number=3901,title="Same",doi="10.3901/same")
+    insert(project_runs,source="wos",number=3902,
+           title="Same",doi="10.3901/same")
+    build_ready_pairs(project_runs)
+    def no_old_index(*args,**kwargs):
+        raise AssertionError("Old complete source-key enumeration forbidden")
+    monkeypatch.setattr(queue,"_original_index",no_old_index)
+    monkeypatch.setattr(queue,"_cached_index",no_old_index)
+    monkeypatch.setattr(queue,"_bucket_pairs",no_old_index)
+    result=read(project_runs)
+    assert result["index_backend"]=="verified_pair_checkpoint_v6"
+    assert result["candidate_pair_total"]==1
+
+
+def test_trusted_gui_pair_backend_and_selection_still_enforces_original_decision(project_runs):
+    project,run,_=project_runs
+    a=insert(project_runs,number=4001,title="Different abstract I",
+             doi="10.4001/shared")
+    b=insert(project_runs,source="wos",number=4002,
+             title="Different abstract II",doi="10.4001/shared")
+    build_ready_pairs(project_runs)
+    from tools.gui_feasibility.real_project_flow import RealProjectFlow, ProjectFlowError
+    flow=RealProjectFlow(selected_root=project.root,
+                         selected_parent=project.root.parent)
+    flow.project=project
+    flow.selected_run_id=run
+    flow.snapshot={"runs":[],"report":None,"exports":[]}
+    flow._operation=lambda name,**kwargs: execute_command(
+        ApplicationCommand.for_project(project,name,**kwargs))
+    try:
+        current=flow.inspect_candidate_queue()["candidate_queue"]
+        assert current["index_backend"]=="verified_pair_checkpoint_v6"
+        assert current["rows"][0]["both_in_selected_run"]
+        selected=flow.inspect_queue_candidate_pair(
+            left=a,right=b,revision=current["revision"])
+        assert selected["candidate_offer"]["automatic_match_allowed"] is False
+        with pytest.raises(ProjectFlowError):
+            flow.confirm_candidate_decision(
+                decision="confirmed_match",move_retrieval_id=a,
+                actor="Researcher",evidence="Not acknowledged",
+                acknowledged=False)
+        outcome=flow.confirm_candidate_decision(
+            decision="rejected_match",move_retrieval_id=None,
+            actor="Researcher",evidence="Separate individual abstract titles",
+            acknowledged=True)
+        assert outcome["candidate_last_outcome"]["action"]=="rejected_match"
+        assert outcome["candidate_queue"] is None
+        # A match or rejection makes the derived pair generation stale
+        # immediately; never keep displaying it as an unchanged cache.
+        assert read(project_runs)["index_backend"]!="verified_pair_checkpoint_v6"
+    finally:
+        flow.close()
