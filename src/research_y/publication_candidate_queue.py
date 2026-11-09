@@ -20,6 +20,7 @@ from research_y import publication_candidates as candidates
 from research_y import result_counts
 from research_y.publication_match_evidence import project_source
 from research_y import candidate_index_build
+from research_y import candidate_pair_checkpoints as pair_checkpoints
 
 METHOD = "project-candidate-queue/1"
 FIELDS = ("doi", "pmid", "accession", "title")
@@ -310,6 +311,218 @@ def _cached_index(db, project, run_id, cache):
     )
 
 
+
+# Exact-key pairs are already B-tree keyed in v6. This query does *not*
+# enumerate every source-pair candidate in Python to reach page N.
+_PAIR_PAGE_SQL = (
+    "SELECT left_retrieval_id,right_retrieval_id,fields_mask "
+    "FROM candidate_pair_hints WHERE run_id=? "
+    "AND (left_retrieval_id,right_retrieval_id)>(?,?) "
+    "ORDER BY left_retrieval_id,right_retrieval_id LIMIT ?"
+)
+_PAIR_EXIST_SQL = (
+    "SELECT fields_mask FROM candidate_pair_hints WHERE run_id=? "
+    "AND left_retrieval_id=? AND right_retrieval_id=?"
+)
+_SUPPORTED_SOURCE_SQL = (
+    "SELECT 1 FROM candidate_index_records i "
+    "JOIN publication_retrievals l ON l.retrieval_id=i.retrieval_id "
+    "WHERE i.retrieval_id=? AND i.supported=1 "
+    "AND i.generation_id=?"
+)
+
+
+def _pair_checkpoint_page(db, project, run_id, snapshot, cursor, expected_revision):
+    """Merge v6 *persisted* exact-key pairs with canonical durable decisions.
+
+    Previously confirmed/rejected pairs with no remaining matching key are
+    included from the original validated append-only decision audit. The
+    receipt stream is not replicated, overwritten or inferred by the cache.
+    B-tree keyset pagination of the potentially large exact-key result takes
+    only PAGE_SIZE+1 rows; historical receipt-only pairs are a separately
+    bounded overlay, not an all-record Cartesian product.
+
+    All displayed fields and states are reconstructed from original sources;
+    a cached match does not authorise any association.
+    """
+    source = candidate_index_build._state(db, full_cache_check=True)
+    if source["status"] != "ready" or not snapshot["index_ready"]:
+        raise CandidateQueueError("candidate_queue_stale")
+    counts = result_counts._snapshot(db, project, run_id)
+    if source["source_records"] > MAX_PROJECT_RECORDS:
+        raise CandidateQueueError("candidate_queue_over_limit")
+    receipts = candidates._receipts(db, None)
+    receipt_pairs = {}
+    # Validate every decision with the existing canonical receipt service.
+    # Use original supported/materialised source identities, never assume
+    # a previous association makes two *current* documents identical.
+    for receipt in receipts:
+        pair = tuple(receipt["pair"])
+        try:
+            both_supported = all(db.execute(
+                _SUPPORTED_SOURCE_SQL, (rid, source["generation_id"])
+            ).fetchone() is not None for rid in pair)
+            if not both_supported:
+                continue
+            in_selected = db.execute(
+                "SELECT 1 FROM source_retrievals WHERE retrieval_id IN (?,?) "
+                "AND run_id=? LIMIT 1", (pair[0],pair[1],run_id)
+            ).fetchone() is not None
+            if in_selected:
+                receipt_pairs[pair] = receipt
+        except (ValueError,TypeError,KeyError):
+            raise CandidateQueueError() from None
+    extras = []
+    for pair in receipt_pairs:
+        if db.execute(_PAIR_EXIST_SQL, (run_id, *pair)).fetchone() is None:
+            extras.append(pair)
+    if len(extras) + snapshot["unique_pairs"] > MAX_PAIR_CANDIDATES:
+        raise CandidateQueueError("candidate_queue_over_limit")
+    extras.sort()
+
+    # Bind all source/identity, historical-run and group context so a cursor
+    # never continues after a source status, membership or reviewer change.
+    runs = list(db.execute(
+        "SELECT run_id,strategy_version_id,status,completed_at_utc "
+        "FROM search_runs ORDER BY run_id"))
+    queries = list(db.execute(
+        "SELECT query_id,run_id,group_id,source_name,exact_query,"
+        "parameters_json,reported_matches,status,executed_at_utc "
+        "FROM source_queries ORDER BY query_id"))
+    memberships = list(db.execute(
+        "SELECT query_id,retrieval_id,run_id,source_name "
+        "FROM query_retrievals ORDER BY query_id,retrieval_id"))
+    associations = list(db.execute(
+        "SELECT retrieval_id,publication_id,decision_provenance_json "
+        "FROM publication_retrievals ORDER BY retrieval_id"))
+    revision = identity._hash([
+        METHOD,"source-backed-pair-checkpoint-v6",
+        str(project.identifier),run_id,counts.revision,
+        snapshot["generation_id"],snapshot["source_index_generation"],
+        snapshot["source_index_epoch"],snapshot["running_sha256"],
+        snapshot["unique_pairs"],source["generation_id"],
+        source["source_epoch"],source["running_sha256"],
+        runs,queries,memberships,associations,
+        [(r["event_id"],r["pair"],r["post_state_sha256"],
+          r["comparison_sha256"],r["status"]) for r in receipts],
+    ])
+    if expected_revision is not None and revision != expected_revision:
+        raise CandidateQueueError("candidate_queue_stale")
+    if cursor is not None and (cursor not in receipt_pairs and
+            db.execute(_PAIR_EXIST_SQL, (run_id,*cursor)).fetchone() is None):
+        raise CandidateQueueError("candidate_queue_stale")
+    boundary = ("","") if cursor is None else cursor
+    stored = db.execute(
+        _PAIR_PAGE_SQL, (run_id,boundary[0],boundary[1],PAGE_SIZE+1)
+    ).fetchall()
+    # The ordered receipt-only overlay is usually small relative to index.
+    # It is sorted once, with a bounded PAGE_SIZE merge; no index-wide scan.
+    receipt_after = (pair for pair in extras
+                     if cursor is None or pair > cursor)
+    from itertools import islice
+    additional = list(islice(receipt_after, PAGE_SIZE+1))
+    evidence = {}
+    for left,right,mask in stored:
+        if type(mask) is not int or mask < 1 or mask > 15:
+            raise CandidateQueueError()
+        evidence[left,right] = sorted(
+            name for name,bit in pair_checkpoints.FIELDS_MASK.items()
+            if mask & bit
+        )
+    for pair in additional:
+        if pair in evidence:
+            raise CandidateQueueError()  # Receipt-only must not duplicate key.
+        evidence[pair] = []
+    ordered = sorted(evidence)[:PAGE_SIZE+1]
+    shown = ordered[:PAGE_SIZE]
+    rows = []
+    for pair in shown:
+        left,right=pair
+        field_names = evidence[pair]
+        candidate, _ = candidates._view(db, pair)
+        if any(candidate.comparison["comparisons"].get(name) != "equal"
+               for name in field_names):
+            # Never display a forged/contradictory cached equality.
+            raise CandidateQueueError()
+        records = []
+        for rid in pair:
+            source_row = identity._source(db, rid)
+            linked = identity._link(db,rid)
+            if (linked is None or db.execute(
+                    _SUPPORTED_SOURCE_SQL,(rid,source["generation_id"])
+                ).fetchone() is None):
+                raise CandidateQueueError()
+            records.append(dict(
+                retrieval_id=rid, run_id=source_row["run_id"],
+                source_name=source_row["source_name"],
+                source_record_id=source_row["source_record_id"],
+                publication_id=linked[0],
+            ))
+        if not any(rec["run_id"]==run_id for rec in records):
+            raise CandidateQueueError()
+        rows.append(dict(
+            retrieval_ids=list(pair),
+            sources=records,
+            matched_exact_fields=field_names,
+            candidate_status=candidate.status,
+            warnings=list(candidate.warnings),
+            current_publication_ids=list(candidate.publication_ids),
+            pair_already_associated=(
+                candidate.publication_ids[0]==candidate.publication_ids[1]),
+            prior_decisions_recorded=len(candidate.prior_decisions),
+            last_decision_event_id=(
+                candidate.prior_decisions[-1]["event_id"]
+                if candidate.prior_decisions else None),
+            both_in_selected_run=all(rec["run_id"]==run_id for rec in records),
+            auto_merge_allowed=False,
+        ))
+    unsupported_linked = db.execute(
+        "SELECT COUNT(*) FROM candidate_index_records i "
+        "JOIN publication_retrievals l ON l.retrieval_id=i.retrieval_id "
+        "WHERE i.supported=0"
+    ).fetchone()[0]
+    unmaterialised = db.execute(
+        "SELECT COUNT(*) FROM source_retrievals r "
+        "LEFT JOIN publication_retrievals l ON l.retrieval_id=r.retrieval_id "
+        "WHERE l.retrieval_id IS NULL"
+    ).fetchone()[0]
+    return dict(
+        method=METHOD,project_id=str(project.identifier),
+        run_id=run_id,revision=revision,
+        selected_run_revision=counts.revision,
+        after_pair=None if cursor is None else list(cursor),
+        rows=rows,page_size=PAGE_SIZE,
+        next_after_pair=list(shown[-1]) if len(ordered)>PAGE_SIZE else None,
+        has_more=len(ordered)>PAGE_SIZE,
+        candidate_pair_total=snapshot["unique_pairs"]+len(extras),
+        project_source_records=source["source_records"],
+        index_backend="verified_pair_checkpoint_v6",
+        index_status="ready",
+        index_generation_id=source["generation_id"],
+        pair_index_status=snapshot["status"],
+        pair_index_generation_id=snapshot["generation_id"],
+        unmaterialised_project_records=unmaterialised,
+        unsupported_project_records=unsupported_linked,
+        prior_receipt_pairs=len(receipt_pairs),
+        receipt_only_pair_total=len(extras),
+        discovery_scope="project_sources_pairs_touching_selected_run",
+        discovery_methods=list(FIELDS)+["prior_candidate_receipts"],
+        exact_rule_coverage_complete=True,
+        exhaustive_duplicate_discovery=False,
+        candidate_discovery_complete=False,
+        source_retrieval_verified=False,verified_complete=False,
+        deduplication_complete=False,global_unique_publications=None,
+        no_network_requests=True,
+        warnings=[
+            "exact_title_identifier_matches_are_review_hints_not_merges",
+            "unsupported_or_unmaterialised_sources_not_compared",
+            "no_fuzzy_or_full_text_duplicate_discovery",
+            "historical_cross_run_pairs_require_separate_review",
+            "not_a_verified_global_unique_publication_count",
+        ],
+    )
+
+
 def _index(db, project, run_id):
     cache = candidate_index_build._state(db, full_cache_check=True)
     if cache["status"] == "ready":
@@ -338,6 +551,14 @@ def read_candidate_queue(project, run_id: str, *,
         if cursor is not None and expected_revision is None:
             raise CandidateQueueError("candidate_queue_invalid")
         with _read(project) as db:
+            # Never use a partial/stale exact-key materialisation as a queue.
+            # When ready, add *all* applicable original reviewer receipt pairs
+            # before publishing any candidate count or page.
+            cached_pairs = pair_checkpoints._raw(
+                db,project,run_id,full=True)
+            if cached_pairs["status"] == "ready_keys_only":
+                return _pair_checkpoint_page(
+                    db,project,run_id,cached_pairs,cursor,expected_revision)
             found = _index(db, project, run_id)
             if (expected_revision is not None
                     and found["revision"] != expected_revision):
