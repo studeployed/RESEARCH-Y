@@ -174,6 +174,21 @@ def services(monkeypatch, tmp_path):
         'method':'project-candidate-queue/1',
         'no_network_requests':True,'global_unique_publications':None,
         'candidate_discovery_complete':False,'source_retrieval_verified':False})
+    indexed=types.ModuleType('research_y.candidate_index_build')
+    from research_y.candidate_index_build import CandidateIndexError
+    indexed.CandidateIndexError=CandidateIndexError
+    indexed.preview_candidate_index=service('candidate_index_preview',{
+        'method':'derived-candidate-key-index/1',
+        'no_network_requests':True,'global_unique_publications':None,
+        'source_retrieval_verified':False,'index_ready':False})
+    indexed.start_candidate_index=service('candidate_index_start',{
+        'method':'derived-candidate-key-index/1',
+        'no_network_requests':True,'global_unique_publications':None,
+        'source_retrieval_verified':False})
+    indexed.advance_candidate_index=service('candidate_index_advance',{
+        'method':'derived-candidate-key-index/1',
+        'no_network_requests':True,'global_unique_publications':None,
+        'source_retrieval_verified':False})
     files=types.ModuleType('research_y.export_files')
     def filename(value, *, workbook=False):
         if value != 'report.xlsx': raise ValueError('invalid synthetic filename')
@@ -192,6 +207,7 @@ def services(monkeypatch, tmp_path):
                         ('publication_run_materialisation',preparation),
                         ('publication_review_gui',review_gui),
                         ('publication_candidate_queue',queue),
+                        ('candidate_index_build',indexed),
                         ('export_files',files)]:
         monkeypatch.setitem(sys.modules,'research_y.'+name,module)
         monkeypatch.setattr(research_y,name,module,raising=False)
@@ -208,6 +224,14 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         kw['run_id']=str(uuid4())
     elif operation=='candidate_queue_page':
         kw.update(run_id=str(uuid4()),candidate_queue_revision='a'*64)
+    elif operation=='candidate_index_preview':
+        pass  # Project-wide read-only inspection takes no run/export arguments.
+    elif operation in ('candidate_index_start','candidate_index_advance'):
+        kw.update(candidate_index_revision='a'*64,
+                  candidate_index_actor='Synthetic researcher',
+                  candidate_index_confirmed=True)
+        if operation=='candidate_index_advance':
+            kw['candidate_index_generation']=str(uuid4())
     elif operation=='publication_detail':
         kw.update(run_id=str(uuid4()),publication_view_id=str(uuid4()),
                   publication_view_revision='a'*64)
@@ -338,6 +362,17 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][1][1]==kw['run_id']
         assert result['no_network_requests'] is True
         assert result['global_unique_publications'] is None
+    if operation in ('candidate_index_preview','candidate_index_start',
+                     'candidate_index_advance'):
+        assert calls[0][1]==(project,)
+        assert result['global_unique_publications'] is None
+        assert result['no_network_requests'] is True
+    if operation in ('candidate_index_start','candidate_index_advance'):
+        assert calls[0][2]['expected_revision']==kw['candidate_index_revision']
+        assert calls[0][2]['actor']=='Synthetic researcher'
+        assert calls[0][2]['confirmed'] is True
+    if operation=='candidate_index_advance':
+        assert calls[0][2]['generation_id']==kw['candidate_index_generation']
     if operation=='candidate_queue_page':
         assert calls[0][1]==(project,kw['run_id'])
         assert calls[0][2]['expected_revision']==kw['candidate_queue_revision']

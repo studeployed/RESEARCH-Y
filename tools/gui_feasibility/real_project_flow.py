@@ -129,6 +129,10 @@ class RealProjectFlow:
         self._candidate_error = None
         self._candidate_queue = None
         self._candidate_queue_error = None
+        self._candidate_index_state = None
+        self._candidate_index_offer = None
+        self._candidate_index_last_receipt = None
+        self._candidate_index_error = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -376,6 +380,10 @@ class RealProjectFlow:
         self._candidate_error = None
         self._candidate_queue = None
         self._candidate_queue_error = None
+        self._candidate_index_state = None
+        self._candidate_index_offer = None
+        self._candidate_index_last_receipt = None
+        self._candidate_index_error = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -516,6 +524,8 @@ class RealProjectFlow:
             self._candidate_error = None
             self._candidate_queue = None
             self._candidate_queue_error = None
+            self._candidate_index_offer = None
+            self._candidate_index_error = None
             self._coord_offer = None
             self._coord_last_outcome = None
             self.snapshot = report
@@ -2207,6 +2217,155 @@ class RealProjectFlow:
                 raise
 
 
+
+    @staticmethod
+    def _candidate_index_checked(data, project):
+        """Only accept original, explicit, incomplete local index evidence."""
+        from uuid import UUID
+        if (type(data) is not dict or
+                data.get('method') != 'derived-candidate-key-index/1' or
+                data.get('project_id') != str(project.identifier) or
+                data.get('status') not in ('empty','building','ready','stale') or
+                type(data.get('revision')) is not str or
+                len(data['revision']) != 64 or
+                any(c not in '0123456789abcdef' for c in data['revision']) or
+                type(data.get('source_epoch')) is not int or
+                type(data.get('source_records')) is not int or
+                type(data.get('processed_records')) is not int or
+                type(data.get('indexed_keys')) is not int or
+                (data['processed_records'] < 0 or
+                 (data['status'] != 'stale' and
+                  data['processed_records'] > data['source_records'])) or
+                not 0 <= data['indexed_keys'] or
+                data.get('index_ready') is not (data['status'] == 'ready') or
+                data.get('no_network_requests') is not True or
+                data.get('source_query_executed') is not False or
+                data.get('automatic_match_allowed') is not False or
+                data.get('candidate_discovery_complete') is not False or
+                data.get('deduplication_complete') is not False or
+                data.get('source_retrieval_verified') is not False or
+                data.get('verified_complete') is not False or
+                data.get('global_unique_publications') is not None):
+            raise ProjectFlowError('candidate_index_invalid')
+        if data['status'] != 'empty':
+            try:
+                token=data['generation_id']
+                if type(token) is not str or str(UUID(token)) != token:
+                    raise ValueError
+            except (ValueError, TypeError):
+                raise ProjectFlowError('candidate_index_invalid') from None
+        return data
+
+    def inspect_candidate_index(self):
+        """Recover current source-key generation; read-only/no provider request."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._candidate_index_offer = None
+            try:
+                fresh = self._candidate_index_checked(
+                    self._operation('candidate_index_preview'), self.project)
+                self._candidate_index_state = fresh
+                self._candidate_index_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._candidate_index_state = None
+                self._candidate_index_error = 'candidate_index_reinspect_required'
+                self._publish()
+                raise
+
+    def offer_candidate_index(self, action):
+        """Separate preview click before each project-local build transaction."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if action not in ('start','advance'):
+                raise ProjectFlowError('candidate_index_invalid')
+            fresh = self._candidate_index_checked(
+                self._operation('candidate_index_preview'),self.project)
+            if action == 'advance' and fresh['status'] != 'building':
+                raise ProjectFlowError('candidate_index_no_work')
+            self._candidate_index_state = fresh
+            self._candidate_index_offer = dict(
+                action=action,revision=fresh['revision'],
+                generation_id=fresh.get('generation_id'),
+                source_epoch=fresh['source_epoch'],
+                source_records=fresh['source_records'],
+                processed_records=fresh['processed_records'])
+            self._candidate_index_error = None
+            return self._publish()
+
+    def dismiss_candidate_index(self):
+        with self._guard:
+            self._candidate_index_offer = None
+            return self._publish()
+
+    def confirm_candidate_index(self, actor):
+        """Single-use researcher consent, followed by independent disk reread."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer=self._candidate_index_offer
+            if offer is None:
+                raise ProjectFlowError('candidate_index_confirmation_required')
+            self._candidate_index_offer = None
+            try:
+                op=('candidate_index_start' if offer['action']=='start'
+                    else 'candidate_index_advance')
+                kwargs=dict(
+                    candidate_index_revision=offer['revision'],
+                    candidate_index_actor=actor,
+                    candidate_index_confirmed=True)
+                if offer['action']=='advance':
+                    kwargs['candidate_index_generation']=offer['generation_id']
+                receipt=self._candidate_index_checked(self._operation(op,**kwargs),
+                                                       self.project)
+                if (receipt['source_epoch'] != offer['source_epoch'] or
+                        receipt['source_records'] != offer['source_records'] or
+                        receipt['status'] not in ('building','ready') or
+                        (offer['action']=='start' and (
+                            receipt['generation_id']==offer['generation_id'] or
+                            receipt['processed_records']!=0)) or
+                        (offer['action']=='advance' and (
+                            receipt['generation_id']!=offer['generation_id'] or
+                            type(receipt.get('committed_records')) is not int or
+                            not 0 <= receipt['committed_records'] <= 128 or
+                            receipt['processed_records'] !=
+                                offer['processed_records']+receipt['committed_records']))):
+                    raise ProjectFlowError('candidate_index_reinspect_required')
+                # This is a new, untrusted process read: not the response to
+                # the write itself. Never trust a child reply alone.
+                stored=self._candidate_index_checked(
+                    self._operation('candidate_index_preview'),self.project)
+                fields=('revision','generation_id','status','source_epoch',
+                        'source_records','processed_records','indexed_keys',
+                        'unsupported_records','running_sha256')
+                if any(stored[k]!=receipt[k] for k in fields):
+                    raise ProjectFlowError('candidate_index_reinspect_required')
+                self._candidate_index_state = stored
+                self._candidate_index_last_receipt = dict(
+                    action=offer['action'],generation_id=stored['generation_id'],
+                    processed_records=stored['processed_records'],
+                    source_records=stored['source_records'],
+                    status=stored['status'],revision=stored['revision'])
+                self._candidate_index_error = None
+                self._candidate_queue = None
+                self._candidate_first = None
+                self._candidate_offer = None
+                self._reversal_offer = None
+                return self._publish()
+            except ProjectFlowError:
+                # An interrupted child can have committed. Never resend the
+                # old consent: inspect durable project state first.
+                self._candidate_index_state = None
+                self._candidate_index_error = 'candidate_index_reinspect_required'
+                self._candidate_queue = None
+                self._candidate_first = None
+                self._candidate_offer = None
+                self._reversal_offer = None
+                self._publish()
+                raise
+
     def inspect_candidate_queue(self, *, cursor=None, revision=None):
         """Read-only project-spanning evidence, not full duplicate screening."""
         with self._guard:
@@ -2240,6 +2399,12 @@ class RealProjectFlow:
                         type(data.get('selected_run_revision')) is not str or
                         len(data['selected_run_revision']) != 64 or
                         data.get('no_network_requests') is not True or
+                        data.get('index_backend') not in (
+                            'verified_derived_keys_v5','original_source_projection') or
+                        data.get('index_status') not in (
+                            'empty','building','ready','stale') or
+                        ((data['index_status']=='ready') !=
+                         (data['index_backend']=='verified_derived_keys_v5')) or
                         data.get('candidate_discovery_complete') is not False or
                         data.get('deduplication_complete') is not False or
                         data.get('verified_complete') is not False or
@@ -3314,6 +3479,10 @@ class RealProjectFlow:
                 'candidate_error': self._candidate_error,
                 'candidate_queue': self._candidate_queue,
                 'candidate_queue_error': self._candidate_queue_error,
+                'candidate_index_state': self._candidate_index_state,
+                'candidate_index_offer': self._candidate_index_offer,
+                'candidate_index_last_receipt': self._candidate_index_last_receipt,
+                'candidate_index_error': self._candidate_index_error,
                 'run_board_error': self._run_board_error,
                 'run_coordination_offer': self._coord_offer,
                 'run_coordination_pending': self._coord_pending is not None,

@@ -281,6 +281,19 @@ def run(args):
                             return flow.dismiss_publication_materialisation()
                         if name == 'publication_materialise_confirm':
                             return flow.confirm_publication_materialisation(value)
+                        if name == 'candidate_index_inspect':
+                            # Local source-key cache status only. No writes.
+                            return flow.inspect_candidate_index()
+                        if name == 'candidate_index_offer':
+                            if value not in ('start','advance'):
+                                raise ProjectFlowError('candidate_index_invalid')
+                            return flow.offer_candidate_index(value)
+                        if name == 'candidate_index_dismiss':
+                            return flow.dismiss_candidate_index()
+                        if name == 'candidate_index_confirm':
+                            # Only a separate confirmation click authorises one
+                            # transaction of at most 128 original source records.
+                            return flow.confirm_candidate_index(value)
                         if name == 'candidate_queue_refresh':
                             # Full project candidate index, original SQLite only.
                             return flow.inspect_candidate_queue()
@@ -720,6 +733,89 @@ def run(args):
                                  'coverage or completed Preferred Reporting Items for '
                                  'Systematic Reviews and Meta-Analyses searches.')
 
+                if state['project'] is not None:
+                    ui.separator()
+                    ui.label('Durable candidate-key index — optional LOCAL '
+                             'derivative of original source records. It is not '
+                             'a deduplicated result or a completed search.').props(
+                                 'data-testid=candidate-index-heading')
+                    ui.button('Inspect current index status (READ-ONLY)',
+                              on_click=lambda: act('candidate_index_inspect')).props(
+                                  'data-testid=candidate-index-inspect')
+                    if state['candidate_index_error'] is not None:
+                        ui.label('Index receipt not independently verified. '
+                                 'An interrupted writer may have committed. '
+                                 'Inspect current durable status before choosing '
+                                 'another action; never replay an old consent.').props(
+                                     'data-testid=candidate-index-error')
+                    index=state['candidate_index_state']
+                    if index is None:
+                        ui.label('Index status has not been inspected in this '
+                                 'session. The original source-based candidate '
+                                 'queue remains available offline.')
+                    else:
+                        ui.label('Index: ' + index['status'] +
+                                 ' • original source records: ' +
+                                 str(index['source_records']) +
+                                 ' • processed: ' +
+                                 str(index['processed_records']) +
+                                 ' • cached keys: ' +
+                                 str(index['indexed_keys']) +
+                                 ' • unsupported layouts: ' +
+                                 str(index['unsupported_records']) +
+                                 ' • search verified: NO • final unique '
+                                 'publications: UNKNOWN.').props(
+                                     'data-testid=candidate-index-status')
+                        if index['status']=='stale':
+                            ui.label('Original source evidence changed. '
+                                     'This generation is not usable; '
+                                     'explicit rebuild required.').props(
+                                         'data-testid=candidate-index-stale')
+                        if index['status']=='ready':
+                            ui.label('Cache is ready for exact-key candidate '
+                                     'hints only. Reviewer decisions remain '
+                                     'separate and source-backed.').props(
+                                         'data-testid=candidate-index-ready')
+                        offer=state['candidate_index_offer']
+                        if offer is None:
+                            ui.button('Preview a NEW project-wide source-key '
+                                      'generation (NO network)',on_click=lambda:
+                                      act('candidate_index_offer','start')).props(
+                                          'data-testid=candidate-index-start-offer')
+                            if index['status']=='building':
+                                ui.button('Preview ONE bounded continuation '
+                                          'batch (up to 128 records)',on_click=lambda:
+                                          act('candidate_index_offer','advance')).props(
+                                              'data-testid=candidate-index-advance-offer')
+                        else:
+                            ui.label('Unsent ' + offer['action'] +
+                                     ' • source records ' +
+                                     str(offer['source_records']) +
+                                     ' • already processed ' +
+                                     str(offer['processed_records']) +
+                                     '. Confirmation writes only derived '
+                                     'index rows and an audit receipt.').props(
+                                         'data-testid=candidate-index-offer')
+                            researcher=ui.input('Researcher confirming local index '
+                                                'work',value='Researcher')
+                            ui.button('CONFIRM ' + offer['action'] +
+                                      ' (ONE bounded SQLite transaction)',
+                                      on_click=lambda box=researcher:
+                                          act('candidate_index_confirm',box.value)).props(
+                                              'data-testid=candidate-index-confirm')
+                            ui.button('Dismiss uncommitted index action',
+                                      on_click=lambda:
+                                      act('candidate_index_dismiss')).props(
+                                          'data-testid=candidate-index-dismiss')
+                    last=state['candidate_index_last_receipt']
+                    if last is not None:
+                        ui.label('Last independently reconciled index action: ' +
+                                 last['action'] + ' • status at receipt: ' +
+                                 last['status'] + ' • processed: ' +
+                                 str(last['processed_records']) +
+                                 '. This does not establish deduplication.').props(
+                                     'data-testid=candidate-index-outcome')
+
                 if state['selected_run_id'] is not None:
                     ui.separator()
                     ui.label('Project-wide POTENTIAL DUPLICATE queue — exact '
@@ -744,6 +840,14 @@ def run(args):
                                      'data-testid=candidate-queue-error')
                     candidate_queue = state['candidate_queue']
                     if candidate_queue is not None:
+                        ui.label('Candidate retrieval backend: ' +
+                                 candidate_queue['index_backend'] +
+                                 ' • index status: ' +
+                                 candidate_queue['index_status'] +
+                                 '. When a generation is not ready, the '
+                                 'original source-based read is used, not an '
+                                 'incomplete cache.').props(
+                                     'data-testid=candidate-queue-backend')
                         ui.label('Potential source-record pairs touching this run: ' +
                                  str(candidate_queue['candidate_pair_total']) +
                                  '; total project records: ' +
