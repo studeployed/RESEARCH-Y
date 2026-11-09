@@ -1,0 +1,11 @@
+requirement,evidence,status_or_limit
+AT-22,scripts/benchmark_candidate_queue.py,component-level 100000-record SQLite workload only; full GUI/data-loss acceptance unverified
+AT-22,.github/workflows/candidate-queue-performance.yml,Linux/Windows measured performance evidence pending execution
+AT-09,tests/test_candidate_queue_performance_probe.py,small reproducible query plan/integrity checks
+PROJ-04,tests/test_candidate_queue_performance_probe.py,synthetic SQLite reopened after bulk write with integrity_check; not full original project
+DUP-01,tests/test_publication_candidate_queue.py::test_large_review_history_is_validated_once_not_for_each_visible_pair,partial per-page candidate history
+DUP-03,tests/test_publication_candidate_queue.py::test_prevalidated_receipt_index_matches_original_pair_review,unchanged reviewer status and revision
+DUP-04,tests/test_publication_candidate_queue.py::test_cached_decisions_never_bypass_full_journal_integrity,canonical receipts retain precedence
+AUDIT-03,tests/test_publication_candidate_queue.py::test_large_review_history_is_validated_once_not_for_each_visible_pair,full audit validator still executes before per-pair reuse
+UI-09,docs/CANDIDATE_QUEUE_PERFORMANCE.md,native interface 100000-record responsiveness not yet verified
+COUNT-05,tests/test_candidate_queue_performance_probe.py,no verified unique-publication count generated
