@@ -5,9 +5,7 @@ latency thresholds on shared continuous-integration runners.
 """
 from __future__ import annotations
 
-import json
-
-from scripts.benchmark_candidate_queue import run, main
+from scripts.benchmark_candidate_queue import run
 
 
 def test_small_sql_kernel_smoke_is_reproducible_and_non_destructive():
@@ -40,7 +38,7 @@ def test_small_sql_kernel_smoke_is_reproducible_and_non_destructive():
 def test_perf_probe_reports_a_bounded_dense_cache_on_small_input():
     report=run(101,100,20,2)
     assert report["parameters"]["records"]==101
-    assert report["source_key_resume"]["returned_rows"]==0  # cursor near end
+    assert report["source_key_resume"]["returned_rows"]==51  # 101 - 50 rows after the cursor
     assert report["dense_key_peer_seek"]["returned_rows"]==100
     assert report["page_near_tail"]["returned_rows"]==21
 
