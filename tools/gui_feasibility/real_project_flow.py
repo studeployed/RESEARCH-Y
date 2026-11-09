@@ -2400,11 +2400,18 @@ class RealProjectFlow:
                         len(data['selected_run_revision']) != 64 or
                         data.get('no_network_requests') is not True or
                         data.get('index_backend') not in (
-                            'verified_derived_keys_v5','original_source_projection') or
+                            'verified_derived_keys_v5','original_source_projection',
+                            'verified_pair_checkpoint_v6') or
                         data.get('index_status') not in (
                             'empty','building','ready','stale') or
-                        ((data['index_status']=='ready') !=
-                         (data['index_backend']=='verified_derived_keys_v5')) or
+                        (data['index_backend']=='original_source_projection' and
+                         data['index_status']=='ready') or
+                        (data['index_backend']!='original_source_projection' and
+                         data['index_status']!='ready') or
+                        (data['index_backend']=='verified_pair_checkpoint_v6' and
+                         (data.get('pair_index_status')!='ready_keys_only' or
+                          type(data.get('pair_index_generation_id')) is not str or
+                          type(data.get('receipt_only_pair_total')) is not int)) or
                         data.get('candidate_discovery_complete') is not False or
                         data.get('deduplication_complete') is not False or
                         data.get('verified_complete') is not False or
