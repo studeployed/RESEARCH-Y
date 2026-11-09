@@ -56,7 +56,7 @@ def test_real_capture_workbook_publication_and_no_research_mutation(application)
     with closing(sqlite3.connect(p.database_path)) as db:
         assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
         assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
-        assert db.execute('PRAGMA user_version').fetchone()[0]==5
+        assert db.execute('PRAGMA user_version').fetchone()[0]==6
         with pytest.raises(sqlite3.DatabaseError):
             db.execute('DELETE FROM audit_events WHERE event_type LIKE ?', (exports.EVENT+':%',))
 

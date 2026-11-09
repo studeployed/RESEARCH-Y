@@ -23,6 +23,7 @@ from research_y.schema import SCHEMA_VERSION, apply_v2_schema
 from research_y.checkpoint_schema import apply_v3_schema
 from research_y.wos_checkpoint_schema import apply_v4_schema
 from research_y.candidate_index_schema import apply_v5_schema
+from research_y.candidate_pair_schema import apply_v6_schema
 
 MANIFEST_FILENAME = "project.ryproj"
 DATABASE_RELATIVE_PATH = Path("data") / "researchy.sqlite3"
@@ -150,6 +151,7 @@ def _create_database(database_path: Path, project: Project) -> None:
         apply_v3_schema(connection)
         apply_v4_schema(connection)
         apply_v5_schema(connection)
+        apply_v6_schema(connection)
         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         connection.execute(
             "INSERT INTO project_metadata "
@@ -274,6 +276,7 @@ def _upgrade_v1_project(project: Project, connection: sqlite3.Connection) -> Non
         apply_v3_schema(connection)
         apply_v4_schema(connection)
         apply_v5_schema(connection)
+        apply_v6_schema(connection)
         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         connection.execute(
             "INSERT INTO audit_events (occurred_at_utc, event_type, details_json) "
@@ -306,6 +309,7 @@ def _upgrade_v2_project(project: Project, connection: sqlite3.Connection) -> Non
         apply_v3_schema(connection)
         apply_v4_schema(connection)
         apply_v5_schema(connection)
+        apply_v6_schema(connection)
         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         connection.execute(
             "INSERT INTO audit_events (occurred_at_utc, event_type, details_json) "
@@ -332,6 +336,7 @@ def _upgrade_v3_project(project: Project, connection: sqlite3.Connection) -> Non
             raise sqlite3.DatabaseError("Schema changed during migration")
         apply_v4_schema(connection)
         apply_v5_schema(connection)
+        apply_v6_schema(connection)
         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         connection.execute(
             "INSERT INTO audit_events (occurred_at_utc,event_type,details_json) VALUES (?,?,?)",
@@ -357,11 +362,36 @@ def _upgrade_v4_project(project: Project, connection: sqlite3.Connection) -> Non
         if connection.execute("PRAGMA user_version").fetchone()[0] != 4:
             raise sqlite3.DatabaseError("Schema changed during migration")
         apply_v5_schema(connection)
+        apply_v6_schema(connection)
         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         connection.execute(
             "INSERT INTO audit_events (occurred_at_utc,event_type,details_json) VALUES (?,?,?)",
             (_utc_now(), "schema_migrated", json.dumps({
                 "from_version": 4, "to_version": SCHEMA_VERSION,
+                "backup": snapshot.name,
+            }, sort_keys=True)),
+        )
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        raise ProjectMigrationError(
+            f"Schema upgrade failed; original data and snapshot preserved: {snapshot.name}"
+        ) from exc
+
+
+def _upgrade_v5_project(project: Project, connection: sqlite3.Connection) -> None:
+    """Recoverable, atomic v5 to v6 upgrade; originals remain untouched."""
+    snapshot = _snapshot_before_upgrade(project, connection, expected_version=5)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        if connection.execute("PRAGMA user_version").fetchone()[0] != 5:
+            raise sqlite3.DatabaseError("Schema changed during migration")
+        apply_v6_schema(connection)
+        connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+        connection.execute(
+            "INSERT INTO audit_events (occurred_at_utc,event_type,details_json) VALUES (?,?,?)",
+            (_utc_now(), "schema_migrated", json.dumps({
+                "from_version": 5, "to_version": SCHEMA_VERSION,
                 "backup": snapshot.name,
             }, sort_keys=True)),
         )
@@ -393,7 +423,7 @@ def _validated_project_connection(project: Project) -> Iterator[sqlite3.Connecti
     with closing(connection):
         try:
             schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if schema_version not in (1, 2, 3, 4, SCHEMA_VERSION):
+            if schema_version not in (1, 2, 3, 4, 5, SCHEMA_VERSION):
                 raise ProjectVersionError(f"Unsupported database schema: {schema_version}")
             application_id = connection.execute("PRAGMA application_id").fetchone()[0]
             if application_id != SQLITE_APPLICATION_ID:
@@ -414,6 +444,8 @@ def _validated_project_connection(project: Project) -> Iterator[sqlite3.Connecti
             _upgrade_v3_project(project, connection)
         elif schema_version == 4:
             _upgrade_v4_project(project, connection)
+        elif schema_version == 5:
+            _upgrade_v5_project(project, connection)
         # Do not convert operational exceptions inside yield into format errors.
         # In particular, an audit-insert failure must rollback *and* remain
         # identifiable as a failed write, not a malformed project.

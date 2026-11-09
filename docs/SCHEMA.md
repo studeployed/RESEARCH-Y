@@ -1,4 +1,4 @@
-# SQLite schema v5 — P1-06k2a (additive to v4)
+# SQLite schema v6 — P1-06k3a (additive to v5)
 
 The approved [specification](../RESEARCH-Y_SPEC.md) remains authoritative. The current implementation stores reproducible local evidence; it is not a declaration of a completed search product.
 
@@ -37,13 +37,19 @@ See [candidate index checkpoints](CANDIDATE_INDEX_CHECKPOINTS.md) for its explic
 
 These structures have no effect on original source queries, publication-identity matching decisions or search completeness. A ready derived index is not a completed search or verified publication count.
 
+## Version 6 additions: source-backed exact-key candidate-pair checkpoints
+
+See [pair checkpoint protocol](CANDIDATE_PAIR_CHECKPOINTS.md). Schema v6 adds `candidate_pair_builds` (run-scoped generation, source index epoch, key-and-peer cursor, progress, rolling checksum, status) and `candidate_pair_hints` (unique canonical source-pair ID and field agreement bit mask). This is derived **review evidence only**; it does not merge publications or certify a completed search.
+
+Seven triggers mark any building/ready pair generation stale if the original source retrievals, publication-retrieval links or explicit candidate decision history change. A source-key index rebuild also invalidates the recorded generation through validation. The pair builder handles at most 64 source/field keys and 128 matching-key hints per confirmed transaction, including resumable partial dense-key buckets. It refuses workloads beyond its stated pair limit without silently omitting records. Existing PR73/75 researcher-facing review remains authoritative until historical receipt-only pairs and original-source confirmation are integrated.
+
 ## Recoverable migration
 
-New projects initialise schema **5**. Opening an older supported project validates its identity before creating a consistent, independently checked backup. Names reflect the old version's next step: `researchy-before-v2-*` for v1, `researchy-before-v3-*` for v2, `researchy-before-v4-*` for v3, and `researchy-before-v5-*` for v4. The actual migration audit records the old version and target **5**, with all needed additive definitions applied in one transaction.
+New projects initialise schema **6**. Opening an older supported project validates its identity before creating a consistent, independently checked backup. Names reflect the old version's next step: `researchy-before-v2-*` for v1, `researchy-before-v3-*` for v2, `researchy-before-v4-*` for v3, `researchy-before-v5-*` for v4, and `researchy-before-v6-*` for v5. The actual migration audit records the old version and target **6**, with all needed additive definitions applied in one transaction.
 
-Schema changes, `PRAGMA user_version=5` and the migration audit are atomic. A failed backup prevents migration; failed DDL or audit rolls back the original database, leaving the pre-upgrade backup intact. Reopening a current project creates no repeated backup. Unknown future versions and identity mismatches are rejected without migration. Existing source records, PubMed checkpoints and research setup are preserved.
+Schema changes, `PRAGMA user_version=6` and the migration audit are atomic. A failed backup prevents migration; failed DDL or audit rolls back the original database, leaving the pre-upgrade backup intact. Reopening a current project creates no repeated backup. Unknown future versions and identity mismatches are rejected without migration. Existing source records, PubMed checkpoints and research setup are preserved.
 
-Tests: `tests/test_schema_migrations.py`, `tests/test_wos_migration.py`, `tests/test_candidate_index_migration.py`, `tests/test_candidate_index_build.py`, `tests/test_wos_checkpoints.py`. These are fixtures until execution evidence is recorded; schema presence alone never proves data retrieval.
+Tests: `tests/test_schema_migrations.py`, `tests/test_wos_migration.py`, `tests/test_candidate_index_migration.py`, `tests/test_candidate_index_build.py`, `tests/test_candidate_pair_migration.py`, `tests/test_candidate_pair_checkpoints.py`, `tests/test_wos_checkpoints.py`. These are fixtures until execution evidence is recorded; schema presence alone never proves data retrieval.
 
 ## Acceptance and security boundary
 
