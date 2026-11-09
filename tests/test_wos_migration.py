@@ -7,6 +7,7 @@ import research_y.projects as projects
 from research_y.storage import ApprovedTerm, StrategyGroup, approve_strategy, create_search_run, plan_source_query
 from research_y.wos_checkpoint_schema import WOS_TABLES, V4_STATEMENTS
 from research_y.candidate_index_schema import V5_TABLES, V5_TRIGGERS
+from research_y.candidate_pair_schema import V6_TABLES, V6_TRIGGERS
 from research_y.wos_checkpoint_store import create_wos_checkpoint
 
 
@@ -17,6 +18,8 @@ def v3_project(tmp_path):
     q=plan_source_query(p,run_id=run.run_id,group_id='g',source_name='wos',exact_query='TS=("ECMO")')
     with closing(sqlite3.connect(p.database_path)) as db:
         db.execute('PRAGMA foreign_keys=OFF')
+        for trigger in V6_TRIGGERS:db.execute(f'DROP TRIGGER {trigger}')
+        for name in V6_TABLES:db.execute(f'DROP TABLE {name}')
         for trigger in V5_TRIGGERS:db.execute(f'DROP TRIGGER {trigger}')
         for name in V5_TABLES:db.execute(f'DROP TABLE {name}')
         db.execute('DROP TRIGGER immutable_wos_query_identity')
