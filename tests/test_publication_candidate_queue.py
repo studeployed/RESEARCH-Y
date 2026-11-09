@@ -958,3 +958,33 @@ def test_trusted_gui_pair_backend_and_selection_still_enforces_original_decision
         assert read(project_runs)["index_backend"]!="verified_pair_checkpoint_v6"
     finally:
         flow.close()
+
+
+def test_pair_checkpoint_queue_preserves_confirmed_match_without_equal_fields(project_runs):
+    project,run,_=project_runs
+    a=insert(project_runs,number=4101,title="Independent source title A",
+             doi="10.4101/one")
+    b=insert(project_runs,source="wos",number=4102,
+             title="Independent source title B",doi="10.4102/two")
+    candidate=pair(project_runs,a,b)
+    decided=candidates.decide_candidate(
+        project,a,b,expected_revision=candidate.revision,
+        decision="confirmed_match",actor="Researcher",
+        evidence="Same individual publication confirmed from original files",
+        acknowledged_warnings=candidate.warnings,
+        decision_confirmed=True,move_retrieval_id=a)
+    assert decided.status=="confirmed_match"
+    before=read(project_runs)
+    assert before["candidate_pair_total"]==1
+    assert before["rows"][0]["candidate_status"]=="confirmed_match"
+    assert before["rows"][0]["matched_exact_fields"]==[]
+    state=build_ready_pairs(project_runs)
+    assert state["unique_pairs"]==0
+    after=queue.read_candidate_queue(open_project(project.root),run)
+    assert after["index_backend"]=="verified_pair_checkpoint_v6"
+    assert after["receipt_only_pair_total"]==1
+    assert after["candidate_pair_total"]==1
+    assert after["rows"]==before["rows"]
+    assert after["rows"][0]["pair_already_associated"] is True
+    assert after["rows"][0]["last_decision_event_id"] is not None
+    assert after["global_unique_publications"] is None
