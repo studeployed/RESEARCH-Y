@@ -133,6 +133,10 @@ class RealProjectFlow:
         self._candidate_index_offer = None
         self._candidate_index_last_receipt = None
         self._candidate_index_error = None
+        self._candidate_pair_state = None
+        self._candidate_pair_offer = None
+        self._candidate_pair_last_receipt = None
+        self._candidate_pair_error = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -384,6 +388,10 @@ class RealProjectFlow:
         self._candidate_index_offer = None
         self._candidate_index_last_receipt = None
         self._candidate_index_error = None
+        self._candidate_pair_state = None
+        self._candidate_pair_offer = None
+        self._candidate_pair_last_receipt = None
+        self._candidate_pair_error = None
         self._coord_offer = None
         self._coord_pending = None
         self._coord_operation_id = None
@@ -526,6 +534,12 @@ class RealProjectFlow:
             self._candidate_queue_error = None
             self._candidate_index_offer = None
             self._candidate_index_error = None
+            # Pair hints are run-scoped; never reuse an offer/progress/receipt
+            # from a different selected run.
+            self._candidate_pair_state = None
+            self._candidate_pair_offer = None
+            self._candidate_pair_last_receipt = None
+            self._candidate_pair_error = None
             self._coord_offer = None
             self._coord_last_outcome = None
             self.snapshot = report
@@ -2366,6 +2380,236 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
+
+    @staticmethod
+    def _candidate_pair_checked(data, project, run_id):
+        """Validate incomplete pair-cache evidence before presenting it."""
+        from uuid import UUID
+
+        def canonical(value):
+            if type(value) is not str:
+                return False
+            try:
+                return str(UUID(value)) == value
+            except (ValueError, TypeError, AttributeError):
+                return False
+
+        def digest(value):
+            return (type(value) is str and len(value)==64 and
+                    all(ch in '0123456789abcdef' for ch in value))
+
+        if (type(data) is not dict or
+                data.get('method')!='candidate-pair-hint-checkpoints/1' or
+                data.get('project_id')!=str(project.identifier) or
+                data.get('run_id')!=run_id or not digest(data.get('revision')) or
+                data.get('status') not in (
+                    'not_started','building','ready_keys_only','stale') or
+                type(data.get('processed_source_keys')) is not int or
+                data['processed_source_keys']<0 or
+                type(data.get('emitted_hints')) is not int or
+                data['emitted_hints']<0 or
+                type(data.get('unique_pairs')) is not int or
+                not 0<=data['unique_pairs']<=data['emitted_hints'] or
+                type(data.get('max_source_keys_per_batch')) is not int or
+                data['max_source_keys_per_batch']!=64 or
+                type(data.get('max_hints_per_batch')) is not int or
+                data['max_hints_per_batch']!=128 or
+                type(data.get('index_ready')) is not bool or
+                data.get('indexed_source_key_hints_complete') is not
+                    (data['status']=='ready_keys_only') or
+                data.get('historical_receipt_only_pairs_included') is not False or
+                data.get('automatic_merge_allowed') is not False or
+                data.get('no_network_requests') is not True or
+                data.get('candidate_discovery_complete') is not False or
+                data.get('deduplication_complete') is not False or
+                data.get('source_retrieval_verified') is not False or
+                data.get('verified_complete') is not False or
+                data.get('global_unique_publications') is not None):
+            raise ProjectFlowError('candidate_pair_invalid')
+        if data['status']=='not_started':
+            if (data.get('generation_id') is not None or
+                    data.get('source_index_generation') is not None or
+                    data.get('running_sha256') is not None or
+                    data.get('cursor_retrieval_id') is not None or
+                    data.get('cursor_field') is not None or
+                    data.get('cursor_other_id') is not None or
+                    data['processed_source_keys'] or data['emitted_hints'] or
+                    data['unique_pairs']):
+                raise ProjectFlowError('candidate_pair_invalid')
+        else:
+            if (not canonical(data.get('generation_id')) or
+                    not canonical(data.get('source_index_generation')) or
+                    not digest(data.get('running_sha256')) or
+                    type(data.get('source_index_epoch')) is not int or
+                    data['source_index_epoch']<0 or
+                    (data['status']=='ready_keys_only' and
+                     data.get('index_ready') is not True)):
+                raise ProjectFlowError('candidate_pair_invalid')
+        if data.get('current_source_index_generation') is not None and not canonical(
+                data['current_source_index_generation']):
+            raise ProjectFlowError('candidate_pair_invalid')
+        if (type(data.get('current_source_index_epoch')) is not int or
+                data['current_source_index_epoch']<0):
+            raise ProjectFlowError('candidate_pair_invalid')
+        return data
+
+    def inspect_candidate_pairs(self):
+        """Run-scoped, read-only inspection of durable hint checkpoints."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            self._candidate_pair_offer = None
+            try:
+                current = self._candidate_pair_checked(
+                    self._operation('candidate_pair_preview',
+                                    run_id=self.selected_run_id),
+                    self.project,self.selected_run_id)
+                self._candidate_pair_state=current
+                self._candidate_pair_error=None
+                return self._publish()
+            except ProjectFlowError:
+                self._candidate_pair_state=None
+                self._candidate_pair_error='candidate_pair_reinspect_required'
+                self._publish()
+                raise
+
+    def offer_candidate_pairs(self, action):
+        """Prepare one, and only one, consciously confirmed SQLite write."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            if type(action) is not str or action not in ('start','advance'):
+                raise ProjectFlowError('candidate_pair_invalid')
+            self._candidate_pair_offer=None
+            try:
+                current=self._candidate_pair_checked(
+                    self._operation('candidate_pair_preview',
+                                    run_id=self.selected_run_id),
+                    self.project,self.selected_run_id)
+                self._candidate_pair_state=current
+                if not current['index_ready']:
+                    raise ProjectFlowError('candidate_pair_index_not_ready')
+                if action=='advance' and current['status']!='building':
+                    raise ProjectFlowError('candidate_pair_no_work')
+                self._candidate_pair_offer=dict(
+                    action=action,run_id=self.selected_run_id,
+                    revision=current['revision'],
+                    generation_id=current['generation_id'],
+                    source_index_generation=current['current_source_index_generation'],
+                    source_index_epoch=current['current_source_index_epoch'],
+                    processed_source_keys=current['processed_source_keys'],
+                    emitted_hints=current['emitted_hints'],
+                    unique_pairs=current['unique_pairs'])
+                self._candidate_pair_error=None
+                return self._publish()
+            except ProjectFlowError:
+                self._candidate_pair_offer=None
+                self._candidate_pair_error='candidate_pair_reinspect_required'
+                self._publish()
+                raise
+
+    def dismiss_candidate_pairs(self):
+        with self._guard:
+            self._candidate_pair_offer=None
+            return self._publish()
+
+    def confirm_candidate_pairs(self, actor):
+        """Consume one consent; independently reconcile the original DB state."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer=self._candidate_pair_offer
+            if (offer is None or self.selected_run_id is None or
+                    offer['run_id']!=self.selected_run_id):
+                raise ProjectFlowError('candidate_pair_confirmation_required')
+            # An unknown worker response could conceal a committed write.
+            # Never leave the original confirmation available to retry.
+            self._candidate_pair_offer=None
+            try:
+                operation=('candidate_pair_start' if offer['action']=='start'
+                           else 'candidate_pair_advance')
+                kwargs=dict(
+                    run_id=self.selected_run_id,
+                    candidate_pair_revision=offer['revision'],
+                    candidate_pair_actor=actor,candidate_pair_confirmed=True)
+                if offer['action']=='advance':
+                    kwargs['candidate_pair_generation']=offer['generation_id']
+                returned=self._candidate_pair_checked(
+                    self._operation(operation,**kwargs),
+                    self.project,self.selected_run_id)
+                if (returned['status'] not in ('building','ready_keys_only') or
+                        returned['index_ready'] is not True or
+                        returned['source_index_generation']!=
+                            offer['source_index_generation'] or
+                        returned['source_index_epoch']!=offer['source_index_epoch']):
+                    raise ProjectFlowError('candidate_pair_reinspect_required')
+                if offer['action']=='start':
+                    if (returned['generation_id']==offer['generation_id'] or
+                            returned['processed_source_keys']!=0 or
+                            returned['emitted_hints']!=0 or
+                            returned['unique_pairs']!=0 or
+                            returned['status']!='building'):
+                        raise ProjectFlowError('candidate_pair_reinspect_required')
+                else:
+                    if (returned['generation_id']!=offer['generation_id'] or
+                            any(type(returned.get(k)) is not int for k in (
+                                'committed_source_keys','committed_hints',
+                                'committed_new_pairs')) or
+                            not 0<=returned['committed_source_keys']<=64 or
+                            not 0<=returned['committed_hints']<=128 or
+                            not 0<=returned['committed_new_pairs']<=
+                                returned['committed_hints'] or
+                            returned['processed_source_keys']!=
+                                offer['processed_source_keys']+
+                                returned['committed_source_keys'] or
+                            returned['emitted_hints']!=offer['emitted_hints']+
+                                returned['committed_hints'] or
+                            returned['unique_pairs']!=offer['unique_pairs']+
+                                returned['committed_new_pairs']):
+                        raise ProjectFlowError('candidate_pair_reinspect_required')
+                # Separate worker operation and original SQLite snapshot:
+                # do not treat a successful-looking write reply as proof.
+                saved=self._candidate_pair_checked(
+                    self._operation('candidate_pair_preview',
+                                    run_id=self.selected_run_id),
+                    self.project,self.selected_run_id)
+                fields=('revision','status','generation_id',
+                        'source_index_generation','source_index_epoch',
+                        'processed_source_keys','emitted_hints','unique_pairs',
+                        'running_sha256','cursor_retrieval_id','cursor_field',
+                        'cursor_other_id','updated_at_utc')
+                if any(saved[k]!=returned[k] for k in fields):
+                    raise ProjectFlowError('candidate_pair_reinspect_required')
+                self._candidate_pair_state=saved
+                self._candidate_pair_last_receipt=dict(
+                    action=offer['action'],run_id=self.selected_run_id,
+                    generation_id=saved['generation_id'],
+                    processed_source_keys=saved['processed_source_keys'],
+                    emitted_hints=saved['emitted_hints'],
+                    unique_pairs=saved['unique_pairs'],
+                    status=saved['status'],revision=saved['revision'])
+                self._candidate_pair_error=None
+                # The queue's trusted cursor/backend has changed. Force a
+                # fresh source-backed page before any further review action.
+                self._candidate_queue=None
+                self._candidate_first=None
+                self._candidate_offer=None
+                self._reversal_offer=None
+                return self._publish()
+            except ProjectFlowError:
+                self._candidate_pair_state=None
+                self._candidate_pair_error='candidate_pair_reinspect_required'
+                self._candidate_queue=None
+                self._candidate_first=None
+                self._candidate_offer=None
+                self._reversal_offer=None
+                self._publish()
+                raise
+
     def inspect_candidate_queue(self, *, cursor=None, revision=None):
         """Read-only project-spanning evidence, not full duplicate screening."""
         with self._guard:
@@ -3490,6 +3734,10 @@ class RealProjectFlow:
                 'candidate_index_offer': self._candidate_index_offer,
                 'candidate_index_last_receipt': self._candidate_index_last_receipt,
                 'candidate_index_error': self._candidate_index_error,
+                'candidate_pair_state': self._candidate_pair_state,
+                'candidate_pair_offer': self._candidate_pair_offer,
+                'candidate_pair_last_receipt': self._candidate_pair_last_receipt,
+                'candidate_pair_error': self._candidate_pair_error,
                 'run_board_error': self._run_board_error,
                 'run_coordination_offer': self._coord_offer,
                 'run_coordination_pending': self._coord_pending is not None,
