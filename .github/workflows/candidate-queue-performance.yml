@@ -1,0 +1,47 @@
+name: Candidate queue large-data performance evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/candidate-queue-performance.yml'
+      - 'scripts/benchmark_candidate_queue.py'
+      - 'src/research_y/publication_candidates.py'
+      - 'src/research_y/publication_candidate_queue.py'
+      - 'src/research_y/candidate_pair_checkpoints.py'
+      - 'tests/test_candidate_queue_performance_probe.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candidate-queue-performance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Synthetic 100k SQL probes ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install candidate query code (no provider extras)
+        run: python -m pip install -e .
+      - name: Run deterministic 100k source/pair SQL microbenchmark
+        run: python scripts/benchmark_candidate_queue.py --records 100000 --pairs 100000 --receipts 10000 --repetitions 40 --json-output .performance-evidence/candidate-queue-100k.json
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: candidate-queue-query-evidence-${{ matrix.os }}-py312
+          path: .performance-evidence/candidate-queue-100k.json
+          if-no-files-found: error
+          retention-days: 21
