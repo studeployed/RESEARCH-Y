@@ -86,7 +86,9 @@ def preview_run_materialisation(
 
 def materialise_run_batch(
     project: Project, run_id: str, *, expected_revision: str,
-    actor: str, confirmed: bool, batch_size: int = MAX_BATCH
+    actor: str, confirmed: bool, batch_size: int = MAX_BATCH,
+    _expected_original_scope_sha256: str | None = None,
+    _expected_retrieval_ids: tuple[str, ...] | None = None,
 ) -> dict:
     """Atomically create at most 64 independent publication hypotheses.
 
@@ -103,11 +105,31 @@ def materialise_run_batch(
     if (type(expected_revision) is not str or len(expected_revision) != 64
             or any(c not in "0123456789abcdef" for c in expected_revision)):
         raise ValueError("A canonical materialisation preview revision is required")
+    if (_expected_original_scope_sha256 is None) != (_expected_retrieval_ids is None):
+        raise ValueError("Both locked original-scope guards are required")
+    if _expected_original_scope_sha256 is not None:
+        if (type(_expected_original_scope_sha256) is not str or
+                len(_expected_original_scope_sha256) != 64 or
+                any(c not in "0123456789abcdef" for c in _expected_original_scope_sha256) or
+                type(_expected_retrieval_ids) is not tuple or
+                not 1 <= len(_expected_retrieval_ids) <= MAX_BATCH):
+            raise ValueError("Invalid locked original-scope guards")
+        for original_id in _expected_retrieval_ids:
+            identity._identifier(original_id)
     with _validated_project_connection(project) as db:
         db.execute("BEGIN IMMEDIATE")
         plan, ids = _plan(db, project, run_id, batch_size)
         if expected_revision != plan["revision"]:
             raise MaterialisationConflict("Materialisation preview is stale; inspect again")
+        if _expected_original_scope_sha256 is not None:
+            # Recheck the original scope under the SAME BEGIN IMMEDIATE write
+            # transaction as the 64 associations. This closes a TOCTOU race
+            # between the window's read-only preview and the locked writer.
+            from research_y.original_source_scope import original_scope_digest
+            if (ids != _expected_retrieval_ids or
+                    original_scope_digest(db) != _expected_original_scope_sha256):
+                raise MaterialisationConflict(
+                    "Original scope or approved batch changed; preview again")
         if not ids:
             raise ValueError("No unmaterialised source retrievals remain in this run")
         for retrieval_id in ids:
