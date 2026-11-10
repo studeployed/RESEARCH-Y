@@ -1304,3 +1304,110 @@ def test_fallback_queue_also_validates_one_journal_per_projection(project_runs,m
     assert page["index_backend"]=="verified_derived_keys_v5"
     assert len(page["rows"])==6
     assert len(calls)==2 and all(x is None for x in calls)
+
+
+def test_bulk_original_source_decoder_matches_individual_authoritative_read(
+    project_runs,
+):
+    """Streaming shares the *exact* raw source/run/hash evidence contract."""
+    project,run,historical=project_runs
+    linked=insert(project_runs,source="pubmed",number=8801,
+                  title="Current independent source",doi="10.8801/one")
+    historical_link=insert(project_runs,source="wos",number=8802,
+                           title="Historical independent source",
+                           doi="10.8801/two",run=historical)
+    unknown=insert(project_runs,source="pubmed",number=8803,
+                   title="Retained but unmaterialised",
+                   materialise=False,run=historical)
+    unsupported=insert(project_runs,source="manual",number=8804,
+                       title="Non-provider original source",
+                       materialise=False,run=historical)
+    from research_y.application_inspection import _read
+    with _read(project) as db:
+        observed=[]
+        for row in db.execute(queue._ORIGINAL_SOURCE_STREAM_SQL):
+            six,status,linked_rid=row[:6],row[6],row[7]
+            rid=six[0]
+            canonical=identity._source(db,rid)
+            streamed=identity._source_from_row(six,status)
+            assert streamed==canonical
+            assert status==canonical["run_status"]
+            assert streamed["source_sha256"]==identity._hash(six)
+            assert (linked_rid is not None)==(
+                identity._link(db,rid) is not None)
+            observed.append(rid)
+    assert set(observed)=={linked,historical_link,unknown,unsupported}
+    assert read(project_runs)["candidate_pair_total"]==0
+
+
+def test_large_unlinked_history_is_not_queried_again_per_record(
+    project_runs,monkeypatch,
+):
+    """One original scan; no historical source/run/link point lookup per row."""
+    project,run,historical=project_runs
+    a=insert(project_runs,source="pubmed",number=8901,
+             title="Chosen conference abstract A",
+             doi="10.8901/same")
+    b=insert(project_runs,source="wos",number=8902,
+             title="Chosen conference abstract B",
+             doi="10.8901/same")
+    rows=[]
+    for n in range(420):
+        source_id=str(900000+n)
+        rid=uid()
+        payload={
+            "source":"NCBI PubMed EFetch XML",
+            "record":{"pmid":source_id,
+                      "title":"Unlinked historical abstract "+str(n),
+                      "identifiers":{"doi":["10.9999/history"+str(n)]}},
+        }
+        rows.append((
+            rid,historical,"pubmed",source_id,project.created_at_utc,
+            identity._json(payload),
+        ))
+    with closing(sqlite3.connect(project.database_path)) as db,db:
+        db.execute("PRAGMA foreign_keys=ON")
+        db.executemany("INSERT INTO source_retrievals VALUES(?,?,?,?,?,?)",rows)
+    historical_ids={row[0] for row in rows}
+    original_source=identity._source
+    calls=[]
+    def checked_source(db,rid):
+        if rid in historical_ids:
+            calls.append(rid)
+        return original_source(db,rid)
+    monkeypatch.setattr(identity,"_source",checked_source)
+    page=read(project_runs)
+    assert page["index_backend"]=="original_source_projection"
+    assert page["project_source_records"]==422
+    assert page["unmaterialised_project_records"]==420
+    assert page["candidate_pair_total"]==1
+    assert page["rows"][0]["retrieval_ids"]==sorted((a,b))
+    assert page["rows"][0]["matched_exact_fields"]==["doi"]
+    assert calls==[]  # all 420 originals still parsed and SHA-checked in stream
+    assert page["global_unique_publications"] is None
+
+
+def test_corrupt_unmaterialised_historical_source_still_fails_closed(
+    project_runs,
+):
+    project,run,historical=project_runs
+    rid=insert(project_runs,number=8951,
+               run=historical,materialise=False)
+    with closing(sqlite3.connect(project.database_path)) as db,db:
+        db.execute("UPDATE source_retrievals SET original_metadata_json=? "
+                   "WHERE retrieval_id=?",('{"record":{"pmid":"BAD"}}',rid))
+    with pytest.raises(queue.CandidateQueueError) as err:
+        read(project_runs)
+    assert err.value.code=="candidate_queue_unavailable"
+
+
+def test_stream_original_query_uses_one_ordered_source_scan(project_runs):
+    """SQLite should seek joined run/association rows by primary key."""
+    project,_,_=project_runs
+    with closing(sqlite3.connect(project.database_path)) as db:
+        plan=[row[3] for row in db.execute(
+            "EXPLAIN QUERY PLAN "+queue._ORIGINAL_SOURCE_STREAM_SQL)]
+    assert any("SCAN r" in step for step in plan),plan
+    assert any("SEARCH s" in step for step in plan),plan
+    assert any("SEARCH l" in step for step in plan),plan
+    assert not any("USE TEMP B-TREE" in step for step in plan),plan
