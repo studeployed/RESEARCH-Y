@@ -9,6 +9,7 @@ on:
       - 'scripts/benchmark_production_materialisation.py'
       - 'tests/test_publication_materialisation_window.py'
       - 'src/research_y/publication_materialisation_window.py'
+      - 'src/research_y/original_source_scope.py'
       - 'src/research_y/publication_run_materialisation.py'
       - 'src/research_y/application_commands.py'
       - 'src/research_y/application_worker.py'
