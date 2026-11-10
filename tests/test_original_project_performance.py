@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from scripts.benchmark_original_project import (
-    run, _seed, _rid, materialise_remaining_fixture,
+    run, _seed, _rid, materialise_remaining_fixture, RUN,
 )
 from research_y.projects import create_project,open_project
 from research_y import publication_identity as identity
@@ -134,7 +134,7 @@ def test_single_run_matching_keys_are_two_original_cross_provider_records(tmp_pa
     with closing(sqlite3.connect(project.database_path)) as db:
         assert db.execute(
             "SELECT COUNT(*) FROM source_retrievals WHERE run_id<>?",
-            ("88888888-8888-4888-8888-888888888801",)
+            (RUN,)
         ).fetchone()==(0,)
         assert db.execute(
             "SELECT COUNT(*) FROM publications"
