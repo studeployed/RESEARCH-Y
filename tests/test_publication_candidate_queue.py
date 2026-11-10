@@ -1208,3 +1208,99 @@ def test_pair_checkpoint_command_fields_are_strictly_allowlisted(project_runs):
     with pytest.raises(ApplicationCommandError,match="candidate_pair_index_not_ready"):
         execute_command(ApplicationCommand.for_project(
             project,"candidate_pair_start",**valid))
+
+
+def test_large_review_history_is_validated_once_not_for_each_visible_pair(
+    project_runs, monkeypatch,
+):
+    """A 20-pair page cannot repeat the full audit scan twenty times."""
+    project,run,_=project_runs
+    for n in range(21):
+        insert(project_runs,number=7100+n,
+               title="Individual report "+str(n),
+               doi="10.7100/individual"+str(n))
+        insert(project_runs,source="wos",number=7200+n,
+               title="Individual report "+str(n),
+               doi="10.7100/individual"+str(n))
+    for n in range(6):
+        a=insert(project_runs,number=7300+n,
+                 title="Distinct source A "+str(n),
+                 doi="10.7300/left"+str(n))
+        b=insert(project_runs,source="wos",number=7400+n,
+                 title="Distinct source B "+str(n),
+                 doi="10.7400/right"+str(n))
+        reject_pair(project_runs,a,b)
+    build_ready_pairs(project_runs)
+    original=candidates._receipts
+    calls=[]
+    def instrumented(db,keys):
+        calls.append(keys)
+        return original(db,keys)
+    monkeypatch.setattr(candidates,"_receipts",instrumented)
+    page=read(project_runs)
+    assert page["index_backend"]=="verified_pair_checkpoint_v6"
+    assert len(page["rows"])==20
+    assert page["candidate_pair_total"]==27
+    assert page["receipt_only_pair_total"]==6
+    assert all(value is None for value in calls)
+    # Once for the canonical count projection and once for the candidate
+    # overlay. Individual rows reuse those validated original receipts.
+    assert len(calls)==2
+    assert all(row["auto_merge_allowed"] is False for row in page["rows"])
+    assert page["global_unique_publications"] is None
+
+
+def test_prevalidated_receipt_index_matches_original_pair_review(project_runs):
+    """Reused history must preserve stale/other-run warnings and exact revision."""
+    project,run,historical=project_runs
+    a=insert(project_runs,number=7501,title="Report one",doi="10.7500/one")
+    b=insert(project_runs,source="wos",number=7502,
+             title="Report two",doi="10.7500/two")
+    reject_pair(project_runs,a,b)
+    with closing(sqlite3.connect(project.database_path)) as db:
+        validated=candidates._receipts(db,None)
+        lookup=candidates._index_validated_receipts(validated)
+        original,original_state=candidates._view(db,tuple(sorted((a,b))))
+        indexed,indexed_state=candidates._view(
+            db,tuple(sorted((a,b))),validated_receipts_by_keys=lookup)
+    assert original==indexed
+    assert original_state==indexed_state
+    assert indexed.status=="rejected_match"
+    assert len(indexed.prior_decisions)==1
+    assert indexed.automatic_match_allowed is False
+
+
+def test_cached_decisions_never_bypass_full_journal_integrity(project_runs,monkeypatch):
+    """A corrupt audited decision remains a hard failure, not a cache miss."""
+    project,run,_=project_runs
+    insert(project_runs,number=7601,title="Same report",doi="10.7600/d")
+    insert(project_runs,source="wos",number=7602,
+           title="Same report",doi="10.7600/d")
+    build_ready_pairs(project_runs)
+    def invalid_audit(*_args,**_kwargs):
+        raise identity.PublicationIntegrityError("Corrupted canonical receipt")
+    monkeypatch.setattr(candidates,"_receipts",invalid_audit)
+    with pytest.raises(queue.CandidateQueueError) as exc:
+        read(project_runs)
+    assert exc.value.code=="candidate_queue_unavailable"
+
+
+def test_fallback_queue_also_validates_one_journal_per_projection(project_runs,monkeypatch):
+    """Original-v5 fallback remains conservative without per-pair revalidation."""
+    project,run,_=project_runs
+    for n in range(6):
+        insert(project_runs,number=7700+n,title="Match "+str(n),
+               doi="10.7700/key"+str(n))
+        insert(project_runs,source="wos",number=7800+n,
+               title="Match "+str(n),doi="10.7700/key"+str(n))
+    build_ready_index(project_runs)
+    original=candidates._receipts
+    calls=[]
+    def instrumented(db,keys):
+        calls.append(keys)
+        return original(db,keys)
+    monkeypatch.setattr(candidates,"_receipts",instrumented)
+    page=read(project_runs)
+    assert page["index_backend"]=="verified_derived_keys_v5"
+    assert len(page["rows"])==6
+    assert len(calls)==2 and all(x is None for x in calls)
