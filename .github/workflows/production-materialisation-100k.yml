@@ -42,7 +42,7 @@ jobs:
       - name: Install RESEARCH-Y internal processing services
         run: python -m pip install -e .
       - name: Exercise existing trusted preview/confirm operations twice on 100k originals
-        run: python scripts/benchmark_production_materialisation.py --records 100000 --matched 64 --worker-timeout-seconds 35 --json-output .performance-evidence/production-materialisation-100k.json
+        run: python -m scripts.benchmark_production_materialisation --records 100000 --matched 64 --worker-timeout-seconds 35 --json-output .performance-evidence/production-materialisation-100k.json
       - name: Verify 100k original evidence and two committed 64-row steps
         shell: python
         run: |
