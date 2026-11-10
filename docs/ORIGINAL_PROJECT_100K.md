@@ -39,6 +39,28 @@ The [original-project 100k workflow](../.github/workflows/original-project-100k.
 
 The report records separate source insertion and audited identity materialisation time, count projection, original publication page, first/second source-backed candidate pages, spawned worker read, observed parent-process peak resident set size (RSS), project file size and total elapsed time. The worker is a **real subprocess**, but the main-thread polling metric is **not a browser-rendering or native-window frame-rate test**. Resident memory is observed for the parent process only; combined worker/parent memory, Windows GUI paint latency and external-data responsiveness are not yet established.
 
+## First observed full-size original-project results
+
+The [original-project 100k GitHub Actions run #42812489679](https://github.com/studeployed/RESEARCH-Y/actions/runs/42812489679) succeeded on **Linux** and **Windows** on **10 November 2026**, exercising commit `97625538fc5366f9cf04e1faf1dedfe9806e098a`. The workflow records original JSON artifacts for each platform. All 100,000 original provider source rows and 100,000 membership rows survived reopening, with 128 audited provisional identities, **64** current-run candidate pairs, valid SQLite integrity and foreign-key checks, and a successful bounded spawned-worker reply. These figures are the exact test scenario above, not real literature results.
+
+| Measured operation | Linux Python 3.12 | Windows Python 3.12 |
+|---|---:|---:|
+| 100,000 original source inserts and 128 audited identities | 3.330 s | 26.849 s |
+| Original selected-run count projection | 104 ms | 166 ms |
+| First provisional-publication page | 109 ms | 176 ms |
+| First original-source candidate page (full 100k project scanned) | 3.317 s | 4.224 s |
+| Second revision-fenced candidate page (full project rescanned) | 3.423 s | 4.186 s |
+| Same first page via real spawned worker | 3.593 s | 4.406 s |
+| Longest observed host-thread poll gap | 15.2 ms | 19.1 ms |
+| Observed parent peak resident memory | 154.5 MB | 156.5 MB |
+| Overall fixture and original-read test | 14.31 s | 40.84 s |
+
+The original SQLite database occupied approximately **95.6 MB** on the measured Linux workload. The resident-memory numbers are for the **parent process only**, not a combined worker-plus-parent memory limit. Worker responsiveness is assessed by the local application's polling interface; the browser graphical rendering and real Windows user input are **not** exercised.
+
+The roughly **3–4-second original-source candidate page cost** is a useful contrast with PR79's roughly 0.02–0.07-millisecond *indexed SQL-only* page lookups. It does not mean the latter are application response times. This cost is a grounded optimisation target for the original-source fallback path, without reducing source/audit validation. A ready prebuilt v6 pair index and 100,000 fully materialised publications were not exercised by this benchmark.
+
+The measured run precedes the small-fixture edge-case fix for workloads containing 20 or fewer pairs; the revised branch is separately subject to fresh continuous integration and exact-commit reviews. No new final acceptance claim is made on the basis of these results.
+
 ## Methodological and acceptance boundaries
 
 This workload avoids externally queried information entirely: all titles, accession numbers and DOIs are synthetic. It does **not** fetch PubMed or WoS, verify ESearch partitions or WoS quotas, interpret society guidance, extract individual conference abstracts, automate deduplication, run a local large language model, assess study design or export a final workbook. No source user credential, real clinical document or licensed abstract is included.
