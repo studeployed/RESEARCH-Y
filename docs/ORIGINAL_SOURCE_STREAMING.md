@@ -26,6 +26,20 @@ Offline SQLite tests compare the streamed evidence to `identity._source` for lin
 
 The existing [100,000-original-source performance workflow](../.github/workflows/original-project-100k.yml) runs the **same PR80 project, selected-run size, original metadata, memberships, audited identities, spawned graphical worker and reopen/integrity checks** on Linux and Windows. That direct workload parity is required before describing any observed speed change; new timings must be recorded with precise workflow/commit references. The comparison is not a paired hardware-controlled experiment: shared runners and independent times can vary.
 
+## First measured comparison (10 November 2026)
+
+The [PR81 original-project run #42826641663](https://github.com/studeployed/RESEARCH-Y/actions/runs/42826641663) passed on Linux and Windows with code HEAD `9b9828dda2cf9158144a0f86fcb8fdddaeca1383`. Both jobs used exactly the same **100,000 original source rows, 128 audited provisional publication identities and 64 candidate pairs** as PR80, checked full source/member/association/audit counts and first/last original metadata fingerprints, reopened the real database and returned valid `PRAGMA integrity_check` and `PRAGMA foreign_key_check` results. Both spawned application workers returned within the original 35-second host bound. The PR79 synthetic indexed-query jobs also passed again on both platforms.
+
+| Original read (observed, separate GitHub-hosted runs) | PR80 Linux | PR81 Linux | PR80 Windows | PR81 Windows |
+|---|---:|---:|---:|---:|
+| First original candidate page | 3.317 s | 3.374 s | 4.224 s | 1.659 s |
+| Second original candidate page | 3.423 s | 3.323 s | 4.186 s | 1.749 s |
+| First page through genuine spawned worker | 3.593 s | 3.515 s | 4.406 s | 1.785 s |
+
+Source: [PR80 original project baseline #42812489679](https://github.com/studeployed/RESEARCH-Y/actions/runs/42812489679) and [PR81 #42826641663](https://github.com/studeployed/RESEARCH-Y/actions/runs/42826641663); detailed JSON artifacts are attached to each workflow run.
+
+**Interpretation:** In the observed Windows run, source-backed page reads were markedly shorter, while Linux timings were essentially unchanged. Both preserved canonical results and original data. These are independent runs on **shared-hosted machines**, not paired controlled hardware measurements. The available data support removal of redundant SQL calls, **not** a guaranteed application speedup across all hosts. Parsing and hashing all 100,000 original source records still imposes material cost, as required for this source-backed fallback. A ready v6 indexed candidate queue remains the preferred bounded query path when its separately audited generation is valid.
+
 ## Limits
 
 Performance of the **unindexed fallback** is improved only by removing redundant SQL lookups, *not* by skipping original evidence validation. Actual licensed articles, full provider retrieval, all 100,000 materialised publication identities, complete deduplication, Graphical User Interface (GUI) browser paint responsiveness, all-worker combined memory and the final unique-publication master list remain unverified.
