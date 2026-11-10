@@ -1,0 +1,69 @@
+name: Materialised original-project 100k identity evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/materialised-original-100k.yml'
+      - 'scripts/benchmark_original_project.py'
+      - 'tests/test_original_project_performance.py'
+      - 'docs/MATERIALISED_PROJECT_100K.md'
+      - 'src/research_y/publication_identity.py'
+      - 'src/research_y/publication_candidate_queue.py'
+      - 'src/research_y/publication_results.py'
+      - 'src/research_y/result_counts.py'
+      - 'src/research_y/application_worker.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: materialised-original-100k-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audited-materialisation:
+    name: 100k original audited identities ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install source evidence services
+        run: python -m pip install -e .
+      - name: Benchmark 100k individually audited provisional identities
+        run: python scripts/benchmark_original_project.py --records 100000 --selected 512 --matched 64 --materialise-all --worker-timeout-seconds 35 --json-output .performance-evidence/materialised-original-100k.json
+      - name: Assert original identity and recovery evidence
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          evidence=json.loads(Path('.performance-evidence/materialised-original-100k.json').read_text(encoding='utf-8'))
+          assert evidence['synthetic_original_source_records']==100000
+          assert evidence['original_provisional_identities']==100000
+          assert evidence['unmaterialised_source_records']==0
+          assert evidence['all_100k_source_records_materialised'] is True
+          assert evidence['restored_row_counts_match'] is True
+          assert evidence['original_sqlite_integrity_check']=='ok'
+          assert evidence['original_foreign_key_check']=='ok'
+          assert evidence['fixture_materialisation_resume']['independently_reopened_before_resume'] is True
+          assert evidence['fixture_materialisation_resume']['all_original_audit_links_written'] is True
+          assert evidence['global_unique_publications'] is None
+          assert evidence['full_AT_22_acceptance'] is False
+          print('All original identity/audit/recovery checks passed. Worker:',evidence['worker']['status'])
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: original-materialised-100k-${{ matrix.os }}-py312
+          path: .performance-evidence/materialised-original-100k.json
+          if-no-files-found: error
+          retention-days: 21

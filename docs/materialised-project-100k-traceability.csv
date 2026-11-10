@@ -1,0 +1,19 @@
+requirement,scenario or test,confirmed status or explicit boundary
+AT-22,.github/workflows/materialised-original-100k.yml,100000 retained originals and 100000 independent audited provisional identities; native GUI and full AT-22 unverified
+DATA-01,tests/test_original_project_performance.py::test_all_original_records_have_independent_audited_provisional_identities,all original source retrievals retain independent provisional publications in synthetic fixture
+DATA-02,docs/MATERIALISED_PROJECT_100K.md,provisional source identity does not certify distinct final publication
+DATA-04,scripts/benchmark_original_project.py,fixture uses canonical source SHA-256 and immutable original audit/link helper
+PROJ-04,tests/test_original_project_performance.py::test_fixture_link_batch_failure_rolls_back_and_reopens_without_duplicates,simulated failed original SQLite transaction preserves prior audit and source data
+PROJ-06,scripts/benchmark_original_project.py,project reopened and original source/identity audit counts verified; concurrent writer not tested
+DUP-01,scripts/benchmark_original_project.py,64 matching source pairs remain independent reviewer-required identities
+DUP-02,scripts/benchmark_original_project.py,shared synthetic DOI/title never causes automatic publication association
+DUP-04,tests/test_original_project_performance.py::test_fixture_link_batch_failure_rolls_back_and_reopens_without_duplicates,append-only identity event count checked across rollback/restart
+AUDIT-03,tests/test_original_project_performance.py::test_all_original_records_have_independent_audited_provisional_identities,real source-to-publication original audit receipts counted
+COUNT-01,scripts/benchmark_original_project.py,100000 original sources and 100000 provisional identities distinct from verified unique publication count
+COUNT-05,tests/test_original_project_performance.py::test_all_original_records_have_independent_audited_provisional_identities,global verified unique publication count explicitly null
+RUN-06,scripts/benchmark_original_project.py,planned stop after first bounded identity transaction and independent reopen/resume
+AT-09,tests/test_original_project_performance.py::test_fixture_link_batch_failure_rolls_back_and_reopens_without_duplicates,failed transaction rollback and deterministic retry no duplicate audit rows
+AT-10,scripts/benchmark_original_project.py,identical bibliographic title/DOI not sufficient to merge
+AT-17,scripts/benchmark_original_project.py,selected and historical run sources remain distinguishable
+AT-19,scripts/benchmark_original_project.py,provider verification/complete statuses remain false
+AT-21,.github/workflows/materialised-original-100k.yml,all fixture records are synthetic with no provider keys or real abstracts

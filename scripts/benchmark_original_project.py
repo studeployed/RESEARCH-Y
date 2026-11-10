@@ -28,7 +28,7 @@ import sqlite3
 import sys
 from tempfile import TemporaryDirectory
 from time import monotonic, perf_counter, sleep
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from research_y import publication_identity as identity
 from research_y import publication_candidate_queue as queue
@@ -141,6 +141,95 @@ def _seed(project, records: int, selected: int, matched: int):
     return 2*matched
 
 
+
+# This is a *fixture-only* bulk materialiser, not a replacement for the
+# researcher-confirmed 64-record run-materialisation command. Every created
+# identity uses the production audit/link writer with original source hashes.
+# The benchmark explicitly reports this separation from application acceptance.
+_MATERIALISE_CURSOR_SQL=(
+    "SELECT r.retrieval_id,r.run_id,r.source_name,r.source_record_id,"
+    "r.retrieved_at_utc,r.original_metadata_json,s.status,l.retrieval_id "
+    "FROM source_retrievals r "
+    "LEFT JOIN search_runs s ON s.run_id=r.run_id "
+    "LEFT JOIN publication_retrievals l ON l.retrieval_id=r.retrieval_id "
+    "WHERE r.retrieval_id>? ORDER BY r.retrieval_id LIMIT ?"
+)
+
+
+def materialise_remaining_fixture(project, *, after_id="", batch_size=256,
+                                  max_batches=None):
+    """Bounded original SQLite transactions, resuming from a persisted cursor.
+
+    Only the script drives this helper on synthetic sources. A returned cursor
+    is an observation of a committed transaction; after a lost response the
+    original project can be reopened and scanned idempotently from the start.
+    No transient in-memory identity mapping is treated as authoritative.
+    """
+    if (type(after_id) is not str or
+            (after_id and str(UUID(after_id))!=after_id) or
+            type(batch_size) is not int or not 1<=batch_size<=512 or
+            (max_batches is not None and
+             (type(max_batches) is not int or not 1<=max_batches<=1000))):
+        raise ValueError("Invalid bounded synthetic materialisation input")
+    cursor=after_id
+    added=chunks=examined=0
+    complete=False
+    with closing(sqlite3.connect(project.database_path)) as db:
+        db.execute("PRAGMA foreign_keys=ON")
+        while True:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                rows=db.execute(
+                    _MATERIALISE_CURSOR_SQL,(cursor,batch_size)
+                ).fetchall()
+                if not rows:
+                    db.rollback()
+                    complete=True
+                    break
+                for row in rows:
+                    original=row[:6]
+                    source=identity._source_from_row(original,row[6])
+                    if (source["retrieval_id"]!=original[0] or
+                            source["source_name"] not in ("pubmed","wos")):
+                        raise ValueError("Synthetic source identity mismatch")
+                    record=source["original_metadata"].get("record")
+                    source_field=(
+                        "pmid" if source["source_name"]=="pubmed" else "uid"
+                    )
+                    if (not isinstance(record,dict) or
+                            record.get(source_field)!=source["source_record_id"]):
+                        raise ValueError("Original synthetic provider identity changed")
+                    if row[7] is not None:
+                        continue
+                    pub_id=str(uuid4())
+                    db.execute(
+                        "INSERT INTO publications(publication_id,created_at_utc) "
+                        "VALUES(?,?)",(pub_id,project.created_at_utc)
+                    )
+                    identity._record_link(
+                        db,source,before=None,after=pub_id,
+                        previous_event_id=None,status="review_required",
+                        action="materialise",actor="Synthetic scale benchmark",
+                        evidence="One source retrieval; publication equivalence not assessed",
+                    )
+                    added+=1
+                db.commit()
+                examined+=len(rows)
+                chunks+=1
+                cursor=rows[-1][0]
+                if max_batches is not None and chunks>=max_batches:
+                    break
+            except BaseException:
+                db.rollback()
+                raise
+    return dict(
+        last_committed_retrieval_id=cursor,
+        records_examined=examined,
+        newly_materialised=added,
+        bounded_transactions=chunks,
+        exhausted_sources=complete,
+    )
+
 def _run_original(run_id, project, operation, **kwargs):
     cmd=ApplicationCommand.for_project(project,operation,run_id=run_id,**kwargs)
     return cmd
@@ -235,11 +324,12 @@ def _worker_read(project, run_id, maximum_seconds):
 
 
 def run(records=100000,selected=512,matched=64,
-        worker_timeout_seconds=35):
+        worker_timeout_seconds=35, *, materialise_all=False):
     if (type(records) is not int or not 512<=records<=100000
             or type(selected) is not int or not 128<=selected<=records//2
             or selected%2 or type(matched) is not int
             or not 1<=matched<=min(64,selected//2,records-selected)
+            or type(materialise_all) is not bool
             or type(worker_timeout_seconds) not in (int,float)
             or not 1<=worker_timeout_seconds<=120):
         raise ValueError("A bounded, reproducible source scenario is required")
@@ -250,6 +340,33 @@ def run(records=100000,selected=512,matched=64,
         materialised=_bench(
             "original_source_and_audit_seeding",
             lambda:_seed(project,records,selected,matched),timings)
+        fixture_resume=None
+        if materialise_all:
+            # Force one planned stop/reopen so 100,000 linked identities are
+            # actually recovered across separate original SQLite connections.
+            checkpoint=_bench(
+                "first_bounded_identity_batch",
+                lambda:materialise_remaining_fixture(
+                    project,batch_size=256,max_batches=1),timings)
+            project=open_project(project.root)
+            rest=_bench(
+                "resumed_bounded_identity_batches",
+                lambda:materialise_remaining_fixture(
+                    project,after_id=checkpoint["last_committed_retrieval_id"],
+                    batch_size=256),timings)
+            if not rest["exhausted_sources"]:
+                raise AssertionError("Fully materialised fixture never exhausted sources")
+            materialised+=checkpoint["newly_materialised"]+rest["newly_materialised"]
+            if materialised!=records:
+                raise AssertionError("Original materialisation did not cover all sources")
+            fixture_resume=dict(
+                first_committed_batch=checkpoint,
+                resumed_batches=rest["bounded_transactions"],
+                resumed_records_examined=rest["records_examined"],
+                independently_reopened_before_resume=True,
+                all_original_audit_links_written=True,
+                production_gui_materialisation_path_exercised=False,
+            )
         project=open_project(project.root)
         with closing(sqlite3.connect(project.database_path)) as db:
             initial=dict(
@@ -263,6 +380,9 @@ def run(records=100000,selected=512,matched=64,
                     "SELECT COUNT(*) FROM publication_retrievals").fetchone()[0],
                 audit_events=db.execute(
                     "SELECT COUNT(*) FROM audit_events").fetchone()[0],
+                identity_audit_events=db.execute(
+                    "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+                    (identity.IDENTITY_EVENT,)).fetchone()[0],
                 first_original_sha256=sha256(
                     db.execute("SELECT original_metadata_json FROM "
                                "source_retrievals WHERE retrieval_id=?",
@@ -275,20 +395,23 @@ def run(records=100000,selected=512,matched=64,
         if (initial["sources"]!=records or
                 initial["membership_rows"]!=records or
                 initial["links"]!=materialised or
-                initial["publications"]!=materialised):
+                initial["publications"]!=materialised or
+                initial["identity_audit_events"]!=materialised or
+                initial["audit_events"]<initial["identity_audit_events"]):
             raise AssertionError("Original synthetic source/audit records lost")
         projection=_bench(
             "original_run_count_read",
             lambda:counts.read_run_counts(project,RUN),timings)
+        expected_current=selected if materialise_all else matched
         if (projection.totals["metadata_source_records"]!=selected or
-                projection.totals["unmaterialised_retrievals"]!=selected-matched or
-                projection.totals["global_publication_identities"]!=matched or
+                projection.totals["unmaterialised_retrievals"]!=selected-expected_current or
+                projection.totals["global_publication_identities"]!=expected_current or
                 projection.totals["global_unique_publications"] is not None):
             raise AssertionError("Original run projection was inconsistent")
         publication=_bench(
             "first_provisional_publication_page",
             lambda:results.read_publication_page(project,RUN),timings)
-        if (len(publication["rows"])!=min(20,matched) or
+        if (len(publication["rows"])!=min(20,expected_current) or
                 publication["global_unique_publications"] is not None):
             raise AssertionError("Original publication page is invalid")
         listing=_bench(
@@ -331,6 +454,9 @@ def run(records=100000,selected=512,matched=64,
                     "SELECT COUNT(*) FROM publication_retrievals").fetchone()[0],
                 audit_events=db.execute(
                     "SELECT COUNT(*) FROM audit_events").fetchone()[0],
+                identity_audit_events=db.execute(
+                    "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+                    (identity.IDENTITY_EVENT,)).fetchone()[0],
                 first_original_sha256=sha256(db.execute(
                     "SELECT original_metadata_json FROM source_retrievals "
                     "WHERE retrieval_id=?",(_rid(0),)).fetchone()[0].encode()).hexdigest(),
@@ -356,7 +482,13 @@ def run(records=100000,selected=512,matched=64,
         selected_run_source_records=selected,
         historical_run_source_records=records-selected,
         original_provisional_identities=materialised,
+        audited_identity_link_events=current["identity_audit_events"],
+        all_original_query_memberships_preserved=(
+            current["membership_rows"]==records),
         unmaterialised_source_records=records-materialised,
+        fixture_materialisation_resume=fixture_resume,
+        fixture_identity_writer="production_audit_link_helper_benchmark_only",
+        researcher_confirmed_materialisation_workflow_tested=False,
         matched_source_pairs=matched,
         restored_row_counts_match=True,
         original_sqlite_integrity_check=integrity,
@@ -368,7 +500,8 @@ def run(records=100000,selected=512,matched=64,
         combined_child_and_parent_peak_rss_measured=False,
         native_browser_rendering_measured=False,
         worker_poll_loop_measured=True,
-        all_100k_source_records_materialised=False,
+        all_100k_source_records_materialised=(
+            bool(materialise_all and records==100000)),
         original_sources_complete=False,
         source_retrieval_verified=False,
         verified_complete=False,
@@ -387,8 +520,11 @@ def main():
     parser.add_argument("--matched",type=int,default=64)
     parser.add_argument("--worker-timeout-seconds",type=float,default=35)
     parser.add_argument("--json-output",type=Path)
+    parser.add_argument("--materialise-all",action="store_true",
+                        help="Create distinct audited provisional identity for each original source")
     a=parser.parse_args()
-    report=run(a.records,a.selected,a.matched,a.worker_timeout_seconds)
+    report=run(a.records,a.selected,a.matched,a.worker_timeout_seconds,
+               materialise_all=a.materialise_all)
     encoded=json.dumps(report,sort_keys=True,indent=2)
     if a.json_output is not None:
         a.json_output.parent.mkdir(parents=True,exist_ok=True)
