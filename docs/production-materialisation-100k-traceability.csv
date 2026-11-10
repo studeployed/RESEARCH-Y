@@ -1,0 +1,13 @@
+requirement,scenario or test,confirmed status or explicit boundary
+AT-22,.github/workflows/production-materialisation-100k.yml,first two original 64-row production-command batches against 100000 sources; full GUI and full 100000-row materialisation unverified
+DATA-01,scripts/benchmark_production_materialisation.py,distinct original source rows and publication identity links counted after each independent reopen
+DATA-02,tests/test_production_materialisation_performance.py::test_two_supervised_consent_batches_keep_originals_and_reject_replay,matching source metadata never causes an automatic publication merge
+DATA-04,scripts/benchmark_production_materialisation.py,unchanged exact original source and membership row hashes and full independent identity audit count
+DUP-01,docs/PRODUCTION_MATERIALISATION_100K.md,independent provisional identities only; full publication-level deduplication remains unverified
+PROJ-04,scripts/benchmark_production_materialisation.py,original SQLite integrity foreign keys original source rows and memberships checked after reopen
+RUN-06,tests/test_production_materialisation_performance.py::test_two_supervised_consent_batches_keep_originals_and_reject_replay,fresh durable preview required after each original confirmed transaction
+AUDIT-03,scripts/benchmark_production_materialisation.py,128 additional original audit receipts across two actual 64-row production confirmation commands
+AT-09,scripts/benchmark_production_materialisation.py,reopened project refuses consumed confirmation and reports unchanged original source/audit records
+AT-10,scripts/benchmark_production_materialisation.py,64 existing matching cross-provider source pairs remain independent publication hypotheses
+AT-19,.github/workflows/production-materialisation-100k.yml,source-complete and publication-verified flags remain false and verified unique count null
+AT-21,tests/test_production_materialisation_performance.py,synthetic fixture only and no credentials provider requests or licensed abstracts
