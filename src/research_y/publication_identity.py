@@ -169,6 +169,36 @@ def _link(db: sqlite3.Connection, retrieval_id: str) -> tuple[str, int, dict[str
     return row[0], event_id, event
 
 
+def _link_from_evidence(source: dict[str, Any], publication_id: str,
+                        pointer_raw: str, audit_row: tuple | None
+                        ) -> tuple[str, int, dict[str, Any]]:
+    """Verify an existing association using its original, co-snapshot rows.
+
+    A read-only bulk projection may supply the original source and audit event
+    from ordered SQLite joins rather than issuing a fresh query for each link.
+    This enforces the same pointer, event, source-hash and status contract as
+    _link; a missing/mistyped event fails closed, never becomes an unlinked row.
+    """
+    pointer = _object(pointer_raw)
+    if (set(pointer) != {"version", "event_id"} or type(pointer["version"]) is not int
+            or pointer["version"] != 1):
+        raise PublicationIntegrityError("Unsupported association provenance; review required")
+    event_id = _positive(pointer["event_id"])
+    if (audit_row is None or len(audit_row) != 4
+            or audit_row[0] != event_id or audit_row[1] != IDENTITY_EVENT):
+        raise PublicationIntegrityError("Missing or mismatched publication audit")
+    event = _object(audit_row[3])
+    if (type(event.get("version")) is not int or event["version"] != 1
+            or event.get("at_utc") != audit_row[2]):
+        raise PublicationIntegrityError("Invalid publication audit version or timestamp")
+    if (event.get("retrieval_id") != source["retrieval_id"]
+            or event.get("after") != publication_id
+            or event.get("status") not in ("review_required", "confirmed_match")
+            or event.get("source_sha256") != source["source_sha256"]):
+        raise PublicationIntegrityError("Association and source evidence do not agree")
+    return publication_id, event_id, event
+
+
 def _field_state(db: sqlite3.Connection, publication_id: str, raw: str) -> dict[str, Any]:
     state = _object(raw)
     if not state:

@@ -457,6 +457,76 @@ def test_other_invalid_evidence_is_not_repaired(fixture,damage):
     assert fingerprint(f.project)==before
 
 
+def test_streamed_high_cardinality_projection_matches_canonical_on_complex_receipts(
+    fixture,monkeypatch
+):
+    """The bulk route must not change a single original publication revision.
+
+    Exercise a singleton, an explicit title choice, a cross-run association,
+    an unmaterialised source, a queryless source and a reviewer receipt.
+    """
+    f=fixture
+    singleton=add_record(f,identifier='12001',groups=('g1','g2'))
+    selected=add_record(f,identifier='12002')
+    unlinked=add_record(f,identifier='12003')
+    chosen_source=add_record(f,identifier='12004',groups=())
+    later=new_run(f.project)
+    cross=add_record(later,'wos','WOS:12005')
+    for rid in (singleton,selected,chosen_source,cross):
+        identity.materialise_retrieval(f.project,rid,actor='Fixture')
+    original=identity.read_publication(
+        f.project,identity.materialise_retrieval(
+            f.project,chosen_source,actor='Fixture').publication_id)
+    from research_y.publication_fields import select_source_field
+    select_source_field(
+        f.project,original.publication_id,'title',
+        retrieval_id=chosen_source,path=('record','title'),
+        expected_revision=original.revision,actor='Fixture',
+        reason='Explicit title choice with original evidence')
+    decide(f,selected,cross,'confirmed_match')
+    before=fingerprint(f.project)
+    canonical=counts.read_run_counts(f.project,f.run)
+    with closing(sqlite3.connect(f.project.database_path)) as db:
+        sources=counts._source_rows(db,f.run)
+        linked,streamed=counts._streamed_identity_rows(db,sources)
+        for pub_id,snapshot in streamed.items():
+            assert snapshot.revision==identity._snapshot(db,pub_id).revision
+        assert len(linked)==3
+        assert unlinked not in linked
+    with monkeypatch.context() as patched:
+        patched.setattr(counts,'_identity_rows',counts._streamed_identity_rows)
+        projected=counts.read_run_counts(f.project,f.run)
+    assert projected==canonical
+    assert fingerprint(f.project)==before
+    assert projected.totals['global_unique_publications'] is None
+    assert projected.totals['queryless_source_records']==1
+    assert projected.totals['unmaterialised_retrievals']==1
+    assert projected.totals['global_publication_identities']==3
+    assert projected.reviews['current_confirmed_matches']==1
+
+
+@pytest.mark.parametrize('invalid',[
+    '{"version":2,"event_id":1}',
+    '{"version":1,"event_id":999999999}',
+    '{"version":1,"event_id":"1"}',
+    '{not valid JSON',
+])
+def test_streamed_original_association_rejects_invalid_audit_pointer(
+    fixture,invalid,monkeypatch
+):
+    rid=add_record(fixture)
+    identity.materialise_retrieval(fixture.project,rid,actor='Fixture')
+    with closing(sqlite3.connect(fixture.project.database_path)) as db,db:
+        db.execute('UPDATE publication_retrievals SET decision_provenance_json=? '
+                   'WHERE retrieval_id=?',(invalid,rid))
+    before=fingerprint(fixture.project)
+    with monkeypatch.context() as patched:
+        patched.setattr(counts,'_identity_rows',counts._streamed_identity_rows)
+        with pytest.raises(CountIntegrityError):
+            counts.read_run_counts(fixture.project,fixture.run)
+    assert fingerprint(fixture.project)==before
+
+
 def test_all_receipts_single_pass_keeps_existing_pair_lookup(fixture):
     f=fixture
     a,b=add_record(f),add_record(f,'wos','WOS:123')

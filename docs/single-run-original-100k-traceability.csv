@@ -1,0 +1,14 @@
+requirement,scenario or test,confirmed status or explicit boundary
+AT-22,.github/workflows/single-run-original-100k.yml,100000 original records and provisional identity links within one selected run; native GUI and full AT-22 unverified
+DATA-01,tests/test_original_project_performance.py::test_single_run_original_sources_preserve_in_run_candidate_pairs,all original source retrievals and independent publication identity rows preserved
+DATA-02,docs/SINGLE_RUN_ORIGINAL_100K.md,provisional publication identity is not final deduplicated publication count
+DATA-04,tests/test_original_project_performance.py::test_single_run_matching_keys_are_two_original_cross_provider_records,matching PubMed and WoS source records retain distinct original provider metadata and links
+DUP-01,tests/test_original_project_performance.py::test_single_run_original_sources_preserve_in_run_candidate_pairs,two separate source records per exact-key pair retained for explicit review
+DUP-02,tests/test_original_project_performance.py::test_single_run_matching_keys_are_two_original_cross_provider_records,equal synthetic DOI/title never triggers an automatic merge
+COUNT-01,scripts/benchmark_original_project.py,selected run original records and provisional identities counted separately from verified global unique publications
+COUNT-05,tests/test_original_project_performance.py::test_single_run_original_sources_preserve_in_run_candidate_pairs,final verified unique count unknown and deduplication status false
+AT-09,scripts/benchmark_original_project.py,fixture-only bounded identity writer retains previously tested rollback and reopen semantics; full GUI recovery unverified
+AT-10,tests/test_original_project_performance.py::test_single_run_matching_keys_are_two_original_cross_provider_records,matching PubMed and WoS records remain separate review-required identities
+AT-17,scripts/benchmark_original_project.py,single selected run explicitly distinguished from empty historical run
+AT-19,.github/workflows/single-run-original-100k.yml,source retrieval completeness remains false and reports cannot be marked verified
+AT-21,.github/workflows/single-run-original-100k.yml,offline synthetic source data with no external calls or credentials

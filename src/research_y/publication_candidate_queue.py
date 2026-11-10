@@ -87,9 +87,13 @@ def _bucket_pairs(bucket, records, run_id):
 _ORIGINAL_SOURCE_STREAM_SQL = (
     "SELECT r.retrieval_id,r.run_id,r.source_name,r.source_record_id,"
     "r.retrieved_at_utc,r.original_metadata_json,s.status,"
-    "l.retrieval_id FROM source_retrievals r "
+    "l.retrieval_id,l.publication_id,l.decision_provenance_json,"
+    "a.event_id,a.event_type,a.occurred_at_utc,a.details_json "
+    "FROM source_retrievals r "
     "LEFT JOIN search_runs s ON s.run_id=r.run_id "
     "LEFT JOIN publication_retrievals l ON l.retrieval_id=r.retrieval_id "
+    "LEFT JOIN audit_events a ON a.event_id="
+    "json_extract(l.decision_provenance_json,'$.event_id') "
     "ORDER BY r.retrieval_id"
 )
 
@@ -131,7 +135,9 @@ def _original_index(db, project, run_id):
         # Authoritative provenance verification remains mandatory for every
         # existing link. Only absent links avoid their old pointless point
         # lookup. The stored source/identity/audit records are never changed.
-        link = identity._link(db, rid) if linked_rid is not None else None
+        link = (identity._link_from_evidence(
+            source, row[8], row[9], row[10:]) if linked_rid is not None
+            else None)
         fingerprints.append((
             rid, source["source_sha256"], source["run_status"],
             None if link is None else link[0],

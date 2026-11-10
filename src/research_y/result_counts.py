@@ -143,10 +143,17 @@ def _review_counts(db, sources):
 
 
 def _source_rows(db, run_id):
+    """Validate original selected-run sources in one ordered SQLite stream."""
     result = {}
-    for (rid,) in db.execute('SELECT retrieval_id FROM source_retrievals WHERE run_id=? ORDER BY retrieval_id', (run_id,)):
-        identity._identifier(rid)
-        source = identity._source(db, rid)
+    sql = (
+        'SELECT r.retrieval_id,r.run_id,r.source_name,r.source_record_id,'
+        'r.retrieved_at_utc,r.original_metadata_json,s.status '
+        'FROM source_retrievals r LEFT JOIN search_runs s ON s.run_id=r.run_id '
+        'WHERE r.run_id=? ORDER BY r.retrieval_id'
+    )
+    for row in db.execute(sql, (run_id,)):
+        rid = identity._identifier(row[0])
+        source = identity._source_from_row(row[:6], row[6])
         identity._text(source['source_name'], 200)
         identity._text(source['source_record_id'])
         _status(source['run_status'])
@@ -162,14 +169,108 @@ def _source_rows(db, run_id):
 
 
 def _identity_rows(db, sources):
-    links, snapshots = {}, {}
-    for rid in sources:
-        link = identity._link(db, rid)
-        if link is not None:
-            links[rid] = link
-            if link[0] not in snapshots:
-                identity._identifier(link[0])
-                snapshots[link[0]] = identity._snapshot(db, link[0])
+    """Read every current identity and its original provenance, without a cache.
+
+    Small runs use the existing canonical snapshot path. Large runs stream the
+    SAME immutable source, association, audit and membership rows in a single
+    read transaction. A multi-source or chosen-field publication still uses the
+    canonical full snapshot so historic memberships and field audit remain
+    authoritative. Singleton revisions are reconstructed byte-for-byte from
+    the original snapshot's canonical source/membership/event structure.
+    """
+    if len(sources) < 2048:
+        links, snapshots = {}, {}
+        for rid in sources:
+            link = identity._link(db, rid)
+            if link is not None:
+                links[rid] = link
+                if link[0] not in snapshots:
+                    identity._identifier(link[0])
+                    snapshots[link[0]] = identity._snapshot(db, link[0])
+        return links, snapshots
+    return _streamed_identity_rows(db, sources)
+
+
+def _streamed_identity_rows(db, sources):
+    """Validate/reconstruct original identity snapshots with ordered bulk reads."""
+    if not sources:
+        return {}, {}
+    run_id = next(iter(sources.values()))['run_id']
+    if any(s['run_id'] != run_id for s in sources.values()):
+        raise CountIntegrityError('Count source run scope changed')
+
+    # Every linked row is still checked against its ORIGINAL event and source
+    # SHA-256. The outer joins must not silently drop broken audit pointers.
+    sql = (
+        'SELECT r.retrieval_id,l.publication_id,l.decision_provenance_json,'
+        'p.created_at_utc,p.chosen_metadata_json,'
+        'a.event_id,a.event_type,a.occurred_at_utc,a.details_json '
+        'FROM source_retrievals r '
+        'LEFT JOIN publication_retrievals l ON l.retrieval_id=r.retrieval_id '
+        'LEFT JOIN publications p ON p.publication_id=l.publication_id '
+        'LEFT JOIN audit_events a ON a.event_id='
+        "json_extract(l.decision_provenance_json,'$.event_id') "
+        'WHERE r.run_id=? ORDER BY r.retrieval_id'
+    )
+    links, publication_data, single_rid = {}, {}, {}
+    observed = 0
+    for row in db.execute(sql, (run_id,)):
+        rid, pub_id, pointer, created, chosen, *event_row = row
+        observed += 1
+        if rid not in sources:
+            raise CountIntegrityError('Count source membership changed')
+        if pub_id is None:
+            if pointer is not None or created is not None or chosen is not None:
+                raise CountIntegrityError('Incomplete publication association')
+            continue
+        identity._identifier(pub_id)
+        if created is None or chosen is None:
+            raise CountIntegrityError('Missing linked publication')
+        links[rid] = identity._link_from_evidence(
+            sources[rid], pub_id, pointer, tuple(event_row))
+        publication_data[pub_id] = (created, chosen)
+        single_rid[pub_id] = rid
+    if observed != len(sources):
+        raise CountIntegrityError('Original source scope changed during projection')
+
+    # One publication may include historical or other-run originals. Those
+    # always require the canonical full snapshot, not a current-run shortcut.
+    multi = {row[0] for row in db.execute(
+        'SELECT publication_id FROM publication_retrievals '
+        'GROUP BY publication_id HAVING COUNT(*)>1'
+    )}
+    memberships = defaultdict(list)
+    member_sql = (
+        'SELECT m.retrieval_id,q.query_id,q.run_id,q.strategy_version_id,'
+        'q.group_id,q.source_name,q.exact_query,q.reported_matches,'
+        'q.status,s.status FROM query_retrievals m '
+        'JOIN source_queries q ON q.query_id=m.query_id '
+        'AND q.run_id=m.run_id AND q.source_name=m.source_name '
+        'JOIN search_runs s ON s.run_id=q.run_id '
+        'AND s.strategy_version_id=q.strategy_version_id '
+        'WHERE m.run_id=? ORDER BY m.retrieval_id,q.query_id'
+    )
+    fields = ('query_id', 'run_id', 'strategy_version_id', 'group_id',
+              'source_name', 'exact_query', 'reported_matches',
+              'status', 'run_status')
+    for row in db.execute(member_sql, (run_id,)):
+        if row[0] not in sources:
+            raise CountIntegrityError('Membership lost its selected-run source')
+        if row[0] in links:
+            memberships[row[0]].append(dict(zip(fields, row[1:])))
+    snapshots = {}
+    for pub_id, original_row in publication_data.items():
+        if pub_id in multi or original_row[1] != '{}':
+            snapshots[pub_id] = identity._snapshot(db, pub_id)
+            continue
+        rid = single_rid[pub_id]
+        source = dict(sources[rid])
+        source.update(association_event_id=links[rid][1],
+                      decision=links[rid][2],
+                      memberships=memberships[rid])
+        revision = identity._hash([pub_id, original_row, [source]])
+        snapshots[pub_id] = identity.PublicationSnapshot(
+            pub_id, original_row[0], revision, (source,), {})
     return links, snapshots
 
 

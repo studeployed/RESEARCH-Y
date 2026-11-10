@@ -1333,11 +1333,30 @@ def test_bulk_original_source_decoder_matches_individual_authoritative_read(
             assert streamed==canonical
             assert status==canonical["run_status"]
             assert streamed["source_sha256"]==identity._hash(six)
-            assert (linked_rid is not None)==(
-                identity._link(db,rid) is not None)
+            streamed_link=(identity._link_from_evidence(
+                streamed,row[8],row[9],row[10:])
+                if linked_rid is not None else None)
+            assert streamed_link==identity._link(db,rid)
             observed.append(rid)
     assert set(observed)=={linked,historical_link,unknown,unsupported}
     assert read(project_runs)["candidate_pair_total"]==0
+
+
+def test_original_queue_rejects_inconsistent_link_receipt_without_silent_loss(
+    project_runs,
+):
+    project,_,_=project_runs
+    rid=insert(project_runs,number=8855)
+    with closing(sqlite3.connect(project.database_path)) as db,db:
+        db.execute(
+            'UPDATE publication_retrievals SET decision_provenance_json=? '
+            'WHERE retrieval_id=?',
+            ('{"version":1,"event_id":999999999}',rid))
+    before=audit(project)
+    with pytest.raises(queue.CandidateQueueError) as err:
+        read(project_runs)
+    assert err.value.code=="candidate_queue_unavailable"
+    assert audit(project)==before
 
 
 def test_large_unlinked_history_is_not_queried_again_per_record(
