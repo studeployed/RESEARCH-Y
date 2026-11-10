@@ -8,10 +8,9 @@ the original consent can never be replayed to materialise a different batch.
 """
 from __future__ import annotations
 
-from hashlib import sha256
-
 from research_y import publication_identity as identity
 from research_y.application_inspection import _read
+from research_y.original_source_scope import original_scope_digest
 from research_y.publication_run_materialisation import (
     MAX_BATCH, MaterialisationConflict, _plan, materialise_run_batch,
 )
@@ -20,49 +19,6 @@ from research_y.projects import Project
 METHOD = "explicit-two-batch-materialisation/1"
 MAX_BATCHES = 2
 MAX_SESSION_RECORDS = MAX_BATCH * MAX_BATCHES
-
-# Explicit original project evidence rather than a derived/materialisation
-# index. Source retrievals, queries and memberships are never modified by the
-# service; a changed original project scope invalidates further consent use.
-_ORIGINAL_SCOPE_SQL = (
-    ("strategy_versions",
-     "SELECT strategy_version_id,version_number,approved_at_utc,snapshot_json "
-     "FROM strategy_versions ORDER BY strategy_version_id"),
-    ("strategy_groups",
-     "SELECT strategy_version_id,group_id,label,group_order "
-     "FROM strategy_groups ORDER BY strategy_version_id,group_id"),
-    ("search_runs",
-     "SELECT run_id,strategy_version_id,created_at_utc,status,completed_at_utc "
-     "FROM search_runs ORDER BY run_id"),
-    ("source_queries",
-     "SELECT query_id,run_id,strategy_version_id,group_id,source_name,"
-     "exact_query,parameters_json,reported_matches,status,executed_at_utc "
-     "FROM source_queries ORDER BY query_id"),
-    ("source_retrievals",
-     "SELECT retrieval_id,run_id,source_name,source_record_id,"
-     "retrieved_at_utc,original_metadata_json FROM source_retrievals "
-     "ORDER BY retrieval_id"),
-    ("query_retrievals",
-     "SELECT query_id,retrieval_id,run_id,source_name "
-     "FROM query_retrievals ORDER BY query_id,retrieval_id"),
-)
-_PENDING_SQL = (
-    "SELECT r.retrieval_id FROM source_retrievals r "
-    "LEFT JOIN publication_retrievals l ON l.retrieval_id=r.retrieval_id "
-    "WHERE r.run_id=? AND l.retrieval_id IS NULL "
-    "ORDER BY r.retrieval_id LIMIT ?"
-)
-
-
-def _original_scope_digest(db) -> str:
-    """Stream original records without collecting source text in the response."""
-    digest = sha256()
-    for table, query in _ORIGINAL_SCOPE_SQL:
-        digest.update(table.encode("ascii") + b"\0")
-        for row in db.execute(query):
-            digest.update(identity._json(row).encode("utf-8") + b"\n")
-    return digest.hexdigest()
-
 
 def _plan_window(db, project: Project, run_id: str) -> tuple[dict, tuple[str, ...], str, str]:
     first, first_ids = _plan(db, project, run_id, MAX_BATCH)
@@ -73,7 +29,7 @@ def _plan_window(db, project: Project, run_id: str) -> tuple[dict, tuple[str, ..
         raise MaterialisationConflict("Materialisation window changed")
     if selected[:len(first_ids)] != first_ids:
         raise MaterialisationConflict("Materialisation first batch changed")
-    scope = _original_scope_digest(db)
+    scope = original_scope_digest(db)
     revision = identity._hash(
         [METHOD, first["revision"], str(project.identifier), run_id,
          MAX_BATCHES, selected, scope])
@@ -153,7 +109,7 @@ def confirm_two_batch_materialisation(
             # another next batch after an interrupted or concurrent change.
             with _read(project) as db:
                 next_plan, next_ids = _plan(db, project, run_id, MAX_BATCH)
-                current_scope = _original_scope_digest(db)
+                current_scope = original_scope_digest(db)
             if (current_scope != original_scope or
                     next_ids != expected_ids or
                     next_plan["unmaterialised_retrievals"] !=
