@@ -34,7 +34,7 @@ For every stage the independent SQLite ledger validates the original source and 
 
 ```sh
 python -m pip install -e .
-python scripts/benchmark_production_materialisation.py --records 100000 --matched 64 --worker-timeout-seconds 35 --json-output production-confirmed-100k.json
+python -m scripts.benchmark_production_materialisation --records 100000 --matched 64 --worker-timeout-seconds 35 --json-output production-confirmed-100k.json
 ```
 
 The [dedicated Windows/Linux workflow](../.github/workflows/production-materialisation-100k.yml) runs Python 3.12 on both platforms, saves JSON evidence and fails the job if a confirmed batch, source/audit integrity or the worker host bound fails. Small 512-record two-batch tests run in the existing four-platform Python test workflow.
