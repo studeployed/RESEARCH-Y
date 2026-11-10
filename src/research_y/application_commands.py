@@ -15,6 +15,7 @@ from uuid import UUID
 OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_run',
                         'publication_page', 'publication_detail',
                         'publication_materialisation_preview', 'publication_materialisation_confirm',
+                        'publication_window_preview', 'publication_window_confirm',
                         'candidate_review_preview', 'candidate_review_decide',
                         'candidate_reversal_preview', 'candidate_reversal_confirm',
                         'candidate_link_status', 'candidate_queue_page',
@@ -415,7 +416,8 @@ class ApplicationCommand:
                           self.candidate_warnings_acknowledged is not None):
                         raise ValueError
             if self.operation in ('publication_page', 'publication_detail',
-                    'publication_materialisation_preview', 'publication_materialisation_confirm'):
+                    'publication_materialisation_preview', 'publication_materialisation_confirm',
+                    'publication_window_preview', 'publication_window_confirm'):
                 if (self.run_id is None or self.export_id is not None or
                         self.output_name is not None or self.directory is not None or
                         self.expected_directory_identity is not None):
@@ -444,7 +446,7 @@ class ApplicationCommand:
                     if (type(digest) is not str or len(digest) != 64 or
                             any(c not in '0123456789abcdef' for c in digest)):
                         raise ValueError
-                elif self.operation == 'publication_materialisation_preview':
+                elif self.operation in ('publication_materialisation_preview', 'publication_window_preview'):
                     if any(v is not None for v in publication_fields):
                         raise ValueError
                 else:
@@ -729,7 +731,8 @@ class ApplicationCommand:
             elif self.operation in candidate_ops:
                 pass  # All source IDs and evidence-bound decisions validated above.
             elif self.operation in ('publication_page', 'publication_detail',
-                    'publication_materialisation_preview', 'publication_materialisation_confirm'):
+                    'publication_materialisation_preview', 'publication_materialisation_confirm',
+                    'publication_window_preview', 'publication_window_confirm'):
                 pass  # Validated above; no provider request or export authority.
             elif self.operation in ('run_coord_preview','run_coord_run'):
                 pass  # Validated above; not an export operation.
@@ -765,7 +768,8 @@ class ApplicationCommand:
             if self.operation not in candidate_ops and any(v is not None for v in candidate_fields):
                 raise ValueError
             if self.operation not in ('publication_page', 'publication_detail',
-                    'publication_materialisation_preview', 'publication_materialisation_confirm') and any(
+                    'publication_materialisation_preview', 'publication_materialisation_confirm',
+                    'publication_window_preview', 'publication_window_confirm') and any(
                     value is not None for value in publication_fields):
                 raise ValueError
             if self.operation not in ('run_coord_preview','run_coord_run') and any(
@@ -941,6 +945,24 @@ def execute_command(command: ApplicationCommand) -> dict:
                 if command.operation == 'publication_materialisation_preview':
                     return preview_run_materialisation(project, command.run_id)
                 return materialise_run_batch(
+                    project, command.run_id,
+                    expected_revision=command.publication_view_revision,
+                    actor=command.publication_actor,
+                    confirmed=command.publication_confirmed)
+            except MaterialisationConflict:
+                raise ApplicationCommandError('publication_materialisation_stale') from None
+            except ValueError:
+                raise ApplicationCommandError('publication_materialisation_no_work') from None
+            except Exception:
+                raise ApplicationCommandError('publication_materialisation_unavailable') from None
+        if command.operation in ('publication_window_preview', 'publication_window_confirm'):
+            from research_y.publication_materialisation_window import (
+                preview_two_batch_materialisation, confirm_two_batch_materialisation,
+                MaterialisationConflict)
+            try:
+                if command.operation == 'publication_window_preview':
+                    return preview_two_batch_materialisation(project, command.run_id)
+                return confirm_two_batch_materialisation(
                     project, command.run_id,
                     expected_revision=command.publication_view_revision,
                     actor=command.publication_actor,
