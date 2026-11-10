@@ -1,0 +1,50 @@
+name: Original-project 100k source read-path performance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/original-project-100k.yml'
+      - 'scripts/benchmark_original_project.py'
+      - 'tests/test_original_project_performance.py'
+      - 'src/research_y/publication_candidate_queue.py'
+      - 'src/research_y/publication_results.py'
+      - 'src/research_y/result_counts.py'
+      - 'src/research_y/publication_identity.py'
+      - 'src/research_y/application_worker.py'
+      - 'docs/ORIGINAL_PROJECT_100K.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: original-project-100k-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  project-probe:
+    name: 100k original sources ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install original project and worker code
+        run: python -m pip install -e .
+      - name: Probe actual project database source/count/browse/worker path
+        run: python scripts/benchmark_original_project.py --records 100000 --selected 512 --matched 64 --worker-timeout-seconds 35 --json-output .performance-evidence/original-project-100k.json
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: original-project-100k-${{ matrix.os }}-py312
+          path: .performance-evidence/original-project-100k.json
+          if-no-files-found: error
+          retention-days: 21
