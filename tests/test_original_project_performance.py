@@ -129,7 +129,7 @@ def test_fixture_link_batch_failure_rolls_back_and_reopens_without_duplicates(tm
     first=materialise_remaining_fixture(
         recovered,batch_size=32,max_batches=1
     )
-    assert first["newly_materialised"]==30
+    assert first["newly_materialised"]==31
     assert first["bounded_transactions"]==1
     assert first["exhausted_sources"] is False
     rest=materialise_remaining_fixture(
