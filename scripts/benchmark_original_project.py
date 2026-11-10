@@ -2,13 +2,18 @@
 
 A limited *real SQLite project* test, NOT completion of specification AT-22:
 - 100,000 retained source records and query/group memberships;
-- 128 production-materialised provisional identities, 64 per run;
-- 64 shared exact-key candidate pairs touching the selected run;
+- a default split-run fixture with 128 audited provisional identities and 64
+  exact-key candidate pairs touching the selected run;
+- optional --materialise-all with one independently audited provisional identity
+  per original source (NOT a verified deduplicated publication);
+- optional --selected 100000 --materialise-all to exercise a single 100,000-source
+  selected run, with all 64 cross-provider candidate pairs inside that run;
 - original count, publication pages, candidate pages, spawned application worker,
   original database integrity and reopen/recovery checks.
 
-The other retained source records are explicitly UNMATERIALISED. This exercises
-the real project/source/identity evidence path and candidly reports its limits.
+Unmaterialised source records remain explicit whenever --materialise-all is
+absent. No native graphical rendering, real provider retrieval, confirmed
+deduplication, or source completeness is claimed.
 No clinical records, provider calls, credentials or source abstracts are used.
 
 Run from a checkout installed with 'python -m pip install -e .':
@@ -57,10 +62,13 @@ def _rid(i: int)->str:
 
 
 def _payload(i: int, total_selected: int, matched: int, source: str,
-             source_id: str) -> str:
-    shared = (i < matched or
-              total_selected <= i < total_selected+matched)
-    index=i if i < total_selected else i-total_selected
+             source_id: str, *, same_run_pairs=False) -> str:
+    mate=(matched <= i < 2*matched if same_run_pairs
+          else total_selected <= i < total_selected+matched)
+    shared=i < matched or mate
+    index=(i if i < matched else
+           i-matched if same_run_pairs else
+           i-total_selected)
     key=(f"shared{index}" if shared else f"individual{i}")
     title=(f"Synthetic source abstract {index}" if shared
            else f"Synthetic report {i}")
@@ -86,6 +94,7 @@ def _payload(i: int, total_selected: int, matched: int, source: str,
 def _seed(project, records: int, selected: int, matched: int):
     """Commit real project source/membership rows in finite SQLite batches."""
     stamp=project.created_at_utc
+    same_run_pairs=selected==records
     with closing(sqlite3.connect(project.database_path)) as db:
         db.execute("PRAGMA foreign_keys=ON")
         db.execute("BEGIN IMMEDIATE")
@@ -112,16 +121,20 @@ def _seed(project, records: int, selected: int, matched: int):
             members=[]
             for i in range(start,min(start+1000,records)):
                 run=RUN if i<selected else HISTORY
-                # The first matched historical records deliberately come
-                # from the opposite database to their selected-run partner.
-                pubmed=(i%2==0) if i<selected else (i%2==1)
+                # Matched partners always come from the opposite database.
+                # The single-run case keeps both sources inside RUN.
+                if same_run_pairs and matched<=i<2*matched:
+                    pubmed=(i-matched)%2!=0
+                else:
+                    pubmed=(i%2==0) if i<selected else (i%2==1)
                 provider="pubmed" if pubmed else "wos"
                 source_id=(str(10000001+i) if pubmed
                            else f"WOS:{10000001+i}")
                 rid=_rid(i)
                 source_rows.append((
                     rid,run,provider,source_id,stamp,
-                    _payload(i,selected,matched,provider,source_id),
+                    _payload(i,selected,matched,provider,source_id,
+                             same_run_pairs=same_run_pairs),
                 ))
                 members.append((QIDS[run,provider],rid,run,provider))
             db.execute("BEGIN IMMEDIATE")
@@ -132,10 +145,12 @@ def _seed(project, records: int, selected: int, matched: int):
             except BaseException:
                 db.rollback()
                 raise
-    # Materialise only the known, bounded cross-source candidate workload
-    # via the existing original audited publication service. This is NOT
-    # a claim that the entire source search has been materialised.
-    for i in (*range(matched),*range(selected,selected+matched)):
+    # Materialise only the bounded cross-provider candidate workload via
+    # the original audited service, whether both partners are in RUN or one
+    # is historical. Other sources remain unmaterialised without --materialise-all.
+    mates=(range(matched,2*matched) if same_run_pairs
+           else range(selected,selected+matched))
+    for i in (*range(matched),*mates):
         identity.materialise_retrieval(
             project,_rid(i),actor="Synthetic performance fixture")
     return 2*matched
@@ -326,9 +341,11 @@ def _worker_read(project, run_id, maximum_seconds):
 def run(records=100000,selected=512,matched=64,
         worker_timeout_seconds=35, *, materialise_all=False):
     if (type(records) is not int or not 512<=records<=100000
-            or type(selected) is not int or not 128<=selected<=records//2
+            or type(selected) is not int or not 128<=selected<=records
             or selected%2 or type(matched) is not int
-            or not 1<=matched<=min(64,selected//2,records-selected)
+            or not 1<=matched<=min(
+                64,selected//2,
+                records-selected if selected<records else selected//2)
             or type(materialise_all) is not bool
             or type(worker_timeout_seconds) not in (int,float)
             or not 1<=worker_timeout_seconds<=120):
@@ -402,7 +419,8 @@ def run(records=100000,selected=512,matched=64,
         projection=_bench(
             "original_run_count_read",
             lambda:counts.read_run_counts(project,RUN),timings)
-        expected_current=selected if materialise_all else matched
+        expected_current=(selected if materialise_all else
+                          2*matched if selected==records else matched)
         if (projection.totals["metadata_source_records"]!=selected or
                 projection.totals["unmaterialised_retrievals"]!=selected-expected_current or
                 projection.totals["global_publication_identities"]!=expected_current or
@@ -481,6 +499,9 @@ def run(records=100000,selected=512,matched=64,
         synthetic_original_source_records=records,
         selected_run_source_records=selected,
         historical_run_source_records=records-selected,
+        selected_run_provisional_identities=expected_current,
+        all_100k_sources_in_selected_run=(
+            records==100000 and selected==records),
         original_provisional_identities=materialised,
         audited_identity_link_events=current["identity_audit_events"],
         all_original_query_memberships_preserved=(
