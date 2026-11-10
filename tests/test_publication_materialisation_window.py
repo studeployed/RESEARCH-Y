@@ -208,6 +208,44 @@ def test_scope_change_between_batches_stops_without_unapproved_second_commit(
         _confirm(open_project(project.root), run, plan["revision"])
 
 
+@pytest.mark.parametrize("at_batch,expected_commits", [(1, 0), (2, 64)])
+def test_unrelated_new_strategy_between_preview_and_locked_write_is_refused(
+    project_run, monkeypatch, at_batch, expected_commits,
+):
+    """Review finding: protect the original project-wide fence in BEGIN IMMEDIATE.
+
+    The insertion does not alter the selected run's _plan revision. A
+    read-only pre-check would therefore miss this TOCTOU race.
+    """
+    project, run, _ = project_run
+    from research_y import publication_materialisation_window as window
+    original_writer = window.materialise_run_batch
+    called = []
+    plan = preview_two_batch_materialisation(project, run)
+
+    def external_write(*args, **kwargs):
+        called.append(True)
+        if len(called) == at_batch:
+            with closing(sqlite3.connect(project.database_path)) as db, db:
+                db.execute(
+                    "INSERT INTO strategy_versions VALUES(?,?,?,?)",
+                    (str(uuid4()), 2, project.created_at_utc, "{}"))
+        return original_writer(*args, **kwargs)
+
+    with monkeypatch.context() as patched:
+        patched.setattr(window, "materialise_run_batch", external_write)
+        with pytest.raises(MaterialisationConflict, match="Original scope"):
+            _confirm(project, run, plan["revision"])
+    reopened = open_project(project.root)
+    after = _rows(reopened)
+    assert len(after["links"]) == expected_commits
+    assert len(after["publications"]) == expected_commits
+    assert len(after["audit"]) == expected_commits
+    with pytest.raises(MaterialisationConflict, match="stale"):
+        _confirm(reopened, run, plan["revision"])
+    assert _rows(reopened) == after
+
+
 def test_trusted_host_allowlist_and_one_use_approval(project_run):
     project, run, _ = project_run
     preview = execute_command(ApplicationCommand.for_project(
