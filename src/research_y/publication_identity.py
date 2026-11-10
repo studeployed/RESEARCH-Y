@@ -118,6 +118,27 @@ def _audit(db: sqlite3.Connection, kind: str, details: dict[str, Any]) -> int:
     ).lastrowid)
 
 
+def _source_from_row(row: tuple, run_status: str) -> dict[str, Any]:
+    """Reconstruct canonical source evidence from a validated SQLite row.
+
+    The original source's six stored columns and the current parent-run status
+    come from the *same* SQLite snapshot. This centralises the source decoder
+    for both individual reads and read-only, streamed project exploration.
+    It does not skip duplicate JSON-key, finite-value or source hashing checks.
+    """
+    if row is None or len(row) != 6:
+        raise PublicationIntegrityError("Invalid source retrieval row")
+    if run_status is None:
+        raise PublicationIntegrityError("Source retrieval has no parent run")
+    return dict(
+        zip(("retrieval_id", "run_id", "source_name", "source_record_id",
+             "retrieved_at_utc"), row[:5]),
+        original_metadata=_object(row[5]),
+        source_sha256=_hash(row),
+        run_status=run_status,
+    )
+
+
 def _source(db: sqlite3.Connection, retrieval_id: str) -> dict[str, Any]:
     row = db.execute(
         "SELECT retrieval_id,run_id,source_name,source_record_id,retrieved_at_utc,"
@@ -127,11 +148,7 @@ def _source(db: sqlite3.Connection, retrieval_id: str) -> dict[str, Any]:
     if row is None:
         raise KeyError("Unknown source retrieval")
     run = db.execute("SELECT status FROM search_runs WHERE run_id=?", (row[1],)).fetchone()
-    if run is None:
-        raise PublicationIntegrityError("Source retrieval has no parent run")
-    return dict(zip(("retrieval_id", "run_id", "source_name", "source_record_id",
-                     "retrieved_at_utc"), row[:5]), original_metadata=_object(row[5]),
-                source_sha256=_hash(row), run_status=run[0])
+    return _source_from_row(row, None if run is None else run[0])
 
 
 def _link(db: sqlite3.Connection, retrieval_id: str) -> tuple[str, int, dict[str, Any]] | None:
