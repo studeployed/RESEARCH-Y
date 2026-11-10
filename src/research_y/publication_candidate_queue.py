@@ -80,6 +80,20 @@ def _bucket_pairs(bucket, records, run_id):
         yield (left, right) if left < right else (right, left)
 
 
+# One ordered original SQLite read across ALL project runs. A left join is
+# intentional: an orphaned/missing run must fail closed, not disappear.
+# Absence of a link is only a provisional/unmaterialised state; every linked
+# retrieval continues to use the canonical provenance and audit validator.
+_ORIGINAL_SOURCE_STREAM_SQL = (
+    "SELECT r.retrieval_id,r.run_id,r.source_name,r.source_record_id,"
+    "r.retrieved_at_utc,r.original_metadata_json,s.status,"
+    "l.retrieval_id FROM source_retrievals r "
+    "LEFT JOIN search_runs s ON s.run_id=r.run_id "
+    "LEFT JOIN publication_retrievals l ON l.retrieval_id=r.retrieval_id "
+    "ORDER BY r.retrieval_id"
+)
+
+
 def _original_index(db, project, run_id):
     """One read-only SQLite snapshot; no cache, schema migration or temp writes.
 
@@ -94,13 +108,17 @@ def _original_index(db, project, run_id):
     records = {}
     fingerprints = []
     total = unsupported = unmaterialised = 0
-    for (rid,) in db.execute(
-            "SELECT retrieval_id FROM source_retrievals ORDER BY retrieval_id"):
+    for row in db.execute(_ORIGINAL_SOURCE_STREAM_SQL):
         total += 1
         if total > MAX_PROJECT_RECORDS:
             raise CandidateQueueError("candidate_queue_over_limit")
-        identity._identifier(rid)
-        source = identity._source(db, rid)
+        # Reconstruct exactly the same source SHA-256, JSON object validation
+        # and run-status evidence as identity._source. Previously, each
+        # historical source caused separate source/run/link lookups, even when
+        # no provisional publication was linked to it.
+        raw, run_status, linked_rid = row[:6], row[6], row[7]
+        rid = identity._identifier(raw[0])
+        source = identity._source_from_row(raw, run_status)
         # Preserve source identity and source-record scope, even for historical
         # records outside the selected run. Unrecognised layouts do not become
         # fabricated comparable bibliography.
@@ -110,7 +128,10 @@ def _original_index(db, project, run_id):
             if (not isinstance(record, dict) or
                     record.get(name) != source["source_record_id"]):
                 raise CandidateQueueError("candidate_queue_unavailable")
-        link = identity._link(db, rid)
+        # Authoritative provenance verification remains mandatory for every
+        # existing link. Only absent links avoid their old pointless point
+        # lookup. The stored source/identity/audit records are never changed.
+        link = identity._link(db, rid) if linked_rid is not None else None
         fingerprints.append((
             rid, source["source_sha256"], source["run_status"],
             None if link is None else link[0],
