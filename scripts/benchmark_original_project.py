@@ -288,7 +288,7 @@ def run(records=100000,selected=512,matched=64,
         publication=_bench(
             "first_provisional_publication_page",
             lambda:results.read_publication_page(project,RUN),timings)
-        if (len(publication["rows"])!=20 or
+        if (len(publication["rows"])!=min(20,matched) or
                 publication["global_unique_publications"] is not None):
             raise AssertionError("Original publication page is invalid")
         listing=_bench(
@@ -296,20 +296,25 @@ def run(records=100000,selected=512,matched=64,
             lambda:queue.read_candidate_queue(project,RUN),timings)
         if (listing["candidate_pair_total"]!=matched or
                 listing["project_source_records"]!=records or
-                len(listing["rows"])!=20 or
+                len(listing["rows"])!=min(20,matched) or
                 listing["index_backend"]!="original_source_projection" or
                 listing["global_unique_publications"] is not None or
                 listing["deduplication_complete"] is not False):
             raise AssertionError("Full original source-based candidate page differs")
-        next_page=_bench(
-            "second_source_backed_candidate_page",
-            lambda:queue.read_candidate_queue(
-                project,RUN,after_pair=tuple(listing["next_after_pair"]),
-                expected_revision=listing["revision"]),timings)
-        if (next_page["revision"]!=listing["revision"] or
-                set(tuple(r["retrieval_ids"]) for r in listing["rows"]) &
-                set(tuple(r["retrieval_ids"]) for r in next_page["rows"])):
-            raise AssertionError("Original keyset page changed/overlapped")
+        if listing["next_after_pair"] is not None:
+            next_page=_bench(
+                "second_source_backed_candidate_page",
+                lambda:queue.read_candidate_queue(
+                    project,RUN,after_pair=tuple(listing["next_after_pair"]),
+                    expected_revision=listing["revision"]),timings)
+            if (next_page["revision"]!=listing["revision"] or
+                    set(tuple(r["retrieval_ids"]) for r in listing["rows"]) &
+                    set(tuple(r["retrieval_ids"]) for r in next_page["rows"])):
+                raise AssertionError("Original keyset page changed/overlapped")
+        else:
+            # A one-page workload cannot have a subsequent cursor. This is
+            # recorded explicitly rather than inventing an empty next page.
+            timings["second_source_backed_candidate_page_ms"]=None
         worker=_worker_read(project,RUN,worker_timeout_seconds)
         # An independent project reopen must preserve the 100k originals
         # despite the read-only page operations and a spawned worker.
@@ -338,7 +343,7 @@ def run(records=100000,selected=512,matched=64,
         if current!=initial or integrity!="ok" or references is not None:
             raise AssertionError("Original evidence changed during read or worker restart")
         if worker["completed"] and (worker["candidate_count"]!=matched or
-                worker["response_rows"]!=20 or
+                worker["response_rows"]!=min(20,matched) or
                 worker["global_unique_publications"] is not None or
                 worker["deduplication_complete"] is not False):
             raise AssertionError("Spawned worker diverged from original source evidence")
