@@ -52,3 +52,17 @@ def test_original_project_retains_independent_provisional_identities():
 def test_original_source_benchmark_refuses_unbounded_input(arguments):
     with pytest.raises(ValueError):
         run(**arguments)
+
+
+def test_one_matching_pair_has_no_invented_second_page():
+    report=run(records=512,selected=128,matched=1,
+               worker_timeout_seconds=35)
+    assert report["matched_source_pairs"]==1
+    assert report["original_provisional_identities"]==2
+    assert report["unmaterialised_source_records"]==510
+    assert report["timings_ms"]["second_source_backed_candidate_page_ms"] is None
+    assert report["worker"]["candidate_count"]==1
+    assert report["worker"]["response_rows"]==1
+    assert report["worker"]["completed"] is True
+    assert report["global_unique_publications"] is None
+    assert report["full_AT_22_acceptance"] is False
