@@ -20,6 +20,13 @@ METHOD = "explicit-two-batch-materialisation/1"
 MAX_BATCHES = 2
 MAX_SESSION_RECORDS = MAX_BATCH * MAX_BATCHES
 
+_PENDING_SQL = (
+    "SELECT r.retrieval_id FROM source_retrievals r "
+    "LEFT JOIN publication_retrievals l ON l.retrieval_id=r.retrieval_id "
+    "WHERE r.run_id=? AND l.retrieval_id IS NULL "
+    "ORDER BY r.retrieval_id LIMIT ?"
+)
+
 def _plan_window(db, project: Project, run_id: str) -> tuple[dict, tuple[str, ...], str, str]:
     first, first_ids = _plan(db, project, run_id, MAX_BATCH)
     selected = tuple(row[0] for row in db.execute(
@@ -109,9 +116,7 @@ def confirm_two_batch_materialisation(
             # another next batch after an interrupted or concurrent change.
             with _read(project) as db:
                 next_plan, next_ids = _plan(db, project, run_id, MAX_BATCH)
-                current_scope = original_scope_digest(db)
-            if (current_scope != original_scope or
-                    next_ids != expected_ids or
+            if (next_ids != expected_ids or
                     next_plan["unmaterialised_retrievals"] !=
                         preview["unmaterialised_retrievals"] - sum(
                             r["materialised_in_batch"] for r in results)):
@@ -120,7 +125,9 @@ def confirm_two_batch_materialisation(
             revision = next_plan["revision"]
         receipt = materialise_run_batch(
             project, run_id, expected_revision=revision,
-            actor=actor, confirmed=True, batch_size=MAX_BATCH)
+            actor=actor, confirmed=True, batch_size=MAX_BATCH,
+            _expected_original_scope_sha256=original_scope,
+            _expected_retrieval_ids=expected_ids)
         if (receipt["materialised_in_batch"] != size or
                 receipt["unmaterialised_retrievals_remaining"] !=
                 preview["unmaterialised_retrievals"] - sum(
