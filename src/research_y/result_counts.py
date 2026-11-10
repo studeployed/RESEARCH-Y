@@ -188,7 +188,13 @@ def _identity_rows(db, sources):
                     identity._identifier(link[0])
                     snapshots[link[0]] = identity._snapshot(db, link[0])
         return links, snapshots
+    return _streamed_identity_rows(db, sources)
 
+
+def _streamed_identity_rows(db, sources):
+    """Validate/reconstruct original identity snapshots with ordered bulk reads."""
+    if not sources:
+        return {}, {}
     run_id = next(iter(sources.values()))['run_id']
     if any(s['run_id'] != run_id for s in sources.values()):
         raise CountIntegrityError('Count source run scope changed')
