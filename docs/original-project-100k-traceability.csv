@@ -1,0 +1,19 @@
+requirement,increment evidence,implementation status or limitation
+AT-22,scripts/benchmark_original_project.py,100000 original retained sources only; 128 materialised; native GUI untested
+AT-22,.github/workflows/original-project-100k.yml,original project Linux/Windows read path timing and worker-poll evidence pending
+PROJ-04,tests/test_original_project_performance.py::test_original_project_retains_independent_provisional_identities,original source and audit row counts checked after independent reopen
+PROJ-06,scripts/benchmark_original_project.py,read-only spawned worker; simultaneous writer/large archive not assessed
+METH-05,scripts/benchmark_original_project.py,unverified source counts and incomplete query/status clearly retained
+DATA-01,tests/test_original_project_performance.py::test_original_project_retains_independent_provisional_identities,128 independent original audited provisional identities
+DUP-01,tests/test_original_project_performance.py::test_original_project_retains_independent_provisional_identities,64 potential cross-run pairs with original source record fidelity
+DUP-02,scripts/benchmark_original_project.py,exact title and DOI hints never merged
+DUP-04,scripts/benchmark_original_project.py,original audit record count unchanged before and after worker read
+AUDIT-03,scripts/benchmark_original_project.py,original identity materialisation creates production audit receipts; immutable count checked on reopen
+COUNT-01,scripts/benchmark_original_project.py,selected 512 vs historical 99488 and 99872 unmaterialised disclosed
+COUNT-05,tests/test_original_project_performance.py::test_original_project_retains_independent_provisional_identities,global verified publication count remains null
+UI-09,scripts/benchmark_original_project.py,real spawned command worker poll heartbeat; native browser painting not measured
+AT-09,scripts/benchmark_original_project.py,independent project reopen after spawned read/timeout
+AT-10,scripts/benchmark_original_project.py,original 64 source-pair review hints only; one-master-row acceptance unverified
+AT-17,scripts/benchmark_original_project.py,original selected and historical run identities stay distinct
+AT-19,scripts/benchmark_original_project.py,source complete/verified flags remain false
+AT-21,scripts/benchmark_original_project.py,no provider keys or real abstracts in synthetic fixture
