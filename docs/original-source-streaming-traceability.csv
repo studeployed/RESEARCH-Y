@@ -1,0 +1,13 @@
+requirement,increment_evidence,scope_or_limit
+PROJ-04,tests/test_publication_candidate_queue.py::test_bulk_original_source_decoder_matches_individual_authoritative_read,canonical source SHA-256 and JSON evidence preserved
+DATA-01,tests/test_publication_candidate_queue.py::test_large_unlinked_history_is_not_queried_again_per_record,all 422 original retained sources counted; independent linked publication identities
+DATA-04,tests/test_publication_candidate_queue.py::test_bulk_original_source_decoder_matches_individual_authoritative_read,historical run status and source provenance checked
+DATA-05,tests/test_publication_candidate_queue.py::test_corrupt_unmaterialised_historical_source_still_fails_closed,malformed unmaterialised original cannot be silently excluded
+DUP-01,tests/test_publication_candidate_queue.py::test_large_unlinked_history_is_not_queried_again_per_record,matching cross-run record source evidence and decision visibility unchanged
+DUP-02,tests/test_publication_candidate_queue.py::test_large_unlinked_history_is_not_queried_again_per_record,exact DOI remains candidate hint only
+DUP-05,tests/test_publication_candidate_queue.py::test_large_unlinked_history_is_not_queried_again_per_record,distinct abstracts are not automatically associated
+AUDIT-03,tests/test_publication_candidate_queue.py::test_bulk_original_source_decoder_matches_individual_authoritative_read,linked records still validated by original identity and audit services
+AT-09,.github/workflows/original-project-100k.yml,100000 original source retrievals reopened and checked after spawned read
+AT-17,tests/test_publication_candidate_queue.py::test_bulk_original_source_decoder_matches_individual_authoritative_read,parent-run historical status is same as canonical reader
+AT-19,tests/test_publication_candidate_queue.py::test_corrupt_unmaterialised_historical_source_still_fails_closed,unsupported and missing metadata never become verified negative results
+AT-22,.github/workflows/original-project-100k.yml,real original 100000 retained source performance evidence only; full 100000 materialised and native GUI unverified
