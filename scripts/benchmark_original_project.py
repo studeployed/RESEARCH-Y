@@ -380,6 +380,9 @@ def run(records=100000,selected=512,matched=64,
                     "SELECT COUNT(*) FROM publication_retrievals").fetchone()[0],
                 audit_events=db.execute(
                     "SELECT COUNT(*) FROM audit_events").fetchone()[0],
+                identity_audit_events=db.execute(
+                    "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+                    (identity.IDENTITY_EVENT,)).fetchone()[0],
                 first_original_sha256=sha256(
                     db.execute("SELECT original_metadata_json FROM "
                                "source_retrievals WHERE retrieval_id=?",
@@ -393,7 +396,8 @@ def run(records=100000,selected=512,matched=64,
                 initial["membership_rows"]!=records or
                 initial["links"]!=materialised or
                 initial["publications"]!=materialised or
-                initial["audit_events"]!=materialised):
+                initial["identity_audit_events"]!=materialised or
+                initial["audit_events"]<initial["identity_audit_events"]):
             raise AssertionError("Original synthetic source/audit records lost")
         projection=_bench(
             "original_run_count_read",
@@ -450,6 +454,9 @@ def run(records=100000,selected=512,matched=64,
                     "SELECT COUNT(*) FROM publication_retrievals").fetchone()[0],
                 audit_events=db.execute(
                     "SELECT COUNT(*) FROM audit_events").fetchone()[0],
+                identity_audit_events=db.execute(
+                    "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+                    (identity.IDENTITY_EVENT,)).fetchone()[0],
                 first_original_sha256=sha256(db.execute(
                     "SELECT original_metadata_json FROM source_retrievals "
                     "WHERE retrieval_id=?",(_rid(0),)).fetchone()[0].encode()).hexdigest(),
