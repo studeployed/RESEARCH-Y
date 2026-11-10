@@ -26,7 +26,7 @@ MAX_SESSION_RECORDS = MAX_BATCH * MAX_BATCHES
 # service; a changed original project scope invalidates further consent use.
 _ORIGINAL_SCOPE_SQL = (
     ("strategy_versions",
-     "SELECT strategy_version_id,version,approved_at_utc,snapshot_json "
+     "SELECT strategy_version_id,version_number,approved_at_utc,snapshot_json "
      "FROM strategy_versions ORDER BY strategy_version_id"),
     ("strategy_groups",
      "SELECT strategy_version_id,group_id,label,group_order "
