@@ -201,8 +201,8 @@ def run(mode, *, large=False):
                 "observed_error": observed.get("observed_error"),
                 "original_sources_and_memberships_unchanged": retained,
                 "all_128_source_links_independently_audited":
-                    after["links"] == after["identity_audits"] ==
-                    after["distinct_publications"] == CONFIRMED,
+                    after["links"] - seeded == after["identity_audits"] - seeded ==
+                    after["distinct_publications"] - seeded == CONFIRMED,
                 "all_expected_source_links_independently_audited":
                     after["links"] == after["identity_audits"] ==
                     after["distinct_publications"] == expected_total,
