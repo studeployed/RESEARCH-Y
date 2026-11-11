@@ -128,7 +128,7 @@ def test_single_run_original_sources_preserve_in_run_candidate_pairs(materialise
     assert report["all_100k_sources_in_selected_run"] is False
 
 
-def test_512_source_streamed_witness_is_exact_and_read_only(tmp_path):
+def test_512_source_streamed_witness_is_exact_and_read_only(tmp_path, monkeypatch):
     """Large-route-style count leaves originals untouched and no full clones.
 
     A 512-source fixture exercises many independent source/audit links in
@@ -145,7 +145,15 @@ def test_512_source_streamed_witness_is_exact_and_read_only(tmp_path):
     canonical_count = counts.read_run_counts(project, RUN)
     with closing(sqlite3.connect(project.database_path)) as db:
         sources = counts._source_rows(db, RUN)
-        links, revisions = counts._streamed_identity_rows(db, sources)
+        # A purely single-source, unedited 512-source fixture must *never*
+        # invoke the expensive canonical per-publication snapshot lookup.
+        # Each output witness still has the identical independently validated
+        # SHA-256 revision checked against canonical samples below.
+        with monkeypatch.context() as patch:
+            def unexpected_full_snapshot(*_a, **_kw):
+                raise AssertionError("singleton unexpectedly took full snapshot")
+            patch.setattr(identity, "_snapshot", unexpected_full_snapshot)
+            links, revisions = counts._streamed_identity_rows(db, sources)
         assert len(links) == len(revisions) == 512
         assert all(isinstance(value, counts._ValidatedRevision)
                    for value in revisions.values())
