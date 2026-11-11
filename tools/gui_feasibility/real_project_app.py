@@ -2655,9 +2655,16 @@ def run(args):
                 else:
                     expected = index + 1 - int(
                         args.scenario == 'publication_window_lost_reply' and index >= 4)
-                    await until(lambda: len(events) >= expected or
-                                last_error['code'] is not None,
-                                deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
+                    if args.scenario == 'publication_window_lost_reply' and index >= 4:
+                        # Previous expected error remains present until the
+                        # new read-only inspection finishes. Do NOT allow that
+                        # stale error to satisfy the completion predicate.
+                        await until(lambda: len(events) >= expected,
+                                    deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
+                    else:
+                        await until(lambda: len(events) >= expected or
+                                    last_error['code'] is not None,
+                                    deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
                     if last_error['code'] is not None:
                         raise RuntimeError('native_window_action_failed')
                     if action == 'publication_window_confirm':
