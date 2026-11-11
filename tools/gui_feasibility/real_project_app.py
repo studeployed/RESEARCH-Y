@@ -110,6 +110,9 @@ def run(args):
         sequence = (('open', 'select_run', 'publication_window_offer',
                      'publication_window_confirm', 'publication_window_inspect')
                     if args.scenario in WINDOW_SCENARIOS else
+                    ('open', 'select_run', 'publication_refresh',
+                     'publication_next', 'publication_detail')
+                    if args.scenario == 'publication_results_large' else
                     ('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
                     if args.scenario == 'publish' else
                     ('recent_open', 'select_run', 'select_export', 'observe')
@@ -125,6 +128,11 @@ def run(args):
         action_lock = asyncio.Lock()
         probe_step_count = 0
         window_uncertain_error_observed = False
+        # Source IDs/cursors stay in this disposable host's private memory;
+        # only aggregate, source-free results evidence goes into the report.
+        results_witness = dict(first_ids=None, first_cursor=None,
+                               first_revision=None, second_ids=None,
+                               detail_open=False)
         # Disposable test-launcher assertions: never readable or selectable
         # through browser state, HTTP requests or an application preference.
         expected_window_remaining = int(os.environ.pop(
@@ -433,6 +441,42 @@ def run(args):
                             events.append(name)
                     else:
                         await asyncio.to_thread(perform)
+                        if args.scenario == 'publication_results_large':
+                            current = flow.state()
+                            page = current.get('publication_page')
+                            if name == 'publication_refresh':
+                                if (page is None or len(page['rows']) != 20 or
+                                        page['after_publication_id'] is not None):
+                                    raise RuntimeError('results_first_page_invalid')
+                                results_witness['first_ids'] = {
+                                    x['publication_id'] for x in page['rows']}
+                                results_witness['first_cursor'] = (
+                                    page['next_after_publication_id'])
+                                results_witness['first_revision'] = page['revision']
+                            if name == 'publication_next':
+                                if (page is None or len(page['rows']) != 20 or
+                                        page['after_publication_id'] !=
+                                        results_witness['first_cursor'] or
+                                        page['revision'] !=
+                                        results_witness['first_revision']):
+                                    raise RuntimeError('results_second_page_invalid')
+                                ids = {x['publication_id'] for x in page['rows']}
+                                if (len(ids) != 20 or
+                                        not ids.isdisjoint(results_witness['first_ids'])):
+                                    raise RuntimeError('results_page_overlap')
+                                results_witness['second_ids'] = ids
+                            if name == 'publication_detail':
+                                detail = current.get('publication_detail')
+                                if (page is None or detail is None or
+                                        page['revision'] != results_witness['first_revision'] or
+                                        detail['publication']['publication_id'] !=
+                                        page['rows'][0]['publication_id'] or
+                                        detail['publication']['publication_id'] not in
+                                        results_witness['second_ids'] or
+                                        detail['abstract_text_displayed'] is not False or
+                                        detail['redistribution_permission_established'] is not False):
+                                    raise RuntimeError('results_detail_invalid')
+                                results_witness['detail_open'] = True
                         events.append(name)
                     last_error['code'] = None
                 except NativeFolderError as exc:
@@ -2608,6 +2652,19 @@ def run(args):
                 return await act(action, expected_export)
             if action == 'publication_window_confirm':
                 return await act(action, 'Synthetic fixture researcher')
+            if args.scenario == 'publication_results_large':
+                # Fixed test harness derives the next cursor and displayed
+                # publication strictly from the currently verified host page.
+                # HTTP callers provide NO identifiers, paths or query values.
+                page = flow.state().get('publication_page')
+                if action == 'publication_next' and page is not None:
+                    return await act(action, {
+                        'cursor': page['next_after_publication_id'],
+                        'revision': page['revision']})
+                if action == 'publication_detail' and page is not None and page['rows']:
+                    return await act(action, {
+                        'publication_id': page['rows'][0]['publication_id'],
+                        'revision': page['revision']})
             return await act(action)
 
         @app.post('/_probe/stop')
@@ -2717,8 +2774,84 @@ def run(args):
             report['native_rendering_verified'] = True
             report['status'] = 'finished'
 
+        async def native_results_probe():
+            """Visit two genuine native 100k-project pages and one source detail."""
+            await until(lambda: session.redeemed and clients and
+                        clients[-1].has_socket_connection)
+            names = {
+                'open': 'open',
+                'select_run': 'select-run',
+                'publication_refresh': 'publication-refresh',
+                'publication_next': 'publication-next',
+                'publication_detail': 'publication-detail-open',
+            }
+            action_timings = []
+            for index, action in enumerate(sequence):
+                await until(lambda: not action_lock.locked())
+                await until_native_button(names[action], js)
+                t0 = time.monotonic()
+                clicked = await js(
+                    "document.querySelector('[data-testid=" +
+                    names[action] + "]').click(); true")
+                if clicked is not True:
+                    raise RuntimeError('results_native_click_failed')
+                await until(lambda: len(events) > index or
+                            last_error['code'] is not None,
+                            deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
+                if (last_error['code'] is not None or events[index] != action):
+                    raise RuntimeError('results_native_action_failed')
+                action_timings.append(round((time.monotonic()-t0)*1000, 2))
+                if action == 'publication_refresh':
+                    await until_native_button('publication-next', js)
+                if action == 'publication_detail':
+                    await until_native_button('publication-detail-heading', js)
+            current = flow.state()
+            page = current['publication_page']
+            detail = current['publication_detail']
+            if (page is None or detail is None or
+                    page['provisional_publication_identities'] != 100000 or
+                    page['retrieved_source_records'] != 100000 or
+                    page['unmaterialised_source_records'] != 0 or
+                    page['global_unique_publications'] is not None or
+                    page['deduplication_complete'] is not False or
+                    page['verified_complete'] is not False or
+                    len(page['rows']) != 20 or
+                    not results_witness['detail_open'] or
+                    len(results_witness['first_ids']) != 20 or
+                    len(results_witness['second_ids']) != 20 or
+                    not results_witness['first_ids'].isdisjoint(
+                        results_witness['second_ids'])):
+                raise RuntimeError('results_native_source_evidence_invalid')
+            rendered = await js(
+                "JSON.stringify({"
+                "rows:document.querySelectorAll('[data-testid=publication-row]').length,"
+                "counts:document.querySelector('[data-testid=publication-counts]')?.textContent||'',"
+                "page:document.querySelector('[data-testid=publication-page-status]')?.textContent||'',"
+                "heading:document.querySelector('[data-testid=publication-detail-heading]')?.textContent||'',"
+                "source:document.querySelector('[data-testid=publication-source-detail]')?.textContent||'',"
+                "incomplete:document.querySelector('[data-testid=incomplete]')?.textContent||'',"
+                "injected:window.__researchy_injected===true})")
+            if not rendered:
+                raise RuntimeError('results_native_rendering_unavailable')
+            visible = json.loads(rendered)
+            if (visible['rows'] != 20 or
+                    '100000' not in visible['counts'] or
+                    'UNKNOWN' not in visible['counts'] or
+                    'maximum 20' not in visible['page'] or
+                    'LOCAL SOURCE PROVENANCE' not in visible['heading'] or
+                    'rights' not in visible['source'] or
+                    'INCOMPLETE' not in visible['incomplete'] or
+                    visible['injected']):
+                raise RuntimeError('results_native_rendering_invalid')
+            report['native_results_action_ms'] = action_timings
+            report['native_rendering_verified'] = True
+            report['status'] = 'finished'
+
         async def native_probe():
             try:
+                if args.scenario == 'publication_results_large':
+                    await native_results_probe()
+                    return
                 if args.scenario in WINDOW_SCENARIOS:
                     await native_window_probe()
                     return
@@ -2829,10 +2962,21 @@ def run(args):
                     'native_window_rendering_unavailable',
                     'native_window_rendering_invalid',
                     'native_button_unavailable',
+                    'results_native_click_failed',
+                    'results_native_action_failed',
+                    'results_native_source_evidence_invalid',
+                    'results_native_rendering_unavailable',
+                    'results_native_rendering_invalid',
+                    'results_first_page_invalid',
+                    'results_second_page_invalid',
+                    'results_page_overlap',
+                    'results_detail_invalid',
                 }
                 reason = str(exc) if type(exc) is RuntimeError else ''
                 report['error'] = reason if (
-                    args.scenario in WINDOW_SCENARIOS and reason in allowed
+                    (args.scenario in WINDOW_SCENARIOS or
+                     args.scenario == 'publication_results_large') and
+                    reason in allowed
                 ) else type(exc).__name__
             finally:
                 app.native.main_window.destroy()
@@ -2856,6 +3000,25 @@ def run(args):
             state = flow.state()
             observed = state['observation']
             report.update(
+                results_page_rows=(
+                    None if state['publication_page'] is None else
+                    len(state['publication_page']['rows'])),
+                results_provisional_count=(
+                    None if state['publication_page'] is None else
+                    state['publication_page']['provisional_publication_identities']),
+                results_unmaterialised=(
+                    None if state['publication_page'] is None else
+                    state['publication_page']['unmaterialised_source_records']),
+                results_detail_open=bool(
+                    results_witness['detail_open'] and
+                    state['publication_detail'] is not None),
+                results_paging_verified=bool(
+                    results_witness['first_ids'] is not None and
+                    results_witness['second_ids'] is not None and
+                    len(results_witness['first_ids']) == 20 and
+                    len(results_witness['second_ids']) == 20 and
+                    results_witness['first_ids'].isdisjoint(
+                        results_witness['second_ids'])),
                 window_remaining=(
                     None if state['publication_window_last_inspection'] is None
                     else state['publication_window_last_inspection']['unmaterialised_retrievals']),
@@ -2921,7 +3084,8 @@ if __name__ == '__main__':
                                                'worker_killed', 'worker_recovered',
                                                'recent_open',
                                                'publication_window',
-                                               'publication_window_lost_reply'), required=True)
+                                               'publication_window_lost_reply',
+                                               'publication_results_large'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))
