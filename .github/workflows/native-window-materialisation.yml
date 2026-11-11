@@ -62,10 +62,10 @@ jobs:
         run: python -c "from importlib.metadata import version; assert version('nicegui')=='3.18.0' and version('pywebview')=='6.2.1' and version('openpyxl')=='3.1.5'"
       - name: Real guarded local transport and two worker-commit scenarios
         if: runner.os == 'Linux'
-        run: python tools/gui_feasibility/run_materialisation_window.py --directory .window-gui-evidence
+        run: python -m tools.gui_feasibility.run_materialisation_window --directory .window-gui-evidence
       - name: Actual native Windows finite-window button and recovery actions
         if: runner.os == 'Windows'
-        run: python tools/gui_feasibility/run_materialisation_window.py --directory .window-gui-evidence --native
+        run: python -m tools.gui_feasibility.run_materialisation_window --directory .window-gui-evidence --native
       - name: Verify two real-original-source GUI scenarios and no false claims
         shell: python
         run: |
