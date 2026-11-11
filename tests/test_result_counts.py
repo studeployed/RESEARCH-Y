@@ -514,6 +514,57 @@ def test_streamed_high_cardinality_projection_matches_canonical_on_complex_recei
     assert projected.reviews['current_confirmed_matches']==1
 
 
+def test_streamed_memberships_preserve_multiple_groups_queryless_and_unlinked(
+    fixture, monkeypatch
+):
+    """The ordered merge consumes every membership without a global map.
+
+    Multiple query chunks may reference one source; a queryless source is not
+    silently assigned a group; and an unmaterialised retrieval stays visible
+    in original counts. All original publication revisions must match the
+    unmodified canonical read, including group membership ordering.
+    """
+    f = fixture
+    paired = add_record(f, identifier='54001', groups=('g1', 'g2'))
+    queryless = add_record(f, identifier='54002', groups=())
+    unlinked = add_record(f, identifier='54003', groups=('g2',))
+    new_query = uid()
+    with closing(sqlite3.connect(f.project.database_path)) as db, db:
+        db.execute(
+            "INSERT INTO source_queries("
+            "query_id,run_id,strategy_version_id,group_id,source_name,"
+            "exact_query,reported_matches) VALUES(?,?,?,?,?,?,?)",
+            (new_query, f.run, f.strategy, 'g1', 'pubmed',
+             '"different source expression"[All Fields]', None))
+        db.execute(
+            "INSERT INTO query_retrievals VALUES(?,?,?,?)",
+            (new_query, paired, f.run, 'pubmed'))
+    for rid in (paired, queryless):
+        identity.materialise_retrieval(f.project, rid, actor='Fixture')
+
+    canonical = counts.read_run_counts(f.project, f.run)
+    with closing(sqlite3.connect(f.project.database_path)) as db:
+        sources = counts._source_rows(db, f.run)
+        linked, streamed = counts._streamed_identity_rows(db, sources)
+        assert len(linked) == len(streamed) == 2
+        assert unlinked not in linked
+        assert isinstance(streamed[linked[paired][0]], counts._ValidatedRevision)
+        assert isinstance(streamed[linked[queryless][0]], counts._ValidatedRevision)
+        for pub_id, witness in streamed.items():
+            assert witness.revision == identity._snapshot(db, pub_id).revision
+
+    with monkeypatch.context() as patch:
+        patch.setattr(counts, '_identity_rows', counts._streamed_identity_rows)
+        result = counts.read_run_counts(f.project, f.run)
+    assert result == canonical
+    assert result.totals['unmaterialised_retrievals'] == 1
+    assert result.totals['queryless_source_records'] == 1
+    assert result.totals['global_publication_identities'] == 2
+    assert result.totals['global_unique_publications'] is None
+    assert result.deduplication_complete is False
+    assert result.source_retrieval_verified is False
+
+
 @pytest.mark.parametrize('invalid',[
     '{"version":2,"event_id":1}',
     '{"version":1,"event_id":999999999}',
