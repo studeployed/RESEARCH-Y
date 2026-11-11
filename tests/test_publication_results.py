@@ -677,3 +677,61 @@ def test_provisional_manifest_revalidates_one_original_count_snapshot(fixture, m
     assert raw.startswith(b"PK")
     assert called == [1]
     assert sha256(project.database_path.read_bytes()).hexdigest() == before
+
+
+def test_failed_provisional_workbook_cleans_every_temporary_xml_file(fixture, monkeypatch):
+    """Repeated early aborts must not leak OpenPyXL write-only sheet files.
+
+    This observes actual tempfile creation, registry cleanup and physical
+    deletion, rather than assuming Workbook.close() releases worksheet XML.
+    """
+    from pathlib import Path
+    from openpyxl.worksheet import _writer as xml_writer
+    from research_y import provisional_manifest_workbook as manifest
+
+    project, run, _, _ = fixture
+    linked = insert(fixture, number=991, groups=("g1", "g2"))
+    insert(fixture, source="wos", number=992, groups=("g2",))
+    identity.materialise_retrieval(project, linked, actor="Fixture")
+    original_database = sha256(project.database_path.read_bytes()).hexdigest()
+    original_temps = set(xml_writer.ALL_TEMP_FILES)
+    created = []
+    create_original = xml_writer.create_temporary_file
+
+    def observe_created(*args, **kwargs):
+        filename = create_original(*args, **kwargs)
+        created.append(filename)
+        return filename
+
+    with monkeypatch.context() as patch:
+        patch.setattr(xml_writer, "create_temporary_file", observe_created)
+        patch.setattr(manifest, "ROW_LIMIT", 4)
+        for _ in range(3):
+            with pytest.raises(manifest.WorkbookLimitError):
+                manifest.render_provisional_manifest(project, run)
+            assert set(xml_writer.ALL_TEMP_FILES) == original_temps
+            assert all(not Path(filename).exists() for filename in created)
+
+    # A failure during cell serialization (rather than just an explicit row
+    # limit) must also discard all already opened worksheet XML writers.
+    normal_literal = manifest._literal
+    calls = 0
+
+    def interrupted_literal(cell, value):
+        nonlocal calls
+        calls += 1
+        if calls == 46:
+            raise manifest.WorkbookLimitError("Synthetic interrupted writer")
+        return normal_literal(cell, value)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(xml_writer, "create_temporary_file", observe_created)
+        patch.setattr(manifest, "_literal", interrupted_literal)
+        with pytest.raises(manifest.WorkbookLimitError, match="Synthetic interrupted"):
+            manifest.render_provisional_manifest(project, run)
+    assert calls == 46
+    assert len(created) >= 16  # Four independent sheets, four aborted renders.
+    assert set(xml_writer.ALL_TEMP_FILES) == original_temps
+    assert all(not Path(filename).exists() for filename in created)
+    assert sha256(project.database_path.read_bytes()).hexdigest() == original_database
+    assert not list((project.root / "exports").glob("*.xlsx"))
