@@ -517,8 +517,27 @@ def test_compact_count_link_rejects_tampered_original_association_audit(fixture)
         ).fetchone()
         event = identity._object(row[0])
         event['source_sha256'] = '0' * 64
+        corrupt_raw = identity._json(event)
+        # Production audit rows are append-only. First prove that protection
+        # still works. Only in this disposable test fixture, temporarily
+        # remove the exact update trigger to simulate on-disk corruption,
+        # then restore the original trigger before any service is invoked.
+        trigger = db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='immutable_audit_events_update'"
+        ).fetchone()
+        assert trigger is not None and 'audit history is append-only' in trigger[0]
+        with pytest.raises(sqlite3.IntegrityError, match='append-only'):
+            db.execute('UPDATE audit_events SET details_json=? WHERE event_id=?',
+                       (corrupt_raw, event_id))
+        db.execute('DROP TRIGGER immutable_audit_events_update')
         db.execute('UPDATE audit_events SET details_json=? WHERE event_id=?',
-                   (identity._json(event), event_id))
+                   (corrupt_raw, event_id))
+        db.execute(trigger[0])
+        assert db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='immutable_audit_events_update'"
+        ).fetchone() == trigger
     before = fingerprint(f.project)
     with closing(sqlite3.connect(f.project.database_path)) as db:
         sources = counts._source_rows(db, f.run)
