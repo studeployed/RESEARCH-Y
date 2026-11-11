@@ -66,7 +66,13 @@ def test_native_action_and_scenario_waits_cover_actual_worker_bounds():
     assert 'deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)' in app_source
     # Initial socket readiness remains subject to the shorter default bound.
     assert 'async def until(condition, deadline=30):' in app_source
-    assert "process.wait(timeout=NATIVE_SCENARIO_TIMEOUT if mode == 'native' else 120)" in inspect.getsource(run_app)
+    driver = inspect.getsource(run_app)
+    # Native windows and the large guarded transport probe share the finite
+    # overall scenario allowance. Ordinary smaller transport tests retain
+    # their original 120-second child-process bound; no per-worker limit rises.
+    assert "process.wait(timeout=(" in driver
+    assert "NATIVE_SCENARIO_TIMEOUT if mode == 'native' or" in driver
+    assert "scenario == 'publication_results_large' else 120))" in driver
 
 
 def test_real_project_action_response_bound_still_fails_closed(monkeypatch):
