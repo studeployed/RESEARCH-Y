@@ -125,6 +125,16 @@ def run(args):
         action_lock = asyncio.Lock()
         probe_step_count = 0
         window_uncertain_error_observed = False
+        # Disposable test-launcher assertions: never readable or selectable
+        # through browser state, HTTP requests or an application preference.
+        expected_window_remaining = int(os.environ.pop(
+            'RESEARCHY_GUI_TEST_EXPECTED_WINDOW_REMAINING', '4'))
+        expected_window_provisional = int(os.environ.pop(
+            'RESEARCHY_GUI_TEST_EXPECTED_WINDOW_PROVISIONAL', '128'))
+        if args.scenario in WINDOW_SCENARIOS and (
+                not 0 <= expected_window_remaining <= 100000 or
+                not 128 <= expected_window_provisional <= 100000):
+            raise RuntimeError('native_window_test_expectation_invalid')
         select_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_RUN_ID')
         expected_project_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_PROJECT_ID', '')
         expected_export = os.environ.pop('RESEARCHY_GUI_EXPECTED_EXPORT_ID', '')
@@ -2679,8 +2689,8 @@ def run(args):
             state = flow.state()
             stored = state['publication_window_last_inspection']
             if (stored is None or
-                    stored['unmaterialised_retrievals'] != 4 or
-                    stored['existing_publication_hypotheses'] != 128 or
+                    stored['unmaterialised_retrievals'] != expected_window_remaining or
+                    stored['existing_publication_hypotheses'] != expected_window_provisional or
                     state['publication_window_offer'] is not None or
                     state['source_retrieval_verified'] is not False):
                 raise RuntimeError('native_window_durable_evidence_invalid')
@@ -2700,7 +2710,8 @@ def run(args):
                 raise RuntimeError('native_window_rendering_unavailable')
             shown = json.loads(check)
             if (not shown['heading'] or
-                    'remaining without publication identities: 4' not in shown['inspected'] or
+                    ('remaining without publication identities: ' +
+                     str(expected_window_remaining)) not in shown['inspected'] or
                     shown['injected']):
                 raise RuntimeError('native_window_rendering_invalid')
             report['native_rendering_verified'] = True
