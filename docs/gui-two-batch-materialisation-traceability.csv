@@ -1,0 +1,15 @@
+requirement,implementation or validation,confirmed status or explicit boundary
+DATA-01,tests/test_gui_materialisation_window.py::test_preview_and_confirmation_are_one_use_and_independently_reconciled,128 independent review-required provisional source identities from original SQLite with no title-based association
+DATA-04,tests/test_gui_materialisation_window.py::test_preview_and_confirmation_are_one_use_and_independently_reconciled,original source and membership totals retained and separately audited identities counted
+DUP-01,tools/gui_feasibility/real_project_app.py,provisional linked identities explicitly separate from unknown verified deduplicated count
+DUP-04,tests/test_gui_materialisation_window.py::test_recovery_after_second_transaction_failure_requires_read_only_reinspection,first 64 original links and audit receipts remain after failed second batch
+AUDIT-03,tests/test_gui_materialisation_window.py::test_preview_and_confirmation_are_one_use_and_independently_reconciled,original identity-link receipts retained for each new provisional publication
+PROJ-04,tests/test_gui_materialisation_window.py::test_recovery_after_second_transaction_failure_requires_read_only_reinspection,independent reopen and recovery of partial committed local source identities
+RUN-06,tests/test_gui_materialisation_window.py::test_lost_returned_reply_must_not_fabricate_success_or_auto_retry,consumed approval cannot be replayed and new consent requires original durable reinspection
+UI-05,tools/gui_feasibility/real_project_app.py,experimental graphical explicit two-batch preview and confirmation only; native product acceptance not claimed
+UI-07,tools/gui_feasibility/real_project_flow.py,read-only aggregate source count and confirmed receipt visibly distinguished from unverified outcome
+AT-01,tests/test_gui_materialisation_window.py::test_run_switch_discards_window_consent_and_recovery,selected-run switch discards pending approvals and project context
+AT-09,tests/test_gui_materialisation_window.py::test_lost_returned_reply_must_not_fabricate_success_or_auto_retry,uncertain child outcome triggers independent original SQLite inspect before fresh approval
+AT-19,tools/gui_feasibility/real_project_app.py,verified unique publications remain unknown and no complete source flag is displayed
+AT-21,tests/test_gui_materialisation_window.py::test_experimental_gui_action_and_source_free_labels_are_allowlisted,untrusted browser cannot send source IDs run IDs batch sizes or consent SHA to trusted host
+AT-22,docs/GUI_TWO_BATCH_MATERIALISATION.md,full native Windows graphical responsiveness and 100000-row product workflow remain unverified
