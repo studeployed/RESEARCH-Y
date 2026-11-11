@@ -330,6 +330,66 @@ def request_action(port, headers):
         conn.close()
 
 
+def transport_window_steps(port, auth, scenario, run_id):
+    """Run fixed, authorized real GUI actions; no browser-supplied identifiers."""
+    lost = scenario == 'publication_window_lost_reply'
+    expected = ('open', 'select_run', 'publication_window_offer',
+                'publication_window_confirm', 'publication_window_inspect')
+    observed = []
+    for index, action in enumerate(expected):
+        status, _, payload = request_action(port, auth)
+        require(status == 200, 'window_action_http_failed')
+        result = json.loads(payload)
+        state = result['state']
+        error = result.get('error')
+        require(state['source_retrieval_verified'] is False,
+                'window_falsely_verified_sources')
+        if lost and action == 'publication_window_confirm':
+            require(error == 'publication_window_reinspect_required',
+                    'window_lost_reply_not_refused')
+            require(state['publication_window_reinspect_required'] is True and
+                    state['publication_window_last_outcome'] is None and
+                    state['publication_window_offer'] is None,
+                    'window_lost_reply_false_success')
+            observed.append('publication_window_confirm_interrupted')
+            continue
+        require(error is None, 'window_action_failed')
+        if action == 'open':
+            require(state['selected_run_id'] is None, 'window_implicit_run')
+        if action == 'select_run':
+            require(state['selected_run_id'] == run_id, 'window_wrong_run')
+        if action == 'publication_window_offer':
+            offer = state['publication_window_offer']
+            require(offer is not None and
+                    offer['batch_sizes'] == [64, 64] and
+                    offer['proposed_source_records'] == 128 and
+                    offer['unmaterialised_retrievals'] == 132 and
+                    offer['global_unique_publications'] is None,
+                    'window_offer_not_bound_to_originals')
+        if action == 'publication_window_confirm':
+            receipt = state['publication_window_last_outcome']
+            require(receipt is not None and
+                    receipt['committed_batches'] == 2 and
+                    receipt['materialised_in_session'] == 128 and
+                    receipt['global_unique_publications'] is None and
+                    state['publication_window_offer'] is None,
+                    'window_confirm_not_audited')
+        if action == 'publication_window_inspect':
+            inspection = state['publication_window_last_inspection']
+            require(inspection is not None and
+                    inspection['unmaterialised_retrievals'] == 4 and
+                    inspection['existing_publication_hypotheses'] == 128 and
+                    'revision' not in inspection and
+                    state['publication_window_offer'] is None and
+                    state['publication_window_reinspect_required'] is False and
+                    (state['publication_window_last_outcome'] is None) is lost,
+                    'window_reinspection_not_durable')
+        observed.append(action)
+    require(request(port, '/_probe/stop', method='POST', headers=auth)[0] == 200,
+            'window_stop_request_failed')
+    return observed
+
+
 def transport_steps(port, token, scenario, run_id, export_id):
     origin = f'http://127.0.0.1:{port}'
     wait_until(lambda: reachable(port), timeout=40)
@@ -343,6 +403,8 @@ def transport_steps(port, token, scenario, run_id, export_id):
                   if key.lower() == 'set-cookie').split(';', 1)[0]
     auth = {'Origin': origin, 'Cookie': cookie}
     require(request(port, '/', headers=auth)[0] == 200, 'nicegui_page_missing')
+    if scenario in ('publication_window', 'publication_window_lost_reply'):
+        return transport_window_steps(port, auth, scenario, run_id)
     expected = (('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
                 if scenario == 'publish' else
                 ('recent_open', 'select_run', 'select_export', 'observe')
@@ -494,41 +556,74 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                 result['observed_worker_reaped'] = report.get('worker_reaped')
                 result['observed_supervisor_stopped'] = report.get('supervisor_stopped')
                 result['observed_outcome'] = report.get('observed_outcome')
-                expected_outcome = (None if scenario == 'worker_killed'
-                                    else 'recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
-                                    else 'published_receipt_missing' if scenario == 'receipt_missing'
-                                    else 'not_yet_staged' if scenario == 'render_fault'
-                                    else 'retained_artifact_changed' if scenario == 'stage_fault'
-                                    else 'published_verified')
-                expected_error = 'worker_interrupted' if scenario == 'worker_killed' else None
-                require(report['status'] == 'finished' and report['real_services'] is True
-                        and report['source_retrieval_verified'] is False
-                        and report['selected_run_matches'] is True
-                        and report['selected_export_matches'] is True
-                        and report['observed_outcome'] == expected_outcome
-                        and report['observation_audited'] is
-                            (expected_outcome == 'published_verified')
-                        and report['error'] == expected_error
-                        and report['session_revoked'] is True
-                        and report['worker_reaped'] is True
-                        and report['supervisor_stopped'] is True, 'real_gui_evidence_not_accepted')
-                require(report['project_id'] == str(project.identifier), 'project_identity_changed')
-                if expected_export:
-                    require(report['export_id'] == expected_export, 'export_identity_changed')
-                if scenario == 'worker_killed':
-                    require(termination['terminated'] is True and termination['error'] is None,
-                            'gui_owned_worker_not_confirmed_terminated')
-                    require(report['actions'] == ['open', 'select_run', 'select_export'],
-                            'worker_interruption_accepted_as_success')
-                if mode == 'native':
-                    require(report.get('native_rendering_verified') is True, 'native_rendering_not_verified')
-                result.update(passed=True, export_id=report['export_id'],
-                              project_identity_retained=True,
-                              workbook_file_verified=expected_outcome == 'published_verified',
-                              native_rendering_verified=bool(
-                                  report.get('native_rendering_verified', False)))
-                with socket.socket() as sock:
-                    require(sock.connect_ex(('127.0.0.1', port)) != 0, 'listener_not_closed')
+                if scenario in ('publication_window', 'publication_window_lost_reply'):
+                    lost = scenario == 'publication_window_lost_reply'
+                    require(
+                        report['status'] == 'finished' and
+                        report['real_services'] is True and
+                        report['source_retrieval_verified'] is False and
+                        report['selected_run_matches'] is True and
+                        report['window_remaining'] == 4 and
+                        report['window_confirmed'] is (not lost) and
+                        report['window_uncertain_error_observed'] is lost and
+                        report['window_recovery_required'] is False and
+                        report['error'] is None and
+                        report['session_revoked'] is True and
+                        report['worker_reaped'] is True and
+                        report['supervisor_stopped'] is True and
+                        report['project_id'] == str(project.identifier),
+                        'window_original_gui_evidence_not_accepted')
+                    if mode == 'native':
+                        require(report.get('native_rendering_verified') is True,
+                                'window_native_rendering_not_verified')
+                        if lost:
+                            require(report.get('window_recovery_notice_verified') is True,
+                                    'window_native_recovery_notice_missing')
+                    result.update(
+                        passed=True, export_id=None,
+                        project_identity_retained=True,
+                        window_sources_reconciled=True,
+                        native_rendering_verified=bool(
+                            report.get('native_rendering_verified', False)))
+                    with socket.socket() as sock:
+                        require(sock.connect_ex(('127.0.0.1', port)) != 0,
+                                'window_listener_not_closed')
+                else:
+                    expected_outcome = (None if scenario == 'worker_killed'
+                                        else 'recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
+                                        else 'published_receipt_missing' if scenario == 'receipt_missing'
+                                        else 'not_yet_staged' if scenario == 'render_fault'
+                                        else 'retained_artifact_changed' if scenario == 'stage_fault'
+                                        else 'published_verified')
+                    expected_error = 'worker_interrupted' if scenario == 'worker_killed' else None
+                    require(report['status'] == 'finished' and report['real_services'] is True
+                            and report['source_retrieval_verified'] is False
+                            and report['selected_run_matches'] is True
+                            and report['selected_export_matches'] is True
+                            and report['observed_outcome'] == expected_outcome
+                            and report['observation_audited'] is
+                                (expected_outcome == 'published_verified')
+                            and report['error'] == expected_error
+                            and report['session_revoked'] is True
+                            and report['worker_reaped'] is True
+                            and report['supervisor_stopped'] is True, 'real_gui_evidence_not_accepted')
+                    require(report['project_id'] == str(project.identifier), 'project_identity_changed')
+                    if expected_export:
+                        require(report['export_id'] == expected_export, 'export_identity_changed')
+                    if scenario == 'worker_killed':
+                        require(termination['terminated'] is True and termination['error'] is None,
+                                'gui_owned_worker_not_confirmed_terminated')
+                        require(report['actions'] == ['open', 'select_run', 'select_export'],
+                                'worker_interruption_accepted_as_success')
+                    if mode == 'native':
+                        require(report.get('native_rendering_verified') is True, 'native_rendering_not_verified')
+                    result.update(passed=True, export_id=report['export_id'],
+                                  project_identity_retained=True,
+                                  workbook_file_verified=expected_outcome == 'published_verified',
+                                  native_rendering_verified=bool(
+                                      report.get('native_rendering_verified', False)))
+                    with socket.socket() as sock:
+                        require(sock.connect_ex(('127.0.0.1', port)) != 0, 'listener_not_closed')
             except Exception as exc:
                 result['error'] = str(exc) if isinstance(exc, ExperimentFailure) else type(exc).__name__
             finally:
