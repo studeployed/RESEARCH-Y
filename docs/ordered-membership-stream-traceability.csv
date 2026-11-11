@@ -1,0 +1,12 @@
+requirement,verification,limitation
+DATA-01,src/research_y/result_counts.py,Original source SHA-256 and linked event data still validated; only ephemeral map reduction
+DATA-02,tests/test_result_counts.py,All original group/query memberships retained and ordered for same source
+DUP-01,tests/test_original_project_performance.py,Distinct provisional identities remain distinct; no implicit DOI/title-based deduplication
+DUP-04,tests/test_result_counts.py,Original multi-source and field-selected association revisions preserved; full manual workflow not completed here
+COUNT-01,tests/test_result_counts.py,Canonical run counts equal before and after stream for multi-group and queryless sources
+AT-09,tests/test_original_project_performance.py,Read-only project reopen with exact same result; not full interrupted retrieval acceptance
+AT-10,tests/test_result_counts.py,Partial: original multi-source link snapshots and per-group memberships parity; final dedup outstanding
+AT-17,tests/test_result_counts.py,Partial: same original canonical SHA-256 revision and no stale historical overwrite
+AT-19,tests/test_result_counts.py,No false verified counts for unlinked/incomplete originals
+AT-21,tests/test_result_counts.py,Original audit pointer mismatch and source-scope failures remain explicit
+AT-22,docs/ORDERED_MEMBERSHIP_STREAM.md,Partial: reduce temporary high-cardinality structures and run real 100k benchmarks
