@@ -10,7 +10,7 @@ from collections import Counter, defaultdict
 from contextlib import closing, contextmanager
 from dataclasses import asdict, dataclass
 import sqlite3
-from typing import Any, Iterator
+from typing import Any, Iterator, NamedTuple
 
 from research_y import publication_candidates as candidates
 from research_y import publication_identity as identity
@@ -168,6 +168,18 @@ def _source_rows(db, run_id):
     return result
 
 
+class _ValidatedCountLink(NamedTuple):
+    """Minimal, immutable evidence for run-count membership arithmetic.
+
+    Each instance is created only AFTER the complete original association
+    pointer, source SHA-256, event body, timestamp and decision status were
+    validated. This does not replace the original audit or interactive links:
+    per-source canonical publication snapshots still use the full event.
+    """
+    publication_id: str
+    status: str
+
+
 @dataclass(frozen=True, slots=True)
 class _ValidatedRevision:
     """One-shot source/association-checked revision for a simple publication.
@@ -189,14 +201,16 @@ def _identity_rows(db, sources):
     authoritative. For uncomplicated singleton links, only the fully
     validated revision is retained; the temporary full source structure is
     never mistaken for a user-facing publication snapshot. The original
-    canonical bytes and SHA-256 revision remain unchanged.
+    canonical bytes and SHA-256 revision remain unchanged. The final count
+    only retains each link's verified publication ID and decision status, not
+    another copy of its already-validated audit event body.
     """
     if len(sources) < 2048:
         links, snapshots = {}, {}
         for rid in sources:
             link = identity._link(db, rid)
             if link is not None:
-                links[rid] = link
+                links[rid] = _ValidatedCountLink(link[0], link[2]['status'])
                 if link[0] not in snapshots:
                     identity._identifier(link[0])
                     snapshots[link[0]] = identity._snapshot(db, link[0])
@@ -286,7 +300,11 @@ def _streamed_identity_rows(db, sources):
             raise CountIntegrityError('Missing linked publication')
         link = identity._link_from_evidence(
             sources[rid], pub_id, pointer, tuple(event_row))
-        links[rid] = link
+        # Retain only the information used by the complete run-count
+        # projection. The full ORIGINAL event remains available here for
+        # exact canonical singleton source hashing below, and all complex
+        # publications are checked through identity._snapshot.
+        links[rid] = _ValidatedCountLink(link[0], link[2]['status'])
 
         if pub_id in multi or chosen != '{}':
             # Full original validation of every source/field selection in
@@ -458,7 +476,7 @@ def _snapshot(db, project, run_id):
         global_publication_identities=len(snapshots), global_unique_publications=None,
         group_publication_identity_sum=sum(g['publication_identities'] for g in groups),
         identities_with_review_required_links_in_run=len({link[0] for link in links.values()
-                                                         if link[2]['status'] == 'review_required'}),
+                                                         if link.status == 'review_required'}),
         extracted_individual_abstracts=None, extracted_abstract_count_status='not_implemented',
         inactive_identities_included=False,
     )
