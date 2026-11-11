@@ -90,7 +90,7 @@ def _ledger(project):
             "provisional": count("SELECT COUNT(*) FROM publications"),
             "links": len(links),
             "identity_audits": count(
-                "SELECT COUNT(*) FROM audit_events WHERE event_type='explicit-publication-identity'"),
+                "SELECT COUNT(*) FROM audit_events WHERE event_type='publication_identity_v1'"),
             "distinct_publications": len({row[1] for row in links}),
             "linked_order_exact":
                 [row[0] for row in links] == [_retrieval_id(i) for i in range(len(links))],
