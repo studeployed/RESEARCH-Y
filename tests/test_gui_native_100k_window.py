@@ -12,6 +12,8 @@ import pytest
 
 from scripts.benchmark_original_project import RUN
 from tools.gui_feasibility import run_real_project as driver
+from tools.gui_feasibility import run_materialisation_window as window
+from research_y.strategy_report import _strategy
 from tools.gui_feasibility.run_prototype import ExperimentFailure
 
 
@@ -113,3 +115,20 @@ def test_large_window_transport_rejects_false_zero_remaining(monkeypatch):
             expected_pending=99872,
             expected_remaining=99744,
             expected_provisional=256)
+
+
+def test_original_100k_fixture_approves_immutable_broad_or_snapshot(monkeypatch, tmp_path):
+    captured = {}
+    def inspect_seed(project, records, selected, matched, *, strategy_snapshot):
+        assert records == selected == 100000 and matched == 64
+        captured["snapshot"] = strategy_snapshot
+        return 128
+
+    monkeypatch.setattr(window, "_seed", inspect_seed)
+    _, run_id = window._large_fixture(tmp_path)
+    assert run_id == RUN
+    snapshot = captured["snapshot"]
+    assert snapshot["logic"] == "OR"
+    assert snapshot["approved_by"] == "Synthetic test-only researcher"
+    assert snapshot["groups"][0]["terms"][0]["approved"] is True
+    _strategy(snapshot, [("all", "Biomedical synthetic OR-group", 0)])
