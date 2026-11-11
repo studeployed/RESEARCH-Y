@@ -16,7 +16,7 @@ import pytest
 
 from research_y import publication_identity as identity
 from research_y.application_commands import (
-    ApplicationCommand, execute_command,
+    ApplicationCommand, ApplicationCommandError, execute_command,
 )
 from research_y.projects import create_project, open_project
 from tools.gui_feasibility.real_project_flow import RealProjectFlow, ProjectFlowError
@@ -97,7 +97,15 @@ def _flow(project, run, other):
             return {"snapshot": {"runs": run_rows, "exports": [],
                                  "selected_run_id": kw.get("run_id"),
                                  "report": {"status": "incomplete"}}}
-        return execute_command(ApplicationCommand.for_project(project, name, **kw))
+        try:
+            return execute_command(ApplicationCommand.for_project(
+                project, name, **kw))
+        except ApplicationCommandError as exc:
+            # The genuine ApplicationWorker reports this static code in a
+            # failed OperationStatus. RealProjectFlow._operation_for_project
+            # translates that status into ProjectFlowError, never leaking
+            # a raw service exception to the user-facing recovery flow.
+            raise ProjectFlowError(exc.code) from None
     flow._operation = original_operation
     flow._publish()
     return flow
