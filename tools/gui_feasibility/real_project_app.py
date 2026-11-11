@@ -281,6 +281,23 @@ def run(args):
                             return flow.dismiss_publication_materialisation()
                         if name == 'publication_materialise_confirm':
                             return flow.confirm_publication_materialisation(value)
+                        if name in ('publication_window_inspect',
+                                    'publication_window_offer',
+                                    'publication_window_dismiss'):
+                            # Only fixed actions; browser cannot supply a run,
+                            # consent hash, source IDs, work limit or path.
+                            if value is not None:
+                                raise ProjectFlowError('publication_window_invalid')
+                            if name == 'publication_window_inspect':
+                                return flow.inspect_publication_window()
+                            if name == 'publication_window_offer':
+                                return flow.offer_publication_window()
+                            return flow.dismiss_publication_window()
+                        if name == 'publication_window_confirm':
+                            if type(value) is not str or not value.strip():
+                                raise ProjectFlowError(
+                                    'publication_window_confirmation_required')
+                            return flow.confirm_publication_window(value)
                         if name == 'candidate_index_inspect':
                             # Local source-key cache status only. No writes.
                             return flow.inspect_candidate_index()
@@ -1083,6 +1100,96 @@ def run(args):
                                  '. Refresh to read CURRENT results. Verified '
                                  'global unique publications: UNKNOWN.').props(
                                      'data-testid=publication-materialise-outcome')
+                    ui.separator()
+                    ui.label('Optional bounded 128-record preparation — '
+                             'ONE explicit approval, at most TWO original '
+                             '64-record transactions. The first transaction '
+                             'may have committed even if the second fails. '
+                             'NO automatic duplicate merging or further '
+                             'batch execution.').props(
+                                 'data-testid=publication-window-heading')
+                    if state['publication_window_error'] is not None:
+                        ui.label('Two-batch preparation is not currently verified. '
+                                 'No success can be inferred from an uncertain '
+                                 'worker response. Inspect the original saved '
+                                 'project before preparing anything else.').props(
+                                     'data-testid=publication-window-error')
+                    if state['publication_window_reinspect_required']:
+                        ui.label('RECOVERY REQUIRED: zero, one or two 64-record '
+                                 'batches may have committed. The previous '
+                                 'approval was consumed and MUST NOT be retried.').props(
+                                     'data-testid=publication-window-recovery')
+                        ui.button('Inspect durable source/identity counts '
+                                  'after interrupted preparation (READ-ONLY)',
+                                  on_click=lambda:
+                                      act('publication_window_inspect')).props(
+                                          'data-testid=publication-window-reinspect')
+                    else:
+                        window_offer=state['publication_window_offer']
+                        if window_offer is not None:
+                            ui.label('UNSENT original-source approval: ' +
+                                     str(window_offer['proposed_source_records']) +
+                                     ' review-required provisional identities in ' +
+                                     str(window_offer['batch_count']) +
+                                     ' separate commits of up to 64 each. ' +
+                                     'Currently unmaterialised originals: ' +
+                                     str(window_offer['unmaterialised_retrievals']) +
+                                     '. NO provider requests, verified unique '
+                                     'count or unattended processing.').props(
+                                         'data-testid=publication-window-preview')
+                            if window_offer['proposed_source_records'] > 0:
+                                author=ui.input('Researcher explicitly authorising '
+                                                'THIS finite original-source window',
+                                                value='')
+                                ui.button('CONFIRM this finite two-batch '
+                                          'publication preparation',
+                                          on_click=lambda field=author:
+                                              act('publication_window_confirm',
+                                                  field.value)).props(
+                                                      'data-testid=publication-window-confirm')
+                            else:
+                                ui.label('No unmaterialised originals remain '
+                                         'in this run. This does NOT indicate '
+                                         'completed deduplication.').props(
+                                             'data-testid=publication-window-no-work')
+                            ui.button('Dismiss two-batch offer without writing',
+                                      on_click=lambda:
+                                          act('publication_window_dismiss')).props(
+                                              'data-testid=publication-window-dismiss')
+                        else:
+                            ui.button('Preview up to 128 new provisional '
+                                      'identities in one finite consent window '
+                                      '(READ-ONLY)',
+                                      on_click=lambda:
+                                          act('publication_window_offer')).props(
+                                              'data-testid=publication-window-offer')
+                            ui.button('Inspect current unmaterialised originals '
+                                      '(READ-ONLY)',
+                                      on_click=lambda:
+                                          act('publication_window_inspect')).props(
+                                              'data-testid=publication-window-inspect')
+                    last_window=state['publication_window_last_outcome']
+                    if last_window is not None:
+                        ui.label('Last independently verified local two-batch '
+                                 'receipt: ' +
+                                 str(last_window['materialised_in_session']) +
+                                 ' independent provisional identities in ' +
+                                 str(last_window['committed_batches']) +
+                                 ' original transactions. Originals still '
+                                 'unmaterialised at receipt: ' +
+                                 str(last_window['unmaterialised_retrievals_remaining']) +
+                                 '. Verified unique publications: UNKNOWN.').props(
+                                     'data-testid=publication-window-outcome')
+                    inspected_window=state['publication_window_last_inspection']
+                    if inspected_window is not None:
+                        ui.label('Durable source records: ' +
+                                 str(inspected_window['source_records_retained']) +
+                                 '; remaining without publication identities: ' +
+                                 str(inspected_window['unmaterialised_retrievals']) +
+                                 '; current provisional publication hypotheses: ' +
+                                 str(inspected_window['existing_publication_hypotheses']) +
+                                 '. Inspection did NOT authorise any change.').props(
+                                     'data-testid=publication-window-inspection')
                     view = state['publication_page']
                     if view is None:
                         ui.label('No CURRENT results snapshot displayed. Choose '
