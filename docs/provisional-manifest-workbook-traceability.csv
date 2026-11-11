@@ -1,0 +1,12 @@
+requirement,implementation evidence,limitation
+EXPORT-01,src/research_y/provisional_manifest_workbook.py,PARTIAL: original source-to-provisional identity manifest is a separate preparatory workbook not the final Master Results worksheet
+EXPORT-03,tests/test_publication_results.py,PARTIAL: whole selected run source and query memberships retained with explicit no-filters and INCOMPLETE; filtered exports not implemented
+EXPORT-04,src/research_y/provisional_manifest_workbook.py,PARTIAL: literal cells and explicit row and 128 MiB output bounds; production Excel presentation and full export pending
+AUDIT-01,tests/test_publication_results.py,PARTIAL: source and membership identifiers remain linked and original audit projections unchanged; no new publication receipts
+DUP-01,tests/test_publication_results.py,PARTIAL: selected-run and historical-run originals remain distinguishable with no implicit deduplication
+COUNT-01,src/research_y/provisional_manifest_workbook.py,PARTIAL: original source/provisional identity denominators explicit and verified global unique count UNKNOWN
+AT-10,tests/test_publication_results.py,PARTIAL: multiple distinct original links and original memberships survive a confirmed cross-run match
+AT-18,tests/test_publication_results.py,PARTIAL: actual XLSX workbook structure tested on small original fixtures; full source-rights checked final export not implemented
+AT-19,src/research_y/provisional_manifest_workbook.py,PARTIAL: unmaterialised originals and INCOMPLETE status remain visible
+AT-21,tests/test_publication_results.py,PARTIAL: original byte integrity and corrupt metadata rejection; no complete archive/security acceptance
+AT-22,docs/PROVISIONAL_MANIFEST_WORKBOOK.md,NOT ACCEPTED: no 100k-row production GUI/export performance or combined memory evidence
