@@ -1,0 +1,116 @@
+name: Native and loopback 100k provisional-result browser evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-100k-results.yml'
+      - 'scripts/benchmark_original_project.py'
+      - 'tools/gui_feasibility/**'
+      - 'src/research_y/publication_materialisation_window.py'
+      - 'src/research_y/publication_run_materialisation.py'
+      - 'src/research_y/application_worker.py'
+      - 'src/research_y/application_commands.py'
+      - 'src/research_y/original_source_scope.py'
+      - 'docs/GUI_NATIVE_100K_RESULTS.md'
+      - 'tests/test_gui_native_100k_results.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-100k-results-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  finite-window-gui:
+    name: Real 100k-provisional-result browser ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Create isolated GUI test environment
+        shell: python
+        run: |
+          import os, pathlib, venv
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'researchy-window-native'
+          venv.EnvBuilder(with_pip=True, system_site_packages=False).create(root)
+          executable=root/('Scripts' if os.name=='nt' else 'bin')
+          with open(os.environ['GITHUB_PATH'],'a',encoding='utf-8') as stream:
+              stream.write(str(executable)+'\n')
+          pathlib.Path('.window-gui-evidence').mkdir()
+      - name: Resolve approved GUI dependency candidates
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --dry-run --ignore-installed --report .window-gui-evidence/resolution.json -r tools/gui_feasibility/requirements.txt
+      - name: Verify release archives and generate hash-bound dependency list
+        run: python scripts/gui_dependency_probe.py prepare --directory .window-gui-evidence
+      - name: Install exact verified GUI dependencies
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --require-hashes --report .window-gui-evidence/installation.json -r .window-gui-evidence/candidate-lock.txt
+      - name: Install existing project Excel testing extras
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --report .window-gui-evidence/excel-installation.json -e ".[excel]"
+      - name: Verify GUI dependency and project environment
+        run: python -m pip check
+      - name: Verify original and current GUI framework package pins
+        run: python -c "from importlib.metadata import version; assert version('nicegui')=='3.18.0' and version('pywebview')=='6.2.1' and version('openpyxl')=='3.1.5'"
+      - name: Real guarded local transport and two worker-commit scenarios
+        if: runner.os == 'Linux'
+        run: python -m tools.gui_feasibility.run_native_100k_results --directory .window-gui-evidence
+      - name: Actual native Windows finite-window button and recovery actions
+        if: runner.os == 'Windows'
+        run: python -m tools.gui_feasibility.run_native_100k_results --directory .window-gui-evidence --native
+      - name: Verify real 100000 provisional result rows and two distinct GUI pages
+        shell: python
+        run: |
+          import json,os
+          from pathlib import Path
+          data=json.loads(Path('.window-gui-evidence/original-gui-results-evidence.json').read_text(encoding='utf-8'))
+          assert data['method']=='original-project-native-100k-results/1'
+          assert data['passed'] is True
+          assert data['mode']==('native' if os.name=='nt' else 'transport')
+          c=data['case']
+          assert c['passed'] is True
+          assert c['original_sources']==100000
+          assert c['original_memberships']==100000
+          assert c['provisional_hypotheses']==100000
+          assert c['original_identity_audits']==100000
+          assert c['original_sources_unchanged'] is True
+          assert c['original_memberships_unchanged'] is True
+          assert c['post_gui_sqlite_intact'] is True
+          assert c['post_gui_sqlite_integrity_verified'] is True
+          assert c['post_gui_foreign_keys_verified'] is True
+          assert c['gui_two_distinct_20_row_pages'] is True
+          assert c['gui_bounded_original_source_detail'] is True
+          assert c['native_rendering_verified'] is (os.name=='nt')
+          assert c['fixture_preparation_elapsed_s'] > 0
+          assert c['gui_session_elapsed_s'] > 0
+          assert data['real_original_sqlite'] is True
+          assert data['real_application_worker'] is True
+          assert data['no_provider_network_requests'] is True
+          assert data['unattended_user_materialisation'] is False
+          assert data['synthetic_fixture_only_materialisation'] is True
+          assert data['global_unique_publications'] is None
+          assert data['deduplication_complete'] is False
+          assert data['source_retrieval_verified'] is False
+          assert data['verified_complete'] is False
+          assert data['native_desktop_installer_tested'] is False
+          assert data['full_AT_22_acceptance'] is False
+          print('Native provisional GUI browser:',data['mode'],'two 20-row pages')
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: original-100k-gui-results-${{ matrix.os }}-py312
+          path: |
+            .window-gui-evidence/original-gui-results-evidence.json
+            .window-gui-evidence/dependency-evidence.json
+            .window-gui-evidence/probe-error.json
+          retention-days: 21
+          if-no-files-found: warn
