@@ -330,7 +330,9 @@ def request_action(port, headers):
         conn.close()
 
 
-def transport_window_steps(port, auth, scenario, run_id):
+def transport_window_steps(port, auth, scenario, run_id, *,
+                           expected_pending=132, expected_remaining=4,
+                           expected_provisional=128):
     """Run fixed, authorized real GUI actions; no browser-supplied identifiers."""
     lost = scenario == 'publication_window_lost_reply'
     expected = ('open', 'select_run', 'publication_window_offer',
@@ -363,7 +365,7 @@ def transport_window_steps(port, auth, scenario, run_id):
             require(offer is not None and
                     offer['batch_sizes'] == [64, 64] and
                     offer['proposed_source_records'] == 128 and
-                    offer['unmaterialised_retrievals'] == 132 and
+                    offer['unmaterialised_retrievals'] == expected_pending and
                     offer['global_unique_publications'] is None,
                     'window_offer_not_bound_to_originals')
         if action == 'publication_window_confirm':
@@ -377,8 +379,8 @@ def transport_window_steps(port, auth, scenario, run_id):
         if action == 'publication_window_inspect':
             inspection = state['publication_window_last_inspection']
             require(inspection is not None and
-                    inspection['unmaterialised_retrievals'] == 4 and
-                    inspection['existing_publication_hypotheses'] == 128 and
+                    inspection['unmaterialised_retrievals'] == expected_remaining and
+                    inspection['existing_publication_hypotheses'] == expected_provisional and
                     'revision' not in inspection and
                     state['publication_window_offer'] is None and
                     state['publication_window_reinspect_required'] is False and
@@ -390,7 +392,9 @@ def transport_window_steps(port, auth, scenario, run_id):
     return observed
 
 
-def transport_steps(port, token, scenario, run_id, export_id):
+def transport_steps(port, token, scenario, run_id, export_id, *,
+                    expected_pending=132, expected_remaining=4,
+                    expected_provisional=128):
     origin = f'http://127.0.0.1:{port}'
     wait_until(lambda: reachable(port), timeout=40)
     require(request(port, '/')[0] == 403, 'unowned_page_access')
@@ -404,7 +408,10 @@ def transport_steps(port, token, scenario, run_id, export_id):
     auth = {'Origin': origin, 'Cookie': cookie}
     require(request(port, '/', headers=auth)[0] == 200, 'nicegui_page_missing')
     if scenario in ('publication_window', 'publication_window_lost_reply'):
-        return transport_window_steps(port, auth, scenario, run_id)
+        return transport_window_steps(
+            port, auth, scenario, run_id, expected_pending=expected_pending,
+            expected_remaining=expected_remaining,
+            expected_provisional=expected_provisional)
     expected = (('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
                 if scenario == 'publish' else
                 ('recent_open', 'select_run', 'select_export', 'observe')
@@ -503,7 +510,9 @@ def reachable(port):
         return False
 
 
-def run_app(mode, scenario, project, parent, run_id, expected_export):
+def run_app(mode, scenario, project, parent, run_id, expected_export, *,
+            expected_pending=132, expected_remaining=4,
+            expected_provisional=128):
     import secrets
     token, port = secrets.token_hex(32), free_port()
     result = {'mode': mode, 'scenario': scenario, 'passed': False}
@@ -518,6 +527,11 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                    RESEARCHY_GUI_EXPECTED_PROJECT_ID=str(project.identifier),
                    RESEARCHY_GUI_EXPECTED_RUN_ID=run_id,
                    RESEARCHY_GUI_EXPECTED_EXPORT_ID=expected_export or '')
+        if scenario in ('publication_window', 'publication_window_lost_reply'):
+            # Test-process-owned assertions, not browser-selectable controls.
+            # The 100k mode uses the exact same application operations.
+            env['RESEARCHY_GUI_TEST_EXPECTED_WINDOW_REMAINING'] = str(expected_remaining)
+            env['RESEARCHY_GUI_TEST_EXPECTED_WINDOW_PROVISIONAL'] = str(expected_provisional)
         marker = root / 'private-worker-stage-pid'
         owner_marker = root / 'private-gui-owner-pid'
         if scenario == 'worker_killed':
@@ -538,7 +552,11 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                         name='researchy-test-owned-worker-termination', daemon=True)
                     monitor.start()
                 if mode == 'transport':
-                    result['actions'] = transport_steps(port, token, scenario, run_id, expected_export)
+                    result['actions'] = transport_steps(
+                        port, token, scenario, run_id, expected_export,
+                        expected_pending=expected_pending,
+                        expected_remaining=expected_remaining,
+                        expected_provisional=expected_provisional)
                 process.wait(timeout=NATIVE_SCENARIO_TIMEOUT if mode == 'native' else 120)
                 require(process.returncode == 0, 'real_gui_child_failed')
                 report_path = app_dir / 'app-result.json'
@@ -563,7 +581,7 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                         report['real_services'] is True and
                         report['source_retrieval_verified'] is False and
                         report['selected_run_matches'] is True and
-                        report['window_remaining'] == 4 and
+                        report['window_remaining'] == expected_remaining and
                         report['window_confirmed'] is (not lost) and
                         report['window_uncertain_error_observed'] is lost and
                         report['window_recovery_required'] is False and
