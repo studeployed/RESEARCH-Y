@@ -13,7 +13,7 @@ import sqlite3
 from uuid import UUID
 
 OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_run',
-                        'publication_page', 'publication_detail',
+                        'publication_page', 'publication_detail', 'publication_page_detail',
                         'publication_materialisation_preview', 'publication_materialisation_confirm',
                         'publication_window_preview', 'publication_window_confirm',
                         'candidate_review_preview', 'candidate_review_decide',
@@ -415,7 +415,7 @@ class ApplicationCommand:
                           self.candidate_move_id is not None or
                           self.candidate_warnings_acknowledged is not None):
                         raise ValueError
-            if self.operation in ('publication_page', 'publication_detail',
+            if self.operation in ('publication_page', 'publication_detail', 'publication_page_detail',
                     'publication_materialisation_preview', 'publication_materialisation_confirm',
                     'publication_window_preview', 'publication_window_confirm'):
                 if (self.run_id is None or self.export_id is not None or
@@ -436,10 +436,17 @@ class ApplicationCommand:
                             len(digest) != 64 or
                             any(c not in '0123456789abcdef' for c in digest)):
                         raise ValueError
-                elif self.operation == 'publication_detail':
+                elif self.operation in ('publication_detail', 'publication_page_detail'):
                     _uuid(self.publication_view_id)
-                    if (self.publication_view_cursor is not None or
-                            self.publication_actor is not None or
+                    # Combined detail revalidates the exact prior 20-row page.
+                    # A cursor is allowed ONLY for that read-only operation.
+                    if (self.operation == 'publication_detail' and
+                            self.publication_view_cursor is not None):
+                        raise ValueError
+                    if self.operation == 'publication_page_detail' and (
+                            self.publication_view_cursor is not None):
+                        _uuid(self.publication_view_cursor)
+                    if (self.publication_actor is not None or
                             self.publication_confirmed is not None):
                         raise ValueError
                     digest = self.publication_view_revision
@@ -730,7 +737,7 @@ class ApplicationCommand:
                 pass  # Exact source-pair cursor; no provider/export authority.
             elif self.operation in candidate_ops:
                 pass  # All source IDs and evidence-bound decisions validated above.
-            elif self.operation in ('publication_page', 'publication_detail',
+            elif self.operation in ('publication_page', 'publication_detail', 'publication_page_detail',
                     'publication_materialisation_preview', 'publication_materialisation_confirm',
                     'publication_window_preview', 'publication_window_confirm'):
                 pass  # Validated above; no provider request or export authority.
@@ -767,7 +774,7 @@ class ApplicationCommand:
                 raise ValueError
             if self.operation not in candidate_ops and any(v is not None for v in candidate_fields):
                 raise ValueError
-            if self.operation not in ('publication_page', 'publication_detail',
+            if self.operation not in ('publication_page', 'publication_detail', 'publication_page_detail',
                     'publication_materialisation_preview', 'publication_materialisation_confirm',
                     'publication_window_preview', 'publication_window_confirm') and any(
                     value is not None for value in publication_fields):
@@ -923,13 +930,19 @@ def execute_command(command: ApplicationCommand) -> dict:
                     confirmed=command.candidate_confirmed)
             except candidate.PublicationReviewError as exc:
                 raise ApplicationCommandError(exc.code) from None
-        if command.operation in ('publication_page', 'publication_detail'):
+        if command.operation in ('publication_page', 'publication_detail', 'publication_page_detail'):
             from research_y.publication_results import (
-                read_publication_page, read_publication_detail, PublicationViewError)
+                read_publication_page, read_publication_detail,
+                read_publication_page_detail, PublicationViewError)
             try:
                 if command.operation == 'publication_page':
                     return read_publication_page(
                         project, command.run_id,
+                        after_publication_id=command.publication_view_cursor,
+                        expected_revision=command.publication_view_revision)
+                if command.operation == 'publication_page_detail':
+                    return read_publication_page_detail(
+                        project, command.run_id, command.publication_view_id,
                         after_publication_id=command.publication_view_cursor,
                         expected_revision=command.publication_view_revision)
                 return read_publication_detail(

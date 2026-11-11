@@ -150,14 +150,129 @@ def _checked(db, project, run_id, revision):
     return projection
 
 
+def _page_from_checked(db, project, run_id, counts, after_publication_id):
+    """Render one original source-backed page from a single verified snapshot.
+
+    The caller validates identifiers and SHA-256 revision; no second full run
+    projection, database connection, implicit merge or provider call occurs.
+    """
+    if after_publication_id is not None:
+        prior = db.execute(
+            "SELECT 1 FROM publication_retrievals l "
+            "JOIN source_retrievals r ON r.retrieval_id=l.retrieval_id "
+            "WHERE r.run_id=? AND l.publication_id=? LIMIT 1",
+            (run_id, after_publication_id),
+        ).fetchone()
+        if prior is None:
+            raise PublicationViewError("publication_view_stale")
+    ids = [row[0] for row in db.execute(
+        "SELECT DISTINCT l.publication_id FROM publication_retrievals l "
+        "JOIN source_retrievals r ON r.retrieval_id=l.retrieval_id "
+        "WHERE r.run_id=? AND (? IS NULL OR l.publication_id>?) "
+        "ORDER BY l.publication_id LIMIT ?",
+        (run_id, after_publication_id, after_publication_id, PAGE_SIZE + 1),
+    )]
+    has_more = len(ids) > PAGE_SIZE
+    page_ids = ids[:PAGE_SIZE]
+    groups = {g["group_id"]: g["label"] for g in counts.groups}
+    rows = [_summary(identity._snapshot(db, pub_id), run_id, groups)
+            for pub_id in page_ids]
+    return dict(
+        method=METHOD, project_id=str(project.identifier), run_id=run_id,
+        revision=counts.revision, rows=rows, page_size=PAGE_SIZE,
+        after_publication_id=after_publication_id,
+        next_after_publication_id=page_ids[-1] if has_more else None,
+        has_more=has_more,
+        provisional_publication_identities=counts.totals["global_publication_identities"],
+        unmaterialised_source_records=counts.totals["unmaterialised_retrievals"],
+        retrieved_source_records=counts.totals["metadata_source_records"],
+        global_unique_publications=None, deduplication_complete=False,
+        source_retrieval_verified=False, verified_complete=False,
+        no_network_requests=True,
+        warnings=["provisional_publication_identities_not_deduplicated",
+                  "source_and_group_memberships_are_not_final_eligibility",
+                  "local_source_titles_are_not_redistribution_permissions"],
+    )
+
+
+def _detail_from_checked(db, project, run_id, counts, publication_id):
+    """Render the original citation-only detail in the caller's snapshot."""
+    snapshot = identity._snapshot(db, publication_id)
+    groups = {g["group_id"]: g["label"] for g in counts.groups}
+    summary = _summary(snapshot, run_id, groups)
+    retrievals = []
+    for source in snapshot.retrievals:
+        projected = project_source(source)
+        fields = []
+        for name in DETAIL_FIELDS:
+            original = projected["fields"][name]
+            display = _value(original)
+            fields.append(dict(
+                field=name, source_path=original["path"],
+                status=display["status"], value=display["value"],
+            ))
+        metadata = source["original_metadata"]
+        record = metadata.get("record") if isinstance(metadata.get("record"), dict) else {}
+        abstract_state = record.get("abstract_status", metadata.get("abstract_status"))
+        if type(abstract_state) is not str or abstract_state not in ABSTRACT_STATES:
+            abstract_state = "not_recorded_or_malformed"
+        rights = metadata.get("rights_status")
+        if type(rights) is not str or rights not in RIGHTS_STATES:
+            rights = ("abstract_redistribution_review_required"
+                      if metadata.get("rights_review_required_for_abstract_redistribution") is True
+                      else "rights_not_verified")
+        memberships = [
+            dict(group_id=m["group_id"], group_label=groups.get(m["group_id"], m["group_id"]),
+                 source_name=m["source_name"], query_status=m["status"],
+                 parent_run_status=m["run_status"],
+                 reported_matches=m["reported_matches"])
+            for m in source["memberships"] if m["run_id"] == run_id
+        ]
+        retrievals.append(dict(
+            retrieval_id=source["retrieval_id"],
+            run_id=source["run_id"],
+            source_name=source["source_name"],
+            source_record_id=source["source_record_id"],
+            decision_status=source["decision"]["status"],
+            included_in_selected_run=source["run_id"] == run_id,
+            memberships=memberships,
+            abstract_status=abstract_state,
+            rights_status=rights,
+            comparison_warnings=projected["warnings"],
+            fields=fields,
+        ))
+    chosen = []
+    suppressed = []
+    for field, record in sorted(snapshot.chosen_fields.items()):
+        # Field names alone are not a licence or a source-field type:
+        # a user can save 'title' pointing at abstract text. Validate
+        # the exact canonical citation path before emitting bytes.
+        if _citation_chosen_source(snapshot, field) is None:
+            suppressed.append(dict(
+                field=field, reason="not_permitted_citation_source_path"))
+            continue
+        display = _value(dict(status="present", value=record["value"]))
+        event = record["provenance"]
+        chosen.append(dict(field=field, status=display["status"],
+                           value=display["value"],
+                           retrieval_id=event["retrieval_id"],
+                           source_path=event["path"], event_id=record["event_id"]))
+    return dict(
+        method=METHOD, project_id=str(project.identifier), run_id=run_id,
+        revision=counts.revision, publication=summary,
+        chosen_source_fields=chosen, suppressed_chosen_fields=suppressed,
+        source_retrievals=retrievals,
+        abstract_text_displayed=False,
+        redistribution_permission_established=False,
+        global_unique_publications=None, deduplication_complete=False,
+        source_retrieval_verified=False, verified_complete=False,
+        no_network_requests=True,
+    )
+
+
 def read_publication_page(project, run_id: str, *, after_publication_id: str | None = None,
                           expected_revision: str | None = None) -> dict:
-    """A cursor-bounded page from the run's CURRENT provisional identity union.
-
-    The supplied SHA-256 revision binds navigation to the same count/source/
-    identity evidence. A changed source, group, identity or decision requires
-    refreshing from the first page. Keyset paging avoids large SQL OFFSETs.
-    """
+    """Read one revision-bound provisional page; never infer unique publications."""
     try:
         identity._identifier(run_id)
         _revision(expected_revision, optional=True)
@@ -167,43 +282,7 @@ def read_publication_page(project, run_id: str, *, after_publication_id: str | N
             identity._identifier(after_publication_id)
         with _read(project) as db:
             counts = _checked(db, project, run_id, expected_revision)
-            if after_publication_id is not None:
-                prior = db.execute(
-                    "SELECT 1 FROM publication_retrievals l "
-                    "JOIN source_retrievals r ON r.retrieval_id=l.retrieval_id "
-                    "WHERE r.run_id=? AND l.publication_id=? LIMIT 1",
-                    (run_id, after_publication_id),
-                ).fetchone()
-                if prior is None:
-                    raise PublicationViewError("publication_view_stale")
-            ids = [row[0] for row in db.execute(
-                "SELECT DISTINCT l.publication_id FROM publication_retrievals l "
-                "JOIN source_retrievals r ON r.retrieval_id=l.retrieval_id "
-                "WHERE r.run_id=? AND (? IS NULL OR l.publication_id>?) "
-                "ORDER BY l.publication_id LIMIT ?",
-                (run_id, after_publication_id, after_publication_id, PAGE_SIZE + 1),
-            )]
-            has_more = len(ids) > PAGE_SIZE
-            page_ids = ids[:PAGE_SIZE]
-            groups = {g["group_id"]: g["label"] for g in counts.groups}
-            rows = [_summary(identity._snapshot(db, pub_id), run_id, groups)
-                    for pub_id in page_ids]
-            return dict(
-                method=METHOD, project_id=str(project.identifier), run_id=run_id,
-                revision=counts.revision, rows=rows, page_size=PAGE_SIZE,
-                after_publication_id=after_publication_id,
-                next_after_publication_id=page_ids[-1] if has_more else None,
-                has_more=has_more,
-                provisional_publication_identities=counts.totals["global_publication_identities"],
-                unmaterialised_source_records=counts.totals["unmaterialised_retrievals"],
-                retrieved_source_records=counts.totals["metadata_source_records"],
-                global_unique_publications=None, deduplication_complete=False,
-                source_retrieval_verified=False, verified_complete=False,
-                no_network_requests=True,
-                warnings=["provisional_publication_identities_not_deduplicated",
-                          "source_and_group_memberships_are_not_final_eligibility",
-                          "local_source_titles_are_not_redistribution_permissions"],
-            )
+            return _page_from_checked(db, project, run_id, counts, after_publication_id)
     except PublicationViewError:
         raise
     except Exception:
@@ -212,87 +291,51 @@ def read_publication_page(project, run_id: str, *, after_publication_id: str | N
 
 def read_publication_detail(project, run_id: str, publication_id: str, *,
                             expected_revision: str) -> dict:
-    """A reviewable bounded local citation/detail view; no abstract export.
-
-    Original values, presence/absence and source paths are shown separately.
-    A researcher-selected field is never mistaken for consensus among sources.
-    """
+    """Revalidate the complete original run before displaying citation detail."""
     try:
         identity._identifier(run_id)
         identity._identifier(publication_id)
         _revision(expected_revision)
         with _read(project) as db:
             counts = _checked(db, project, run_id, expected_revision)
-            snapshot = identity._snapshot(db, publication_id)
-            groups = {g["group_id"]: g["label"] for g in counts.groups}
-            summary = _summary(snapshot, run_id, groups)
-            retrievals = []
-            for source in snapshot.retrievals:
-                projected = project_source(source)
-                fields = []
-                for name in DETAIL_FIELDS:
-                    original = projected["fields"][name]
-                    display = _value(original)
-                    fields.append(dict(
-                        field=name, source_path=original["path"],
-                        status=display["status"], value=display["value"],
-                    ))
-                metadata = source["original_metadata"]
-                record = metadata.get("record") if isinstance(metadata.get("record"), dict) else {}
-                abstract_state = record.get("abstract_status", metadata.get("abstract_status"))
-                if type(abstract_state) is not str or abstract_state not in ABSTRACT_STATES:
-                    abstract_state = "not_recorded_or_malformed"
-                rights = metadata.get("rights_status")
-                if type(rights) is not str or rights not in RIGHTS_STATES:
-                    rights = ("abstract_redistribution_review_required"
-                              if metadata.get("rights_review_required_for_abstract_redistribution") is True
-                              else "rights_not_verified")
-                memberships = [
-                    dict(group_id=m["group_id"], group_label=groups.get(m["group_id"], m["group_id"]),
-                         source_name=m["source_name"], query_status=m["status"],
-                         parent_run_status=m["run_status"],
-                         reported_matches=m["reported_matches"])
-                    for m in source["memberships"] if m["run_id"] == run_id
-                ]
-                retrievals.append(dict(
-                    retrieval_id=source["retrieval_id"],
-                    run_id=source["run_id"],
-                    source_name=source["source_name"],
-                    source_record_id=source["source_record_id"],
-                    decision_status=source["decision"]["status"],
-                    included_in_selected_run=source["run_id"] == run_id,
-                    memberships=memberships,
-                    abstract_status=abstract_state,
-                    rights_status=rights,
-                    comparison_warnings=projected["warnings"],
-                    fields=fields,
-                ))
-            chosen = []
-            suppressed = []
-            for field, record in sorted(snapshot.chosen_fields.items()):
-                # Field names alone are not a licence or a source-field type:
-                # a user can save 'title' pointing at abstract text. Validate
-                # the exact canonical citation path before emitting bytes.
-                if _citation_chosen_source(snapshot, field) is None:
-                    suppressed.append(dict(
-                        field=field, reason="not_permitted_citation_source_path"))
-                    continue
-                display = _value(dict(status="present", value=record["value"]))
-                event = record["provenance"]
-                chosen.append(dict(field=field, status=display["status"],
-                                   value=display["value"],
-                                   retrieval_id=event["retrieval_id"],
-                                   source_path=event["path"], event_id=record["event_id"]))
+            return _detail_from_checked(db, project, run_id, counts, publication_id)
+    except PublicationViewError:
+        raise
+    except Exception:
+        raise PublicationViewError() from None
+
+
+def read_publication_page_detail(project, run_id: str, publication_id: str, *,
+                                 after_publication_id: str | None,
+                                 expected_revision: str) -> dict:
+    """Atomically recheck the shown page AND its selected citation-only detail.
+
+    One full source/identity/count validation is performed inside a single
+    original read-only SQLite transaction. The publication must be on the
+    validated 20-row page, including the same keyset cursor and revision.
+    No cached count, unverified source, browser-supplied SQL or write is used.
+    """
+    try:
+        identity._identifier(run_id)
+        identity._identifier(publication_id)
+        _revision(expected_revision)
+        if after_publication_id is not None:
+            identity._identifier(after_publication_id)
+        with _read(project) as db:
+            counts = _checked(db, project, run_id, expected_revision)
+            page = _page_from_checked(db, project, run_id, counts, after_publication_id)
+            if not any(row["publication_id"] == publication_id for row in page["rows"]):
+                raise PublicationViewError("publication_view_stale")
+            detail = _detail_from_checked(db, project, run_id, counts, publication_id)
+            if detail["revision"] != page["revision"]:
+                raise PublicationViewError("publication_view_stale")
             return dict(
-                method=METHOD, project_id=str(project.identifier), run_id=run_id,
-                revision=counts.revision, publication=summary,
-                chosen_source_fields=chosen, suppressed_chosen_fields=suppressed,
-                source_retrievals=retrievals,
-                abstract_text_displayed=False,
-                redistribution_permission_established=False,
-                global_unique_publications=None, deduplication_complete=False,
-                source_retrieval_verified=False, verified_complete=False,
-                no_network_requests=True,
+                method="provisional-publication-page-detail/1",
+                project_id=str(project.identifier), run_id=run_id,
+                revision=counts.revision, page=page, detail=detail,
+                source_retrieval_verified=False,
+                deduplication_complete=False, verified_complete=False,
+                global_unique_publications=None, no_network_requests=True,
             )
     except PublicationViewError:
         raise

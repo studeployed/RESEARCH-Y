@@ -2124,17 +2124,36 @@ class RealProjectFlow:
             try:
                 # A stale display is never an authorisation to inspect another
                 # identity after a concurrent review/source status change.
-                fresh = self._operation('publication_page',
+                # One original read-only SQLite snapshot validates the
+                # displayed page AND its requested source detail. Previously,
+                # two independent full-run count projections were repeated on
+                # every click; neither projection was cached or reusable.
+                combined = self._operation('publication_page_detail',
                     run_id=self.selected_run_id,
                     publication_view_cursor=current['after_publication_id'],
+                    publication_view_id=publication_id,
                     publication_view_revision=revision)
-                if (fresh.get('revision') != revision or
+                if (type(combined) is not dict or
+                        combined.get('method') != 'provisional-publication-page-detail/1' or
+                        combined.get('project_id') != str(self.project.identifier) or
+                        combined.get('run_id') != self.selected_run_id or
+                        combined.get('revision') != revision or
+                        combined.get('no_network_requests') is not True or
+                        combined.get('global_unique_publications') is not None or
+                        combined.get('source_retrieval_verified') is not False or
+                        combined.get('deduplication_complete') is not False or
+                        combined.get('verified_complete') is not False):
+                    raise ProjectFlowError('publication_view_invalid')
+                fresh = combined.get('page')
+                detail = combined.get('detail')
+                if (type(fresh) is not dict or
+                        fresh.get('revision') != revision or
+                        fresh.get('after_publication_id') != current['after_publication_id'] or
                         fresh.get('rows') != current['rows'] or
-                        fresh.get('no_network_requests') is not True):
+                        fresh.get('no_network_requests') is not True or
+                        fresh.get('deduplication_complete') is not False or
+                        fresh.get('global_unique_publications') is not None):
                     raise ProjectFlowError('publication_view_stale')
-                detail = self._operation('publication_detail',
-                    run_id=self.selected_run_id, publication_view_id=publication_id,
-                    publication_view_revision=revision)
                 if (type(detail) is not dict or detail.get('run_id') != self.selected_run_id or
                         detail.get('project_id') != str(self.project.identifier) or
                         detail.get('revision') != revision or

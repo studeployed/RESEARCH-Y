@@ -1,0 +1,9 @@
+requirement,increment evidence,implementation status or limitation
+UI-07,src/research_y/publication_results.py,PARTIAL: combined original verified page and detail read; full interactive filtering/search not yet accepted
+UI-08,tools/gui_feasibility/real_project_flow.py,PARTIAL: original-source citation-only detail from same SQLite transaction with previous displayed page rechecked
+DATA-04,tests/test_publication_results.py,PARTIAL: original chosen/provenance field bytes preserved by shared render logic; no new metadata inference
+DUP-01,src/research_y/publication_results.py,PARTIAL: provisional identity provenance retained; no automatic merge or final unique count
+AT-09,tests/test_publication_results.py,PARTIAL: stale revision and changed source-status refusal; not full interrupted retrieval scenario
+AT-19,tests/test_publication_results.py,PARTIAL: source_retrieval_verified false and global_unique_publications null
+AT-21,src/research_y/application_commands.py,PARTIAL: strict read-only command authorisation/field allowlist; no full release security gate
+AT-22,docs/GUI_SINGLE_SNAPSHOT_DETAIL.md,PARTIAL: removes repeated whole-run scan for detail operation; further native GUI benchmark and user-level acceptance outstanding
