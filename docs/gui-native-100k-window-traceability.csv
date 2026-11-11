@@ -1,0 +1,10 @@
+requirement,increment evidence,implementation status or limitation
+AT-22,.github/workflows/native-100k-window.yml,PARTIAL: original 100000 source row native GUI 128-window only; not full interface acceptance or usability
+AT-09,tools/gui_feasibility/run_materialisation_window.py,PARTIAL: durable original SQLite reinspection and reply-loss after actual commits; no full acquisition recovery
+AT-10,tools/gui_feasibility/run_materialisation_window.py,PARTIAL: distinct provisional links only; no confirmed deduplicated master publication union
+AT-17,tests/test_gui_native_100k_window.py,PARTIAL: original audits and immutable materialisation receipts; not full repeated-search acceptance
+AT-19,tests/test_gui_native_100k_window.py,PARTIAL: missing verification remains unknown; false zero remaining rejected
+AT-21,tools/gui_feasibility/run_real_project.py,PARTIAL: bound-only evidence and non-browser fixture assertions; not full security acceptance
+UI-05,tools/gui_feasibility/real_project_app.py,PARTIAL: experimental finite worker recovery UI on 100k originals; not full execution monitor
+UI-07,docs/GUI_NATIVE_100K_WINDOW.md,PARTIAL: actual GUI does not paint or paginate 100k publication rows
+DUP-01,tools/gui_feasibility/run_materialisation_window.py,PARTIAL: 256 independent hypotheses; no final merge or deduplicated denominator
