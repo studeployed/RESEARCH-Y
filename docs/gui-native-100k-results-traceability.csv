@@ -1,0 +1,8 @@
+requirement,increment evidence,implementation status or limitation
+AT-22,.github/workflows/native-100k-results.yml,PARTIAL: actual 100k original publication-linked read-only GUI navigation; no full UI acceptance or usability guarantee
+UI-07,tools/gui_feasibility/real_project_app.py,PARTIAL: first/second actual native 20-row provisional results pages; full filters and search absent
+UI-08,tools/gui_feasibility/real_project_app.py,PARTIAL: actual native citation-only original-source detail and rights/status; complete clinical metadata display absent
+DUP-01,tools/gui_feasibility/run_native_100k_results.py,PARTIAL: 100k independent original provisional identities not verified unique publications
+AT-10,tools/gui_feasibility/run_native_100k_results.py,PARTIAL: source/provenance preserved but no full deduplication acceptance
+AT-19,tests/test_gui_native_100k_results.py,PARTIAL: rejects invented unique count and false completeness in browse response
+AT-21,tools/gui_feasibility/run_real_project.py,PARTIAL: browser supplies no fixture size path publication cursor or source IDs for test transport

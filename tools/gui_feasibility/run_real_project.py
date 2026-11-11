@@ -398,9 +398,101 @@ def transport_window_steps(port, auth, scenario, run_id, *,
     return observed
 
 
+def transport_results_steps(port, auth, run_id, expected_results):
+    """Validate two genuinely distinct current 20-row pages and original detail.
+
+    This test-only HTTP route runs fixed host-authored actions. It accepts no
+    cursor, source ID, run, path or selection from the HTTP request.
+    """
+    sequence = ("open", "select_run", "publication_refresh",
+                "publication_next", "publication_detail")
+    original_ids = None
+    original_cursor = None
+    original_revision = None
+    detail_id = None
+    observed = []
+    for action in sequence:
+        status, _, payload = request_action(port, auth)
+        require(status == 200, "results_action_http_failed")
+        received = json.loads(payload)
+        error = received.get("error")
+        safe_error = (error if type(error) is str and len(error) <= 64 and
+                      error.replace("_", "").isalnum() else "unknown")
+        require(error is None, "results_action_" + action + "_" + safe_error)
+        state = received["state"]
+        require(state["source_retrieval_verified"] is False,
+                "results_falsely_verified")
+        if action == "open":
+            require(state["selected_run_id"] is None,
+                    "results_implicitly_selected_run")
+        elif action == "select_run":
+            require(state["selected_run_id"] == run_id,
+                    "results_wrong_selected_run")
+        elif action in ("publication_refresh", "publication_next"):
+            page = state["publication_page"]
+            require(page is not None and
+                    page["run_id"] == run_id and
+                    page["provisional_publication_identities"] == expected_results and
+                    page["retrieved_source_records"] == expected_results and
+                    page["unmaterialised_source_records"] == 0 and
+                    page["global_unique_publications"] is None and
+                    page["deduplication_complete"] is False and
+                    page["source_retrieval_verified"] is False and
+                    page["verified_complete"] is False and
+                    page["page_size"] == 20 and
+                    len(page["rows"]) == 20 and
+                    page["has_more"] is True and
+                    page["next_after_publication_id"] is not None and
+                    page["no_network_requests"] is True,
+                    "results_page_scope_invalid")
+            ids = [row["publication_id"] for row in page["rows"]]
+            require(len(set(ids)) == 20 and
+                    all(row["publication_identity_verified"] is False and
+                        row["identity_status"] == "provisional_review_required" and
+                        row["original_source_records_in_run"] == 1 and
+                        row["additional_source_records_in_other_runs"] == 0
+                        for row in page["rows"]),
+                    "results_page_identity_invalid")
+            if action == "publication_refresh":
+                require(page["after_publication_id"] is None,
+                        "results_first_cursor_not_empty")
+                original_ids = set(ids)
+                original_cursor = page["next_after_publication_id"]
+                original_revision = page["revision"]
+            else:
+                require(page["after_publication_id"] == original_cursor and
+                        page["revision"] == original_revision and
+                        original_ids.isdisjoint(ids) and
+                        ids == sorted(ids),
+                        "results_keyset_page_repeated_or_stale")
+                detail_id = ids[0]
+        elif action == "publication_detail":
+            page = state["publication_page"]
+            detail = state["publication_detail"]
+            require(page is not None and detail is not None and
+                    page["revision"] == original_revision and
+                    detail["revision"] == original_revision and
+                    detail["publication"]["publication_id"] == detail_id and
+                    detail["run_id"] == run_id and
+                    detail["abstract_text_displayed"] is False and
+                    detail["redistribution_permission_established"] is False and
+                    detail["global_unique_publications"] is None and
+                    detail["deduplication_complete"] is False and
+                    detail["source_retrieval_verified"] is False and
+                    detail["verified_complete"] is False and
+                    detail["no_network_requests"] is True and
+                    len(detail["source_retrievals"]) == 1 and
+                    detail["source_retrievals"][0]["included_in_selected_run"] is True,
+                    "results_source_detail_invalid")
+        observed.append(action)
+    require(request(port, "/_probe/stop", method="POST", headers=auth)[0] == 200,
+            "results_stop_failed")
+    return observed
+
+
 def transport_steps(port, token, scenario, run_id, export_id, *,
                     expected_pending=132, expected_remaining=4,
-                    expected_provisional=128):
+                    expected_provisional=128, expected_results=100000):
     origin = f'http://127.0.0.1:{port}'
     wait_until(lambda: reachable(port), timeout=40)
     require(request(port, '/')[0] == 403, 'unowned_page_access')
@@ -413,6 +505,8 @@ def transport_steps(port, token, scenario, run_id, export_id, *,
                   if key.lower() == 'set-cookie').split(';', 1)[0]
     auth = {'Origin': origin, 'Cookie': cookie}
     require(request(port, '/', headers=auth)[0] == 200, 'nicegui_page_missing')
+    if scenario == "publication_results_large":
+        return transport_results_steps(port, auth, run_id, expected_results)
     if scenario in ('publication_window', 'publication_window_lost_reply'):
         return transport_window_steps(
             port, auth, scenario, run_id, expected_pending=expected_pending,
@@ -518,7 +612,7 @@ def reachable(port):
 
 def run_app(mode, scenario, project, parent, run_id, expected_export, *,
             expected_pending=132, expected_remaining=4,
-            expected_provisional=128):
+            expected_provisional=128, expected_results=100000):
     import secrets
     token, port = secrets.token_hex(32), free_port()
     result = {'mode': mode, 'scenario': scenario, 'passed': False}
@@ -562,8 +656,11 @@ def run_app(mode, scenario, project, parent, run_id, expected_export, *,
                         port, token, scenario, run_id, expected_export,
                         expected_pending=expected_pending,
                         expected_remaining=expected_remaining,
-                        expected_provisional=expected_provisional)
-                process.wait(timeout=NATIVE_SCENARIO_TIMEOUT if mode == 'native' else 120)
+                        expected_provisional=expected_provisional,
+                        expected_results=expected_results)
+                process.wait(timeout=(
+                    NATIVE_SCENARIO_TIMEOUT if mode == 'native' or
+                    scenario == 'publication_results_large' else 120))
                 require(process.returncode == 0, 'real_gui_child_failed')
                 report_path = app_dir / 'app-result.json'
                 require(report_path.is_file(), 'missing_real_gui_report')
@@ -580,7 +677,39 @@ def run_app(mode, scenario, project, parent, run_id, expected_export, *,
                 result['observed_worker_reaped'] = report.get('worker_reaped')
                 result['observed_supervisor_stopped'] = report.get('supervisor_stopped')
                 result['observed_outcome'] = report.get('observed_outcome')
-                if scenario in ('publication_window', 'publication_window_lost_reply'):
+                if scenario == 'publication_results_large':
+                    expected_actions = [
+                        'open', 'select_run', 'publication_refresh',
+                        'publication_next', 'publication_detail']
+                    require(
+                        report['status'] == 'finished' and
+                        report['real_services'] is True and
+                        report['source_retrieval_verified'] is False and
+                        report['selected_run_matches'] is True and
+                        report['results_page_rows'] == 20 and
+                        report['results_provisional_count'] == expected_results and
+                        report['results_unmaterialised'] == 0 and
+                        report['results_detail_open'] is True and
+                        report['results_paging_verified'] is True and
+                        report['actions'] == expected_actions and
+                        report['error'] is None and
+                        report['session_revoked'] is True and
+                        report['worker_reaped'] is True and
+                        report['supervisor_stopped'] is True and
+                        report['project_id'] == str(project.identifier),
+                        'results_original_gui_evidence_not_accepted')
+                    if mode == 'native':
+                        require(report.get('native_rendering_verified') is True,
+                                'results_native_rendering_missing')
+                    result.update(
+                        passed=True, results_paging_verified=True,
+                        results_detail_verified=True,
+                        native_rendering_verified=bool(
+                            report.get('native_rendering_verified', False)))
+                    with socket.socket() as sock:
+                        require(sock.connect_ex(('127.0.0.1', port)) != 0,
+                                'results_listener_not_closed')
+                elif scenario in ('publication_window', 'publication_window_lost_reply'):
                     lost = scenario == 'publication_window_lost_reply'
                     require(
                         report['status'] == 'finished' and
