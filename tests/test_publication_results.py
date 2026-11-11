@@ -528,3 +528,152 @@ def test_single_snapshot_command_rejects_unapproved_actor_and_bogus_cursor(fixtu
                 project, "publication_page_detail", run_id=run,
                 publication_view_id=pub_id,
                 publication_view_revision=page["revision"], **extra)
+
+
+
+def test_full_original_provisional_manifest_xlsx_preserves_unlinked_scope(fixture):
+    """Original workbook lists every current run source without metadata export."""
+    from io import BytesIO
+    from zipfile import ZipFile
+    from openpyxl import load_workbook
+    from research_y import result_counts
+    from research_y.provisional_manifest_workbook import render_provisional_manifest
+
+    project, run, other, _ = fixture
+    linked = insert(fixture, number=100, title="PRIVATE TITLE =SCARY",
+                    groups=("g1", "g2"), abstract="SECRET ABSTRACT")
+    unlinked = insert(fixture, source="wos", number=201, groups=("g2",))
+    outside = insert(fixture, source="wos", number=301, run=other)
+    original = identity.materialise_retrieval(project, linked, actor="Fixture")
+    identity.materialise_retrieval(project, outside, actor="Fixture")
+    before = sha256(project.database_path.read_bytes()).hexdigest()
+    original_counts = result_counts.read_run_counts(project, run)
+    raw = render_provisional_manifest(open_project(project.root), run)
+    assert raw.startswith(b"PK")
+    assert sha256(project.database_path.read_bytes()).hexdigest() == before
+    with ZipFile(BytesIO(raw)) as zipped:
+        text = "\n".join(
+            zipped.read(name).decode("utf-8") for name in zipped.namelist()
+            if name.startswith("xl/worksheets/") or
+               name.startswith("xl/sharedStrings"))
+        assert "PRIVATE TITLE =SCARY" not in text
+        assert "SECRET ABSTRACT" not in text
+        assert "10.1234/same-container" not in text
+        assert "WOS:201" not in text
+    wb = load_workbook(BytesIO(raw), read_only=True, data_only=False)
+    try:
+        assert wb.sheetnames == [
+            "Evidence & Limits", "Provisional Identities",
+            "Original Source Links", "Query Memberships"]
+        facts = dict((row[0], row[1]) for row in list(
+            wb["Evidence & Limits"].values)[3:])
+        assert facts["Selected run ID"] == run
+        assert facts["Original count revision (SHA-256)"] == original_counts.revision
+        assert facts["Verified unique publications"] == "UNKNOWN"
+        assert facts["Report status"] == "INCOMPLETE"
+        assert facts["Unmaterialised original run source records"] == 1
+        assert facts["Provisional publication identities in run"] == 1
+        pubs = list(wb["Provisional Identities"].values)[3:]
+        assert len(pubs) == 1
+        assert pubs[0][0] == original.publication_id
+        assert pubs[0][1:6] == (1, 0, 0, 1, 2)
+        source_rows = list(wb["Original Source Links"].values)[3:]
+        assert len(source_rows) == 2
+        assert {r[0] for r in source_rows} == {linked, unlinked}
+        assert {r[3] for r in source_rows} == {original.publication_id, "Unknown"}
+        assert next(r for r in source_rows if r[0] == unlinked)[5].startswith(
+            "UNMATERIALISED")
+        members = list(wb["Query Memberships"].values)[3:]
+        assert len(members) == 3
+        assert {(row[0], row[3]) for row in members} == {
+            (linked, "g1"), (linked, "g2"), (unlinked, "g2")}
+        assert all(row[1] == run for row in members)
+        assert all(
+            cell.data_type != "f" for ws in wb.worksheets for row in ws
+            for cell in row)
+    finally:
+        wb.close()
+
+
+def test_provisional_manifest_includes_original_historical_source_after_review(fixture):
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from research_y.publication_candidates import read_candidate, decide_candidate
+    from research_y.provisional_manifest_workbook import render_provisional_manifest
+    project, run, other, _ = fixture
+    a = insert(fixture, number=111, groups=("g1",))
+    b = insert(fixture, number=222, source="wos", run=other)
+    first = identity.materialise_retrieval(project, a, actor="Fixture")
+    second = identity.materialise_retrieval(project, b, actor="Fixture")
+    candidate = read_candidate(project, a, b)
+    decide_candidate(
+        project, a, b, expected_revision=candidate.revision,
+        decision="confirmed_match", actor="Researcher",
+        evidence="Synthetic explicit cross-run comparison",
+        acknowledged_warnings=candidate.warnings,
+        decision_confirmed=True, move_retrieval_id=a)
+    before = sha256(project.database_path.read_bytes()).hexdigest()
+    raw = render_provisional_manifest(project, run)
+    wb = load_workbook(BytesIO(raw), read_only=True)
+    try:
+        pubs = list(wb["Provisional Identities"].values)[3:]
+        assert len(pubs) == 1
+        assert pubs[0][1:3] == (1, 1)
+        assert pubs[0][0] == second.publication_id
+        originals = list(wb["Original Source Links"].values)[3:]
+        assert len(originals) == 2
+        assert {(row[0], row[4]) for row in originals} == {
+            (a, True), (b, False)}
+        assert all(row[3] == second.publication_id for row in originals)
+        members = list(wb["Query Memberships"].values)[3:]
+        assert len(members) == 2
+        assert {row[1] for row in members} == {run, other}
+    finally:
+        wb.close()
+    assert sha256(project.database_path.read_bytes()).hexdigest() == before
+
+
+def test_provisional_manifest_is_all_or_failure_for_limits_and_corrupt_original(
+        fixture, monkeypatch):
+    from research_y import provisional_manifest_workbook as manifest
+    project, run, _, _ = fixture
+    linked = insert(fixture, number=1101)
+    insert(fixture, number=1102)
+    identity.materialise_retrieval(project, linked, actor="Fixture")
+    before = sha256(project.database_path.read_bytes()).hexdigest()
+    with monkeypatch.context() as patched:
+        patched.setattr(manifest, "ROW_LIMIT", 4)
+        with pytest.raises(manifest.WorkbookLimitError):
+            manifest.render_provisional_manifest(project, run)
+    with monkeypatch.context() as patched:
+        patched.setattr(manifest, "MAX_ARTIFACT_BYTES", 50)
+        with pytest.raises(manifest.WorkbookLimitError):
+            manifest.render_provisional_manifest(project, run)
+    assert sha256(project.database_path.read_bytes()).hexdigest() == before
+    assert not list((project.root / "exports").glob("*.xlsx"))
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute("UPDATE source_retrievals SET original_metadata_json='[]' "
+                   "WHERE retrieval_id=?", (linked,))
+    corrupted = sha256(project.database_path.read_bytes()).hexdigest()
+    with pytest.raises(manifest.ProvisionalManifestError):
+        manifest.render_provisional_manifest(project, run)
+    assert sha256(project.database_path.read_bytes()).hexdigest() == corrupted
+
+
+def test_provisional_manifest_revalidates_one_original_count_snapshot(fixture, monkeypatch):
+    from research_y import result_counts
+    from research_y.provisional_manifest_workbook import render_provisional_manifest
+    project, run, _, _ = fixture
+    insert(fixture, number=1103)
+    before = sha256(project.database_path.read_bytes()).hexdigest()
+    original = result_counts._snapshot
+    called = []
+    def witnessed(*args, **kwargs):
+        called.append(1)
+        return original(*args, **kwargs)
+    with monkeypatch.context() as patched:
+        patched.setattr(result_counts, "_snapshot", witnessed)
+        raw = render_provisional_manifest(project, run)
+    assert raw.startswith(b"PK")
+    assert called == [1]
+    assert sha256(project.database_path.read_bytes()).hexdigest() == before
