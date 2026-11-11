@@ -457,6 +457,78 @@ def test_other_invalid_evidence_is_not_repaired(fixture,damage):
     assert fingerprint(f.project)==before
 
 
+def test_compact_count_links_match_original_event_status_after_review(fixture, monkeypatch):
+    """Count-link witness never carries unchecked or retained audit event bodies.
+
+    The original single-source and confirmed multi-source receipts are still
+    validated in full; group/identity counts remain byte-identical when the
+    large-run streaming path is used.
+    """
+    f = fixture
+    a = add_record(f, identifier='25001', groups=('g1', 'g2'))
+    b = add_record(f, 'wos', 'WOS:25001', groups=('g1',))
+    c = add_record(f, identifier='25002', groups=())
+    decide(f, a, b, 'confirmed_match')
+    identity.materialise_retrieval(f.project, c, actor='Fixture')
+    before = fingerprint(f.project)
+    canonical = counts.read_run_counts(f.project, f.run)
+    with closing(sqlite3.connect(f.project.database_path)) as db:
+        sources = counts._source_rows(db, f.run)
+        compact, revisions = counts._streamed_identity_rows(db, sources)
+        assert len(compact) == 3 and len(revisions) == 2
+        assert all(type(v) is counts._ValidatedCountLink
+                   and len(v) == 2 for v in compact.values())
+        for retrieval_id, witness in compact.items():
+            original = identity._link(db, retrieval_id)
+            assert original is not None
+            assert tuple(witness) == (original[0], original[2]['status'])
+            assert not hasattr(witness, 'event_id')
+            assert not hasattr(witness, 'source_sha256')
+            assert 'PRIVATE' not in repr(witness)
+        assert compact[a].status == 'confirmed_match'
+        assert compact[b].status == 'review_required'
+        assert compact[c].status == 'review_required'
+        for publication_id, stored in revisions.items():
+            assert stored.revision == identity._snapshot(db, publication_id).revision
+    with monkeypatch.context() as patched:
+        patched.setattr(counts, '_identity_rows', counts._streamed_identity_rows)
+        streamed = counts.read_run_counts(f.project, f.run)
+    assert streamed == canonical
+    assert streamed.totals['identities_with_review_required_links_in_run'] == 2
+    assert streamed.totals['global_unique_publications'] is None
+    assert streamed.deduplication_complete is False
+    assert streamed.source_retrieval_verified is False
+    assert fingerprint(f.project) == before
+
+
+def test_compact_count_link_rejects_tampered_original_association_audit(fixture):
+    """A small count link must never hide a source/receipt mismatch."""
+    f = fixture
+    rid = add_record(f, identifier='25005')
+    identity.materialise_retrieval(f.project, rid, actor='Fixture')
+    with closing(sqlite3.connect(f.project.database_path)) as db, db:
+        event_id = db.execute(
+            "SELECT json_extract(decision_provenance_json,'$.event_id') "
+            "FROM publication_retrievals WHERE retrieval_id=?", (rid,)
+        ).fetchone()[0]
+        row = db.execute(
+            'SELECT details_json FROM audit_events WHERE event_id=?',
+            (event_id,)
+        ).fetchone()
+        event = identity._object(row[0])
+        event['source_sha256'] = '0' * 64
+        db.execute('UPDATE audit_events SET details_json=? WHERE event_id=?',
+                   (identity._json(event), event_id))
+    before = fingerprint(f.project)
+    with closing(sqlite3.connect(f.project.database_path)) as db:
+        sources = counts._source_rows(db, f.run)
+        with pytest.raises(identity.PublicationIntegrityError):
+            counts._streamed_identity_rows(db, sources)
+    with pytest.raises(CountIntegrityError):
+        counts.read_run_counts(f.project, f.run)
+    assert fingerprint(f.project) == before
+
+
 def test_streamed_high_cardinality_projection_matches_canonical_on_complex_receipts(
     fixture,monkeypatch
 ):
