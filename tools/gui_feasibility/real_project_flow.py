@@ -122,6 +122,11 @@ class RealProjectFlow:
         self._publication_error = None
         self._publication_materialisation_offer = None
         self._publication_materialisation_last_outcome = None
+        self._publication_window_offer = None
+        self._publication_window_last_outcome = None
+        self._publication_window_last_inspection = None
+        self._publication_window_reinspect_required = False
+        self._publication_window_error = None
         self._candidate_first = None
         self._candidate_offer = None
         self._reversal_offer = None
@@ -377,6 +382,11 @@ class RealProjectFlow:
         self._publication_error = None
         self._publication_materialisation_offer = None
         self._publication_materialisation_last_outcome = None
+        self._publication_window_offer = None
+        self._publication_window_last_outcome = None
+        self._publication_window_last_inspection = None
+        self._publication_window_reinspect_required = False
+        self._publication_window_error = None
         self._candidate_first = None
         self._candidate_offer = None
         self._reversal_offer = None
@@ -525,6 +535,11 @@ class RealProjectFlow:
             self._publication_error = None
             self._publication_materialisation_offer = None
             self._publication_materialisation_last_outcome = None
+            self._publication_window_offer = None
+            self._publication_window_last_outcome = None
+            self._publication_window_last_inspection = None
+            self._publication_window_reinspect_required = False
+            self._publication_window_error = None
             self._candidate_first = None
             self._candidate_offer = None
             self._reversal_offer = None
@@ -2139,10 +2154,211 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
+    @staticmethod
+    def _checked_publication_window(data, project, run_id):
+        """Verify the original command response, never a browser-supplied plan."""
+        if (type(data) is not dict or
+                data.get('method') != 'explicit-two-batch-materialisation/1' or
+                data.get('project_id') != str(project.identifier) or
+                data.get('run_id') != run_id or
+                type(data.get('revision')) is not str or
+                len(data['revision']) != 64 or
+                any(c not in '0123456789abcdef' for c in data['revision']) or
+                type(data.get('batch_count')) is not int or
+                not 0 <= data['batch_count'] <= 2 or
+                type(data.get('maximum_batches')) is not int or
+                data['maximum_batches'] != 2 or
+                type(data.get('maximum_source_records')) is not int or
+                data['maximum_source_records'] != 128 or
+                type(data.get('batch_sizes')) is not list or
+                len(data['batch_sizes']) != data['batch_count'] or
+                any(type(size) is not int or not 1 <= size <= 64
+                    for size in data['batch_sizes']) or
+                type(data.get('proposed_source_records')) is not int or
+                data['proposed_source_records'] != sum(data['batch_sizes']) or
+                type(data.get('unmaterialised_retrievals')) is not int or
+                not 0 <= data['proposed_source_records'] <=
+                    data['unmaterialised_retrievals'] or
+                type(data.get('source_records_retained')) is not int or
+                data['unmaterialised_retrievals'] > data['source_records_retained'] or
+                type(data.get('existing_publication_hypotheses')) is not int or
+                data['existing_publication_hypotheses'] < 0 or
+                data.get('materialisation_complete') is not
+                    (data['unmaterialised_retrievals'] == 0) or
+                data.get('requires_explicit_confirmation') is not True or
+                data.get('unattended_processing') is not False or
+                data.get('no_network_requests') is not True or
+                data.get('source_retrieval_verified') is not False or
+                data.get('deduplication_complete') is not False or
+                data.get('verified_complete') is not False or
+                data.get('global_unique_publications') is not None):
+            raise ProjectFlowError('publication_window_invalid')
+        return data
+
+    def inspect_publication_window(self):
+        """Recover current durable counts without creating or reusing approval."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            self._publication_window_offer = None
+            try:
+                stored = self._checked_publication_window(
+                    self._operation('publication_window_preview',
+                        run_id=self.selected_run_id),
+                    self.project, self.selected_run_id)
+                # Inspection is NOT an offer: do not publish its consent hash.
+                self._publication_window_last_inspection = {
+                    'source_records_retained': stored['source_records_retained'],
+                    'unmaterialised_retrievals': stored['unmaterialised_retrievals'],
+                    'existing_publication_hypotheses':
+                        stored['existing_publication_hypotheses'],
+                    'batch_sizes': list(stored['batch_sizes']),
+                    'global_unique_publications': None,
+                }
+                self._publication_window_reinspect_required = False
+                self._publication_window_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publication_window_reinspect_required = True
+                self._publication_window_last_inspection = None
+                self._publication_window_error = 'publication_window_reinspect_required'
+                self._publish()
+                raise
+
+    def offer_publication_window(self):
+        """Prepare exactly one finite window; cannot bypass uncertain recovery."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('run_selection_required')
+            if self._publication_window_reinspect_required:
+                raise ProjectFlowError('publication_window_reinspect_required')
+            try:
+                offer = self._checked_publication_window(
+                    self._operation('publication_window_preview',
+                        run_id=self.selected_run_id),
+                    self.project, self.selected_run_id)
+                self._publication_materialisation_offer = None
+                self._publication_window_offer = offer
+                self._publication_window_last_inspection = None
+                self._publication_window_error = None
+                return self._publish()
+            except ProjectFlowError:
+                self._publication_window_offer = None
+                self._publication_window_error = 'publication_window_unavailable'
+                self._publish()
+                raise
+
+    def dismiss_publication_window(self):
+        with self._guard:
+            self._publication_window_offer = None
+            return self._publish()
+
+    def confirm_publication_window(self, actor):
+        """One click, at most two original transactions; lost reply is UNKNOWN."""
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer = self._publication_window_offer
+            if (self.selected_run_id is None or offer is None or
+                    offer.get('run_id') != self.selected_run_id or
+                    offer.get('batch_count') not in (1, 2) or
+                    type(actor) is not str or not actor.strip()):
+                raise ProjectFlowError('publication_window_confirmation_required')
+            # Consume BEFORE dispatch. Never replay an old confirmation even
+            # if a worker dies or the second original transaction fails.
+            self._publication_window_offer = None
+            self._publication_materialisation_offer = None
+            self._publication_window_last_outcome = None
+            self._publication_window_last_inspection = None
+            try:
+                result = self._operation('publication_window_confirm',
+                    run_id=self.selected_run_id,
+                    publication_view_revision=offer['revision'],
+                    publication_actor=actor, publication_confirmed=True)
+                if (type(result) is not dict or
+                        result.get('method') != 'explicit-two-batch-materialisation/1' or
+                        result.get('project_id') != str(self.project.identifier) or
+                        result.get('run_id') != self.selected_run_id or
+                        type(result.get('committed_batches')) is not int or
+                        result['committed_batches'] != offer['batch_count'] or
+                        type(result.get('materialised_in_session')) is not int or
+                        result['materialised_in_session'] !=
+                            offer['proposed_source_records'] or
+                        result.get('requires_new_preview_for_next_session') is not True or
+                        result.get('partial_commits_possible_if_interrupted') is not True or
+                        result.get('unattended_processing') is not False or
+                        result.get('no_network_requests') is not True or
+                        result.get('source_retrieval_verified') is not False or
+                        result.get('deduplication_complete') is not False or
+                        result.get('verified_complete') is not False or
+                        result.get('global_unique_publications') is not None):
+                    raise ProjectFlowError('publication_window_reinspect_required')
+                # Independently read durable ORIGINAL source/identity counts
+                # before claiming the worker's message reflects a commit.
+                stored = self._checked_publication_window(
+                    self._operation('publication_window_preview',
+                        run_id=self.selected_run_id),
+                    self.project, self.selected_run_id)
+                if (stored['unmaterialised_retrievals'] !=
+                        offer['unmaterialised_retrievals'] -
+                            result['materialised_in_session'] or
+                        result.get('unmaterialised_retrievals_remaining') !=
+                            stored['unmaterialised_retrievals'] or
+                        stored['existing_publication_hypotheses'] !=
+                            offer['existing_publication_hypotheses'] +
+                            result['materialised_in_session'] or
+                        stored['source_records_retained'] !=
+                            offer['source_records_retained']):
+                    raise ProjectFlowError('publication_window_reinspect_required')
+                inspected = self._operation(
+                    'inspect', run_id=self.selected_run_id)['snapshot']
+                if (type(inspected) is not dict or
+                        inspected.get('selected_run_id') != self.selected_run_id or
+                        inspected.get('report') is None):
+                    raise ProjectFlowError('publication_window_reinspect_required')
+                self.snapshot = inspected
+                self._publication_window_last_outcome = result
+                self._publication_window_reinspect_required = False
+                self._publication_window_error = None
+                # All previously offered source/candidate pages become stale
+                # after the change; browsing must start with a fresh revision.
+                self._publication_page = None
+                self._publication_detail = None
+                self._candidate_first = None
+                self._candidate_offer = None
+                self._reversal_offer = None
+                self._candidate_queue = None
+                self._run_execution_board = None
+                self._run_board_error = None
+                self._coord_offer = None
+                return self._publish()
+            except ProjectFlowError:
+                # There may be ZERO, ONE or TWO committed 64-row batches. The
+                # old consent must NOT be replayed. Read durable state first.
+                self._publication_window_reinspect_required = True
+                self._publication_window_error = 'publication_window_reinspect_required'
+                self._publication_page = None
+                self._publication_detail = None
+                self._candidate_first = None
+                self._candidate_offer = None
+                self._reversal_offer = None
+                self._candidate_queue = None
+                self._run_execution_board = None
+                self._run_board_error = None
+                self._coord_offer = None
+                self._publish()
+                raise ProjectFlowError('publication_window_reinspect_required') from None
+
     def offer_publication_materialisation(self):
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
+            if self._publication_window_reinspect_required:
+                raise ProjectFlowError('publication_window_reinspect_required')
             if self.selected_run_id is None:
                 raise ProjectFlowError('run_selection_required')
             proposal = self._operation('publication_materialisation_preview',
@@ -2157,6 +2373,7 @@ class RealProjectFlow:
                     proposal.get('deduplication_complete') is not False or
                     proposal.get('global_unique_publications') is not None):
                 raise ProjectFlowError('publication_view_invalid')
+            self._publication_window_offer = None
             self._publication_materialisation_offer = proposal
             return self._publish()
 
@@ -3723,6 +3940,12 @@ class RealProjectFlow:
                 'publication_error': self._publication_error,
                 'publication_materialisation_offer': self._publication_materialisation_offer,
                 'publication_materialisation_last_outcome': self._publication_materialisation_last_outcome,
+                'publication_window_offer': self._publication_window_offer,
+                'publication_window_last_outcome': self._publication_window_last_outcome,
+                'publication_window_last_inspection': self._publication_window_last_inspection,
+                'publication_window_reinspect_required':
+                    self._publication_window_reinspect_required,
+                'publication_window_error': self._publication_window_error,
                 'candidate_first': self._candidate_first,
                 'candidate_offer': self._candidate_offer,
                 'reversal_offer': self._reversal_offer,
