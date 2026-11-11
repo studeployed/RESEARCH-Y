@@ -59,7 +59,12 @@ def test_window_driver_and_native_scenario_actions_are_fixed():
     assert 'publication-window-inspection' in app
     assert 'publication-window-actor' in app
     assert "if scenario in ('publication_window', 'publication_window_lost_reply'):" in driver
-    assert 'transport_window_steps(port, auth, scenario, run_id)' in driver
+    # Fixed transport actions are still validated, now with test-owned expected
+    # counts for both original 132-record and new 100k-record fixtures.
+    assert 'return transport_window_steps(' in driver
+    assert 'expected_pending=expected_pending' in driver
+    assert 'expected_remaining=expected_remaining' in driver
+    assert 'expected_provisional=expected_provisional' in driver
     assert 'window_lost_reply_not_refused' in driver
     # Verify the actual scenario is present without assuming Python quote style.
     assert "publication_window_lost_reply" in experiment
