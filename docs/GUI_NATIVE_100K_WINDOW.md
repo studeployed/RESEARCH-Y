@@ -10,6 +10,9 @@ PRs #83–85 measured the original 100,000-record SQLite and supervised worker p
 
 The original `scripts.benchmark_original_project._seed` inserts **100,000 original retained source retrievals** and **100,000 original query/group memberships** into a versioned real SQLite project, with both PubMed and Web of Science representations. It creates **128 already independently audited provisional identities**, using the existing fixture-only writer. Those identities remain original baseline evidence and are not counted as GUI approvals.
 
+
+The earlier command-line-only benchmark fixture stored an intentionally empty strategy snapshot because it never opened the graphical project interface. The first 100,000-record graphical attempt correctly refused to open this invalid research evidence (`window_action_failed_open_invalid_evidence`). The new fixture now seeds an explicitly approved, internally consistent synthetic **OR-only** strategy **at initial database creation**, leaving the application's authoritative strategy validation intact; existing command-line fixtures remain unchanged.
+
 For each of two **separate** disposable projects, the native Windows test clicks original host-selected, researcher-visible buttons; the Linux test exercises the existing guarded loopback test transport:
 
 1. Open the original project and explicitly select the synthetic run. Preview exactly **128 new original source identities** in two original 64-record transactions while **99,872** remain unmaterialised.
