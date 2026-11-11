@@ -140,6 +140,10 @@ def services(monkeypatch, tmp_path):
     publication.read_publication_detail=service('publication_detail',{
         'no_network_requests':True,'source_retrieval_verified':False,
         'abstract_text_displayed':False,'global_unique_publications':None})
+    publication.read_publication_page_detail=service('publication_page_detail',{
+        'no_network_requests':True,'source_retrieval_verified':False,
+        'deduplication_complete':False,'verified_complete':False,
+        'global_unique_publications':None})
     preparation=types.ModuleType('research_y.publication_run_materialisation')
     from research_y.publication_run_materialisation import MaterialisationConflict
     preparation.MaterialisationConflict=MaterialisationConflict
@@ -264,9 +268,11 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
                   candidate_index_confirmed=True)
         if operation=='candidate_index_advance':
             kw['candidate_index_generation']=str(uuid4())
-    elif operation=='publication_detail':
+    elif operation in ('publication_detail','publication_page_detail'):
         kw.update(run_id=str(uuid4()),publication_view_id=str(uuid4()),
                   publication_view_revision='a'*64)
+        if operation == 'publication_page_detail':
+            kw['publication_view_cursor']=str(uuid4())
     elif operation in ('publication_materialisation_confirm','publication_window_confirm'):
         kw.update(run_id=str(uuid4()),publication_view_revision='a'*64,
                   publication_actor='Fixture Researcher',publication_confirmed=True)
@@ -424,10 +430,15 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert result['no_network_requests'] is True
         assert result['candidate_discovery_complete'] is False
         assert result['global_unique_publications'] is None
-    if operation=='publication_detail':
+    if operation in ('publication_detail','publication_page_detail'):
         assert calls[0][1]==(project,kw['run_id'],kw['publication_view_id'])
         assert calls[0][2]['expected_revision']==kw['publication_view_revision']
-        assert result['abstract_text_displayed'] is False
+        if operation == 'publication_detail':
+            assert result['abstract_text_displayed'] is False
+        else:
+            assert calls[0][2]['after_publication_id']==kw['publication_view_cursor']
+            assert result['no_network_requests'] is True
+            assert result['global_unique_publications'] is None
     if operation in ('publication_materialisation_confirm','publication_window_confirm'):
         assert calls[0][1]==(project,kw['run_id'])
         assert calls[0][2]['expected_revision']==kw['publication_view_revision']
