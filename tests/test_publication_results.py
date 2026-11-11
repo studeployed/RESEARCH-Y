@@ -19,7 +19,8 @@ from research_y.projects import create_project, open_project
 from research_y.publication_run_materialisation import (
     preview_run_materialisation, materialise_run_batch)
 from research_y.publication_results import (
-    PAGE_SIZE, PublicationViewError, read_publication_page, read_publication_detail)
+    PAGE_SIZE, PublicationViewError, read_publication_page, read_publication_detail,
+    read_publication_page_detail)
 
 
 def uid():
@@ -418,3 +419,112 @@ def test_read_and_navigation_are_unchanged_on_disk(fixture):
     read_publication_detail(project,run,page["rows"][0]["publication_id"],
                             expected_revision=page["revision"])
     assert before==sha256(project.database_path.read_bytes()).hexdigest()
+
+
+def test_single_snapshot_page_detail_matches_original_paths_without_second_count(
+        fixture, monkeypatch):
+    """Exactly one FULL original projection validates the shown page and detail."""
+    from research_y import result_counts
+    project, run, _, _ = fixture
+    for n in range(1, 24):
+        insert(fixture, number=n, title=f"Synthetic research item {n}")
+    materialise(fixture)
+    first = read_publication_page(project, run)
+    second = read_publication_page(project, run,
+        after_publication_id=first["next_after_publication_id"],
+        expected_revision=first["revision"])
+    target = second["rows"][0]["publication_id"]
+    ordinary = read_publication_detail(project, run, target,
+        expected_revision=second["revision"])
+    before_audit = audit(project)
+    before_bytes = sha256(project.database_path.read_bytes()).hexdigest()
+    original_projection = result_counts._snapshot
+    called = []
+    def counted(*args, **kwargs):
+        called.append("full-original-validation")
+        return original_projection(*args, **kwargs)
+    monkeypatch.setattr(result_counts, "_snapshot", counted)
+    combined = read_publication_page_detail(
+        open_project(project.root), run, target,
+        after_publication_id=first["next_after_publication_id"],
+        expected_revision=first["revision"])
+    assert called == ["full-original-validation"]
+    assert combined["method"] == "provisional-publication-page-detail/1"
+    assert combined["page"] == second
+    assert combined["detail"] == ordinary
+    assert combined["revision"] == first["revision"]
+    assert combined["global_unique_publications"] is None
+    assert combined["deduplication_complete"] is False
+    assert combined["verified_complete"] is False
+    assert combined["source_retrieval_verified"] is False
+    assert combined["no_network_requests"] is True
+    assert audit(project) == before_audit
+    assert sha256(project.database_path.read_bytes()).hexdigest() == before_bytes
+
+
+def test_single_snapshot_detail_rejects_row_not_on_canonical_page(fixture):
+    project, run, _, _ = fixture
+    for n in range(1, 24):
+        insert(fixture, number=n)
+    materialise(fixture)
+    first = read_publication_page(project, run)
+    second = read_publication_page(project, run,
+        after_publication_id=first["next_after_publication_id"],
+        expected_revision=first["revision"])
+    target = second["rows"][0]["publication_id"]
+    with pytest.raises(PublicationViewError, match="publication_view_stale"):
+        read_publication_page_detail(
+            project, run, target,
+            after_publication_id=None, expected_revision=first["revision"])
+    assert read_publication_page_detail(
+        project, run, target,
+        after_publication_id=first["next_after_publication_id"],
+        expected_revision=first["revision"])["detail"]["publication"]["publication_id"] == target
+
+
+def test_single_snapshot_detail_rejects_stale_original_query_and_leaks_no_abstract(
+        fixture):
+    project, run, _, queries = fixture
+    insert(fixture, abstract="SYNTHETIC HIDDEN ABSTRACT")
+    materialise(fixture)
+    first = read_publication_page(project, run)
+    publication_id = first["rows"][0]["publication_id"]
+    combined = read_publication_page_detail(
+        project, run, publication_id,
+        after_publication_id=None, expected_revision=first["revision"])
+    assert "SYNTHETIC HIDDEN ABSTRACT" not in identity._json(combined)
+    assert combined["detail"]["abstract_text_displayed"] is False
+    assert combined["detail"]["redistribution_permission_established"] is False
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute("UPDATE source_queries SET status='failed' WHERE query_id=?",
+                   (queries[run, "g1", "pubmed"],))
+    with pytest.raises(PublicationViewError, match="publication_view_stale"):
+        read_publication_page_detail(project, run, publication_id,
+            after_publication_id=None, expected_revision=first["revision"])
+
+
+def test_single_snapshot_command_rejects_unapproved_actor_and_bogus_cursor(fixture):
+    project, run, _, _ = fixture
+    insert(fixture)
+    materialise(fixture)
+    page = read_publication_page(project, run)
+    pub_id = page["rows"][0]["publication_id"]
+    command = ApplicationCommand.for_project(
+        project, "publication_page_detail", run_id=run,
+        publication_view_id=pub_id,
+        publication_view_revision=page["revision"])
+    combined = execute_command(command)
+    assert combined["page"] == page
+    assert combined["detail"]["publication"]["publication_id"] == pub_id
+    for extra in (
+        dict(publication_actor="Unapproved"),
+        dict(publication_confirmed=True),
+        dict(publication_view_cursor="not-uuid"),
+        dict(pilot_api_key="SYNTHETIC FORGED KEY"),
+        dict(output_name="forged.xlsx"),
+    ):
+        with pytest.raises(ApplicationCommandError, match="invalid_command"):
+            ApplicationCommand.for_project(
+                project, "publication_page_detail", run_id=run,
+                publication_view_id=pub_id,
+                publication_view_revision=page["revision"], **extra)
