@@ -29,6 +29,12 @@ All cells use the existing `_literal` workbook encoder with explicit text types 
 - It returns workbook bytes only to internal code. **It is not registered with `ApplicationCommand`, the audited export journal, or the graphical download interface.** It never chooses a destination, creates a published file, issues a provider network call, or grants researcher consent. The presence of a renderer is *not* an authorisation to publish source data.
 - This is an original provenance **manifest**, not the complete Master Results sheet specified by EXPORT-01. It does not contain full abstracts/classification, deduplicated unique paper counts, faceted filters, source-specific rights decisions or a tested 100,000-row production export. Unverified source and deduplication status remain explicit.
 
+## Failure-path temporary file hygiene
+
+OpenPyXL 3.1.5 is pinned as the existing optional Excel dependency. Its write-only worksheets create intermediate on-disk XML files during `append()`, and `Workbook.close()` alone does not remove those files if generation aborts before `save()`. The renderer now explicitly closes each still-active worksheet's XML generator/writer and invokes the original writer's registered temporary-file cleanup on **every failure path**, including early Excel row-limit errors and interrupted cell serialization. Successfully saved worksheets have already been cleaned by OpenPyXL's own archive writer; they are not recreated or deleted again.
+
+A regression exercises four actual write-only worksheets, three repeated row-limit failures and a separate injected serialization failure. It checks the original OpenPyXL temp registry **and the physical filesystem**, plus original SQLite byte immutability and absence of any published workbook. Unexpected cleanup failure itself is reported explicitly, not silently ignored. This safeguard does not authorise export publication, change the source rights boundary or change scientific counts.
+
 ## Offline regression acceptance
 
 Versioned original SQLite fixture tests examine actual `.xlsx` worksheet structure and source rows for one linked, one unmaterialised and a separate historical run, multi-group membership, cross-run confirmed source association, no abstract/title/DOI/provider accession leakage, no spreadsheet formula execution, one original full-run validation, byte-for-byte original DB immutability, explicit Excel row/byte limit failures, and refusal of original source corruption without publishing an output.
