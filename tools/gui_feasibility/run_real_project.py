@@ -588,42 +588,42 @@ def run_app(mode, scenario, project, parent, run_id, expected_export):
                     with socket.socket() as sock:
                         require(sock.connect_ex(('127.0.0.1', port)) != 0,
                                 'window_listener_not_closed')
-                    return result
-                expected_outcome = (None if scenario == 'worker_killed'
-                                    else 'recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
-                                    else 'published_receipt_missing' if scenario == 'receipt_missing'
-                                    else 'not_yet_staged' if scenario == 'render_fault'
-                                    else 'retained_artifact_changed' if scenario == 'stage_fault'
-                                    else 'published_verified')
-                expected_error = 'worker_interrupted' if scenario == 'worker_killed' else None
-                require(report['status'] == 'finished' and report['real_services'] is True
-                        and report['source_retrieval_verified'] is False
-                        and report['selected_run_matches'] is True
-                        and report['selected_export_matches'] is True
-                        and report['observed_outcome'] == expected_outcome
-                        and report['observation_audited'] is
-                            (expected_outcome == 'published_verified')
-                        and report['error'] == expected_error
-                        and report['session_revoked'] is True
-                        and report['worker_reaped'] is True
-                        and report['supervisor_stopped'] is True, 'real_gui_evidence_not_accepted')
-                require(report['project_id'] == str(project.identifier), 'project_identity_changed')
-                if expected_export:
-                    require(report['export_id'] == expected_export, 'export_identity_changed')
-                if scenario == 'worker_killed':
-                    require(termination['terminated'] is True and termination['error'] is None,
-                            'gui_owned_worker_not_confirmed_terminated')
-                    require(report['actions'] == ['open', 'select_run', 'select_export'],
-                            'worker_interruption_accepted_as_success')
-                if mode == 'native':
-                    require(report.get('native_rendering_verified') is True, 'native_rendering_not_verified')
-                result.update(passed=True, export_id=report['export_id'],
-                              project_identity_retained=True,
-                              workbook_file_verified=expected_outcome == 'published_verified',
-                              native_rendering_verified=bool(
-                                  report.get('native_rendering_verified', False)))
-                with socket.socket() as sock:
-                    require(sock.connect_ex(('127.0.0.1', port)) != 0, 'listener_not_closed')
+                else:
+                    expected_outcome = (None if scenario == 'worker_killed'
+                                        else 'recorded_cancelled' if scenario in ('cancel', 'cancel_reopen')
+                                        else 'published_receipt_missing' if scenario == 'receipt_missing'
+                                        else 'not_yet_staged' if scenario == 'render_fault'
+                                        else 'retained_artifact_changed' if scenario == 'stage_fault'
+                                        else 'published_verified')
+                    expected_error = 'worker_interrupted' if scenario == 'worker_killed' else None
+                    require(report['status'] == 'finished' and report['real_services'] is True
+                            and report['source_retrieval_verified'] is False
+                            and report['selected_run_matches'] is True
+                            and report['selected_export_matches'] is True
+                            and report['observed_outcome'] == expected_outcome
+                            and report['observation_audited'] is
+                                (expected_outcome == 'published_verified')
+                            and report['error'] == expected_error
+                            and report['session_revoked'] is True
+                            and report['worker_reaped'] is True
+                            and report['supervisor_stopped'] is True, 'real_gui_evidence_not_accepted')
+                    require(report['project_id'] == str(project.identifier), 'project_identity_changed')
+                    if expected_export:
+                        require(report['export_id'] == expected_export, 'export_identity_changed')
+                    if scenario == 'worker_killed':
+                        require(termination['terminated'] is True and termination['error'] is None,
+                                'gui_owned_worker_not_confirmed_terminated')
+                        require(report['actions'] == ['open', 'select_run', 'select_export'],
+                                'worker_interruption_accepted_as_success')
+                    if mode == 'native':
+                        require(report.get('native_rendering_verified') is True, 'native_rendering_not_verified')
+                    result.update(passed=True, export_id=report['export_id'],
+                                  project_identity_retained=True,
+                                  workbook_file_verified=expected_outcome == 'published_verified',
+                                  native_rendering_verified=bool(
+                                      report.get('native_rendering_verified', False)))
+                    with socket.socket() as sock:
+                        require(sock.connect_ex(('127.0.0.1', port)) != 0, 'listener_not_closed')
             except Exception as exc:
                 result['error'] = str(exc) if isinstance(exc, ExperimentFailure) else type(exc).__name__
             finally:
