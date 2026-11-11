@@ -155,6 +155,11 @@ def test_512_source_streamed_witness_is_exact_and_read_only(tmp_path, monkeypatc
             patch.setattr(identity, "_snapshot", unexpected_full_snapshot)
             links, revisions = counts._streamed_identity_rows(db, sources)
         assert len(links) == len(revisions) == 512
+        # The read-only projection must not retain 512 full audit event bodies
+        # after all original source/event checks and revision hashes complete.
+        assert all(type(link) is counts._ValidatedCountLink
+                   and link.status == 'review_required'
+                   and len(link) == 2 for link in links.values())
         assert all(isinstance(value, counts._ValidatedRevision)
                    for value in revisions.values())
         assert len({revision.revision for revision in revisions.values()}) == 512
