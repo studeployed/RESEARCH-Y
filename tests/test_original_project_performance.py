@@ -128,6 +128,43 @@ def test_single_run_original_sources_preserve_in_run_candidate_pairs(materialise
     assert report["all_100k_sources_in_selected_run"] is False
 
 
+def test_512_source_streamed_witness_is_exact_and_read_only(tmp_path):
+    """Large-route-style count leaves originals untouched and no full clones.
+
+    A 512-source fixture exercises many independent source/audit links in
+    ordinary fast CI, while the 100000-row workflow benchmarks the real scale.
+    """
+    from hashlib import sha256
+    from research_y import result_counts as counts
+    project = create_project(tmp_path, "Canonical source witness regression")
+    assert _seed(project, 512, 512, 2) == 4
+    continuation = materialise_remaining_fixture(project, batch_size=64)
+    assert continuation["newly_materialised"] == 508
+    assert continuation["exhausted_sources"] is True
+    before_digest = sha256(project.database_path.read_bytes()).hexdigest()
+    canonical_count = counts.read_run_counts(project, RUN)
+    with closing(sqlite3.connect(project.database_path)) as db:
+        sources = counts._source_rows(db, RUN)
+        links, revisions = counts._streamed_identity_rows(db, sources)
+        assert len(links) == len(revisions) == 512
+        assert all(isinstance(value, counts._ValidatedRevision)
+                   for value in revisions.values())
+        assert len({revision.revision for revision in revisions.values()}) == 512
+        # Independent comparison to the unchanged canonical original read,
+        # including the duplicate-DOI source pairs (which are not merged).
+        sample = sorted(revisions)
+        for pid in (sample[0], sample[2], sample[-1]):
+            assert revisions[pid].revision == identity._snapshot(db, pid).revision
+    reopened = open_project(project.root)
+    after = counts.read_run_counts(reopened, RUN)
+    assert after == canonical_count
+    assert after.totals["global_publication_identities"] == 512
+    assert after.totals["global_unique_publications"] is None
+    assert after.deduplication_complete is False
+    assert after.verified_complete is False
+    assert sha256(project.database_path.read_bytes()).hexdigest() == before_digest
+
+
 def test_single_run_matching_keys_are_two_original_cross_provider_records(tmp_path):
     project=create_project(tmp_path,"Same-run cross-source source fixture")
     assert _seed(project,512,512,2)==4

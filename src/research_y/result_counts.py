@@ -168,6 +168,17 @@ def _source_rows(db, run_id):
     return result
 
 
+@dataclass(frozen=True, slots=True)
+class _ValidatedRevision:
+    """One-shot source/association-checked revision for a simple publication.
+
+    Used ONLY by whole-run count projections. Canonical single-publication
+    views still obtain full PublicationSnapshot objects with all original
+    retrievals, chosen fields and audit data.
+    """
+    revision: str
+
+
 def _identity_rows(db, sources):
     """Read every current identity and its original provenance, without a cache.
 
@@ -175,8 +186,10 @@ def _identity_rows(db, sources):
     SAME immutable source, association, audit and membership rows in a single
     read transaction. A multi-source or chosen-field publication still uses the
     canonical full snapshot so historic memberships and field audit remain
-    authoritative. Singleton revisions are reconstructed byte-for-byte from
-    the original snapshot's canonical source/membership/event structure.
+    authoritative. For uncomplicated singleton links, only the fully
+    validated revision is retained; the temporary full source structure is
+    never mistaken for a user-facing publication snapshot. The original
+    canonical bytes and SHA-256 revision remain unchanged.
     """
     if len(sources) < 2048:
         links, snapshots = {}, {}
@@ -269,8 +282,12 @@ def _streamed_identity_rows(db, sources):
                       decision=links[rid][2],
                       memberships=memberships[rid])
         revision = identity._hash([pub_id, original_row, [source]])
-        snapshots[pub_id] = identity.PublicationSnapshot(
-            pub_id, original_row[0], revision, (source,), {})
+        # The complete source/association/membership evidence has just been
+        # decoded, linked to the immutable audit and included in this exact
+        # canonical hash. The whole-run count caller only reads .revision.
+        # Do not retain another 100000 full source dictionaries/tuples in
+        # publication snapshots after the digest has been computed.
+        snapshots[pub_id] = _ValidatedRevision(revision)
     return links, snapshots
 
 

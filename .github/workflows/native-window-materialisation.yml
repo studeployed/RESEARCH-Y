@@ -10,6 +10,7 @@ on:
       - 'src/research_y/publication_run_materialisation.py'
       - 'src/research_y/application_worker.py'
       - 'src/research_y/application_commands.py'
+      - 'src/research_y/result_counts.py'
       - 'src/research_y/original_source_scope.py'
       - 'docs/GUI_NATIVE_MATERIALISATION_WINDOW.md'
       - 'tests/test_gui_materialisation_window.py'

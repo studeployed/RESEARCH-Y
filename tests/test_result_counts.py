@@ -491,6 +491,15 @@ def test_streamed_high_cardinality_projection_matches_canonical_on_complex_recei
         linked,streamed=counts._streamed_identity_rows(db,sources)
         for pub_id,snapshot in streamed.items():
             assert snapshot.revision==identity._snapshot(db,pub_id).revision
+        # The simple singleton remains fully hash-validated but retains only
+        # a compact internal revision. Complex/cross-run/chosen-field cases
+        # MUST continue through the canonical full original snapshot.
+        singleton_id = identity._link(db, singleton)[0]
+        merged_id = identity._link(db, selected)[0]
+        assert isinstance(streamed[singleton_id], counts._ValidatedRevision)
+        assert isinstance(streamed[merged_id], identity.PublicationSnapshot)
+        assert isinstance(streamed[original.publication_id],
+                          identity.PublicationSnapshot)
         assert len(linked)==3
         assert unlinked not in linked
     with monkeypatch.context() as patched:
