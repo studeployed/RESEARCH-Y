@@ -31,6 +31,7 @@ LITERAL_NAME = '<img src=x onerror="window.__researchy_injected=true">'
 # One UI action may execute three bounded, sequential 35-second worker calls.
 # Keep short readiness checks separate from the longer action-completion wait.
 NATIVE_ACTION_COMPLETION_TIMEOUT = 115
+WINDOW_SCENARIOS = ('publication_window', 'publication_window_lost_reply')
 
 
 def write_report(path, report):
@@ -90,12 +91,26 @@ def run(args):
                                recent_parent=recents_parent,
                                pubmed_profile=pubmed_profile,
                                wos_profile=wos_profile)
+        if args.scenario == 'publication_window_lost_reply':
+            # Test-process-only failure injection. The *real* supervised child
+            # commits both original transactions; only the reply to the GUI
+            # host is deliberately lost. No browser action can enable this.
+            original_window_operation = flow._operation
+            def return_lost_after_commit(name, **kwargs):
+                result = original_window_operation(name, **kwargs)
+                if name == 'publication_window_confirm':
+                    raise ProjectFlowError('worker_interrupted')
+                return result
+            flow._operation = return_lost_after_commit
         os.environ['RESEARCHY_PROTOTYPE_ALLOWED_ORIGIN'] = session.origin
         os.environ['RESEARCHY_PROTOTYPE_MARKER_DIR'] = str(args.directory)
         events, clients, tasks = [], [], []
         last_error = {'code': None}
         finished = asyncio.Event()
-        sequence = (('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
+        sequence = (('open', 'select_run', 'publication_window_offer',
+                     'publication_window_confirm', 'publication_window_inspect')
+                    if args.scenario in WINDOW_SCENARIOS else
+                    ('open', 'select_run', 'prepare', 'prepare', 'resume', 'observe')
                     if args.scenario == 'publish' else
                     ('recent_open', 'select_run', 'select_export', 'observe')
                     if args.scenario == 'recent_open' else
@@ -108,6 +123,8 @@ def run(args):
                     if args.scenario == 'worker_killed' else
                     ('open', 'select_run', 'select_export', 'observe'))
         action_lock = asyncio.Lock()
+        probe_step_count = 0
+        window_uncertain_error_observed = False
         select_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_RUN_ID')
         expected_project_id = os.environ.pop('RESEARCHY_GUI_EXPECTED_PROJECT_ID', '')
         expected_export = os.environ.pop('RESEARCHY_GUI_EXPECTED_EXPORT_ID', '')
@@ -412,6 +429,11 @@ def run(args):
                     last_error['code'] = str(exc)
                 except ProjectFlowError as exc:
                     last_error['code'] = str(exc)
+                    if (args.scenario == 'publication_window_lost_reply' and
+                            name == 'publication_window_confirm' and
+                            last_error['code'] == 'publication_window_reinspect_required'):
+                        nonlocal window_uncertain_error_observed
+                        window_uncertain_error_observed = True
                 except Exception:
                     last_error['code'] = 'unhandled_action_failure'
                 if clients:
@@ -1140,7 +1162,7 @@ def run(args):
                             if window_offer['proposed_source_records'] > 0:
                                 author=ui.input('Researcher explicitly authorising '
                                                 'THIS finite original-source window',
-                                                value='')
+                                                value='').props('data-testid=publication-window-actor')
                                 ui.button('CONFIRM this finite two-batch '
                                           'publication preparation',
                                           on_click=lambda field=author:
@@ -2558,16 +2580,24 @@ def run(args):
 
         @app.post('/_probe/start')
         async def step():
-            index = len(events)
+            nonlocal probe_step_count
+            # For the dedicated test-only lost-reply scenario, an expected
+            # failure does NOT enter the action success ledger. Advance the
+            # fixed probe sequence separately; never replay the old consent.
+            index = probe_step_count if args.scenario in WINDOW_SCENARIOS else len(events)
             if index >= len(sequence):
                 return {'error': 'no_more_steps'}
             action = sequence[index]
+            if args.scenario in WINDOW_SCENARIOS:
+                probe_step_count += 1
             if action == 'recent_open':
                 return await act(action, expected_project_id)
             if action == 'select_run':
                 return await act(action, select_id)
             if action == 'select_export':
                 return await act(action, expected_export)
+            if action == 'publication_window_confirm':
+                return await act(action, 'Synthetic fixture researcher')
             return await act(action)
 
         @app.post('/_probe/stop')
@@ -2585,8 +2615,90 @@ def run(args):
         async def js(expression):
             return await asyncio.wait_for(app.native.main_window.evaluate_js(expression), timeout=8)
 
+        async def native_window_probe():
+            """Click actual finite-window buttons in a native Windows window."""
+            await until(lambda: session.redeemed and clients and clients[-1].has_socket_connection)
+            for index, action in enumerate(sequence):
+                name = {'open': 'open', 'select_run': 'select-run',
+                        'publication_window_offer': 'publication-window-offer',
+                        'publication_window_confirm': 'publication-window-confirm',
+                        'publication_window_inspect': (
+                            'publication-window-reinspect'
+                            if args.scenario == 'publication_window_lost_reply'
+                            else 'publication-window-inspect')}[action]
+                await until(lambda: not action_lock.locked())
+                await until_native_button(name, js)
+                if action == 'publication_window_confirm':
+                    changed = await js(
+                        "(function(){const field=document.querySelector("
+                        "'[data-testid=publication-window-actor] input');"
+                        "if(!field)return false;"
+                        "Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"
+                        "'value').set.call(field,'Synthetic fixture researcher');"
+                        "field.dispatchEvent(new Event('input',{bubbles:true}));"
+                        "field.dispatchEvent(new Event('change',{bubbles:true}));"
+                        "return true;})()")
+                    if changed is not True:
+                        raise RuntimeError('native_researcher_input_missing')
+                await js("document.querySelector('[data-testid=" + name + "]').click(); true")
+                if (args.scenario == 'publication_window_lost_reply' and
+                        action == 'publication_window_confirm'):
+                    await until(
+                        lambda: last_error['code'] ==
+                            'publication_window_reinspect_required',
+                        deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
+                    await until_native_button('publication-window-recovery', js)
+                    if (flow.state()['publication_window_last_outcome'] is not None or
+                            not flow.state()['publication_window_reinspect_required']):
+                        raise RuntimeError('native_uncertain_outcome_falsely_confirmed')
+                    report['window_recovery_notice_verified'] = True
+                else:
+                    expected = index + 1 - int(
+                        args.scenario == 'publication_window_lost_reply' and index >= 4)
+                    await until(lambda: len(events) >= expected or
+                                last_error['code'] is not None,
+                                deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
+                    if last_error['code'] is not None:
+                        raise RuntimeError('native_window_action_failed')
+                    if action == 'publication_window_confirm':
+                        await until_native_button('publication-window-outcome', js)
+                    if action == 'publication_window_inspect':
+                        await until_native_button('publication-window-inspection', js)
+            state = flow.state()
+            stored = state['publication_window_last_inspection']
+            if (stored is None or
+                    stored['unmaterialised_retrievals'] != 4 or
+                    stored['existing_publication_hypotheses'] != 128 or
+                    state['publication_window_offer'] is not None or
+                    state['source_retrieval_verified'] is not False):
+                raise RuntimeError('native_window_durable_evidence_invalid')
+            if args.scenario == 'publication_window_lost_reply':
+                if state['publication_window_last_outcome'] is not None:
+                    raise RuntimeError('native_window_lost_reply_falsified_success')
+            elif (state['publication_window_last_outcome'] is None or
+                  state['publication_window_last_outcome']['materialised_in_session'] != 128):
+                raise RuntimeError('native_window_receipt_missing')
+            check = await js(
+                "JSON.stringify({heading:!!document.querySelector("
+                "'[data-testid=publication-window-heading]'),"
+                "inspected:document.querySelector("
+                "'[data-testid=publication-window-inspection]')?.textContent||'',"
+                "injected:window.__researchy_injected===true})")
+            if not check:
+                raise RuntimeError('native_window_rendering_unavailable')
+            shown = json.loads(check)
+            if (not shown['heading'] or
+                    'remaining without publication identities: 4' not in shown['inspected'] or
+                    shown['injected']):
+                raise RuntimeError('native_window_rendering_invalid')
+            report['native_rendering_verified'] = True
+            report['status'] = 'finished'
+
         async def native_probe():
             try:
+                if args.scenario in WINDOW_SCENARIOS:
+                    await native_window_probe()
+                    return
                 await until(lambda: session.redeemed and clients and clients[-1].has_socket_connection)
                 for index, action in enumerate(sequence):
                     name = {'open': 'open', 'recent_open': 'open-recent',
@@ -2703,6 +2815,12 @@ def run(args):
             state = flow.state()
             observed = state['observation']
             report.update(
+                window_remaining=(
+                    None if state['publication_window_last_inspection'] is None
+                    else state['publication_window_last_inspection']['unmaterialised_retrievals']),
+                window_confirmed=bool(state['publication_window_last_outcome'] is not None),
+                window_uncertain_error_observed=window_uncertain_error_observed,
+                window_recovery_required=state['publication_window_reinspect_required'],
                 status=('finished' if args.mode == 'transport' and
                         (not last_error['code'] or
                          (args.scenario == 'worker_killed' and
@@ -2760,7 +2878,9 @@ if __name__ == '__main__':
                                                'render_fault', 'render_recovered',
                                                'stage_fault', 'stage_recovered',
                                                'worker_killed', 'worker_recovered',
-                                               'recent_open'), required=True)
+                                               'recent_open',
+                                               'publication_window',
+                                               'publication_window_lost_reply'), required=True)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--directory', type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))
