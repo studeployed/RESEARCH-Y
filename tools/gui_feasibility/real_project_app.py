@@ -2630,8 +2630,10 @@ def run(args):
                 await until_native_button(name, js)
                 if action == 'publication_window_confirm':
                     changed = await js(
-                        "(function(){const field=document.querySelector("
-                        "'[data-testid=publication-window-actor] input');"
+                        "(function(){const host=document.querySelector("
+                        "'[data-testid=publication-window-actor]');"
+                        "const field=host&&(host.matches('input')?host:"
+                        "host.querySelector('input'));"
                         "if(!field)return false;"
                         "Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"
                         "'value').set.call(field,'Synthetic fixture researcher');"
@@ -2640,6 +2642,9 @@ def run(args):
                         "return true;})()")
                     if changed is not True:
                         raise RuntimeError('native_researcher_input_missing')
+                    # Let Quasar propagate the actual input/change events
+                    # to the NiceGUI host before clicking explicit CONFIRM.
+                    await asyncio.sleep(.2)
                 await js("document.querySelector('[data-testid=" + name + "]').click(); true")
                 if (args.scenario == 'publication_window_lost_reply' and
                         action == 'publication_window_confirm'):
