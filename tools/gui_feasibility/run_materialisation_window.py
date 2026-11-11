@@ -89,7 +89,31 @@ def _large_fixture(parent):
     128 originals, without replaying the fixture-only bulk preparation.
     """
     project = create_project(parent, "Native 100k synthetic GUI fixture")
-    seeded = _seed(project, LARGE_RECORDS, LARGE_RECORDS, 64)
+    # The old benchmark fixture used '{}' for its unused strategy payload.
+    # A real GUI is required to validate the original approved OR-only strategy
+    # at project-open time. Seed valid immutable test strategy from the outset;
+    # never bypass the application validator or edit the frozen snapshot later.
+    approved_strategy = {
+        "format_version": 1,
+        "theme": "Synthetic original-source GUI acceptance",
+        "logic": "OR",
+        "approved_by": "Synthetic test-only researcher",
+        "groups": [{
+            "group_id": "all",
+            "label": "Biomedical synthetic OR-group",
+            "group_order": 0,
+            "terms": [{
+                "text": "synonyms",
+                "origin": "researcher",
+                "rationale": "Exact literal used by existing synthetic source queries",
+                "enabled": True,
+                "approved": True,
+            }],
+        }],
+    }
+    seeded = _seed(
+        project, LARGE_RECORDS, LARGE_RECORDS, 64,
+        strategy_snapshot=approved_strategy)
     require(seeded == LARGE_SEEDED_IDENTITIES, "large_window_fixture_seed_invalid")
     return project, LARGE_RUN
 
