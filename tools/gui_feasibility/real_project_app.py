@@ -2799,7 +2799,25 @@ def run(args):
                 report['status'] = 'finished'
             except Exception as exc:
                 report['status'] = 'failed'
-                report['error'] = type(exc).__name__
+                # The native fixture may return ONLY a fixed diagnostic code
+                # owned by this test harness. Never pass exception text that
+                # could contain a project path, source title or access token.
+                allowed = {
+                    'native_action_timeout',
+                    'native_researcher_input_missing',
+                    'native_window_action_failed',
+                    'native_uncertain_outcome_falsely_confirmed',
+                    'native_window_durable_evidence_invalid',
+                    'native_window_lost_reply_falsified_success',
+                    'native_window_receipt_missing',
+                    'native_window_rendering_unavailable',
+                    'native_window_rendering_invalid',
+                    'native_button_unavailable',
+                }
+                reason = str(exc) if type(exc) is RuntimeError else ''
+                report['error'] = reason if (
+                    args.scenario in WINDOW_SCENARIOS and reason in allowed
+                ) else type(exc).__name__
             finally:
                 app.native.main_window.destroy()
 
