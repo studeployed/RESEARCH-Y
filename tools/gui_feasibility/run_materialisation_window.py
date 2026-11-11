@@ -4,7 +4,8 @@ A disposable project holds 132 actual original source retrievals and original
 query memberships. Test-only CLI scenarios click the REAL finite-window UI
 controls; both confirmed and lost-reply-after-commit paths are independently
 checked against reopened SQLite. No sources, credentials or private paths leave
-the runner. This is not a product-scale 100,000-row GUI latency acceptance.
+the runner. The optional --large mode tests native GUI actions against 100,000 retained
+original source records, not 100,000 UI rows, complete deduplication or AT-22.
 """
 from __future__ import annotations
 
@@ -21,11 +22,15 @@ from tools.gui_feasibility.run_real_project import (
     ExperimentFailure, fixture, require, run_app,
 )
 from research_y import publication_identity as identity
-from research_y.projects import open_project
+from research_y.projects import create_project, open_project
+from scripts.benchmark_original_project import RUN as LARGE_RUN, _seed
 from research_y.storage import plan_source_query
 
 METHOD = "original-project-finite-window-gui-probe/1"
+LARGE_METHOD = "original-project-native-100k-window-gui-probe/1"
 RECORDS = 132
+LARGE_RECORDS = 100000
+LARGE_SEEDED_IDENTITIES = 128
 CONFIRMED = 128
 
 
@@ -76,6 +81,19 @@ def _fixture(parent):
     return project, run_id
 
 
+def _large_fixture(parent):
+    """Seed 100,000 retained original source rows, not 100,000 GUI approvals.
+
+    The existing independently audited synthetic scale fixture creates 128
+    original provisional identity links. The native GUI must approve another
+    128 originals, without replaying the fixture-only bulk preparation.
+    """
+    project = create_project(parent, "Native 100k synthetic GUI fixture")
+    seeded = _seed(project, LARGE_RECORDS, LARGE_RECORDS, 64)
+    require(seeded == LARGE_SEEDED_IDENTITIES, "large_window_fixture_seed_invalid")
+    return project, LARGE_RUN
+
+
 def _ledger(project):
     with closing(sqlite3.connect(project.database_path)) as db:
         db.execute("PRAGMA foreign_keys=ON")
@@ -102,22 +120,32 @@ def _ledger(project):
         }
 
 
-def run(mode):
+def run(mode, *, large=False):
+    records = LARGE_RECORDS if large else RECORDS
+    seeded = LARGE_SEEDED_IDENTITIES if large else 0
+    expected_total = seeded + CONFIRMED
+    expected_remaining = records - expected_total
     result = []
     for scenario in ("publication_window", "publication_window_lost_reply"):
         with TemporaryDirectory(prefix="researchy-native-window-case-") as tmp:
             root = Path(tmp)
-            project, run_id = _fixture(root)
+            project, run_id = (_large_fixture(root) if large else _fixture(root))
             before = _ledger(project)
-            require(before["sources"] == RECORDS and
-                    before["memberships"] == RECORDS and
-                    before["links"] == 0 and
-                    before["provisional"] == 0 and
-                    before["identity_audits"] == 0 and
+            require(before["sources"] == records and
+                    before["memberships"] == records and
+                    before["links"] == seeded and
+                    before["provisional"] == seeded and
+                    before["identity_audits"] == seeded and
+                    before["distinct_publications"] == seeded and
+                    before["linked_order_exact"] is True and
                     before["sqlite_integrity_check"] == "ok" and
                     before["foreign_key_check"] is True,
                     "window_fixture_original_evidence_invalid")
-            observed = run_app(mode, scenario, project, root, run_id, "")
+            observed = run_app(
+                mode, scenario, project, root, run_id, "",
+                expected_pending=records - seeded,
+                expected_remaining=expected_remaining,
+                expected_provisional=expected_total)
             after = _ledger(open_project(project.root))
             retained = (after["original_source_sha256"] ==
                         before["original_source_sha256"] and
@@ -126,12 +154,12 @@ def run(mode):
             correct = bool(
                 observed.get("passed") is True and
                 observed.get("window_sources_reconciled") is True and
-                after["sources"] == RECORDS and
-                after["memberships"] == RECORDS and
-                after["provisional"] == CONFIRMED and
-                after["links"] == CONFIRMED and
-                after["identity_audits"] == CONFIRMED and
-                after["distinct_publications"] == CONFIRMED and
+                after["sources"] == records and
+                after["memberships"] == records and
+                after["provisional"] == expected_total and
+                after["links"] == expected_total and
+                after["identity_audits"] == expected_total and
+                after["distinct_publications"] == expected_total and
                 after["linked_order_exact"] is True and
                 retained and
                 after["sqlite_integrity_check"] == "ok" and
@@ -151,8 +179,11 @@ def run(mode):
                 "all_128_source_links_independently_audited":
                     after["links"] == after["identity_audits"] ==
                     after["distinct_publications"] == CONFIRMED,
+                "all_expected_source_links_independently_audited":
+                    after["links"] == after["identity_audits"] ==
+                    after["distinct_publications"] == expected_total,
                 "no_automatic_duplicate_merge":
-                    after["distinct_publications"] == CONFIRMED,
+                    after["distinct_publications"] == expected_total,
                 "sql_integrity_verified":
                     after["sqlite_integrity_check"] == "ok" and
                     after["foreign_key_check"] is True,
@@ -168,18 +199,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", required=True, type=Path)
     parser.add_argument("--native", action="store_true")
+    parser.add_argument("--large", action="store_true",
+                        help="Test the fixed 100,000-original-source native/loopback fixture")
     args = parser.parse_args()
     if args.native and sys.platform != "win32":
         raise ValueError("Native graphical test requires Windows")
     mode = "native" if args.native else "transport"
     try:
-        cases = run(mode)
+        cases = run(mode, large=args.large)
         outcome = bool(cases and len(cases) == 2 and
                        all(x["passed"] for x in cases))
         evidence = {
-            "method": METHOD,
+            "method": LARGE_METHOD if large else METHOD,
             "tested_mode": mode,
-            "original_source_count": RECORDS,
+            "original_source_count": records,
+            "initial_provisional_identities": seeded,
+            "expected_provisional_identities": expected_total,
+            "expected_remaining": expected_remaining,
             "approved_provisional_identities_per_case": CONFIRMED,
             "cases": cases,
             "all_passed": outcome,
@@ -196,7 +232,7 @@ def main():
     except (ExperimentFailure, ValueError, OSError, sqlite3.DatabaseError) as exc:
         outcome = False
         evidence = {
-            "method": METHOD, "tested_mode": mode, "all_passed": False,
+            "method": LARGE_METHOD if large else METHOD, "tested_mode": mode, "all_passed": False,
             "error": str(exc) if isinstance(exc, ExperimentFailure)
                      else "window_gui_probe_unavailable",
             "full_AT_22_acceptance": False,
