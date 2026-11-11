@@ -264,8 +264,24 @@ def pid_alive(pid):
         # A reaped-or-zombie child cannot continue performing application work.
         status=Path(f'/proc/{pid}/stat').read_text()
         return status.rsplit(')',1)[1].split()[0] != 'Z'
-    except FileNotFoundError:
+    except (FileNotFoundError, ProcessLookupError):
+        # /proc/<pid>/stat may vanish after path resolution but before or
+        # during read(2). Linux then raises ESRCH, not necessarily ENOENT.
+        # That is a stopped child, not a failed worker-cleanup assertion.
         return False
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='Linux /proc lifetime only')
+def test_pid_probe_recognises_proc_disappearance_during_read(monkeypatch):
+    original = Path.read_text
+
+    def vanished(path, *args, **kwargs):
+        if str(path) == '/proc/123456789/stat':
+            raise ProcessLookupError(3, 'No such process')
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'read_text', vanished)
+    assert pid_alive(123456789) is False
 
 
 def test_abrupt_host_exit_does_not_leave_worker_running(tmp_path):
