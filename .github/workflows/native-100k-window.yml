@@ -1,0 +1,117 @@
+name: Native and loopback 100k original-source GUI evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-100k-window.yml'
+      - 'scripts/benchmark_original_project.py'
+      - 'tools/gui_feasibility/**'
+      - 'src/research_y/publication_materialisation_window.py'
+      - 'src/research_y/publication_run_materialisation.py'
+      - 'src/research_y/application_worker.py'
+      - 'src/research_y/application_commands.py'
+      - 'src/research_y/original_source_scope.py'
+      - 'docs/GUI_NATIVE_100K_WINDOW.md'
+      - 'tests/test_gui_native_window_acceptance.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-100k-window-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  finite-window-gui:
+    name: Real 100k-original-source window ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Create isolated GUI test environment
+        shell: python
+        run: |
+          import os, pathlib, venv
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'researchy-window-native'
+          venv.EnvBuilder(with_pip=True, system_site_packages=False).create(root)
+          executable=root/('Scripts' if os.name=='nt' else 'bin')
+          with open(os.environ['GITHUB_PATH'],'a',encoding='utf-8') as stream:
+              stream.write(str(executable)+'\n')
+          pathlib.Path('.window-gui-evidence').mkdir()
+      - name: Resolve approved GUI dependency candidates
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --dry-run --ignore-installed --report .window-gui-evidence/resolution.json -r tools/gui_feasibility/requirements.txt
+      - name: Verify release archives and generate hash-bound dependency list
+        run: python scripts/gui_dependency_probe.py prepare --directory .window-gui-evidence
+      - name: Install exact verified GUI dependencies
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --require-hashes --report .window-gui-evidence/installation.json -r .window-gui-evidence/candidate-lock.txt
+      - name: Install existing project Excel testing extras
+        run: python -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --timeout 20 --retries 1 --report .window-gui-evidence/excel-installation.json -e ".[excel]"
+      - name: Verify GUI dependency and project environment
+        run: python -m pip check
+      - name: Verify original and current GUI framework package pins
+        run: python -c "from importlib.metadata import version; assert version('nicegui')=='3.18.0' and version('pywebview')=='6.2.1' and version('openpyxl')=='3.1.5'"
+      - name: Real guarded local transport and two worker-commit scenarios
+        if: runner.os == 'Linux'
+        run: python -m tools.gui_feasibility.run_materialisation_window --directory .window-gui-evidence --large
+      - name: Actual native Windows finite-window button and recovery actions
+        if: runner.os == 'Windows'
+        run: python -m tools.gui_feasibility.run_materialisation_window --directory .window-gui-evidence --native --large
+      - name: Verify two real-original-source GUI scenarios and no false claims
+        shell: python
+        run: |
+          import json,os
+          from pathlib import Path
+          data=json.loads(Path('.window-gui-evidence/window-gui-evidence.json').read_text(encoding='utf-8'))
+          assert data['method']=='original-project-native-100k-window-gui-probe/1'
+          assert data['all_passed'] is True
+          assert data['original_source_count']==100000
+          assert data['initial_provisional_identities']==128
+          assert data['expected_provisional_identities']==256
+          assert data['expected_remaining']==99744
+          assert data['approved_provisional_identities_per_case']==128
+          assert data['tested_mode']==('native' if os.name=='nt' else 'transport')
+          assert len(data['cases'])==2
+          assert {x['scenario'] for x in data['cases']}=={
+              'publication_window','publication_window_lost_reply'}
+          for case in data['cases']:
+              assert case['passed'] is True
+              assert case['original_sources_and_memberships_unchanged'] is True
+              assert case['all_expected_source_links_independently_audited'] is True
+              assert case['no_automatic_duplicate_merge'] is True
+              assert case['sql_integrity_verified'] is True
+              assert case['original_sources']==100000
+              assert case['remaining_without_provisional_identity']==99744
+              assert case['provisional_identities']==256
+              if os.name=='nt':
+                  assert case['native_rendering_verified'] is True
+          assert data['no_network_provider_requests'] is True
+          assert data['real_original_sqlite'] is True
+          assert data['real_application_worker'] is True
+          assert data['native_desktop_installer_tested'] is False
+          assert data['full_AT_22_acceptance'] is False
+          assert data['source_retrieval_verified'] is False
+          assert data['deduplication_complete'] is False
+          assert data['verified_complete'] is False
+          assert data['global_unique_publications'] is None
+          print('Actual finite-window test modes:',data['tested_mode'])
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: original-100k-gui-window-${{ matrix.os }}-py312
+          path: |
+            .window-gui-evidence/window-gui-evidence.json
+            .window-gui-evidence/dependency-evidence.json
+            .window-gui-evidence/probe-error.json
+          retention-days: 21
+          if-no-files-found: warn

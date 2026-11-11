@@ -91,7 +91,7 @@ def _payload(i: int, total_selected: int, matched: int, source: str,
     return identity._json(body)
 
 
-def _seed(project, records: int, selected: int, matched: int):
+def _seed(project, records: int, selected: int, matched: int, *, strategy_snapshot=None):
     """Commit real project source/membership rows in finite SQLite batches."""
     stamp=project.created_at_utc
     same_run_pairs=selected==records
@@ -99,7 +99,8 @@ def _seed(project, records: int, selected: int, matched: int):
         db.execute("PRAGMA foreign_keys=ON")
         db.execute("BEGIN IMMEDIATE")
         db.execute("INSERT INTO strategy_versions VALUES(?,?,?,?)",
-                   (STRATEGY,1,stamp,"{}"))
+                   (STRATEGY,1,stamp,
+                    identity._json(strategy_snapshot) if strategy_snapshot is not None else "{}"))
         db.execute("INSERT INTO strategy_groups VALUES(?,?,?,?)",
                    (STRATEGY,"all","Biomedical synthetic OR-group",0))
         for run_id in (RUN,HISTORY):
