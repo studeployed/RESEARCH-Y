@@ -1,0 +1,7 @@
+requirement,increment evidence,implementation status or limitation
+AT-22,.github/workflows/native-100k-results.yml,PARTIAL: original 100k stage timing and real GUI action timing; no final latency threshold or product acceptance
+UI-07,tools/gui_feasibility/run_native_100k_results.py,PARTIAL: diagnostic around original full run result browse, not full filters or saved views
+UI-08,tools/gui_feasibility/real_project_app.py,PARTIAL: source-only host timing of detail inspection, not complete record UI
+AT-10,tests/test_gui_results_latency_profile.py,PARTIAL: unchanged original identity hypotheses and associations, no deduplicated publication acceptance
+AT-19,tools/gui_feasibility/run_native_100k_results.py,PARTIAL: original invalid/uncertain completion status never promoted; no full source completeness
+AT-21,tools/gui_feasibility/run_real_project.py,PARTIAL: only bounded elapsed intervals and static action labels leave disposable host; not release security acceptance
