@@ -1,0 +1,11 @@
+requirement,evidence,qualification
+COUNT-01,src/research_y/result_counts.py,Original publication and group count denominators unchanged; count-only status witnesses used after full audit verification
+COUNT-02,tests/test_result_counts.py,Existing arithmetic group sum differs from original global publication union when source links span groups
+DUP-01,tests/test_result_counts.py,Original independent source-to-publication associations and confirmed/review-required distinctions preserved; no new automatic deduplication
+DUP-04,tests/test_result_counts.py,Explicit reviewer-confirmed and reversible association histories still drive original canonical counts
+AUDIT-01,tests/test_result_counts.py,Original linked event source checksum and receipt mismatch fail closed; no event storage or audit writer changed
+AT-10,tests/test_result_counts.py,Partial: original multi-source reviews and source memberships counted without premature true unique verdict
+AT-17,tests/test_original_project_performance.py,Partial: original source-backed publication revisions remain identical after reopen
+AT-19,src/research_y/result_counts.py,No source completeness promotion or inferred global unique publication total
+AT-21,tests/test_result_counts.py,Audit-corrupt original event is rejected even when only a compact witness would be retained
+AT-22,docs/COMPACT_COUNT_LINKS.md,Partial: large-project in-memory link representation reduction with independent 100k benchmark verification required
