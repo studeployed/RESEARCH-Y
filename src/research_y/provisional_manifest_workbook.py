@@ -66,7 +66,7 @@ def render_provisional_manifest(project, run_id: str) -> bytes:
         with result_counts._read_connection(project) as db:
             projection = result_counts._snapshot(db, project, run_id)
             if (projection.status != "incomplete" or
-                    projection.global_unique_publications is not None):
+                    projection.totals["global_unique_publications"] is not None):
                 raise ProvisionalManifestError("provisional_status_invalid")
             # The current projection is the only source of run denominators.
             # Query/group membership rows are re-read from this same snapshot.
@@ -123,7 +123,14 @@ def render_provisional_manifest(project, run_id: str) -> bytes:
                 for row in facts:
                     emit_evidence(row)
 
-                labels = {g["group_id"]: g["label"] for g in projection.groups}
+                sheet_rows = {"identities": 0, "sources": 0, "memberships": 0}
+
+                def add(tab, writer, fields):
+                    sheet_rows[tab] += 1
+                    if sheet_rows[tab] > ROW_LIMIT - 3:
+                        raise WorkbookLimitError("Provisional sheet exceeds Excel row limit")
+                    writer(fields)
+
                 count_identities = 0
                 included = set()
                 count_source_links = 0
@@ -149,25 +156,23 @@ def render_provisional_manifest(project, run_id: str) -> bytes:
                     confirmed = sum(
                         s["decision"]["status"] == "confirmed_match"
                         for s in selected)
-                    emit_identity((
+                    add("identities", emit_identity, (
                         pub_id, len(selected),
                         len(snapshot.retrievals) - len(selected),
                         confirmed, len(selected) - confirmed, len(groups),
                         "PROVISIONAL: independent source review outstanding"))
                     count_identities += 1
-                    if count_identities + 3 > ROW_LIMIT:
-                        raise WorkbookLimitError("Identity sheet exceeds Excel row limit")
                     for src in snapshot.retrievals:
                         rid = src["retrieval_id"]
                         if rid in included:
                             raise ProvisionalManifestError("original_source_duplicate")
                         included.add(rid)
-                        emit_source((
+                        add("sources", emit_source, (
                             rid, src["run_id"], src["source_name"], pub_id,
                             src["run_id"] == run_id, src["decision"]["status"]))
                         count_source_links += 1
                         for member in src["memberships"]:
-                            emit_member((
+                            add("memberships", emit_member, (
                                 rid, member["run_id"], member["query_id"],
                                 member["group_id"], member["source_name"],
                                 member["status"], member["run_status"]))
@@ -190,8 +195,9 @@ def render_provisional_manifest(project, run_id: str) -> bytes:
                     if rid in included:
                         raise ProvisionalManifestError("original_source_duplicate")
                     included.add(rid)
-                    emit_source((rid, source_run, name, None, True,
-                                 "UNMATERIALISED: no publication hypothesis"))
+                    add("sources", emit_source,
+                        (rid, source_run, name, None, True,
+                         "UNMATERIALISED: no publication hypothesis"))
                     count_source_links += 1
                     for member in db.execute(
                         "SELECT m.run_id,m.query_id,q.group_id,q.source_name,"
@@ -202,15 +208,17 @@ def render_provisional_manifest(project, run_id: str) -> bytes:
                         "AND s.strategy_version_id=q.strategy_version_id "
                         "WHERE m.retrieval_id=? ORDER BY m.query_id", (rid,)
                     ):
-                        emit_member((rid, *member))
+                        add("memberships", emit_member, (rid, *member))
                         count_memberships += 1
                 if (count_selected_links +
                         projection.totals["unmaterialised_retrievals"] !=
                         projection.totals["metadata_source_records"]):
                     raise ProvisionalManifestError("selected_original_count_mismatch")
-                if (count_source_links + 3 > ROW_LIMIT or
-                        count_memberships + 3 > ROW_LIMIT):
-                    raise WorkbookLimitError("Workbook exceeds Excel row limits")
+                if (sheet_rows != {
+                        "identities": count_identities,
+                        "sources": count_source_links,
+                        "memberships": count_memberships}):
+                    raise ProvisionalManifestError("manifest_sheet_counts_mismatch")
                 output = BytesIO()
                 workbook.save(output)
                 result = output.getvalue()
