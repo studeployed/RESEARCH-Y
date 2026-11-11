@@ -132,7 +132,7 @@ def run(args):
         # only aggregate, source-free results evidence goes into the report.
         results_witness = dict(first_ids=None, first_cursor=None,
                                first_revision=None, second_ids=None,
-                               detail_open=False)
+                               detail_open=False, action_service_ms=[])
         # Disposable test-launcher assertions: never readable or selectable
         # through browser state, HTTP requests or an application preference.
         expected_window_remaining = int(os.environ.pop(
@@ -149,6 +149,10 @@ def run(args):
 
         async def act(name, value=None):
             async with action_lock:
+                # Only aggregate duration and fixed action names enter
+                # disposable evidence; no source, path, actor or cursor data.
+                service_started = time.perf_counter()
+                initial_events = len(events)
                 try:
                     def perform():
                         if name == 'open':
@@ -490,6 +494,14 @@ def run(args):
                         window_uncertain_error_observed = True
                 except Exception:
                     last_error['code'] = 'unhandled_action_failure'
+                if (args.scenario == 'publication_results_large' and
+                        len(events) == initial_events + 1 and
+                        name in ('open', 'select_run', 'publication_refresh',
+                                 'publication_next', 'publication_detail')):
+                    results_witness['action_service_ms'].append({
+                        'action': name,
+                        'elapsed_ms': round(
+                            (time.perf_counter() - service_started)*1000, 3)})
                 if clients:
                     panel.refresh()
                 return view()
@@ -3000,6 +3012,9 @@ def run(args):
             state = flow.state()
             observed = state['observation']
             report.update(
+                results_action_service_ms=(
+                    list(results_witness['action_service_ms'])
+                    if args.scenario == 'publication_results_large' else None),
                 results_page_rows=(
                     None if state['publication_page'] is None else
                     len(state['publication_page']['rows'])),
