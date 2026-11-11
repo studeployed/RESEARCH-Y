@@ -355,7 +355,13 @@ def transport_window_steps(port, auth, scenario, run_id, *,
                     'window_lost_reply_false_success')
             observed.append('publication_window_confirm_interrupted')
             continue
-        require(error is None, 'window_action_failed')
+        if error is not None:
+            # Test-only diagnostic: retain only bounded error codes, never
+            # source text, user values, paths or raw service replies.
+            safe_error = (error if type(error) is str and len(error) <= 64
+                          and error.replace('_', '').isalnum() else 'redacted')
+            raise ExperimentFailure('window_action_failed_' + action +
+                                    '_' + safe_error)
         if action == 'open':
             require(state['selected_run_id'] is None, 'window_implicit_run')
         if action == 'select_run':
