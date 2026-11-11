@@ -701,9 +701,34 @@ def run_app(mode, scenario, project, parent, run_id, expected_export, *,
                     if mode == 'native':
                         require(report.get('native_rendering_verified') is True,
                                 'results_native_rendering_missing')
+                    # The child fixture retains only timings and fixed
+                    # operations. Reject arbitrary strings and non-finite
+                    # durations before copying any evidence across processes.
+                    service_ms = report.get('results_action_service_ms')
+                    native_ms = report.get('native_results_action_ms')
+                    require(
+                        type(service_ms) is list and
+                        [x.get('action') for x in service_ms
+                         if type(x) is dict] == expected_actions and
+                        len(service_ms) == len(expected_actions) and
+                        all(type(x.get('elapsed_ms')) in (int, float) and
+                            0 < x['elapsed_ms'] < 120000
+                            for x in service_ms),
+                        'results_service_timing_invalid')
+                    if mode == 'native':
+                        require(
+                            type(native_ms) is list and len(native_ms) == 5 and
+                            all(type(x) in (int, float) and 0 < x < 120000
+                                for x in native_ms),
+                            'results_native_timing_invalid')
+                    else:
+                        require(native_ms is None,
+                                'results_transport_native_timing_forged')
                     result.update(
                         passed=True, results_paging_verified=True,
                         results_detail_verified=True,
+                        results_action_service_ms=service_ms,
+                        native_results_action_ms=native_ms,
                         native_rendering_verified=bool(
                             report.get('native_rendering_verified', False)))
                     with socket.socket() as sock:
