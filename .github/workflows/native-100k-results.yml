@@ -92,6 +92,32 @@ jobs:
           assert c['native_rendering_verified'] is (os.name=='nt')
           assert c['fixture_preparation_elapsed_s'] > 0
           assert c['gui_session_elapsed_s'] > 0
+          profile=c['original_count_stage_profile']
+          assert profile['full_original_validation_retained'] is True
+          assert profile['stage_count']==4
+          assert profile['original_source_records']==100000
+          assert profile['provisional_identity_hypotheses']==100000
+          assert profile['global_unique_publications'] is None
+          assert profile['whole_run_ms'] > 0
+          assert profile['other_validation_ms'] >= 0
+          assert set(profile['stages_ms'])=={
+              'original_source_validation',
+              'original_identity_link_validation',
+              'query_membership_validation',
+              'original_review_receipt_validation'}
+          assert all(0 <= t < 120000 for t in profile['stages_ms'].values())
+          assert c['results_action_profile_verified'] is True
+          assert [a['action'] for a in c['results_action_service_ms']]==[
+              'open','select_run','publication_refresh','publication_next',
+              'publication_detail']
+          assert all(0 < a['elapsed_ms'] < 120000
+                     for a in c['results_action_service_ms'])
+          if os.name=='nt':
+              assert len(c['native_results_action_ms'])==5
+              assert all(0 < t < 120000
+                         for t in c['native_results_action_ms'])
+          else:
+              assert c['native_results_action_ms'] is None
           assert data['real_original_sqlite'] is True
           assert data['real_application_worker'] is True
           assert data['no_provider_network_requests'] is True
