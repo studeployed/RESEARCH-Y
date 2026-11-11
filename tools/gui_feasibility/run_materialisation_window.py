@@ -205,6 +205,11 @@ def main():
     if args.native and sys.platform != "win32":
         raise ValueError("Native graphical test requires Windows")
     mode = "native" if args.native else "transport"
+    large = bool(args.large)
+    records = LARGE_RECORDS if large else RECORDS
+    seeded = LARGE_SEEDED_IDENTITIES if large else 0
+    expected_total = seeded + CONFIRMED
+    expected_remaining = records - expected_total
     try:
         cases = run(mode, large=args.large)
         outcome = bool(cases and len(cases) == 2 and
