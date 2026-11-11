@@ -10,6 +10,7 @@ provider metadata is emitted; no queries, mutations or background operations.
 from __future__ import annotations
 
 from io import BytesIO
+import os
 import sqlite3
 
 from research_y import publication_identity as identity, result_counts
@@ -50,6 +51,44 @@ def _columns(sheet, header, widths):
     styled([STATUS])
     styled(header, heading=True)
     return styled
+
+
+
+def _discard_unsaved_worksheets(workbook) -> None:
+    """Release OpenPyXL 3.1.5 write-only XML files if save never completed.
+
+    Workbook.close() closes the workbook archive, but NOT the temporary files
+    created by write-only worksheet append(). The normal ExcelWriter cleans
+    these only after it has saved each worksheet. On a row-limit, invalid
+    source or interrupted writer failure, close active XML generators/handles
+    and remove *every* remaining worksheet file before propagating the error.
+    This uses the worksheet writer's pinned-OpenPyXL cleanup contract, not
+    application-managed paths, and does not touch any retained original data.
+    """
+    cleanup_failed = False
+    for sheet in workbook.worksheets:
+        writer = sheet._writer
+        if writer is None:
+            continue
+        # The archive writer may have already cleaned some sheets if save
+        # failed halfway through; never delete or reopen a completed output.
+        if not os.path.exists(writer.out):
+            continue
+        try:
+            if sheet._rows is not None:
+                sheet._rows.close()
+        except Exception:
+            cleanup_failed = True
+        try:
+            writer.close()
+        except Exception:
+            cleanup_failed = True
+        try:
+            writer.cleanup()
+        except (OSError, ValueError):
+            cleanup_failed = True
+    if cleanup_failed:
+        raise ProvisionalManifestError("provisional_temporary_cleanup_failed")
 
 
 def render_provisional_manifest(project, run_id: str) -> bytes:
@@ -225,6 +264,12 @@ def render_provisional_manifest(project, run_id: str) -> bytes:
                 if len(result) > MAX_ARTIFACT_BYTES:
                     raise WorkbookLimitError("Workbook exceeds existing export byte limit")
                 return result
+            except BaseException:
+                # A failed generation must not accumulate the OpenPyXL
+                # write-only sheet XML files in a long-running process.
+                # Preserve the original error unless cleanup itself fails.
+                _discard_unsaved_worksheets(workbook)
+                raise
             finally:
                 workbook.close()
     except (ProvisionalManifestError, WorkbookLimitError):
