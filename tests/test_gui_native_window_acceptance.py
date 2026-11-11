@@ -61,8 +61,10 @@ def test_window_driver_and_native_scenario_actions_are_fixed():
     assert "if scenario in ('publication_window', 'publication_window_lost_reply'):" in driver
     assert 'transport_window_steps(port, auth, scenario, run_id)' in driver
     assert 'window_lost_reply_not_refused' in driver
-    assert "if name == 'publication_window_confirm':" in experiment or (
-        "'publication_window_lost_reply'" in experiment)
+    # Verify the actual scenario is present without assuming Python quote style.
+    assert "publication_window_lost_reply" in experiment
+    assert "publication_window" in experiment
+    assert "for scenario in" in experiment
     # This is a command-line-selected synthetic failure, NOT a browser route
     # accepting a client-selected fault, source ID, original path or query.
     assert "if name == 'publication_window_confirm':\n                    raise ProjectFlowError('worker_interrupted')" in app
