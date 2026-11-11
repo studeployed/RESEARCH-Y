@@ -1,0 +1,15 @@
+requirement,scenario or test,confirmed status or explicit boundary
+DATA-01,tests/test_publication_materialisation_window.py::test_two_batch_window_previews_and_commits_only_approved_ids,original source records and independent provisional publication identities preserved
+DATA-02,docs/TWO_BATCH_MATERIALISATION.md,same DOI and title remain independent provisional identities with no automatic merge
+DATA-04,tests/test_publication_materialisation_window.py::test_two_batch_window_previews_and_commits_only_approved_ids,unchanged original sources and query memberships after both separate audited commits
+DUP-03,tests/test_publication_materialisation_window.py::test_two_batch_window_previews_and_commits_only_approved_ids,all new identities review_required without final deduplication
+DUP-04,tests/test_publication_materialisation_window.py::test_second_batch_sqlite_failure_retains_first_and_refuses_replay,previous committed association and immutable audit rows remain after later rollback
+RUN-06,tests/test_publication_materialisation_window.py::test_scope_change_between_batches_stops_without_unapproved_second_commit,foreground operation stops if approved original source or query scope changes
+PROJ-04,tests/test_publication_materialisation_window.py::test_second_batch_sqlite_failure_retains_first_and_refuses_replay,transactional rollback of second 64-source batch with first committed intact
+AUDIT-03,.github/workflows/two-batch-materialisation-100k.yml,128 additional original production publication association audit receipts verified
+UI-05,src/research_y/application_commands.py,strictly allowlisted trusted-host preview and confirmation; user-visible GUI consent still outstanding
+AT-09,tests/test_publication_materialisation_window.py::test_second_batch_sqlite_failure_retains_first_and_refuses_replay,project reopen and stale consent refuse silent resumption after partial commit
+AT-10,tests/test_publication_materialisation_window.py::test_two_batch_window_previews_and_commits_only_approved_ids,no automatic DOI/title equivalence association despite source candidates
+AT-19,scripts/benchmark_materialisation_window.py,source and deduplication completion statuses remain false with unknown verified global total
+AT-21,tests/test_publication_materialisation_window.py::test_trusted_host_allowlist_and_one_use_approval,explicit trusted-host permission and one-use SHA token required
+AT-22,.github/workflows/two-batch-materialisation-100k.yml,one 128-original-source foreground approval against 100000 project sources; full native GUI and entire production materialisation unverified

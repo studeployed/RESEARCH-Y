@@ -149,6 +149,14 @@ def services(monkeypatch, tmp_path):
     preparation.materialise_run_batch=service('publication_materialisation_confirm',{
         'no_network_requests':True,'source_retrieval_verified':False,
         'global_unique_publications':None})
+    window=types.ModuleType('research_y.publication_materialisation_window')
+    window.MaterialisationConflict=MaterialisationConflict
+    window.preview_two_batch_materialisation=service('publication_window_preview',{
+        'no_network_requests':True,'source_retrieval_verified':False,
+        'global_unique_publications':None})
+    window.confirm_two_batch_materialisation=service('publication_window_confirm',{
+        'no_network_requests':True,'source_retrieval_verified':False,
+        'global_unique_publications':None})
     review_gui=types.ModuleType('research_y.publication_review_gui')
     from research_y.publication_review_gui import PublicationReviewError
     review_gui.PublicationReviewError=PublicationReviewError
@@ -218,6 +226,7 @@ def services(monkeypatch, tmp_path):
                         ('run_source_coordinator',coordination),
                         ('publication_results',publication),
                         ('publication_run_materialisation',preparation),
+                        ('publication_materialisation_window',window),
                         ('publication_review_gui',review_gui),
                         ('publication_candidate_queue',queue),
                         ('candidate_index_build',indexed),
@@ -234,7 +243,8 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     project,calls,_,_,_=services
     kw={}
     if operation in ('inspect','run_board','run_coord_preview',
-                     'publication_page','publication_materialisation_preview'):
+                     'publication_page','publication_materialisation_preview',
+                     'publication_window_preview'):
         kw['run_id']=str(uuid4())
     elif operation=='candidate_queue_page':
         kw.update(run_id=str(uuid4()),candidate_queue_revision='a'*64)
@@ -257,7 +267,7 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     elif operation=='publication_detail':
         kw.update(run_id=str(uuid4()),publication_view_id=str(uuid4()),
                   publication_view_revision='a'*64)
-    elif operation=='publication_materialisation_confirm':
+    elif operation in ('publication_materialisation_confirm','publication_window_confirm'):
         kw.update(run_id=str(uuid4()),publication_view_revision='a'*64,
                   publication_actor='Fixture Researcher',publication_confirmed=True)
     elif operation in ('candidate_review_preview','candidate_review_decide'):
@@ -379,7 +389,8 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][1][1:]==(kw['run_id'],'report.xlsx')
         assert calls[0][2]['export_id']==kw['export_id']
     if 'directory' in kw: assert calls[0][2]['directory']==kw['directory']
-    if operation in ('publication_page','publication_materialisation_preview'):
+    if operation in ('publication_page','publication_materialisation_preview',
+                      'publication_window_preview'):
         assert calls[0][1][0]==project
         assert calls[0][1][1]==kw['run_id']
         assert result['no_network_requests'] is True
@@ -417,7 +428,7 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
         assert calls[0][1]==(project,kw['run_id'],kw['publication_view_id'])
         assert calls[0][2]['expected_revision']==kw['publication_view_revision']
         assert result['abstract_text_displayed'] is False
-    if operation=='publication_materialisation_confirm':
+    if operation in ('publication_materialisation_confirm','publication_window_confirm'):
         assert calls[0][1]==(project,kw['run_id'])
         assert calls[0][2]['expected_revision']==kw['publication_view_revision']
         assert calls[0][2]['actor']==kw['publication_actor']
