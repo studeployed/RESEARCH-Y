@@ -129,7 +129,8 @@ def test_injected_disk_full_keeps_partial_stage_and_recovers_without_overwrite(t
 
 
 def test_fault_scenarios_keep_error_and_recovery_actions_inside_trusted_host():
-    app = inspect.getsource(run)
+    from desktop_source import project_ui_source
+    app = project_ui_source()
     steps = inspect.getsource(transport_steps)
     runner = inspect.getsource(run_app)
     assert "data-testid=stage-recovery" in app

@@ -1,4 +1,9 @@
 requirement_id,implementation,test_evidence,scope_status
+UI-01,installed native launcher and host-selected folders,test_desktop_launcher.py::test_desktop_starts_without_selected_paths_or_implicit_project,Phase 1 optional desktop component
+AT-01,native create open select save and restart,tools/desktop_lifecycle.py,Windows synthetic project and host-supplied OS folder selection
+AT-02,reopen relocated native project and verify identical workbook,tools/desktop_lifecycle.py,Windows synthetic project
+SEC-01,read only named Windows source settings and keep private values on the host,test_desktop_launcher.py::test_source_settings_only_load_the_two_app_entries_and_redact_values,Windows generic credentials
+AT-21,installed desktop excludes disposable test routes,test_desktop_launcher.py::test_desktop_has_no_automation_routes_even_with_owner_session,authenticated localhost session
 ARCH-01,application_commands and application_worker independent of GUI,test_application_commands.py,partial no graphical adapter
 ARCH-02,spawned service work with responsive submit and poll,test_application_worker.py,partial no real interface or live network
 PROJ-03,expected identity retained and no saved absolute worker paths,test_application_worker_integration.py,partial local opened-project operations only

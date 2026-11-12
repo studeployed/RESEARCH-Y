@@ -345,7 +345,8 @@ def test_profile_rejects_control_characters_and_never_logs_secrets():
 
 
 def test_gui_controls_keep_two_step_consent_out_of_automated_probe_route():
-    code=inspect.getsource(run)
+    from desktop_source import project_ui_source
+    code = project_ui_source()
     assert "name == 'pubmed_pilot_offer'" in code
     assert "name == 'pubmed_pilot_confirm'" in code
     assert "name == 'pubmed_pilot_reconcile'" in code

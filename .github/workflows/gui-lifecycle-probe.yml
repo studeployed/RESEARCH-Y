@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/gui-lifecycle-probe.yml'
       - 'tools/gui_feasibility/**'
+      - 'src/research_y/desktop/**'
       - 'scripts/gui_dependency_probe.py'
       - 'src/research_y/application_worker.py'
       - 'src/research_y/application_commands.py'

@@ -249,7 +249,8 @@ def test_malformed_candidate_inspection_cannot_switch_project(tmp_path, monkeypa
 
 
 def test_native_buttons_are_host_owned_not_client_supplied_paths():
-    code = inspect.getsource(run)
+    from desktop_source import project_ui_source
+    code = project_ui_source()
     chooser = inspect.getsource(select_from_native_window)
     assert "name in ('native_open', 'native_create')" in code
     assert "selected = await select_from_native_window(app.native.main_window)" in code

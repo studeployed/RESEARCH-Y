@@ -45,13 +45,14 @@ def test_gui_window_132_original_sources_preserve_individual_citations(tmp_path)
 
 def test_window_driver_and_native_scenario_actions_are_fixed():
     root = Path(__file__).parents[1]
-    app = (root / 'tools/gui_feasibility/real_project_app.py').read_text(
-        encoding='utf-8')
+    from desktop_source import project_ui_source
+    app = project_ui_source()
     driver = (root / 'tools/gui_feasibility/run_real_project.py').read_text(
         encoding='utf-8')
     experiment = (root / 'tools/gui_feasibility/run_materialisation_window.py').read_text(
         encoding='utf-8')
-    assert "WINDOW_SCENARIOS = ('publication_window', 'publication_window_lost_reply')" in app
+    from tools.gui_feasibility.real_project_app import WINDOW_SCENARIOS
+    assert WINDOW_SCENARIOS == ('publication_window', 'publication_window_lost_reply')
     assert 'if args.scenario in WINDOW_SCENARIOS:' in app
     assert "if name == 'publication_window_confirm':" in app
     assert "flow.confirm_publication_window(value)" in app

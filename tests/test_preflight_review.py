@@ -311,7 +311,8 @@ def test_unconfirmed_review_can_be_revised_without_database_mutation(tmp_path):
 def test_gui_exposes_real_review_actions_but_not_browser_file_or_source_trigger():
     import inspect
     from tools.gui_feasibility.real_project_app import run
-    source=inspect.getsource(run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     assert "name == 'preflight_inspect'" in source
     assert "name == 'preflight_offer'" in source
     assert "name == 'preflight_record'" in source

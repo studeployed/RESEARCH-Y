@@ -14,6 +14,15 @@ dependencies = []
 
 [project.optional-dependencies]
 excel = ["openpyxl==3.1.5", "et-xmlfile==2.0.0"]
+desktop = [
+    "nicegui[native]==3.18.0",
+    "pywebview==6.2.1",
+    "openpyxl==3.1.5",
+    "et-xmlfile==2.0.0",
+]
+
+[project.gui-scripts]
+research-y = "research_y.desktop.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

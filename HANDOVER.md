@@ -2,6 +2,12 @@
 
 ## Phase 1 delivery
 
+The owner approved optional Windows desktop adoption on 12 November. The
+normal installed entry point is `research-y`. Its ordinary local session
+shares project operations with the isolated harness and starts with an empty
+selection. See `docs/DESKTOP.md` for source settings and the dedicated native
+two-process acceptance test. The full phase remains tracked in #105.
+
 [Issue #105](https://github.com/studeployed/RESEARCH-Y/issues/105) tracks all six
 roadmap units, existing evidence and remaining gates from main `cf331c2`.
 The first retrieval regression concerns a reopened run missing an approved

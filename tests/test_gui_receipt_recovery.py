@@ -113,7 +113,8 @@ def test_unreceipted_file_tampering_cannot_be_reconciled_or_overwritten(tmp_path
 
 
 def test_recovery_notice_and_real_transport_native_sequences_not_fake_success():
-    source = inspect.getsource(run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     driver = inspect.getsource(transport_steps)
     host = inspect.getsource(run_app)
     assert "if observed['outcome'] == 'published_receipt_missing':" in source
