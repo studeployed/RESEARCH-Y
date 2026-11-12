@@ -26,6 +26,21 @@ Offline original SQLite and actual Excel fixtures exercise publication after exp
 
 Each user-visible/host-driven publication operation remains **disabled** until a later, separately reviewed GUI/worker integration with real researcher consent and current-revision reinspection. The existing strategy/count workbook export remains independent and unchanged. The completed initial product's full EXPORT-01, AT-18, archival recovery, and end-to-end AT-22 remain outstanding.
 
+## Process-death verification under issue #39 (P1-06l6)
+
+`test_manifest_publisher_process_death` starts the production publisher in a fresh Python process using a synthetic, consented and staged workbook. The child exits abruptly inside the publishing transaction or file operation. The parent reopens the project and checks the committed receipt count, destination entries and inspected state before attempting recovery.
+
+| Exit after | Committed publication receipts | State after reopening |
+|---|---:|---|
+| Publishing receipt insertion, before commit | 0 | not_published |
+| Publishing receipt commit | 1 | publishing_interrupted |
+| Destination copy write | 1 | publishing_copy_ready |
+| Final hard link | 1 | awaiting_publication_receipt |
+| Published receipt insertion, before commit | 1 | awaiting_publication_receipt |
+| Published receipt commit, before reply | 2 | published_verified |
+
+With zero receipts an explicit new publication call is required. With an existing intent, resume reconciles the original file. Repeated resume must preserve exactly two receipts and two names for one file with the staged SHA-256. This test covers process termination on a running filesystem. Hardware power loss remains outside its evidence.
+
 ## Mandatory merge gate
 
 For exact current PR HEAD, inspect the four Windows/Linux Python 3.12/3.13 jobs, source/identity integrity and affected workbook checks, and completed Codex **code review first**, then completed matching-commit **security review**, including individual review receipts and all unresolved findings. New commits invalidate earlier approvals. No merge without explicit project-owner authorisation. Real product acceptance is not asserted from a successful internal staging/publication fixture.
