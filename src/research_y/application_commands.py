@@ -220,6 +220,7 @@ class ApplicationCommand:
     candidate_evidence: str | None = None
     candidate_confirmed: bool | None = None
     candidate_warnings_acknowledged: bool | None = None
+    candidate_cross_run: bool | None = None
     # Host-selected, validated two-source cursor. No untrusted database query.
     candidate_queue_cursor: tuple[str, str] | None = None
     candidate_queue_revision: str | None = None
@@ -254,6 +255,10 @@ class ApplicationCommand:
                 _uuid(self.run_id)
             if self.export_id is not None:
                 _uuid(self.export_id)
+            if self.candidate_cross_run is not None and (
+                    self.candidate_cross_run is not True or
+                    self.operation not in ('candidate_review_preview', 'candidate_review_decide')):
+                raise ValueError
             if self.operation not in ('prepare_manifest_intent', 'save_consented_manifest') and any(value is not None for value in
                     (self.manifest_revision, self.manifest_actor, self.manifest_confirmed)):
                 raise ValueError
@@ -933,11 +938,12 @@ def execute_command(command: ApplicationCommand) -> dict:
                 'candidate_link_status'):
             from research_y import publication_review_gui as candidate
             try:
+                scope = {'cross_run': True} if command.candidate_cross_run else {}
                 if command.operation == 'candidate_review_preview':
                     return candidate.preview_candidate_review(
                         project, command.run_id, command.candidate_left_id,
                         command.candidate_right_id,
-                        run_revision=command.candidate_run_revision)
+                        run_revision=command.candidate_run_revision, **scope)
                 if command.operation == 'candidate_review_decide':
                     return candidate.record_candidate_review(
                         project, command.run_id, command.candidate_left_id,
@@ -949,7 +955,7 @@ def execute_command(command: ApplicationCommand) -> dict:
                         actor=command.candidate_actor,
                         evidence=command.candidate_evidence,
                         warnings_acknowledged=command.candidate_warnings_acknowledged,
-                        confirmed=command.candidate_confirmed)
+                        confirmed=command.candidate_confirmed, **scope)
                 if command.operation == 'candidate_link_status':
                     return candidate.read_current_retrieval_link(
                         project, command.run_id, command.candidate_retrieval_id,

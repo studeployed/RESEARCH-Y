@@ -3113,17 +3113,17 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
-    def inspect_queue_candidate_pair(self, *, left, right, revision):
-        """Open an explicitly listed same-run pair with the original review engine."""
+    def inspect_queue_candidate_pair(self, *, left, right, revision, cross_run=False):
+        """Open a listed pair with explicit same-run or cross-run scope."""
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
             shown = self._candidate_queue
             if (self.selected_run_id is None or shown is None or
                     revision != shown['revision'] or
-                    type(left) is not str or type(right) is not str or
+                    type(left) is not str or type(right) is not str or type(cross_run) is not bool or
                     not any(r['retrieval_ids'] == sorted((left, right))
-                            and r['both_in_selected_run'] is True
+                            and r['both_in_selected_run'] is (not cross_run)
                             for r in shown['rows'])):
                 raise ProjectFlowError('candidate_queue_stale')
             try:
@@ -3140,8 +3140,10 @@ class RealProjectFlow:
                 offer = self._operation(
                     'candidate_review_preview', run_id=self.selected_run_id,
                     candidate_left_id=left, candidate_right_id=right,
-                    candidate_run_revision=shown['selected_run_revision'])
+                    candidate_run_revision=shown['selected_run_revision'],
+                    **({'candidate_cross_run': True} if cross_run else {}))
                 if (offer.get('method') != 'local-publication-review/1' or
+                        offer.get('cross_run', False) is not cross_run or
                         offer.get('project_id') != str(self.project.identifier) or
                         offer.get('run_id') != self.selected_run_id or
                         offer.get('run_revision') != shown['selected_run_revision'] or
@@ -3284,12 +3286,21 @@ class RealProjectFlow:
             return self._publish()
 
     def confirm_candidate_decision(self, *, decision, move_retrieval_id,
-                                   actor, evidence, acknowledged):
+                                   actor, evidence, acknowledged, offer_revision=None):
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
             offer = self._candidate_offer
             page = self._publication_page
+            cross_run = offer is not None and offer.get('cross_run') is True
+            if (cross_run or offer_revision is not None) and (
+                    not offer or offer_revision != offer['revision']):
+                raise ProjectFlowError('publication_review_stale')
+            if cross_run and decision == 'confirmed_match' and not any(
+                    source['retrieval_id'] == move_retrieval_id and source['run_id'] == self.selected_run_id
+                    for source in offer['sources']):
+                raise ProjectFlowError('publication_review_wrong_run')
+            scope = {'candidate_cross_run': True} if cross_run else {}
             if (offer is None or self.selected_run_id is None or
                     page is None or page['revision'] != offer['run_revision'] or
                     acknowledged is not True or
@@ -3311,7 +3322,7 @@ class RealProjectFlow:
                     candidate_decision=decision, candidate_move_id=move_retrieval_id,
                     candidate_actor=actor, candidate_evidence=evidence,
                     candidate_confirmed=True,
-                    candidate_warnings_acknowledged=True)
+                    candidate_warnings_acknowledged=True, **scope)
                 if (result.get('method') != 'local-publication-review/1' or
                         result.get('run_id') != self.selected_run_id or
                         result.get('decision') != decision or
@@ -3323,7 +3334,7 @@ class RealProjectFlow:
                     'candidate_review_preview', run_id=self.selected_run_id,
                     candidate_left_id=offer['retrieval_ids'][0],
                     candidate_right_id=offer['retrieval_ids'][1],
-                    candidate_run_revision=fresh['revision'])
+                    candidate_run_revision=fresh['revision'], **scope)
                 recent = checked.get('recent_decisions', [])
                 if (checked.get('status') != decision or not recent or
                         recent[-1]['status'] != decision or

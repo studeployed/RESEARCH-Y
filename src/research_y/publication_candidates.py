@@ -231,7 +231,8 @@ def find_candidates(project: Project, retrieval_ids: tuple[str, ...]) -> tuple[C
 def decide_candidate(project: Project, left_retrieval_id: str, right_retrieval_id: str, *,
                      expected_revision: str, decision: str, actor: str, evidence: str,
                      acknowledged_warnings: tuple[str, ...], decision_confirmed: bool,
-                     move_retrieval_id: str | None = None) -> CandidateSnapshot:
+                     move_retrieval_id: str | None = None,
+                     cross_run_context: tuple[str, str] | None = None) -> CandidateSnapshot:
     """Append an explicit decision; confirmation atomically associates ONE record.
 
     Rejection never splits an existing identity; reverse it first. Researcher
@@ -256,15 +257,25 @@ def decide_candidate(project: Project, left_retrieval_id: str, right_retrieval_i
         raise ValueError("Confirmation specifies one contributing retrieval; rejection moves none")
     request = identity._hash([pair, expected_revision, decision, actor, evidence, warnings,
                               move_retrieval_id, RULE_VERSION])
+    if cross_run_context is not None:
+        request = identity._hash([request, cross_run_context])
     with _validated_project_connection(project) as db:
         db.execute("BEGIN IMMEDIATE")
         current, state = _view(db, pair)
+        if cross_run_context is not None:
+            from research_y import result_counts
+            selected_run, expected_run_revision = cross_run_context
+            selected_ids = [source["retrieval_id"] for source in current.sources if source["run_id"] == selected_run]
+            if len(selected_ids) != 1 or (decision == "confirmed_match" and move_retrieval_id != selected_ids[0]):
+                raise ValueError("Only the selected run's retrieval can move in a cross-run review")
         prior = next((r for r in reversed(current.prior_decisions) if r["pair"] == list(pair)), None)
         if prior and prior["request_sha256"] == request:
             if (prior["post_state_sha256"] != state or prior["method"] != RULE_VERSION
                     or current.prior_decisions[-1]["event_id"] != prior["event_id"]):
                 raise identity.StalePublicationError("Decision evidence changed; reopen before retrying")
             return current
+        if cross_run_context is not None and result_counts._snapshot(db, project, selected_run).revision != expected_run_revision:
+            raise identity.StalePublicationError("Selected run changed during review")
         if current.revision != expected_revision:
             raise identity.StalePublicationError("Candidate evidence changed; reopen before deciding")
         if warnings != list(current.warnings):
@@ -299,5 +310,7 @@ def decide_candidate(project: Project, left_retrieval_id: str, right_retrieval_i
             post_state_sha256=after_state, association_event_id=association_event,
             moved_retrieval_id=move_retrieval_id,
         )
+        if cross_run_context is not None:
+            receipt["selected_run_id"], receipt["selected_run_revision"] = cross_run_context
         identity._audit(db, DECISION_EVENT, receipt)
         return _view(db, pair)[0]
