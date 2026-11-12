@@ -2,6 +2,10 @@
 
 ## Phase 1 delivery
 
+Use the [Phase 1 acceptance record](docs/PHASE1_ACCEPTANCE.md) for the
+current status of the six roadmap units, native Windows evidence, live
+source limits and the distinction between publication and membership counts.
+
 The owner approved optional Windows desktop adoption on 12 November. The
 normal installed entry point is `research-y`. Its ordinary local session
 shares project operations with the isolated harness and starts with an empty
