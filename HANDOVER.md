@@ -2,7 +2,7 @@
 
 ## Current work — P1-06l8, issue #102
 
-PR #100 merged at `c5a6f1c`. Issue #102 extends the trusted worker with
+PR #100 merged at `c5a6f1c` and PR #101 at `d018726`. Issue #102 extends the trusted worker with
 whole-run preview, explicit researcher consent and consent-receipt inspection.
 Use the selected revision and retain the export UUID across retries. Check the
 issue's PR for CI and commit-specific review evidence. The next application
