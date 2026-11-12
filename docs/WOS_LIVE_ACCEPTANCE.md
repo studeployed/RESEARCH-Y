@@ -46,13 +46,17 @@ The original aggregate artifact and downloaded audit were rechecked when prepari
 `.github/workflows/wos-cross-day.yml` uses the same public query and existing
 private Starter credential. The operator must confirm the right to retain up
 to 150 original source records temporarily on the disposable runner. Dispatch
-so that the first source step runs between **23:45 and 23:58 UTC**; this allows
-both processes to use the same private project under the 25-minute job limit.
+so that the first source step runs between **23:45 and 23:58 UTC**. Both
+processes use the same private project. The job has an 80-minute limit.
 The workflow has no schedule, PR or push trigger.
 
 The first process uses at most two requests. After UTC midnight a fresh process
 validates the old pages, makes a one-record resume probe and acquires at most
 one new page. Existing provider cooldowns and count-drift checks still apply.
+If the first day ends with zero remaining requests, the connector records a
+one-hour hold. The second process waits until the saved deadline before its
+probe. If more than one hour of cooldown remains after midnight, the bounded
+sample stops before contacting Starter again.
 The maximum is four requests. Dates and daily quota counts come from the original
 successful request observations. A later UTC date alone does not establish quota
 replenishment. The aggregate artifact records the quota increase flag, actual

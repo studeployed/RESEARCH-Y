@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 from uuid import UUID
 
 from research_y.projects import open_project, _validated_project_connection
@@ -18,6 +19,7 @@ from scripts.wos_checkpoint_validation import PROJECT, _save, create_diagnostic_
 
 STATE = "cross-day-state.json"
 EVIDENCE = "cross-day-evidence.json"
+MAX_RESUME_WAIT_SECONDS = 60 * 60
 
 
 def _utcnow():
@@ -74,7 +76,7 @@ def start(workspace, client, *, now=_utcnow):
     return {"stage": "paused", "pages": len(pages), "remaining": attempts[-1][4]}
 
 
-def resume(workspace, client, *, now=_utcnow):
+def resume(workspace, client, *, now=_utcnow, sleep=time.sleep):
     saved = json.loads((workspace / STATE).read_text(encoding="utf-8"))
     project = open_project(workspace / PROJECT)
     query_id = str(UUID(saved["query"]))
@@ -83,8 +85,15 @@ def resume(workspace, client, *, now=_utcnow):
     before, pages, attempts = _evidence(project, query_id)
     _first_day(before, pages, attempts)
     first_date, first_remaining, first_limit = attempts[-1][3:]
-    if now().astimezone(timezone.utc).date().isoformat() <= first_date:
+    reopened_at = now().astimezone(timezone.utc)
+    if reopened_at.date().isoformat() <= first_date:
         raise ValueError("later_utc_date_required")
+    if before.not_before_utc is not None:
+        delay = (datetime.fromisoformat(before.not_before_utc) - reopened_at).total_seconds()
+        if delay > MAX_RESUME_WAIT_SECONDS:
+            raise ValueError("provider_hold_exceeds_sample_window")
+        if delay > 0:
+            sleep(delay)
     run_wos_checkpoint(project, query_id, client, max_requests=2, revalidate_quota=True, now=now)
     after, final_pages, all_attempts = _evidence(project, query_id)
     next_attempts = all_attempts[len(attempts):]
