@@ -974,3 +974,337 @@ def test_manifest_intent_read_services_refuse_legacy_schema_without_migration(fi
     with closing(sqlite3.connect(project.database_path)) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION - 1
         assert db.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == audits_before
+
+
+def test_manifest_stage_is_audited_private_and_reopen_verified(fixture):
+    """Only the approved exact original revision creates an internal stage."""
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from research_y import result_counts
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    from research_y.provisional_manifest_stage import (
+        stage_manifest_workbook, inspect_manifest_stage, resume_manifest_stage,
+        STORE, METHOD)
+    project, run, _, _ = fixture
+    linked = insert(fixture, number=23001, groups=("g1", "g2"),
+                    title="PRIVATE DO NOT EXPORT", abstract="PRIVATE ABSTRACT")
+    unlinked = insert(fixture, number=23002, source="wos", groups=("g2",))
+    identity.materialise_retrieval(project, linked, actor="Fixture")
+    with closing(sqlite3.connect(project.database_path)) as db:
+        sources_before = db.execute(
+            "SELECT * FROM source_retrievals ORDER BY retrieval_id").fetchall()
+        members_before = db.execute(
+            "SELECT * FROM query_retrievals ORDER BY retrieval_id,query_id").fetchall()
+    offered = preview_manifest_intent(project, run)
+    request = uid()
+    prepare_manifest_intent(
+        project, run, "internal-approval.xlsx", export_id=request,
+        expected_revision=offered["original_revision"],
+        actor="Synthetic researcher", confirmed=True)
+    before = inspect_manifest_stage(project, request)
+    assert before["state"] == "not_staged"
+    assert before["workbook_staged"] is False
+    assert before["workbook_published"] is False
+
+    staged = stage_manifest_workbook(project, request)
+    assert staged["method"] == METHOD
+    assert staged["state"] == "staged"
+    assert staged["workbook_staged"] is True
+    assert staged["retained_artifact_verified"] is True
+    assert staged["current_original_revision_matches"] is True
+    assert staged["audited_publication_success"] is False
+    assert staged["workbook_published"] is False
+    assert staged["global_unique_publications"] is None
+    assert staged["source_retrieval_verified"] is False
+    assert staged["deduplication_complete"] is False
+    assert not (project.root / "exports" / "internal-approval.xlsx").exists()
+
+    store = project.root / "exports" / STORE
+    files = list(store.glob("retained-*.xlsx"))
+    assert len(files) == 1
+    artifact = files[0].read_bytes()
+    assert sha256(artifact).hexdigest() == staged["staged_artifact_sha256"]
+    assert len(artifact) == staged["staged_artifact_bytes"]
+    workbook = load_workbook(BytesIO(artifact), read_only=True, data_only=False)
+    try:
+        assert workbook.sheetnames == [
+            "Evidence & Limits", "Provisional Identities",
+            "Original Source Links", "Query Memberships"]
+        assert len(list(workbook["Original Source Links"].values)[3:]) == 2
+        assert len(list(workbook["Query Memberships"].values)[3:]) == 3
+        assert len(list(workbook["Provisional Identities"].values)[3:]) == 1
+        assert all(cell.data_type != "f" for ws in workbook.worksheets
+                   for row in ws for cell in row)
+    finally:
+        workbook.close()
+    assert b"PRIVATE DO NOT EXPORT" not in artifact
+    assert b"PRIVATE ABSTRACT" not in artifact
+
+    assert stage_manifest_workbook(project, request) == staged
+    assert resume_manifest_stage(project, request) == staged
+    assert inspect_manifest_stage(open_project(project.root), request) == staged
+    assert len(list(store.glob("retained-*.xlsx"))) == 1
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute("SELECT * FROM source_retrievals "
+                          "ORDER BY retrieval_id").fetchall() == sources_before
+        assert db.execute("SELECT * FROM query_retrievals "
+                          "ORDER BY retrieval_id,query_id").fetchall() == members_before
+        event_ids = db.execute(
+            "SELECT event_id FROM audit_events WHERE event_type=? ORDER BY event_id",
+            ("provisional_manifest_stage_v1:" + request,)
+        ).fetchall()
+        assert len(event_ids) == 2
+    assert result_counts.read_run_counts(project, run).revision == offered["original_revision"]
+
+
+def test_manifest_stage_recovery_of_missing_file_matches_original_digest(fixture):
+    """Crash after staging intent, before write, can recover *exact* bytes."""
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    from research_y import provisional_manifest_stage as stage
+    project, run, _, _ = fixture
+    item = insert(fixture, number=23003)
+    identity.materialise_retrieval(project, item, actor="Fixture")
+    approved = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(project, run, "staging.xlsx", export_id=export_id,
+                            expected_revision=approved["original_revision"],
+                            actor="Researcher", confirmed=True)
+    with stage.result_counts._read_connection(project) as db:
+        consent = stage._intent(db, project, export_id)
+    data = stage._render(project, consent)
+    _, pending = stage._writer(project, export_id, content=data)
+    assert pending["phase"] == "staging"
+    assert stage.inspect_manifest_stage(project, export_id)["state"] == (
+        "staging_interrupted")
+    # Simulate restart without a file: the source revision + complete digest
+    # must match the PREVIOUS immutable staging receipt before exclusive write.
+    recovered = stage.resume_manifest_stage(open_project(project.root), export_id)
+    assert recovered["workbook_staged"] is True
+    assert recovered["staged_artifact_sha256"] == sha256(data).hexdigest()
+    assert stage.inspect_manifest_stage(project, export_id) == recovered
+    assert not (project.root / "exports" / "staging.xlsx").exists()
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+            ("provisional_manifest_stage_v1:" + export_id,)
+        ).fetchone()[0] == 2
+
+
+def test_manifest_stage_existing_non_directory_is_not_missing(fixture):
+    """A hostile regular-file replacement for the private store fails closed.
+
+    Unlike a genuinely absent directory after a staging intent, an existing
+    non-directory cannot be treated as recoverable missing storage on Windows
+    or Linux. The original file must remain byte-identical.
+    """
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    from research_y import provisional_manifest_stage as stage
+    project, run, _, _ = fixture
+    rid = insert(fixture, number=23008)
+    identity.materialise_retrieval(project, rid, actor="Fixture")
+    preview = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(
+        project, run, "guarded-stage.xlsx", export_id=export_id,
+        expected_revision=preview["original_revision"],
+        actor="Researcher", confirmed=True)
+    with stage.result_counts._read_connection(project) as db:
+        approval = stage._intent(db, project, export_id)
+    raw = stage._render(project, approval)
+    stage._writer(project, export_id, content=raw)
+    private = project.root / "exports" / stage.STORE
+    assert not private.exists()
+    assert stage.inspect_manifest_stage(project, export_id)["state"] == (
+        "staging_interrupted")
+    private.write_bytes(b"AN UNRELATED ORDINARY FILE")
+    with pytest.raises(stage.ManifestStageError, match="stage_artifact_changed"):
+        stage.inspect_manifest_stage(project, export_id)
+    with pytest.raises(stage.ManifestStageError, match="stage_artifact_changed"):
+        stage.resume_manifest_stage(project, export_id)
+    assert private.read_bytes() == b"AN UNRELATED ORDINARY FILE"
+    assert not (project.root / "exports" / "guarded-stage.xlsx").exists()
+
+
+def test_manifest_stage_partial_or_changed_file_never_overwritten(fixture):
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    from research_y import provisional_manifest_stage as stage
+    project, run, _, _ = fixture
+    item = insert(fixture, number=23004)
+    identity.materialise_retrieval(project, item, actor="Fixture")
+    offered = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(project, run, "pending.xlsx", export_id=export_id,
+                            expected_revision=offered["original_revision"],
+                            actor="Researcher", confirmed=True)
+    with stage.result_counts._read_connection(project) as db:
+        consent = stage._intent(db, project, export_id)
+    original = stage._render(project, consent)
+    _, pending = stage._writer(project, export_id, content=original)
+    with stage._store(project, create=True) as store:
+        store.write_new(pending["artifact"]["name"], b"PARTIAL FILE DATA")
+    file = project.root / "exports" / stage.STORE / pending["artifact"]["name"]
+    with pytest.raises(stage.ManifestStageError, match="stage_artifact_changed"):
+        stage.inspect_manifest_stage(project, export_id)
+    with pytest.raises(stage.ManifestStageError, match="stage_artifact_changed"):
+        stage.resume_manifest_stage(project, export_id)
+    with pytest.raises(stage.ManifestStageError, match="stage_artifact_changed"):
+        stage.stage_manifest_workbook(project, export_id)
+    assert file.read_bytes() == b"PARTIAL FILE DATA"
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+            ("provisional_manifest_stage_v1:" + export_id,)
+        ).fetchone()[0] == 1
+
+
+def test_manifest_stage_fences_changed_original_evidence_and_rejects_legacy(fixture):
+    from research_y.schema import SCHEMA_VERSION
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    from research_y import provisional_manifest_stage as stage
+    project, run, _, queries = fixture
+    insert(fixture, number=23005)
+    offered = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(project, run, "fenced.xlsx", export_id=export_id,
+                            expected_revision=offered["original_revision"],
+                            actor="Researcher", confirmed=True)
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute("UPDATE source_queries SET status='failed' WHERE query_id=?",
+                   (queries[run, "g1", "pubmed"],))
+    with pytest.raises(stage.ManifestStageError, match="stage_revision_stale"):
+        stage.stage_manifest_workbook(project, export_id)
+    asserted = stage.inspect_manifest_stage(project, export_id)
+    assert asserted["state"] == "stale_reapproval_required"
+    assert asserted["workbook_staged"] is False
+    assert not list((project.root / "exports").glob("*.xlsx"))
+
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute(f"PRAGMA user_version={SCHEMA_VERSION-1}")
+    database_before = sha256(project.database_path.read_bytes()).hexdigest()
+    backups_before = list((project.root / "backups").iterdir())
+    with pytest.raises((stage.ManifestStageError, ValueError)):
+        stage.inspect_manifest_stage(project, export_id)
+    with pytest.raises((stage.ManifestStageError, ValueError)):
+        stage.stage_manifest_workbook(project, export_id)
+    assert sha256(project.database_path.read_bytes()).hexdigest() == database_before
+    assert list((project.root / "backups").iterdir()) == backups_before
+
+
+def test_manifest_stage_commit_window_rejects_source_change_after_render(fixture, monkeypatch):
+    """Race before staging event cannot authorise a different source revision."""
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    from research_y import provisional_manifest_stage as stage
+    project, run, _, queries = fixture
+    item = insert(fixture, number=23006)
+    identity.materialise_retrieval(project, item, actor="Fixture")
+    offer = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(project, run, "concurrent.xlsx", export_id=export_id,
+                            expected_revision=offer["original_revision"],
+                            actor="Researcher", confirmed=True)
+    actual = stage._render
+
+    def changed_after_render(project_arg, original_approval):
+        raw = actual(project_arg, original_approval)
+        with closing(sqlite3.connect(project.database_path)) as db, db:
+            db.execute("UPDATE source_queries SET status='failed' WHERE query_id=?",
+                       (queries[run, "g1", "pubmed"],))
+        return raw
+
+    with monkeypatch.context() as patched:
+        patched.setattr(stage, "_render", changed_after_render)
+        with pytest.raises(stage.ManifestStageError, match="stage_revision_stale"):
+            stage.stage_manifest_workbook(project, export_id)
+    assert not list((project.root / "exports").glob("*.xlsx"))
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+            ("provisional_manifest_stage_v1:" + export_id,)
+        ).fetchone()[0] == 0
+
+
+def test_manifest_stage_recovery_normalises_changed_workbook_and_zip_clock(fixture, monkeypatch):
+    """A later-day retry has the EXACT immutable staged digest, not a new ZIP.
+
+    Drive two deliberately distinct, readable generated XLSX packages whose
+    OpenPyXL core XML and ZIP entry timestamps differ, without sleeping or
+    depending on runner wall-clock speed. Only the approved original consent
+    time may determine the persisted archive's normalized metadata.
+    """
+    from io import BytesIO
+    from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
+    from xml.etree import ElementTree as ET
+    from openpyxl import load_workbook
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    from research_y import provisional_manifest_stage as stage
+
+    project, run, _, _ = fixture
+    record = insert(fixture, number=23007)
+    identity.materialise_retrieval(project, record, actor="Fixture")
+    preview = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(
+        project, run, "time-safe.xlsx", export_id=export_id,
+        expected_revision=preview["original_revision"],
+        actor="Researcher", confirmed=True)
+    with stage.result_counts._read_connection(project) as db:
+        approval = stage._intent(db, project, export_id)
+
+    original_render = stage.render_provisional_manifest
+    early = original_render(project, run)
+
+    def advanced_zip_and_core_clock(raw):
+        output = BytesIO()
+        with ZipFile(BytesIO(raw)) as source, ZipFile(
+                output, "w", compression=ZIP_DEFLATED) as target:
+            for member in source.infolist():
+                data = source.read(member)
+                if member.filename == "docProps/core.xml":
+                    root = ET.fromstring(data)
+                    for field in ("created", "modified"):
+                        node = root.find("{" + stage._CORE_NS + "}" + field)
+                        assert node is not None
+                        node.text = "2048-11-12T21:45:06Z"
+                    data = ET.tostring(root, encoding="utf-8",
+                                       xml_declaration=True)
+                altered = ZipInfo(member.filename, (2048, 11, 12, 21, 45, 6))
+                altered.compress_type = ZIP_DEFLATED
+                target.writestr(altered, data)
+        return output.getvalue()
+
+    late = advanced_zip_and_core_clock(early)
+    assert late != early
+    assert stage._stable_package(early, approval) == (
+        stage._stable_package(late, approval))
+    # Create one durable staging receipt but interrupt before file creation.
+    immutable = stage._stable_package(early, approval)
+    _, pending = stage._writer(project, export_id, content=immutable)
+    assert pending["phase"] == "staging"
+    assert stage.inspect_manifest_stage(project, export_id)["state"] == (
+        "staging_interrupted")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(stage, "render_provisional_manifest",
+                      lambda *_: advanced_zip_and_core_clock(
+                          original_render(project, run)))
+        resumed = stage.resume_manifest_stage(project, export_id)
+    assert resumed["state"] == "staged"
+    assert resumed["staged_artifact_sha256"] == sha256(immutable).hexdigest()
+    retained = list((project.root / "exports" / stage.STORE).glob("*.xlsx"))
+    assert len(retained) == 1
+    assert retained[0].read_bytes() == immutable
+    workbook = load_workbook(BytesIO(immutable), read_only=True)
+    try:
+        assert workbook.sheetnames == [
+            "Evidence & Limits", "Provisional Identities",
+            "Original Source Links", "Query Memberships"]
+    finally:
+        workbook.close()
+    assert not (project.root / "exports" / "time-safe.xlsx").exists()
