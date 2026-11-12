@@ -8,6 +8,7 @@ exactly once; unknown/omitted records make the batch incomplete, not successful.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from hashlib import sha256
 import re
@@ -61,6 +62,13 @@ class PubMedRecord:
         return asdict(self)
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PubMedBookRecord(PubMedRecord):
+    """Container information kept separate from the cited contribution."""
+
+    book: dict[str, object]
+
+
 @dataclass(frozen=True, slots=True)
 class PubMedMetadataBatch:
     requested_pmids: tuple[str, ...]
@@ -105,9 +113,9 @@ def _date(node: ET.Element, *, kind: str) -> dict[str, str | None]:
     }
 
 
-def _authors(article: ET.Element) -> tuple[dict[str, object], ...]:
+def _authors(nodes: Iterable[ET.Element]) -> tuple[dict[str, object], ...]:
     out: list[dict[str, object]] = []
-    for n in article.findall("./AuthorList/Author"):
+    for n in nodes:
         ids = [{"source": x.get("Source"), "value": _text(x)} for x in n.findall("Identifier")]
         out.append({
             "last_name": _path(n, "LastName"), "fore_name": _path(n, "ForeName"),
@@ -120,6 +128,22 @@ def _authors(article: ET.Element) -> tuple[dict[str, object], ...]:
     return tuple(out)
 
 
+def _identifiers(pmid: str, nodes: Iterable[ET.Element]) -> dict[str, list[str]]:
+    identifiers: dict[str, list[str]] = {"pmid": [pmid]}
+    for n in nodes:
+        kind, value = n.get("IdType"), _text(n)
+        if kind in ("pmid", "pubmed") and value != pmid:
+            raise PubMedMetadataError("Conflicting PubMed PMID identifiers")
+        if kind and value:
+            identifiers.setdefault(kind, []).append(value)
+    return identifiers
+
+
+def _sections(parent: ET.Element) -> tuple[dict[str, str | None], ...]:
+    return tuple({"label": section.get("Label"), "category": section.get("NlmCategory"), "text": text}
+                 for section in parent.findall("./Abstract/AbstractText") if (text := _text(section)))
+
+
 def _record(element: ET.Element) -> PubMedRecord:
     citation = element.find("MedlineCitation")
     if citation is None:
@@ -129,28 +153,16 @@ def _record(element: ET.Element) -> PubMedRecord:
         raise PubMedMetadataError("PubMed record omitted a canonical PMID")
     article = citation.find("Article")
     if article is None:
-        # A MEDLINE status is not enough to fabricate an article's metadata.
         raise PubMedMetadataError("PubMed record omitted Article metadata")
     journal = article.find("Journal")
     issue = journal.find("JournalIssue") if journal is not None else None
-    identifiers: dict[str, list[str]] = {"pmid": [pmid]}
-    for n in element.findall("./PubmedData/ArticleIdList/ArticleId"):
-        kind, value = n.get("IdType"), _text(n)
-        if kind == "pubmed" and value != pmid:
-            raise PubMedMetadataError("Conflicting PubMed PMID identifiers")
-        if kind and value:
-            identifiers.setdefault(kind, []).append(value)
+    identifiers = _identifiers(pmid, element.findall("./PubmedData/ArticleIdList/ArticleId"))
     for n in article.findall("ELocationID"):
         kind, value = n.get("EIdType"), _text(n)
         if kind and value:
             identifiers.setdefault(kind, []).append(value)
-    abstracts: list[dict[str, str | None]] = []
+    abstracts = _sections(article)
     abstract = article.find("Abstract")
-    if abstract is not None:
-        for n in abstract.findall("AbstractText"):
-            value = _text(n)
-            if value:
-                abstracts.append({"label": n.get("Label"), "category": n.get("NlmCategory"), "text": value})
     other_abstracts: list[dict[str, object]] = []
     for other in citation.findall("OtherAbstract"):
         sections = []
@@ -197,13 +209,63 @@ def _record(element: ET.Element) -> PubMedRecord:
         abstract_sections=tuple(abstracts),
         abstract_status="present" if abstracts or any(x["sections"] for x in other_abstracts) else "not_supplied_in_response",
         abstract_copyright=_path(abstract, "CopyrightInformation") if abstract is not None else None,
-        authors=_authors(article), journal=journal_data, publication_dates=tuple(dates),
+        authors=_authors(article.findall("./AuthorList/Author")), journal=journal_data, publication_dates=tuple(dates),
         identifiers={k: _unique(v) for k, v in identifiers.items()},
         languages=_unique([_text(x) for x in article.findall("Language")]),
         publication_types=_unique([_text(x) for x in article.findall("./PublicationTypeList/PublicationType")]),
         keywords=_unique([_text(x) for x in citation.findall("./KeywordList/Keyword")]),
         mesh_headings=tuple(headings), citation_status=citation.get("Status"),
         other_abstracts=tuple(other_abstracts),
+    )
+
+
+def _book_contributors(parent: ET.Element) -> list[dict]:
+    return [{"role": group.get("Type"), "people": _authors(group.findall("Author"))}
+            for group in parent.findall("AuthorList")]
+
+
+def _book_record(element: ET.Element) -> PubMedBookRecord:
+    documents = element.findall("BookDocument")
+    if len(documents) != 1:
+        raise PubMedMetadataError("Expected one PubMed BookDocument")
+    document = documents[0]
+    books = document.findall("Book")
+    pmid = _path(document, "PMID")
+    if len(books) != 1 or len(document.findall("PMID")) != 1 or not pmid or not _PMID.fullmatch(pmid):
+        raise PubMedMetadataError("Invalid PubMed book identity or container")
+    book = books[0]
+    identifiers = _identifiers(pmid, document.findall("./ArticleIdList/ArticleId") +
+                               element.findall("./PubmedBookData/ArticleIdList/ArticleId"))
+    abstracts = _sections(document)
+    dates = [_date(node, kind="book_pub_date") for node in book.findall("PubDate")]
+    dates.extend(_date(node, kind="contribution_date") for node in document.findall("ContributionDate"))
+    dates.extend(_date(node, kind=f"pubmed_history_{node.get('PubStatus') or 'unknown'}")
+                 for node in element.findall("./PubmedBookData/History/PubMedPubDate"))
+    contributors = _book_contributors(document)
+    return PubMedBookRecord(
+        pmid=pmid, title=_path(document, "ArticleTitle"), abstract_sections=abstracts,
+        abstract_status="present" if abstracts else "not_supplied_in_response",
+        abstract_copyright=_path(document, "./Abstract/CopyrightInformation"),
+        authors=tuple(person for group in contributors if group["role"] == "authors"
+                     for person in group["people"]), journal={}, publication_dates=tuple(dates),
+        identifiers={kind: _unique(values) for kind, values in identifiers.items()},
+        languages=_unique([_text(node) for node in document.findall("Language")]),
+        publication_types=_unique([_text(node) for node in document.findall("PublicationType")]),
+        keywords=_unique([_text(node) for node in document.findall("./KeywordList/Keyword")]),
+        mesh_headings=(), citation_status=None,
+        book=dict(title=_path(book, "BookTitle"), edition=_path(book, "Edition"),
+                  volume=_path(book, "Volume"), collection_title=_path(book, "CollectionTitle"),
+                  publisher=_path(book, "./Publisher/PublisherName"),
+                  publisher_location=_path(book, "./Publisher/PublisherLocation"),
+                  isbns=_unique([_text(node) for node in book.findall("Isbn")]),
+                  contributors=_book_contributors(book), document_contributors=contributors,
+                  locators=[{"type": node.get("Type"), "value": _text(node)}
+                            for node in document.findall("LocationLabel")],
+                  pages=_path(document, "./Pagination/MedlinePgn"),
+                  start_page=_path(document, "./Pagination/StartPage"),
+                  end_page=_path(document, "./Pagination/EndPage"),
+                  container_ids=[{"type": node.get("EIdType"), "value": _text(node)}
+                                 for node in book.findall("ELocationID")]),
     )
 
 
@@ -225,15 +287,18 @@ def parse_efetch_xml(payload: bytes, expected_pmids: tuple[str, ...] | list[str]
         root = ET.fromstring(document)
     except (ET.ParseError, ValueError):
         raise PubMedMetadataError("PubMed EFetch returned malformed XML") from None
-    if root.tag != "PubmedArticleSet":
+    if root.tag not in ("PubmedArticleSet", "PubmedBookArticleSet"):
         raise PubMedMetadataError("PubMed EFetch returned an unexpected document type")
     if sum(1 for _ in root.iter()) > MAX_XML_NODES:
         raise PubMedMetadataError("PubMed EFetch XML exceeds the element limit")
     records: list[PubMedRecord] = []
     for child in root:
-        if child.tag != "PubmedArticle":
+        if child.tag == "PubmedBookArticle":
+            records.append(_book_record(child))
+        elif child.tag == "PubmedArticle" and root.tag == "PubmedArticleSet":
+            records.append(_record(child))
+        else:
             raise PubMedMetadataError("PubMed EFetch returned an unsupported record type")
-        records.append(_record(child))
     actual = tuple(r.pmid for r in records)
     if len(actual) != len(set(actual)) or set(actual) != set(pmids) or len(actual) != len(pmids):
         raise PubMedMetadataError("PubMed EFetch IDs do not match the requested batch")

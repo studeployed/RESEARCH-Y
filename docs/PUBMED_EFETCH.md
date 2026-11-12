@@ -18,3 +18,21 @@ Reopening a project resumes from PMIDs without linked metadata, using bounded re
 
 Ordinary fixture tests do not call NCBI. scripts/pubmed_source_smoke.py requires RESEARCHY_NCBI_CONTACT_EMAIL set privately (optional RESEARCHY_NCBI_API_KEY). It sends one exact approved ESearch query, checks translation, fetches one returned PMID and reports only bibliographic status—not credentials or full abstract text. Developer/contact registration must follow NCBI policies. No successful live query was executed here.
 Docs: https://www.nlm.nih.gov/dataguide/eutilities/utilities.html ; https://www.ncbi.nlm.nih.gov/books/NBK25499/ ; https://eutilities.github.io/site/API_Key/usageandkey/ .
+## Mixed book and journal responses
+
+The [NLM PubmedArticleSet content model](https://dtd.nlm.nih.gov/ncbi/pubmed/doc/out/250101/el-PubmedArticleSet.html)
+allows a journal citation and a book citation in the same EFetch response.
+The parser accepts both while checking the exact requested PMID set. A conflicting
+book PMID refuses the batch before storage. Reopening a project resumes with
+the missing identifiers and preserves existing journal-record JSON.
+
+For a [BookDocument](https://dtd.nlm.nih.gov/ncbi/pubmed/doc/out/250101/el-BookDocument.html),
+the contribution title, identifiers and abstract are distinct from its container
+title, identifiers, publisher and contributors. If the source gives only a book
+title it stays in the container field. Role-labelled editors remain editors.
+Stored book abstracts carry the existing redistribution-review flag.
+
+**Phase 1 evidence (#7, #105):** SRC-04, RUN-04/06 and partial AT-09 map to
+`tests/test_pubmed_metadata.py::test_mixed_book_and_journal_metadata_reopens_without_refetch`
+and `tests/test_pubmed_metadata.py::test_malformed_book_refuses_mixed_batch_without_partial_commit`.
+These are synthetic provider responses.
