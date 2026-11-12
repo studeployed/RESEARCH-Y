@@ -61,7 +61,8 @@ def test_native_action_and_scenario_waits_cover_actual_worker_bounds():
     assert ACTION_RESPONSE_TIMEOUT == NATIVE_ACTION_COMPLETION_TIMEOUT
     assert 3 * 35 < NATIVE_ACTION_COMPLETION_TIMEOUT < 120
     assert 11 * 35 + 30 + 6 * 15 < NATIVE_SCENARIO_TIMEOUT < 600
-    app_source = inspect.getsource(run)
+    from desktop_source import project_ui_source
+    app_source = project_ui_source()
     assert "await until(lambda: len(events) > index or last_error['code'] is not None," in app_source
     assert 'deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)' in app_source
     # Initial socket readiness remains subject to the shorter default bound.
@@ -296,7 +297,8 @@ def test_existing_request_requires_explicit_selection_after_restart(tmp_path):
 
 
 def test_untrusted_bytes_have_no_browser_path_route():
-    text = (Path(__file__).parents[1] / 'tools/gui_feasibility/real_project_app.py').read_text()
+    from desktop_source import project_ui_source
+    text = project_ui_source()
     assert "os.environ.pop('RESEARCHY_GUI_SELECTED_ROOT')" in text
     assert "os.environ.pop('RESEARCHY_GUI_SELECTED_PARENT')" in text
     assert "app.add_middleware(PrototypeGuard, session=session)" in text

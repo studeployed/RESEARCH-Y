@@ -514,7 +514,8 @@ def test_stale_run_board_cannot_authorize_old_source_step(tmp_path):
 
 
 def test_graphical_source_actions_never_automatically_dispatch_provider_requests():
-    source=inspect.getsource(gui_run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     assert "name == 'run_board_refresh'" in source
     assert "name == 'run_board_select'" in source
     assert "data-testid=run-board-heading" in source

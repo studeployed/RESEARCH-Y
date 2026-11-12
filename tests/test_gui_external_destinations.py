@@ -178,7 +178,8 @@ def test_host_picker_refuses_browser_paths_project_internals_and_unsafe_links(tm
 def test_external_confirmation_is_not_a_browser_path_endpoint():
     import inspect
     from tools.gui_feasibility.real_project_app import run
-    source = inspect.getsource(run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     assert "name == 'native_export'" in source
     assert "await select_from_native_window(app.native.main_window)" in source
     assert "flow.offer_external_directory, selected" in source

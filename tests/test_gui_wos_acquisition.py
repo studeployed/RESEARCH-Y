@@ -554,7 +554,8 @@ def test_untouched_group_may_be_prepared_after_sibling_retrieval_started(
 
 
 def test_gui_has_explicit_retention_and_session_controls_not_probe_automation():
-    source=inspect.getsource(run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     for name in ('wos_acquisition_offer','wos_acquisition_prepare',
                  'wos_acquisition_tick_offer','wos_acquisition_tick_confirm',
                  'wos_acquisition_tick_reconcile'):
@@ -839,7 +840,8 @@ def test_long_verification_abort_unknown_outcome_blocks_reconciliation(
 
 
 def test_gui_auto_progress_refresh_is_read_only_and_confirm_gated():
-    source=inspect.getsource(run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     assert "name == 'wos_verification_confirm'" in source
     assert "name == 'wos_verification_poll'" in source
     assert "name == 'wos_verification_pause'" in source

@@ -272,8 +272,8 @@ def test_both_preparation_modes_cannot_have_simultaneous_offers(project_run):
 def test_experimental_gui_action_and_source_free_labels_are_allowlisted():
     from pathlib import Path
     root = Path(__file__).parents[1]
-    content = (root / "tools/gui_feasibility/real_project_app.py").read_text(
-        encoding="utf-8")
+    from desktop_source import project_ui_source
+    content = project_ui_source()
     for action in ("publication_window_inspect", "publication_window_offer",
                    "publication_window_confirm", "publication_window_dismiss"):
         assert action in content

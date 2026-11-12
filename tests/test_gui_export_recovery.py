@@ -204,7 +204,8 @@ def test_two_concurrent_preparations_retain_one_export_request(tmp_path):
 
 
 def test_failure_controls_have_no_browser_supplied_path_or_export_identity():
-    code = inspect.getsource(run)
+    from desktop_source import project_ui_source
+    code = project_ui_source()
     assert "if name == 'cancel':" in code
     assert "return flow.cancel()" in code
     assert "data-testid=export-phase" in code

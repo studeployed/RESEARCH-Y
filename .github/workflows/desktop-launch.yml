@@ -1,0 +1,41 @@
+name: Installed Windows desktop application
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/desktop-launch.yml'
+      - 'pyproject.toml'
+      - 'src/research_y/desktop/**'
+      - 'src/research_y/application_commands.py'
+      - 'src/research_y/application_worker.py'
+      - 'tools/desktop_lifecycle.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desktop-launch-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  desktop:
+    name: Installed native desktop / Python ${{ matrix.python }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install the desktop package
+        run: python -m pip install --disable-pip-version-check ".[desktop]"
+      - run: python -m pip check
+      - name: Verify the installed launcher and optional package contents
+        run: |
+          python -c "from importlib.metadata import distribution; from shutil import which; d=distribution('research-y'); assert which('research-y') and any(e.group=='gui_scripts' and e.value=='research_y.desktop.app:main' for e in d.entry_points); assert all('gui_feasibility' not in str(p) for p in d.files)"
+      - name: Open, save, restart and verify in native Windows
+        run: python tools/desktop_lifecycle.py

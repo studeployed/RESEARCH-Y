@@ -596,7 +596,8 @@ def test_511_leaf_legacy_checkpoint_fails_before_any_provider_requests(tmp_path)
 
 
 def test_graphical_pubmed_controls_never_exposed_on_probe_automation_route():
-    text=inspect.getsource(run)
+    from desktop_source import project_ui_source
+    text = project_ui_source()
     for operation in ('pubmed_identifier_offer','pubmed_identifier_confirm',
                       'pubmed_identifier_pause','pubmed_identifier_poll',
                       'pubmed_identifier_reconcile'):

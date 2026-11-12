@@ -395,7 +395,8 @@ def test_missing_profile_is_not_silently_promoted_to_run_network_consent(tmp_pat
 
 
 def test_probe_route_never_automatically_executes_or_retries_run_coordination():
-    source=inspect.getsource(gui_run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     for marker in ('run_coord_offer','run_coord_dismiss','run_coord_confirm',
                    'run_coord_poll','run_coord_reconcile'):
         assert "name == '"+marker+"'" in source

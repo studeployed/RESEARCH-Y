@@ -444,7 +444,8 @@ def test_completed_metadata_is_not_automatically_requeried_and_no_profile_reads(
 
 
 def test_gui_buttons_never_include_efetch_in_probe_automated_route():
-    src=inspect.getsource(gui_main)
+    from desktop_source import project_ui_source
+    src = project_ui_source()
     for marker in ('pubmed_metadata_read','pubmed_metadata_offer',
                    'pubmed_metadata_confirm','pubmed_metadata_poll',
                    'pubmed_metadata_reconcile'):
