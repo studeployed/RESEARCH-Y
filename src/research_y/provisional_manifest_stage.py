@@ -275,7 +275,7 @@ def _stable_package(raw: bytes, approved: dict) -> bytes:
             if name == "docProps/core.xml":
                 root = ET.fromstring(content)
                 for field in ("created", "modified"):
-                    node = root.find(f"{{_CORE_NS}}{field}")
+                    node = root.find("{" + _CORE_NS + "}" + field)
                     if node is None:
                         raise ManifestStageError("stage_render_failed")
                     node.text = fixed
