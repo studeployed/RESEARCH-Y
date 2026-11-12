@@ -12,7 +12,16 @@ The previously recorded `publication_candidate_decision_v1` audit receipts remai
 
 A 20-pair keyset queue page requires a complete source/identity/decision **revision** on subsequent pages. This revision covers current-run count evidence, every original project's retained source record, current identity links, prior-run statuses and source query/membership context, and original review receipts. If evidence changes, continuation fails explicitly and requires a first-page refresh. No provider call or persistent duplicate index is created. All result-count denominators continue to originate in the original storage and run-count projection.
 
-An explicitly displayed pair whose **both** retrievals belong to the selected run can open PR72's existing researcher-confirmed comparison/decision form. The trusted host re-reads the same original queue page before opening the pair, then separately validates the candidate and selected run via their original services. It never accepts an arbitrary pair ID, query or filesystem path from the browser. Pairs spanning different runs are displayed but **read-only** pending a separately validated cross-run decision workflow; they cannot be silently adopted as reviewed.
+An explicitly displayed pair can be opened for researcher review. Same-run
+review keeps its existing scope. For a pair spanning two runs the user selects
+**Compare records from two runs**. The host rechecks the displayed queue page,
+shows both source run IDs, and permits a confirmed match to move only the
+selected run's retrieval onto the other publication. Rejection moves neither.
+The comparison and run revisions are checked again before a new write under
+the SQLite writer lock. The audit retains the selected run and its revision
+alongside the original pair evidence. The existing reversal service restores
+the selected source's previous identity. Other-run source rows and original
+query memberships stay intact.
 
 ## Resource and scientific limitations
 

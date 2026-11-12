@@ -51,6 +51,8 @@ UI-05,whole-run read-only progress alongside original source-specific preview ac
 UI-06,per-group and per-source honest summary,test_run_execution_board.py,partial final global unique publication count not implemented
 SEC-01,credential-free worker board and revision-fenced preview selection,test_application_commands.py and test_run_execution_board.py,partial local security acceptance ongoing
 AT-19,unfinished source cannot be promoted by equal numeric count,test_run_execution_board.py,partial no live failure mix verification
+DUP-01,cross-run candidate decision uses the selected retrieval and preserves original memberships,test_publication_candidate_queue.py::test_explicit_cross_run_review_keeps_originals_and_only_moves_selected_source,explicit review only
+DUP-04,cross-run match or rejection with run revision fencing under the writer lock and reversible association,test_publication_candidate_queue.py::test_cross_run_decision_rechecks_run_under_writer_lock,automatic decision propagation remains pending
 RUN-05,run-wide coverage checks the complete recompiled approved inventory and numeric reconciliation,test_run_execution_board.py::test_reopened_run_reconciles_against_approved_query_inventory,partial local checkpoint evidence
 AT-09,original group and provider unions checked after reopening a two-source project,test_run_execution_board.py::test_reopened_run_reconciles_against_approved_query_inventory,offline mixed-source coverage
 AT-08,completed Starter board stage rechecks page observations and final count receipt,test_run_execution_board.py::test_reopened_board_requires_the_independent_wos_observations,offline reopened checkpoint
