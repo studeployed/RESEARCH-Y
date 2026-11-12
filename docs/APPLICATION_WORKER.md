@@ -7,6 +7,25 @@ PR #42, `bc4666fa7aaefe8082ad7ea21a1918f0ac4187f1`.
 
 ## Contract
 
+### Inspect a provisional workbook (P1-06l7, issue #9)
+
+For a project already opened by the trusted host and a known manifest export
+UUID, submit `ApplicationCommand.for_project(project, "inspect_manifest_publication",
+export_id=export_id)` through the worker. The child calls the read-only
+publication inspector from PR #99. It verifies the consent, stage, publication
+receipts and files against the current source revision. The returned state
+distinguishes an interrupted save, an artifact awaiting a receipt, a current
+verified artifact and a historical one. A missing or changed published file
+yields a static error code.
+
+The command accepts only the export UUID in addition to the expected project
+identity. Inspection leaves incomplete publications available for explicit
+recovery. The host must keep the artifact verification flags separate from
+source retrieval and scientific completeness. See
+`PROVISIONAL_MANIFEST_PUBLICATION.md` for the full state contract.
+
+### Worker lifecycle
+
 `ApplicationCommand.for_project` accepts an already-opened project from trusted
 host code. Only inspection, retained-report reading, export preparation, resume,
 explicit cancellation and current file observation are supported. No search,
