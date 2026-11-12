@@ -361,6 +361,77 @@ def test_trusted_host_refuses_cross_run_review_and_invalidates_page_on_change(pr
         flow.close()
 
 
+@pytest.mark.parametrize("decision", ["confirmed_match", "rejected_match"])
+def test_explicit_cross_run_review_keeps_originals_and_only_moves_selected_source(project_runs, decision):
+    from tools.gui_feasibility.real_project_flow import RealProjectFlow, ProjectFlowError
+    from research_y.publication_review_gui import preview_candidate_reversal, confirm_candidate_reversal
+    from research_y.publication_results import read_publication_page
+
+    project, run_id, other_run = project_runs
+    current = insert(project_runs, number=301, title="Fixture", doi="10.7777/same")
+    other = insert(project_runs, source="wos", number=302, run=other_run, title="Fixture", doi="10.7777/same")
+    with closing(sqlite3.connect(project.database_path)) as db:
+        memberships = db.execute("SELECT * FROM query_retrievals ORDER BY query_id").fetchall()
+        prior_links = dict(db.execute("SELECT retrieval_id,publication_id FROM publication_retrievals"))
+    with closing(RealProjectFlow(selected_root=project.root, selected_parent=project.root.parent)) as flow:
+        flow.project, flow.selected_run_id = project, run_id
+        flow.snapshot = {"runs": [], "report": None, "exports": []}
+        listing = flow.inspect_candidate_queue()["candidate_queue"]
+        offer = flow.inspect_queue_candidate_pair(left=current, right=other, revision=listing["revision"],
+                                                  cross_run=True)["candidate_offer"]
+        assert offer["cross_run"] and {source["run_id"] for source in offer["sources"]} == {run_id, other_run}
+        args = dict(decision=decision, actor="Fixture", evidence="Compared original locators", acknowledged=True,
+                    move_retrieval_id=current if decision == "confirmed_match" else None)
+        with pytest.raises(ProjectFlowError, match="publication_review_stale"):
+            flow.confirm_candidate_decision(offer_revision="0"*64, **args)
+        with pytest.raises(ProjectFlowError, match="publication_review_wrong_run"):
+            flow.confirm_candidate_decision(**(args | {"decision": "confirmed_match", "move_retrieval_id": other}),
+                                           offer_revision=offer["revision"])
+        done = flow.confirm_candidate_decision(offer_revision=offer["revision"], **args)
+        assert done["candidate_last_outcome"]["action"] == decision
+    reopened = open_project(project.root)
+    with closing(sqlite3.connect(reopened.database_path)) as db:
+        assert db.execute("SELECT * FROM query_retrievals ORDER BY query_id").fetchall() == memberships
+        links = dict(db.execute("SELECT retrieval_id,publication_id FROM publication_retrievals"))
+    assert links[other] == prior_links[other]
+    if decision == "confirmed_match":
+        assert links[current] == links[other]
+        revision = read_publication_page(reopened, run_id)["revision"]
+        undo = preview_candidate_reversal(reopened, run_id, current, run_revision=revision)
+        confirm_candidate_reversal(reopened, run_id, current, run_revision=revision,
+                                   expected_revision=undo["revision"], actor="Fixture",
+                                   evidence="Different publications", confirmed=True)
+        with closing(sqlite3.connect(reopened.database_path)) as db:
+            assert dict(db.execute("SELECT retrieval_id,publication_id FROM publication_retrievals")) == prior_links
+    else:
+        assert links == prior_links
+
+
+def test_cross_run_decision_rechecks_run_under_writer_lock(project_runs, monkeypatch):
+    from research_y import publication_review_gui as review
+    from research_y.publication_results import read_publication_page
+
+    project, run_id, other_run = project_runs
+    current = insert(project_runs, number=310, title="Fixture")
+    other = insert(project_runs, source="wos", number=311, title="Fixture", run=other_run)
+    revision = read_publication_page(project, run_id)["revision"]
+    offer = review.preview_candidate_review(project, run_id, current, other, run_revision=revision, cross_run=True)
+    original = candidates.decide_candidate
+
+    def change_unrelated_query(*args, **kwargs):
+        with closing(sqlite3.connect(project.database_path)) as db, db:
+            db.execute("UPDATE source_queries SET status='failed' WHERE run_id=? AND source_name='wos'", (run_id,))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(candidates, "decide_candidate", change_unrelated_query)
+    with pytest.raises(review.PublicationReviewError, match="publication_review_stale"):
+        review.record_candidate_review(project, run_id, current, other, run_revision=revision,
+                                       expected_revision=offer["revision"], decision="confirmed_match",
+                                       move_retrieval_id=current, actor="Fixture", evidence="Compared sources",
+                                       warnings_acknowledged=True, confirmed=True, cross_run=True)
+    assert len(set(pair(project_runs, current, other).publication_ids)) == 2
+
+
 def test_large_historical_only_key_bucket_never_enumerates_historical_pairs():
     """3,000 identical older titles must not lead to 4.5 million comparisons."""
     selected=uid()

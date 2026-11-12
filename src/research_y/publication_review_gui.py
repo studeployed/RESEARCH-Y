@@ -40,9 +40,10 @@ def _context(db, project, run_id, revision):
     return counts
 
 
-def _pair(db, run_id, left, right):
+def _pair(db, run_id, left, right, *, cross_run=False):
     snapshot, _ = candidates._view(db, candidates._pair(left, right))
-    if any(source["run_id"] != run_id for source in snapshot.sources):
+    selected = sum(source["run_id"] == run_id for source in snapshot.sources)
+    if type(cross_run) is not bool or selected != (1 if cross_run else 2):
         raise PublicationReviewError("publication_review_wrong_run")
     return snapshot
 
@@ -68,7 +69,7 @@ def _safe_pair(snapshot, project, run_id, run_revision):
         run_revision=run_revision, revision=snapshot.revision,
         retrieval_ids=list(snapshot.retrieval_ids),
         publication_ids=list(snapshot.publication_ids),
-        sources=[dict(retrieval_id=s["retrieval_id"],
+        sources=[dict(retrieval_id=s["retrieval_id"], run_id=s["run_id"],
                       source_name=s["source_name"],
                       source_record_id=s["source_record_id"]) for s in snapshot.sources],
         comparison=fields, warnings=list(snapshot.warnings),
@@ -83,16 +84,16 @@ def _safe_pair(snapshot, project, run_id, run_revision):
     )
 
 
-def preview_candidate_review(project, run_id, left, right, *, run_revision):
-    """Compare two explicitly selected source retrievals in one run, read-only."""
+def preview_candidate_review(project, run_id, left, right, *, run_revision, cross_run=False):
+    """Compare two sources within the selected scope without writing."""
     try:
         identity._identifier(run_id)
         identity._identifier(left); identity._identifier(right)
         _digest(run_revision)
         with _read(project) as db:
             _context(db, project, run_id, run_revision)
-            snapshot = _pair(db, run_id, left, right)
-            return _safe_pair(snapshot, project, run_id, run_revision)
+            snapshot = _pair(db, run_id, left, right, cross_run=cross_run)
+            return dict(_safe_pair(snapshot, project, run_id, run_revision), cross_run=cross_run)
     except PublicationReviewError:
         raise
     except Exception:
@@ -101,7 +102,7 @@ def preview_candidate_review(project, run_id, left, right, *, run_revision):
 
 def record_candidate_review(project, run_id, left, right, *, run_revision,
                             expected_revision, decision, move_retrieval_id,
-                            actor, evidence, warnings_acknowledged, confirmed):
+                            actor, evidence, warnings_acknowledged, confirmed, cross_run=False):
     """Commit match or rejection using the original candidate receipt transaction.
 
     No browser-supplied comparison or warning list is trusted. A changed
@@ -123,7 +124,11 @@ def record_candidate_review(project, run_id, left, right, *, run_revision,
             raise PublicationReviewError("publication_review_invalid")
         with _read(project) as db:
             _context(db, project, run_id, run_revision)
-            snapshot = _pair(db, run_id, left, right)
+            snapshot = _pair(db, run_id, left, right, cross_run=cross_run)
+            if cross_run and decision == "confirmed_match" and not any(
+                    source["run_id"] == run_id and source["retrieval_id"] == move_retrieval_id
+                    for source in snapshot.sources):
+                raise PublicationReviewError("publication_review_wrong_run")
             if snapshot.revision != expected_revision:
                 raise PublicationReviewError("publication_review_stale")
             warnings = tuple(snapshot.warnings)
@@ -132,6 +137,7 @@ def record_candidate_review(project, run_id, left, right, *, run_revision,
             decision=decision, actor=actor, evidence=evidence,
             acknowledged_warnings=warnings, decision_confirmed=True,
             move_retrieval_id=move_retrieval_id,
+            **({"cross_run_context": (run_id, run_revision)} if cross_run else {}),
         )
         if decided.status != decision:
             raise PublicationReviewError("publication_review_unavailable")
