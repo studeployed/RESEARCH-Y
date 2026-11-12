@@ -26,6 +26,7 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                         'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'inspect_manifest_publication',
                         'preview_manifest_intent', 'prepare_manifest_intent', 'inspect_manifest_intent',
+                        'manifest_intent_history',
                         'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
@@ -761,11 +762,14 @@ class ApplicationCommand:
                 pass  # Validated above; no provider request or export authority.
             elif self.operation in ('run_coord_preview','run_coord_run'):
                 pass  # Validated above; not an export operation.
-            elif self.operation in ('run_board', 'preview_manifest_intent'):
+            elif self.operation in ('run_board', 'preview_manifest_intent', 'manifest_intent_history'):
                 if (self.run_id is None or any(v is not None for v in
                         (self.export_id, self.output_name, self.directory,
                          self.expected_directory_identity))):
                     raise ValueError
+                if self.operation == 'manifest_intent_history' and self.history_before_event_id is not None:
+                    if type(self.history_before_event_id) is not int or not 1 <= self.history_before_event_id < 2**63:
+                        raise ValueError
             elif self.operation == 'prepare_manifest_intent':
                 from research_y.provisional_manifest_intent import validate_manifest_request
                 if self.directory is not None:
@@ -823,7 +827,7 @@ class ApplicationCommand:
                                        'wos_acquisition_verify','wos_acquisition_pause') and any(
                     value is not None for value in acquisition_fields):
                 raise ValueError
-            if self.operation != 'pilot_history' and self.history_before_event_id is not None:
+            if self.operation not in ('pilot_history', 'manifest_intent_history') and self.history_before_event_id is not None:
                 raise ValueError
             if self.operation != 'admit_strategy' and any(
                     value is not None for value in admission_fields):
@@ -1228,9 +1232,13 @@ def execute_command(command: ApplicationCommand) -> dict:
             except (ValueError, TypeError):
                 raise ApplicationCommandError('strategy_invalid') from None
             return dict(asdict(result), source_retrieval_verified=False)
-        if command.operation in ('preview_manifest_intent', 'prepare_manifest_intent', 'inspect_manifest_intent'):
+        if command.operation in ('preview_manifest_intent', 'prepare_manifest_intent', 'inspect_manifest_intent',
+                                 'manifest_intent_history'):
             from research_y import provisional_manifest_intent as consent
             try:
+                if command.operation == 'manifest_intent_history':
+                    return consent.list_manifest_intents(project, command.run_id,
+                                                         before_event_id=command.history_before_event_id)
                 if command.operation == 'preview_manifest_intent':
                     return consent.preview_manifest_intent(project, command.run_id)
                 if command.operation == 'prepare_manifest_intent':

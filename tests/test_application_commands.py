@@ -52,6 +52,7 @@ def services(monkeypatch, tmp_path):
     for operation, payload in (("preview_manifest_intent", {}), ("prepare_manifest_intent", receipt),
                                ("inspect_manifest_intent", receipt)):
         monkeypatch.setattr(consent, operation, service(operation, payload))
+    monkeypatch.setattr(consent, "list_manifest_intents", service("manifest_intent_history", {}))
     exports=types.ModuleType('research_y.workbook_exports'); exports.WorkbookExportError=Failure
     exports.prepare_workbook_export=service('prepare_export',Result())
     exports.resume_workbook_export=service('resume_export',Result())
@@ -257,7 +258,7 @@ def services(monkeypatch, tmp_path):
 def test_only_named_service_called_identity_arguments_unchanged(services,operation,tmp_path):
     project,calls,_,_,_=services
     kw={}
-    if operation in ('inspect','run_board','run_coord_preview','preview_manifest_intent',
+    if operation in ('inspect','run_board','run_coord_preview','preview_manifest_intent','manifest_intent_history',
                      'publication_page','publication_materialisation_preview',
                      'publication_window_preview'):
         kw['run_id']=str(uuid4())
@@ -404,6 +405,9 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     assert calls[0][1][0]==project
     if operation == 'preview_manifest_intent':
         assert calls[0][1] == (project, kw['run_id'])
+    if operation == 'manifest_intent_history':
+        assert calls[0][1] == (project, kw['run_id'])
+        assert calls[0][2] == {"before_event_id": None}
     if operation == 'prepare_manifest_intent':
         assert calls[0][1] == (project, kw['run_id'], kw['output_name'])
         assert calls[0][2] == dict(export_id=kw['export_id'], expected_revision='a'*64,

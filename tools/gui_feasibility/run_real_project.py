@@ -505,6 +505,29 @@ def transport_steps(port, token, scenario, run_id, export_id, *,
                   if key.lower() == 'set-cookie').split(';', 1)[0]
     auth = {'Origin': origin, 'Cookie': cookie}
     require(request(port, '/', headers=auth)[0] == 200, 'nicegui_page_missing')
+    if scenario in ('manifest_consent', 'manifest_reopen'):
+        steps = (['manifest_preview', 'manifest_confirm'] if scenario == 'manifest_consent'
+                 else ['manifest_history', 'manifest_inspect'])
+        actions = ['open', 'select_run', *steps]
+        for action in actions:
+            status, _, payload = request_action(port, auth)
+            require(status == 200, 'consent_action_http_failed')
+            response = json.loads(payload)
+            require(response['error'] is None and response['actions'][-1] == action,
+                    'consent_action_failed')
+            state = response['state']
+            if action == 'manifest_preview':
+                offer = state['manifest_offer']
+                require(offer['run_id'] == run_id and offer['state'] == 'INCOMPLETE' and
+                        offer['global_unique_publications'] is None and state['manifest_receipt'] is None,
+                        'consent_preview_invalid')
+            if action == steps[-1]:
+                receipt = state['manifest_receipt']
+                require(receipt['run_id'] == run_id and receipt['state'] == 'consent_current'
+                        and receipt['explicit_confirmation_recorded'] is True, 'consent_receipt_invalid')
+        require(request(port, '/_probe/stop', method='POST', headers=auth)[0] == 200,
+                'consent_stop_failed')
+        return actions
     if scenario == "publication_results_large":
         return transport_results_steps(port, auth, run_id, expected_results)
     if scenario in ('publication_window', 'publication_window_lost_reply'):
@@ -677,7 +700,18 @@ def run_app(mode, scenario, project, parent, run_id, expected_export, *,
                 result['observed_worker_reaped'] = report.get('worker_reaped')
                 result['observed_supervisor_stopped'] = report.get('supervisor_stopped')
                 result['observed_outcome'] = report.get('observed_outcome')
-                if scenario == 'publication_results_large':
+                if scenario in ('manifest_consent', 'manifest_reopen'):
+                    expected_steps = (['manifest_preview', 'manifest_confirm'] if scenario == 'manifest_consent'
+                                      else ['manifest_history', 'manifest_inspect'])
+                    require(report['status'] == 'finished' and report['error'] is None
+                            and report['actions'] == ['open', 'select_run', *expected_steps]
+                            and report['selected_run_matches'] is True and report['session_revoked'] is True
+                            and report['worker_reaped'] is True and report['supervisor_stopped'] is True
+                            and type(report['consent_event_id']) is int and report['consent_event_id'] > 0
+                            and (mode == 'transport' or report.get('native_rendering_verified') is True),
+                            'manifest_consent_gui_evidence_invalid')
+                    result.update(passed=True, consent_event_id=report['consent_event_id'])
+                elif scenario == 'publication_results_large':
                     expected_actions = [
                         'open', 'select_run', 'publication_refresh',
                         'publication_next', 'publication_detail']
@@ -1097,6 +1131,20 @@ def run_scenario(mode):
         recent['same_uuid_after_relocation'] = True
         recent['no_implicit_run_selection'] = True
         recent['no_new_export_receipt'] = True
+        consent_parent = root / 'manifest-case'
+        consent_parent.mkdir()
+        consent_project, consent_run = fixture(consent_parent)
+        for scenario in ('manifest_consent', 'manifest_reopen'):
+            outcome = run_app(mode, scenario, consent_project, consent_parent, consent_run, '')
+            results.append(outcome)
+            if not outcome['passed']:
+                return results
+        with closing(sqlite3.connect(consent_project.database_path)) as db:
+            rows = db.execute("SELECT event_id FROM audit_events WHERE event_type GLOB ?",
+                              ('provisional_manifest_intent_v1:*',)).fetchall()
+        require(rows == [(results[-1]['consent_event_id'],)] and
+                results[-2]['consent_event_id'] == results[-1]['consent_event_id'] and
+                not list((consent_project.root / 'exports').iterdir()), 'manifest_reopen_changed_evidence')
         return results
 
 

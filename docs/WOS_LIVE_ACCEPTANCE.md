@@ -41,6 +41,26 @@ The original aggregate artifact and downloaded audit were rechecked when prepari
 
 ## Requirement disposition
 
+### Bounded cross-day follow-up (manual)
+
+`.github/workflows/wos-cross-day.yml` uses the same public query and existing
+private Starter credential. The operator must confirm the right to retain up
+to 150 original source records temporarily on the disposable runner. Dispatch
+so that the first source step runs between **23:45 and 23:58 UTC**; this allows
+both processes to use the same private project under the 25-minute job limit.
+The workflow has no schedule, PR or push trigger.
+
+The first process uses at most two requests. After UTC midnight a fresh process
+validates the old pages, makes a one-record resume probe and acquires at most
+one new page. Existing provider cooldowns and count-drift checks still apply.
+The maximum is four requests. Dates and daily quota counts come from the original
+successful request observations. A later UTC date alone does not establish quota
+replenishment. The aggregate artifact records the quota increase flag, actual
+observed exhaustion flag, page continuity and run provenance independently.
+Only that aggregate JSON is uploaded. Fixture coverage for SRC-05/06 and partial
+AT-08/09 is in `tests/test_wos_cross_day_validation.py`. A live result requires
+its own completed, authorized dispatch.
+
 | Requirement / scenario | Evidence now available | Still open |
 |---|---|---|
 | SRC-05, SRC-06; AT-08 | Institutional allowance, full 50-record pagination and observed count reconciliation for this query | Real quota-exhaustion/reset and multi-day recovery; broader provider-limit behaviour |

@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 from tools.gui_feasibility.prototype_guard import LaunchSession, PrototypeGuard
 from tools.gui_feasibility.prototype_app import guarded_open_window
 from tools.gui_feasibility.real_project_flow import ProjectFlowError, RealProjectFlow
+from tools.gui_feasibility.manifest_consent import render_manifest_consent
 from tools.gui_feasibility.pubmed_host_profile import PubMedHostProfile
 from tools.gui_feasibility.wos_host_profile import WoSHostProfile
 from tools.gui_feasibility.native_folder_selection import NativeFolderError, select_from_native_window
@@ -107,7 +108,11 @@ def run(args):
         events, clients, tasks = [], [], []
         last_error = {'code': None}
         finished = asyncio.Event()
-        sequence = (('open', 'select_run', 'publication_window_offer',
+        sequence = (('open', 'select_run', 'manifest_preview', 'manifest_confirm')
+                    if args.scenario == 'manifest_consent' else
+                    ('open', 'select_run', 'manifest_history', 'manifest_inspect')
+                    if args.scenario == 'manifest_reopen' else
+                    ('open', 'select_run', 'publication_window_offer',
                      'publication_window_confirm', 'publication_window_inspect')
                     if args.scenario in WINDOW_SCENARIOS else
                     ('open', 'select_run', 'publication_refresh',
@@ -412,6 +417,20 @@ def run(args):
                             return flow.reconcile_run_coordination()
                         if name == 'select_export':
                             return flow.select_export(value)
+                        if name == 'manifest_preview':
+                            if type(value) is not dict or set(value) != {'output_name', 'actor'}:
+                                raise ProjectFlowError('invalid_manifest_request')
+                            return flow.preview_manifest(**value)
+                        if name == 'manifest_confirm':
+                            return flow.confirm_manifest(value)
+                        if name == 'manifest_dismiss':
+                            return flow.dismiss_manifest(value)
+                        if name == 'manifest_reconcile':
+                            return flow.reconcile_manifest()
+                        if name in ('manifest_history', 'manifest_older'):
+                            return flow.manifest_history(older=name == 'manifest_older')
+                        if name == 'manifest_inspect':
+                            return flow.inspect_saved_manifest(value)
                         if name == 'prepare':
                             return flow.prepare()
                         if name == 'external_confirm':
@@ -2507,6 +2526,7 @@ def run(args):
                                   else str(last['successful_batches'])) +
                                  '; whole run verified: FALSE').props(
                                      'data-testid=pubmed-metadata-outcome')
+                render_manifest_consent(ui, state, act)
                 for item in state['exports']:
                     # Only offer requests belonging to the explicitly selected run.
                     if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:
@@ -2665,6 +2685,13 @@ def run(args):
                 return await act(action, select_id)
             if action == 'select_export':
                 return await act(action, expected_export)
+            if action == 'manifest_preview':
+                return await act(action, {'output_name': f'provenance-{select_id}.xlsx',
+                                          'actor': 'Synthetic fixture researcher'})
+            if action == 'manifest_confirm':
+                return await act(action, flow.state()['manifest_offer']['offer_token'])
+            if action == 'manifest_inspect':
+                return await act(action, flow.state()['manifest_history']['entries'][0]['export_id'])
             if action == 'publication_window_confirm':
                 return await act(action, 'Synthetic fixture researcher')
             if args.scenario == 'publication_results_large':
@@ -2875,8 +2902,20 @@ def run(args):
                     name = {'open': 'open', 'recent_open': 'open-recent',
                             'select_run': 'select-run', 'select_export': 'select-export',
                             'prepare': 'prepare', 'resume': 'resume', 'cancel': 'cancel',
-                            'observe': 'observe'}[action]
+                            'observe': 'observe', 'manifest_preview': 'manifest-preview',
+                            'manifest_confirm': 'manifest-confirm', 'manifest_history': 'manifest-history',
+                            'manifest_inspect': 'manifest-inspect'}[action]
                     await until(lambda: bool(clients) and not action_lock.locked())
+                    if action in ('manifest_preview', 'manifest_history'):
+                        await until_native_button('manifest-panel', js)
+                        await js("document.querySelector('[data-testid=manifest-panel] .q-item').click(); true")
+                    if action == 'manifest_preview':
+                        await until_native_button('manifest-actor', js)
+                        await js("(()=>{const el=document.querySelector('[data-testid=manifest-actor] input, "
+                                 "input[data-testid=manifest-actor]'); el.value='Synthetic fixture researcher'; "
+                                 "el.dispatchEvent(new Event('input',{bubbles:true})); "
+                                 "el.dispatchEvent(new Event('change',{bubbles:true})); return true})()")
+                        await asyncio.sleep(.2)
                     await until_native_button(name, js)
                     await js("document.querySelector('[data-testid=" + name + "]').click(); true")
                     await until(lambda: len(events) > index or last_error['code'] is not None,
@@ -2917,6 +2956,14 @@ def run(args):
                         return
                     if last_error['code'] is not None or events[index] != action:
                         raise RuntimeError('native_action_failed')
+                if args.scenario in ('manifest_consent', 'manifest_reopen'):
+                    await until_native_button('manifest-receipt', js)
+                    if not await js("document.querySelector('[data-testid=manifest-receipt]').textContent"
+                                    ".includes('Current source revision')"):
+                        raise RuntimeError('consent_receipt_missing')
+                    report['native_rendering_verified'] = True
+                    report['status'] = 'finished'
+                    return
                 await until(lambda: flow.state()['observation'] is not None)
                 current = flow.state()
                 expected_outcome = ('recorded_cancelled' if args.scenario in
@@ -3015,6 +3062,7 @@ def run(args):
             state = flow.state()
             observed = state['observation']
             report.update(
+                consent_event_id=(state['manifest_receipt'] or {}).get('audit_event_id'),
                 results_action_service_ms=(
                     list(results_witness['action_service_ms'])
                     if args.scenario == 'publication_results_large' else None),
@@ -3101,6 +3149,7 @@ if __name__ == '__main__':
                                                'stage_fault', 'stage_recovered',
                                                'worker_killed', 'worker_recovered',
                                                'recent_open',
+                                               'manifest_consent', 'manifest_reopen',
                                                'publication_window',
                                                'publication_window_lost_reply',
                                                'publication_results_large'), required=True)
