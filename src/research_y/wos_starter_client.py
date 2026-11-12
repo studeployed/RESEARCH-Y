@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 import math
 import threading
 import time
@@ -16,6 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from research_y.http_timing import retry_after_seconds
 from research_y.wos_starter import (MAX_RESPONSE_BYTES, WoSPage, WoSQuota,
                                   WoSStarterError, parse_document_page, parse_quota,
                                   validate_request)
@@ -44,19 +44,7 @@ def _read_http(request: Request, timeout: float) -> WoSHTTPResponse:
 
 def _retry_after(headers: Mapping[str, str], now: datetime) -> float | None:
     value = next((v for k, v in headers.items() if k.lower() == "retry-after"), None)
-    if not isinstance(value, str):
-        return None
-    try:
-        if value.strip().isascii() and value.strip().isdecimal():
-            seconds = float(value.strip())
-        else:
-            when = parsedate_to_datetime(value)
-            if when.tzinfo is None:
-                return None
-            seconds = max(0.0, (when-now).total_seconds())
-        return seconds if math.isfinite(seconds) and seconds >= 0 else None
-    except (ValueError, TypeError, OverflowError):
-        return None
+    return retry_after_seconds(value, now)
 
 
 class WoSStarterClient:

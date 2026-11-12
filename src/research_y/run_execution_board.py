@@ -15,6 +15,7 @@ from research_y.reviewed_master import retained_union
 from research_y.preflight_review import _matched_query_plan, PreflightError
 from research_y.pubmed_checkpoint_store import _snapshot_from_db, CheckpointIntegrityError
 from research_y.pubmed_metadata_store import iter_retained_efetch_records
+from research_y.pubmed_cooldown import retry_not_before
 from research_y.wos_checkpoint_store import _job, _validate_verification_receipts, WoSCheckpointError
 from research_y.publication_identity import _hash, _identifier
 
@@ -245,7 +246,11 @@ def read_run_execution_board(project, run_id: str) -> dict:
                 reviewed_run_total = reviewed["retained_unique_publications"]
             elif reconciled and projection.totals["source_record_sum"] == projection.totals["metadata_source_records"] == 0:
                 reviewed_run_total = 0
-            revision = _hash([METHOD, projection.revision, plan_sha, output, group_rows, totals])
+            pubmed_deadline = retry_not_before(db)
+            inputs = [METHOD, projection.revision, plan_sha, output, group_rows, totals]
+            if pubmed_deadline is not None:
+                inputs.append(pubmed_deadline)
+            revision = _hash(inputs)
             return dict(
                 method=METHOD, project_id=str(project.identifier), run_id=run_id,
                 strategy_version_id=projection.strategy_version_id,
@@ -255,6 +260,7 @@ def read_run_execution_board(project, run_id: str) -> dict:
                 query_count=len(output), group_count=len(group_rows),
                 source_totals=source_rows, totals=totals,
                 approved_query_inventory_matches=plan_sha is not None,
+                pubmed_retry_not_before_utc=pubmed_deadline,
                 primary_source_enumerations_reconciled=all_enumerated,
                 available_primary_metadata_acquired=all_metadata,
                 reviewed_retained_master=reviewed,

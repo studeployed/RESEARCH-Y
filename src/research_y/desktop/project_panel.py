@@ -292,6 +292,9 @@ def render_project_panel(ui, flow, act, *, native, error):
                     ui.label(f"Reviewed retained publications: {master['retained_unique_publications']} "
                              f"across {master['source_count']} original records. Sum of group counts: "
                              f"{master['group_count_sum']}.").props('data-testid=reviewed-retained-count')
+                if board.get('pubmed_retry_not_before_utc'):
+                    ui.label('PubMed requested that the next request be sent at or after ' +
+                             board['pubmed_retry_not_before_utc'] + ' (UTC).')
                 ui.label('Primary source enumerations reconciled: ' +
                          str(board['primary_source_enumerations_reconciled']) +
                          '; available source metadata retained: ' +
