@@ -1,5 +1,15 @@
 # RESEARCH-Y handover
 
+## Phase 1 delivery
+
+[Issue #105](https://github.com/studeployed/RESEARCH-Y/issues/105) tracks all six
+roadmap units, existing evidence and remaining gates from main `cf331c2`.
+The first retrieval regression concerns a reopened run missing an approved
+source/group query. The run board now checks the frozen plan before reporting
+enumeration or metadata coverage. See `docs/GUI_RUN_EXECUTION.md` and the
+application-worker traceability table. Source-specific live evidence and
+remaining product acceptance are tracked separately in #7, #8 and #9.
+
 ## Current work — P1-06l8, issue #102
 
 PR #100 merged at `c5a6f1c` and PR #101 at `d018726`. Issue #102 extends the trusted worker with

@@ -11,6 +11,7 @@ import sqlite3
 
 from research_y.application_inspection import _read, ApplicationInspectionError
 from research_y import result_counts
+from research_y.preflight_review import _matched_query_plan, PreflightError
 from research_y.pubmed_checkpoint_store import _snapshot_from_db, CheckpointIntegrityError
 from research_y.wos_checkpoint_store import _job, WoSCheckpointError
 from research_y.publication_identity import _hash, _identifier
@@ -146,6 +147,15 @@ def read_run_execution_board(project, run_id: str) -> dict:
     try:
         with _read(project) as db:
             projection = result_counts._snapshot(db, project, run_id)
+            snapshot = db.execute("SELECT snapshot_json FROM strategy_versions WHERE strategy_version_id=?",
+                                  (projection.strategy_version_id,)).fetchone()
+            if snapshot is None:
+                raise ExecutionBoardError("run_board_invalid")
+            try:
+                plan_sha = _matched_query_plan(db, run_id, projection.strategy_version_id,
+                                               snapshot[0], allow_started=True)[3]
+            except PreflightError:
+                plan_sha = None
             named = {}
             for group in projection.groups:
                 named[group["group_id"]] = group["label"]
@@ -209,7 +219,9 @@ def read_run_execution_board(project, run_id: str) -> dict:
                     sources=selected,
                     publication_identity_hypotheses=group["publication_identities"],
                     group_unique_publications=None, deduplication_complete=False))
-            all_enumerated = bool(output) and all(
+            all_enumerated = plan_sha is not None and bool(output) and all(
+                q["count_reconciliation"] == "equal" and
+                q["stored_query_status"] not in ("failed", "cancelled") and
                 (q["source_stage"] in (
                     "pubmed_no_identifiers", "pubmed_metadata_needed",
                     "pubmed_metadata_acquired") if q["source_name"] == "pubmed"
@@ -218,7 +230,7 @@ def read_run_execution_board(project, run_id: str) -> dict:
             all_metadata = all_enumerated and all(q["source_stage"] in (
                 "pubmed_no_identifiers", "pubmed_metadata_acquired",
                 "wos_enumeration_reconciled_with_warnings") for q in output)
-            revision = _hash([METHOD, projection.revision, output, group_rows, totals])
+            revision = _hash([METHOD, projection.revision, plan_sha, output, group_rows, totals])
             return dict(
                 method=METHOD, project_id=str(project.identifier), run_id=run_id,
                 strategy_version_id=projection.strategy_version_id,
@@ -227,13 +239,15 @@ def read_run_execution_board(project, run_id: str) -> dict:
                 groups=group_rows, queries=output,
                 query_count=len(output), group_count=len(group_rows),
                 source_totals=source_rows, totals=totals,
+                approved_query_inventory_matches=plan_sha is not None,
                 primary_source_enumerations_reconciled=all_enumerated,
                 available_primary_metadata_acquired=all_metadata,
                 global_unique_publications=None,
                 deduplication_complete=False, source_retrieval_verified=False,
                 whole_search_verified=False, verified_complete=False,
                 no_network_requests=True,
-                warnings=list(projection.warnings) + [
+                warnings=list(projection.warnings) + (
+                    ["approved_query_inventory_unverified"] if plan_sha is None else []) + [
                     "execution_board_is_not_a_provider_snapshot",
                     "complete_bibliography_and_multisource_acceptance_not_verified",
                     "provisional_publication_identities_not_final_unique_count",

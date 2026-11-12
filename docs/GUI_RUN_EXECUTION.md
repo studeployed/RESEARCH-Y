@@ -27,6 +27,14 @@ Read-only source results are inspected on a consistent transaction. If any check
 
 ## Evidence and remaining work
 
+For run-wide enumeration and metadata coverage, the board recompiles the frozen
+approved strategy and compares each expected source/group query with the stored
+inventory inside the count snapshot. The same query matcher validates preflight.
+A missing query leaves the remaining rows inspectable and adds a plan warning.
+Unknown reported counts and failed or cancelled queries keep both coverage
+flags false. A fully enumerated two-group fixture can have both flags true
+while the final unique-publication count remains unknown.
+
 Offline, cross-platform regression tests use actual approved two-group OR strategies, original SQLite ESearch identifier pages, EFetch metadata commits, and the original WoS Starter client/runner plus synthetic provider responses. They cover not-started/unknown versus true zero; independent PubMed and WoS stages; successful WoS enumeration without final overall completion; EFetch metadata gaps; repeated group source-record union; read-only checksum preservation; damaged source evidence; strictly allowlisted worker command; credential-free source navigation; stale board revision refusal; and absence of board actions from automated GUI probes. These are **scoped fixtures**, not live external-provider acceptance or 100,000-record performance.
 
 **Not implemented here:** automatic multi-source network scheduling, running entire group sets from one click, verified final source acceptance, a full group/source global deduplicated unique-publication count, automatic conservative cross-source matching/materialisation, final master table, complete reporting workbook, society-site acquisition or Windows product packaging. Those remain Phase 1–3 increments and acceptance gates, not implied accomplishments.
