@@ -56,7 +56,7 @@ def _original_table_hash(db, table: str) -> str:
         raise ValueError("Only original source evidence tables may be hashed")
     h = sha256()
     for row in db.execute(f"SELECT * FROM {table} ORDER BY 1"):
-        h.update(identity._json(row).encode("utf-8") + b"\\n")
+        h.update(identity._json(row).encode("utf-8") + b"\n")
     return h.hexdigest()
 
 
