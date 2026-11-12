@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, build_opener
 import xml.etree.ElementTree as ET
 
-from research_y.pubmed_probe import PubMedESearchProbeClient, _RejectRedirects
+from research_y.pubmed_probe import PubMedESearchProbeClient, PubMedRetryNotDue, _RejectRedirects
 
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 MAX_BATCH_IDS = 20
@@ -36,6 +36,10 @@ class PubMedMetadataTransportError(PubMedMetadataError):
         super().__init__(message)
         self.retryable = retryable
         self.http_status = http_status
+
+
+class PubMedMetadataRetryNotDue(PubMedMetadataTransportError):
+    """No EFetch request was sent because the provider deadline is still active."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -308,8 +312,10 @@ def parse_efetch_xml(payload: bytes, expected_pmids: tuple[str, ...] | list[str]
     )
 
 
-def _fetch_http(request: Request, timeout: float) -> bytes:
+def _fetch_http(request: Request, timeout: float, *, on_headers=None) -> bytes:
     with build_opener(_RejectRedirects()).open(request, timeout=timeout) as response:
+        if on_headers is not None:
+            on_headers(response.headers)
         return response.read(MAX_EFETCH_BYTES + 1)
 
 
@@ -323,7 +329,7 @@ class PubMedEFetchClient:
         if transport is not None and not callable(transport):
             raise TypeError("EFetch transport must be callable")
         self._client = esearch_client
-        self._transport = transport or _fetch_http
+        self._transport = transport
 
     def fetch(self, pmids: tuple[str, ...] | list[str]) -> PubMedMetadataBatch:
         identifiers = validate_pmids(pmids)
@@ -338,9 +344,10 @@ class PubMedEFetchClient:
             headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "RESEARCHY/0.1"},
             method="POST",
         )
-        self._client._pace()  # shared NCBI rate limiter across ESearch and EFetch
         try:
-            payload = self._transport(request, self._client._timeout)
+            payload = self._client._request(request, self._transport, _fetch_http)
+        except PubMedRetryNotDue as exc:
+            raise PubMedMetadataRetryNotDue(str(exc), retryable=True) from None
         except HTTPError as exc:
             raise PubMedMetadataTransportError(
                 f"PubMed EFetch HTTP {exc.code}; metadata not verified",

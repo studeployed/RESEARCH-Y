@@ -1,4 +1,6 @@
 requirement_id,implementation,test_evidence,scope_status
+RUN-04,PubMed retry deadline crosses ESearch and EFetch and survives project reopen,test_pubmed_cooldown.py::test_reopen_honors_efetch_backoff_across_both_endpoints,offline provider timing
+AT-09,prior pilot outcome can be inspected during a provider wait without dispatching a new pilot,test_pubmed_cooldown.py::test_fresh_pilot_receipt_waits_but_already_recorded_failure_can_be_reinspected,offline restart
 UI-01,installed native launcher and host-selected folders,test_desktop_launcher.py::test_desktop_starts_without_selected_paths_or_implicit_project,Phase 1 optional desktop component
 AT-01,native create open select save and restart,tools/desktop_lifecycle.py,Windows synthetic project and host-supplied OS folder selection
 AT-02,reopen relocated native project and verify identical workbook,tools/desktop_lifecycle.py,Windows synthetic project

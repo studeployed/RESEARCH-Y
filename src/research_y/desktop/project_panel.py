@@ -285,6 +285,9 @@ def render_project_panel(ui, flow, act, *, native, error):
                          str(board['totals']['identifiers_missing_metadata']) +
                          '; global UNIQUE publications: NOT ESTABLISHED.').props(
                              'data-testid=run-board-totals')
+                if board.get('pubmed_retry_not_before_utc'):
+                    ui.label('PubMed requested that the next request be sent at or after ' +
+                             board['pubmed_retry_not_before_utc'] + ' (UTC).')
                 ui.label('Primary source enumerations reconciled: ' +
                          str(board['primary_source_enumerations_reconciled']) +
                          '; available source metadata retained: ' +
