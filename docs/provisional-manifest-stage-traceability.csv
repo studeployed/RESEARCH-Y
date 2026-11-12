@@ -1,0 +1,12 @@
+requirement,new evidence,remaining limitation
+AUDIT-01,src/research_y/provisional_manifest_stage.py,Partial: append-only staging and staged receipt chain linked to explicit source-revision consent; not a final publication receipt
+EXPORT-01,tests/test_publication_results.py,Partial: source-only original-link XLSX remains private and provisional; not complete deduplicated Master Results
+EXPORT-03,src/research_y/provisional_manifest_stage.py,Partial: approved entire original run and SHA-256 revision locked; no user filtered subset export
+EXPORT-04,src/research_y/provisional_manifest_stage.py,Partial: safe single-component private filenames and 128 MiB exclusive staging; no final user-facing workbook publication
+SEC-03,tests/test_publication_results.py,Partial: no licensed metadata text in returned receipt or final destination; complete rights review outstanding
+SEC-04,tests/test_publication_results.py,Partial: hardened Directory write_new/read/flush and no overwrite under project root; not hostile archive import
+AT-17,tests/test_publication_results.py,Partial: stale approved run revision cannot be reused to stage newer research content
+AT-18,docs/PROVISIONAL_MANIFEST_STAGE.md,Not accepted: audited private staging only, no verified published workbook or complete results/filters
+AT-19,src/research_y/provisional_manifest_stage.py,Partial: every stage reports incomplete source and unknown scientific publication uniqueness
+AT-21,tests/test_publication_results.py,Partial: interrupted stage recovery and partial-file fail-closed tests; not complete security/restore acceptance
+AT-22,docs/PROVISIONAL_MANIFEST_STAGE.md,Not accepted: no 100000-row end-to-end staged GUI/export performance gate
