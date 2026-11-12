@@ -8,6 +8,7 @@ sources or mark a source search complete. Crash recovery skips committed PMIDs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Iterator
 import json
 import re
 import sqlite3
@@ -92,8 +93,10 @@ def validate_retained_efetch(payload: dict, pmid: str, retrieved_at_utc: str,
         raise PubMedMetadataIntegrityError("Persisted PubMed EFetch evidence is inconsistent") from None
 
 
-def _known_query_records(connection: sqlite3.Connection, query_id: str,
-                         run_id: str, *, committed_hashes: set[str] | None = None) -> dict[str, str]:
+def iter_retained_efetch_records(connection: sqlite3.Connection, query_id: str,
+                                 run_id: str, *, committed_hashes: set[str] | None = None
+                                 ) -> Iterator[tuple[str, str]]:
+    """Stream validated original EFetch records from the caller's SQLite snapshot."""
     rows = connection.execute(
         "SELECT r.source_record_id, r.original_metadata_json, r.retrieved_at_utc "
         "FROM query_retrievals q JOIN source_retrievals r "
@@ -102,9 +105,9 @@ def _known_query_records(connection: sqlite3.Connection, query_id: str,
         "WHERE q.query_id=? AND q.run_id=? AND q.source_name='pubmed'",
         (query_id, run_id),
     )
-    records: dict[str, str] = {}
+    seen = set()
     for pmid, raw, retrieved_at in rows:
-        if pmid in records:
+        if pmid in seen:
             raise PubMedMetadataIntegrityError("Repeated source retrieval membership")
         if committed_hashes is None:
             committed_hashes = committed_efetch_hashes(connection, run_id)
@@ -113,8 +116,13 @@ def _known_query_records(connection: sqlite3.Connection, query_id: str,
             validate_retained_efetch(doc, pmid, retrieved_at, committed_hashes=committed_hashes)
         except (TypeError, ValueError, KeyError, IndexError):
             raise PubMedMetadataIntegrityError("Persisted PubMed metadata is inconsistent") from None
-        records[pmid] = raw
-    return records
+        seen.add(pmid)
+        yield pmid, raw
+
+
+def _known_query_records(connection: sqlite3.Connection, query_id: str,
+                         run_id: str, *, committed_hashes: set[str] | None = None) -> dict[str, str]:
+    return dict(iter_retained_efetch_records(connection, query_id, run_id, committed_hashes=committed_hashes))
 
 
 def _checked_snapshot(project: Project, query_id: str):

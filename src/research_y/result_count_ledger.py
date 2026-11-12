@@ -11,9 +11,6 @@ import re
 import sqlite3
 
 from research_y.publication_identity import _hash, _object
-from research_y.pubmed_metadata_store import (
-    PubMedMetadataIntegrityError, committed_efetch_hashes, validate_retained_efetch,
-)
 
 
 class CountIntegrityError(ValueError):
@@ -63,13 +60,6 @@ def _pubmed(db: sqlite3.Connection, query: dict, materialised: dict[str, dict]):
                             'WHERE query_id=?', (qid,)).fetchall())
     if actual != expected or not set(materialised).issubset(identifiers) or len(identifiers) > row[1]:
         raise CountIntegrityError("PubMed index or metadata membership mismatch")
-    hashes = committed_efetch_hashes(db, query['run_id']) if materialised else set()
-    for pmid, source in materialised.items():
-        try:
-            validate_retained_efetch(source['original_metadata'], pmid, source['retrieved_at_utc'],
-                                     committed_hashes=hashes)
-        except PubMedMetadataIntegrityError:
-            raise CountIntegrityError("Retained PubMed EFetch evidence is inconsistent") from None
     return identifiers, 'stored_hashes_and_identifier_links'
 
 

@@ -61,6 +61,8 @@ appear on an immutable record-creating EFetch commit for the same run.
 A shared PMID can therefore retain its first response when another group
 receives it in a different batch. Inconsistent evidence stops recovery and
 prevents the board from reporting acquired metadata. Inspection is read-only.
+The ordinary count report still shows an interrupted identifier search's
+reported total, committed identifiers, linked local records and shortfall.
 
 These historical batch receipts contain aggregate counts and a response
 digest. They support local consistency checks. Verifying each original
