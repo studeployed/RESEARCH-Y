@@ -277,6 +277,39 @@ def test_duplicate_group_memberships_are_unions_not_global_unique_publications(t
     assert board["totals"]["publication_identity_hypotheses"]==0
 
 
+@pytest.mark.parametrize("damage", ["source", "response_hash", "unreceipted_hash", "timestamp", "rights", "abstract"])
+def test_reopened_board_and_resume_require_retained_efetch_evidence(tmp_path, damage):
+    from research_y.pubmed_metadata_store import (
+        missing_pubmed_metadata_pmids, PubMedMetadataIntegrityError,
+    )
+    project, run_id, queries = _project(tmp_path)
+    query_id, exact = queries["g-ecmo", "pubmed"]
+    _pubmed(project, query_id, exact, pmids=("111",))
+    _efetch(project, query_id, pmids=("111",))
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        raw, = db.execute("SELECT original_metadata_json FROM source_retrievals").fetchone()
+        saved = json.loads(raw)
+        if damage == "abstract":
+            saved["record"]["abstract_sections"] = []
+        else:
+            key, value = {
+                "source": ("source", "unverified import"),
+                "response_hash": ("response_sha256", "invalid"),
+                "unreceipted_hash": ("response_sha256", "0" * 64),
+                "timestamp": ("retrieved_at_utc", "different"),
+                "rights": ("rights_review_required_for_abstract_redistribution", False),
+            }[damage]
+            saved[key] = value
+        db.execute("UPDATE source_retrievals SET original_metadata_json=?", (json.dumps(saved),))
+    reopened = open_project(project.root)
+    before = _digest(reopened)
+    with pytest.raises(ExecutionBoardError):
+        read_run_execution_board(reopened, run_id)
+    with pytest.raises(PubMedMetadataIntegrityError):
+        missing_pubmed_metadata_pmids(reopened, query_id)
+    assert _digest(reopened) == before
+
+
 def test_corrupted_provider_checkpoint_or_query_identity_fails_closed(tmp_path):
     p,rid,queries=_project(tmp_path)
     qid,exact=queries["g-ecmo","pubmed"]
@@ -286,6 +319,30 @@ def test_corrupted_provider_checkpoint_or_query_identity_fails_closed(tmp_path):
                    ('("UNAPPROVED"[All Fields])',qid))
     with pytest.raises(ExecutionBoardError,match="run_board_unavailable"):
         read_run_execution_board(p,rid)
+
+
+def test_shared_pubmed_record_uses_its_original_batch_across_groups(tmp_path):
+    from research_y.pubmed_metadata_store import missing_pubmed_metadata_pmids
+
+    project, run_id, queries = _project(tmp_path)
+    first, exact = queries["g-ecmo", "pubmed"]
+    _pubmed(project, first, exact, pmids=("111",))
+    _efetch(project, first, pmids=("111",))
+    second, exact = queries["g-rv", "pubmed"]
+    _pubmed(project, second, exact)
+    _efetch(project, second)
+
+    reopened = open_project(project.root)
+    with closing(sqlite3.connect(reopened.database_path)) as db:
+        batches = db.execute(
+            "SELECT DISTINCT json_extract(details_json, '$.batch_sha256') FROM audit_events "
+            "WHERE event_type='pubmed_efetch_metadata_committed'"
+        ).fetchall()
+    assert len(batches) == 2
+    assert missing_pubmed_metadata_pmids(reopened, second) == ()
+    board = read_run_execution_board(reopened, run_id)
+    assert _row(board, "g-rv", "pubmed")["metadata_records_retained"] == 2
+    assert board["totals"]["source_records_by_provider"]["pubmed"] == 2
 
 
 @pytest.mark.parametrize("purpose", ["verify", "final"])

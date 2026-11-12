@@ -50,3 +50,18 @@ source count and fetches exactly the missing IDs. Total budget per dispatch
 is ten requests. Only aggregate evidence and the fixed expressions may leave
 the runner. This is an opt-in source check for AT-06/09 and SRC-04. Tests in
 `tests/test_pubmed_metadata_recovery_validation.py` use a synthetic transport.
+
+### Evidence used when reopening retained metadata
+
+For a checkpointed query, recovery and the execution board check each linked
+PMID against the stored EFetch source, retrieval timestamp, response digest,
+abstract-redistribution review flag and availability of original abstract
+sections (including alternative-language sections). The response digest must
+appear on an immutable record-creating EFetch commit for the same run.
+A shared PMID can therefore retain its first response when another group
+receives it in a different batch. Inconsistent evidence stops recovery and
+prevents the board from reporting acquired metadata. Inspection is read-only.
+
+These historical batch receipts contain aggregate counts and a response
+digest. They support local consistency checks. Verifying each original
+response byte independently would require the provider XML.
