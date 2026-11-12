@@ -9,5 +9,5 @@ SEC-03,unchanged rights-restricted source-only staged workbook is the sole publi
 SEC-04,project-relative no-overwrite destination and identity/read checks including restart and unrelated-file refusal,Not a project archive import or full hostile-filesystem security proof
 AT-18,tests/test_publication_results.py verify actual published XLSX and durable receipt against source-only scope,Full Master Results filters/links/counts not accepted
 AT-19,publication inspection retains explicit incomplete and UNKNOWN scientific counts including historical revisions,Full source completion not established
-AT-21,crash before copy/after copy/after link and corrupted/unrelated-file refusal,Hardware power-loss and full archive recovery not tested
+AT-21,tests/test_publication_results.py::test_manifest_publisher_process_death checks six real process exits across receipt inserts and commits and both destination files plus reopen and repeat recovery,Hardware power-loss and full archive recovery not tested
 AT-22,internal verified workbook and original 100k renderer evidence only,Final UI responsiveness and end-to-end 100k published-export performance outstanding

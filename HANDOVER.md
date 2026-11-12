@@ -1,4 +1,17 @@
-# RESEARCH-Y handover — PR #42 merged; supervised local operations
+# RESEARCH-Y handover
+
+## Current work — P1-06l6, issue #39
+
+PR #99 merged at `2ab1d0c2809b63ff737e1bdaeb055cf13c21cb07`.
+The next recovery increment exercises six abrupt process exits during provisional
+workbook publication. All 55 publication-results tests passed locally on Windows
+with Python 3.12. See `docs/PROVISIONAL_MANIFEST_PUBLICATION.md` for the
+boundaries and `docs/provisional-manifest-publication-traceability.csv` for the
+mapping. Consult the PR for current CI, review receipts and merge status.
+The next application integration step is read-only inspection of a selected
+export through the supervised worker.
+
+## Historical handover — PR #42
 
 ## Authority and baseline
 
