@@ -351,7 +351,8 @@ def test_stale_saved_detail_refused_until_current_history_refreshed(tmp_path):
 
 
 def test_history_graphical_controls_cannot_trigger_provider_or_forge_paths():
-    src=inspect.getsource(run)
+    from desktop_source import project_ui_source
+    src = project_ui_source()
     for value in ('pilot_history_refresh','pilot_history_older',
                   'pilot_history_detail','pilot-history-heading',
                   'pilot-history-indeterminate','pilot-history-error'):

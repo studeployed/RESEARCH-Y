@@ -131,7 +131,8 @@ def test_actual_supervised_worker_death_keeps_original_request_and_partial_stage
 
 
 def test_test_only_worker_death_is_not_a_browser_fault_action():
-    app_source = inspect.getsource(run)
+    from desktop_source import project_ui_source
+    app_source = project_ui_source()
     driver = inspect.getsource(run_app)
     transport = inspect.getsource(transport_steps)
     assert "if args.scenario == 'worker_killed':" in app_source

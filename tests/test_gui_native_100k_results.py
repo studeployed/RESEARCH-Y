@@ -111,8 +111,8 @@ def test_native_100k_browser_cannot_claim_success_for_invalid_result_evidence(
 def test_native_results_100k_scenario_never_accepts_browser_source_identifiers():
     from pathlib import Path
     root = Path(__file__).parents[1]
-    source = (root / "tools/gui_feasibility/real_project_app.py").read_text(
-        encoding="utf-8")
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     runner = (root / "tools/gui_feasibility/run_native_100k_results.py").read_text(
         encoding="utf-8")
     assert "args.scenario == 'publication_results_large'" in source

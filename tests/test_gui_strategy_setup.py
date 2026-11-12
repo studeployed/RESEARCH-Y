@@ -257,7 +257,8 @@ def test_post_commit_inspection_failure_retains_original_approved_snapshot(tmp_p
 
 def test_host_draft_without_optional_gui_dependency_and_no_browser_file_path():
     from tools.gui_feasibility.real_project_app import run
-    source = inspect.getsource(run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     assert "name == 'setup_edit'" in source
     assert "name == 'setup_preview'" in source
     assert "name == 'setup_approve'" in source

@@ -1,6 +1,9 @@
 # RESEARCH-Y
 
-Python-based, locally operated biomedical literature discovery application for Windows. **Development stage: Phase 1 durable storage and query compilation; not yet an installable or usable search application.**
+RESEARCH-Y is a local Windows application for biomedical literature discovery.
+Phase 1 includes a native project launcher, approved strategies, supervised
+source retrieval, publication review and audited Excel workbooks.
+The phase acceptance record is [issue #105](https://github.com/studeployed/RESEARCH-Y/issues/105).
 
 ## Scientific and technical baseline
 
@@ -9,6 +12,11 @@ The authoritative requirements are in [`RESEARCH-Y_SPEC.md`](RESEARCH-Y_SPEC.md)
 The development plan and tracked test coverage are in [`docs/ROADMAP.md`](docs/ROADMAP.md) and [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md). See [`HANDOVER.md`](HANDOVER.md) for current state and next action.
 
 ## Developer setup (not the future end-user installation process)
+
+For Windows development or evaluation, installing the optional desktop
+components creates the `research-y` graphical launcher in the environment.
+See [the desktop guide](docs/DESKTOP.md) for startup, source configuration
+and test coverage. The bundled Windows installer is a Phase 3 deliverable.
 
 Python **3.12 or 3.13**:
 

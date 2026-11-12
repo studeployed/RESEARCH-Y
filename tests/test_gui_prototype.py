@@ -26,7 +26,7 @@ ORIGIN = f'http://127.0.0.1:{PORT}'.encode()
 HOST = f'127.0.0.1:{PORT}'.encode()
 
 
-def call(*, session=None, path='/', method='GET', kind='http', headers=(), body=b'',
+def call(*, guard=PrototypeGuard, session=None, path='/', method='GET', kind='http', headers=(), body=b'',
          more=False, raw=None, query=b'', client=('127.0.0.1', 10)):
     session = session or LaunchSession(PORT, TOKEN)
     sent, reached = [], []
@@ -45,7 +45,7 @@ def call(*, session=None, path='/', method='GET', kind='http', headers=(), body=
     scope = {'type': kind, 'path': path, 'raw_path': raw or path.encode(),
              'method': method, 'headers': [(b'host', HOST), *headers],
              'query_string': query, 'client': client}
-    asyncio.run(PrototypeGuard(app, session=session)(scope, receive, send))
+    asyncio.run(guard(app, session=session)(scope, receive, send))
     return sent, reached
 
 
@@ -459,6 +459,7 @@ def test_native_document_invalid_response_does_not_count_as_ready(raw, code):
 
 def test_native_prototype_contains_pre_navigation_veto_and_owner_death_watch():
     text = (ROOT / 'tools/gui_feasibility/prototype_app.py').read_text(encoding='utf-8')
+    text += (ROOT / 'src/research_y/desktop/native.py').read_text(encoding='utf-8')
     assert 'NavigationStarting' in text and 'event.Cancel = True' in text
     assert 'def before_show():' in text and 'valid_initial_bootstrap' in text
     assert "native_mode._open_window = guarded_open_window" in text

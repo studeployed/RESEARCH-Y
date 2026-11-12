@@ -421,7 +421,8 @@ def test_profile_consumes_only_trusted_environment_and_never_echoes(monkeypatch)
 
 
 def test_wos_gui_network_action_not_available_on_automated_probe_route():
-    source=inspect.getsource(run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     assert "name == 'wos_pilot_offer'" in source
     assert "name == 'wos_pilot_confirm'" in source
     assert "name == 'wos_pilot_reconcile'" in source

@@ -7,6 +7,7 @@ on:
       - '.github/workflows/native-100k-results.yml'
       - 'scripts/benchmark_original_project.py'
       - 'tools/gui_feasibility/**'
+      - 'src/research_y/desktop/**'
       - 'src/research_y/publication_materialisation_window.py'
       - 'src/research_y/publication_run_materialisation.py'
       - 'src/research_y/application_worker.py'

@@ -298,7 +298,8 @@ def test_no_implicit_project_change_on_failed_recent_db_open(tmp_path):
 
 
 def test_recent_gui_exposes_only_host_catalog_uuid_not_browser_path():
-    source = inspect.getsource(run)
+    from desktop_source import project_ui_source
+    source = project_ui_source()
     transport = inspect.getsource(transport_steps)
     driver = inspect.getsource(run_app)
     assert "if name == 'recent_open':" in source
