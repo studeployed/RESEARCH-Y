@@ -19,6 +19,12 @@ explicit match and preserves six original query memberships in an audited
 XLSX. This provides scoped AT-08/09/10/18 evidence. Live quota behaviour,
 production Windows launch and full scientific acceptance remain separate.
 
+The PubMed metadata recovery change for #7 checks the saved EFetch evidence
+before counting a checkpointed record as acquired. The regression covers
+altered source, receipt digest, timestamp, rights and abstract availability
+after reopen, plus reuse of an original record across two distinct responses.
+See `docs/PUBMED_EFETCH.md` and the application-worker traceability table.
+
 Issue #104 connects consent preview, explicit confirmation and durable receipt
 history to the guarded graphical prototype. The two synthetic lifecycle cases
 `manifest_consent` and `manifest_reopen` use separate host processes on the same

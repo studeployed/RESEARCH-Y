@@ -8,7 +8,9 @@ sources or mark a source search complete. Crash recovery skips committed PMIDs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Iterator
 import json
+import re
 import sqlite3
 from typing import Callable
 from uuid import uuid4
@@ -51,29 +53,76 @@ def _query_identity(connection: sqlite3.Connection, query_id: str) -> str:
     return run_id
 
 
-def _known_query_records(connection: sqlite3.Connection, query_id: str,
-                         run_id: str) -> dict[str, str]:
+def committed_efetch_hashes(db: sqlite3.Connection, run_id: str) -> set[str]:
+    """Response digests from original record-creating EFetch commits in this run."""
+    return {digest for (digest,) in db.execute(
+        "SELECT json_extract(a.details_json, '$.batch_sha256') FROM audit_events a "
+        "JOIN source_queries q ON q.query_id=json_extract(a.details_json, '$.query_id') "
+        "WHERE a.event_type='pubmed_efetch_metadata_committed' AND q.source_name='pubmed' "
+        "AND q.run_id=? AND json_extract(a.details_json, '$.run_id')=q.run_id "
+        "AND json_type(a.details_json, '$.created_records')='integer' "
+        "AND json_extract(a.details_json, '$.created_records')>0", (run_id,)
+    )}
+
+
+def validate_retained_efetch(payload: dict, pmid: str, retrieved_at_utc: str,
+                            *, committed_hashes: set[str] | None = None) -> None:
+    """Check the saved EFetch envelope and abstract availability against its source row."""
+    try:
+        record = payload["record"]
+        if (payload["source"] != "NCBI PubMed EFetch XML" or record["pmid"] != pmid
+                or not isinstance(retrieved_at_utc, str) or not retrieved_at_utc.strip()
+                or payload["retrieved_at_utc"] != retrieved_at_utc
+                or not re.fullmatch(r"[0-9a-f]{64}", payload["response_sha256"])
+                or (committed_hashes is not None and payload["response_sha256"] not in committed_hashes)
+                or payload["rights_review_required_for_abstract_redistribution"] is not True):
+            raise ValueError
+        alternates = record.get("other_abstracts", [])
+        if not isinstance(alternates, list):
+            raise ValueError
+        sections = [record["abstract_sections"], *(item["sections"] for item in alternates)]
+        for group in sections:
+            if not isinstance(group, list) or any(
+                not isinstance(section["text"], str) or not section["text"].strip() for section in group
+            ):
+                raise ValueError
+        expected = "present" if any(sections) else "not_supplied_in_response"
+        if record["abstract_status"] != expected:
+            raise ValueError
+    except (KeyError, TypeError, AttributeError, ValueError):
+        raise PubMedMetadataIntegrityError("Persisted PubMed EFetch evidence is inconsistent") from None
+
+
+def iter_retained_efetch_records(connection: sqlite3.Connection, query_id: str,
+                                 run_id: str, *, committed_hashes: set[str] | None = None
+                                 ) -> Iterator[tuple[str, str]]:
+    """Stream validated original EFetch records from the caller's SQLite snapshot."""
     rows = connection.execute(
-        "SELECT r.source_record_id, r.original_metadata_json "
+        "SELECT r.source_record_id, r.original_metadata_json, r.retrieved_at_utc "
         "FROM query_retrievals q JOIN source_retrievals r "
         "ON (q.retrieval_id=r.retrieval_id AND q.run_id=r.run_id "
         "AND q.source_name=r.source_name) "
         "WHERE q.query_id=? AND q.run_id=? AND q.source_name='pubmed'",
         (query_id, run_id),
-    ).fetchall()
-    records: dict[str, str] = {}
-    for pmid, raw in rows:
-        if pmid in records:
+    )
+    seen = set()
+    for pmid, raw, retrieved_at in rows:
+        if pmid in seen:
             raise PubMedMetadataIntegrityError("Repeated source retrieval membership")
+        if committed_hashes is None:
+            committed_hashes = committed_efetch_hashes(connection, run_id)
         try:
             doc = json.loads(raw)
-            if (doc["source"] != "NCBI PubMed EFetch XML"
-                    or doc["record"]["pmid"] != pmid):
-                raise ValueError("Source record identity mismatch")
+            validate_retained_efetch(doc, pmid, retrieved_at, committed_hashes=committed_hashes)
         except (TypeError, ValueError, KeyError, IndexError):
             raise PubMedMetadataIntegrityError("Persisted PubMed metadata is inconsistent") from None
-        records[pmid] = raw
-    return records
+        seen.add(pmid)
+        yield pmid, raw
+
+
+def _known_query_records(connection: sqlite3.Connection, query_id: str,
+                         run_id: str, *, committed_hashes: set[str] | None = None) -> dict[str, str]:
+    return dict(iter_retained_efetch_records(connection, query_id, run_id, committed_hashes=committed_hashes))
 
 
 def _checked_snapshot(project: Project, query_id: str):
@@ -116,7 +165,8 @@ def commit_pubmed_metadata_batch(project: Project, query_id: str,
     with _validated_project_connection(project) as connection:
         connection.execute("BEGIN IMMEDIATE")
         run_id = _query_identity(connection, query_id)
-        known = _known_query_records(connection, query_id, run_id)
+        hashes = committed_efetch_hashes(connection, run_id)
+        known = _known_query_records(connection, query_id, run_id, committed_hashes=hashes)
         if not set(known).issubset(allowed):
             raise PubMedMetadataIntegrityError("Existing source metadata is outside the checkpoint")
         created = 0
@@ -126,20 +176,21 @@ def commit_pubmed_metadata_batch(project: Project, query_id: str,
             original = json.loads(json.dumps(
                 record.source_dict(), ensure_ascii=False, sort_keys=True, allow_nan=False,
             ))
+            payload = {
+                "source": batch.source,
+                "record": original,
+                "retrieved_at_utc": batch.retrieved_at_utc,
+                "response_sha256": batch.response_sha256,
+                "rights_review_required_for_abstract_redistribution": True,
+            }
+            validate_retained_efetch(payload, pmid, batch.retrieved_at_utc)
             existing = connection.execute(
-                "SELECT retrieval_id, original_metadata_json FROM source_retrievals "
+                "SELECT retrieval_id, original_metadata_json, retrieved_at_utc FROM source_retrievals "
                 "WHERE run_id=? AND source_name='pubmed' AND source_record_id=?",
                 (run_id, pmid),
             ).fetchone()
             if existing is None:
                 retrieval_id = str(uuid4())
-                payload = {
-                    "source": batch.source,
-                    "record": original,
-                    "retrieved_at_utc": batch.retrieved_at_utc,
-                    "response_sha256": batch.response_sha256,
-                    "rights_review_required_for_abstract_redistribution": True,
-                }
                 connection.execute(
                     "INSERT INTO source_retrievals "
                     "(retrieval_id,run_id,source_name,source_record_id,retrieved_at_utc,original_metadata_json) "
@@ -149,9 +200,10 @@ def commit_pubmed_metadata_batch(project: Project, query_id: str,
                 )
                 created += 1
             else:
-                retrieval_id, stored = existing
+                retrieval_id, stored, retrieved_at = existing
                 try:
                     prior = json.loads(stored)
+                    validate_retained_efetch(prior, pmid, retrieved_at, committed_hashes=hashes)
                     same_record = (prior.get("source") == batch.source
                                    and prior.get("record") == original)
                 except (TypeError, ValueError, AttributeError):

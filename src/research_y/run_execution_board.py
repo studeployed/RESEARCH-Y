@@ -13,6 +13,7 @@ from research_y.application_inspection import _read, ApplicationInspectionError
 from research_y import result_counts
 from research_y.preflight_review import _matched_query_plan, PreflightError
 from research_y.pubmed_checkpoint_store import _snapshot_from_db, CheckpointIntegrityError
+from research_y.pubmed_metadata_store import iter_retained_efetch_records
 from research_y.wos_checkpoint_store import _job, _validate_verification_receipts, WoSCheckpointError
 from research_y.publication_identity import _hash, _identifier
 
@@ -31,7 +32,7 @@ class ExecutionBoardError(ValueError):
         super().__init__(self.code)
 
 
-def _pubmed(db, query, counts):
+def _pubmed(db, run_id, query, counts):
     qid = query["query_id"]
     exists = db.execute(
         "SELECT 1 FROM pubmed_checkpoint_runs WHERE query_id=?", (qid,)
@@ -50,6 +51,10 @@ def _pubmed(db, query, counts):
         stage, action = "pubmed_identifier_paused", "inspect_pubmed"
     elif (checkpoint.stored_status == "identifiers_reconciled_metadata_pending" and
           checkpoint.identifiers_reconciled):
+        if counts["metadata_source_records"]:
+            retained = sum(1 for _ in iter_retained_efetch_records(db, qid, run_id))
+            if retained != counts["metadata_source_records"]:
+                raise ExecutionBoardError("run_board_invalid")
         if not checkpoint.pmids:
             stage, action = "pubmed_no_identifiers", "inspect_pubmed"
         elif counts["metadata_source_records"] == len(checkpoint.pmids):
@@ -184,7 +189,7 @@ def read_run_execution_board(project, run_id: str) -> dict:
                              reported_matches=reported)
                 if source == "pubmed":
                     stage, action, pages, expected, verified, warnings = _pubmed(
-                        db, query, count)
+                        db, run_id, query, count)
                 else:
                     stage, action, pages, expected, verified, warnings = _wos(
                         db, project, query, count)
