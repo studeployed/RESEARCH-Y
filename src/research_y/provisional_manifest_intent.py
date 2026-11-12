@@ -304,3 +304,34 @@ def inspect_manifest_intent(project, export_id: str) -> dict:
         raise
     except (sqlite3.DatabaseError, OSError, ExportFileError, ValueError, TypeError):
         raise ManifestIntentError("source_evidence_unavailable") from None
+
+
+def list_manifest_intents(project, run_id: str, *, before_event_id: int | None = None) -> dict:
+    """Read one newest-first page of consent receipts; current state needs inspection."""
+    _uuid(run_id)
+    if before_event_id is not None and (
+            type(before_event_id) is not int or not 1 <= before_event_id < 2**63):
+        raise ManifestIntentError("invalid_request")
+    try:
+        with result_counts._read_connection(project) as db:
+            if db.execute("SELECT 1 FROM search_runs WHERE run_id=?", (run_id,)).fetchone() is None:
+                raise ManifestIntentError("invalid_request")
+            rows = db.execute(
+                "SELECT event_id,event_type FROM audit_events WHERE event_type GLOB ? "
+                "AND json_extract(details_json,'$.run_id')=? AND (? IS NULL OR event_id<?) "
+                "ORDER BY event_id DESC LIMIT 21",
+                (EVENT_PREFIX + "*", run_id, before_event_id, before_event_id)).fetchall()
+            entries = []
+            for event_id, event_type in rows[:20]:
+                export_id = _uuid(event_type[len(EVENT_PREFIX):])
+                receipt = _load(db, project, export_id)
+                if receipt is None or receipt["audit_event_id"] != event_id or receipt["run_id"] != run_id:
+                    raise ManifestIntentError("invalid_intent_receipt")
+                entries.append(dict(export_id=export_id, output_name=receipt["output_name"],
+                                    event_id=event_id, authorised_at_utc=receipt["authorised_at_utc"]))
+            return dict(run_id=run_id, entries=entries,
+                        next_before_event_id=rows[19][0] if len(rows) > 20 else None)
+    except ManifestIntentError:
+        raise
+    except (sqlite3.DatabaseError, OSError, ValueError, TypeError):
+        raise ManifestIntentError("source_evidence_unavailable") from None
