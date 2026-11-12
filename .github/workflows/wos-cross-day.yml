@@ -16,7 +16,8 @@ jobs:
   cross-day:
     if: ${{ inputs.confirm_local_retention }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Initial acquisition, midnight rollover, up to one hour of saved cooldown, and upload.
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v4.2.2
         with:

@@ -34,7 +34,7 @@ SRC-02,1,AT-07,tests/test_pubmed_partition.py; tests/test_pubmed_date_translatio
 SRC-03,1,"AT-07,AT-19",tests/test_pubmed_partition.py; tests/test_pubmed_date_translation_integration.py (exact date scope; changed counts or fields remain incomplete),partial
 SRC-04,1,AT-07,tests/test_pubmed_metadata.py (one-record EFetch live smoke passed; full metadata reconciliation pending); tests/test_pubmed_metadata.py and docs/evidence/pubmed-metadata-43300410950-summary.json (mixed journal/book fixtures and live two-record restart),partial
 SRC-05,1,AT-08,tests/test_wos_starter.py; docs/evidence/wos-starter-41254004073.json; docs/evidence/wos-recovery-41306953908-summary.json (actual 5000/day allowance observed in sample and full enumeration),partial
-SRC-06,1,"AT-08,AT-09",tests/test_wos_checkpoints.py; docs/evidence/wos-recovery-41306953908-summary.json (19584 records and 392 pages reconcile after live restart; live multi-day/quota-reset pending),partial
+SRC-06,1,"AT-08,AT-09",tests/test_wos_checkpoints.py; tests/test_wos_cross_day_validation.py (reopen after midnight honours saved cooldown and bounds requests); docs/evidence/wos-recovery-41306953908-summary.json (19584 records and 392 pages reconcile after live restart; live multi-day/quota-reset pending),partial
 SRC-07,1,"AT-08,AT-16",tests/test_wos_checkpoints.py (persistent original source fields and memberships; abstract enrichment pending),partial
 SRC-08,1,"AT-08,AT-19",tests/test_wos_checkpoints.py; docs/evidence/wos-recovery-41306953908-summary.json (scoped enumeration only; no frozen-snapshot claim; broader provider limits pending),partial
 SRC-09,2,AT-13,planned,planned
