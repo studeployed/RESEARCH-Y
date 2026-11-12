@@ -72,6 +72,7 @@ class RealProjectFlow:
         # A worker may die after committing the prepared receipt but before replying.
         # Retain the UUID privately until authoritative inspection reconciles it.
         self._pending_export_id = None
+        self._pending_export_revision = None
         self.operation_state = 'idle'
         self.operation_error = None
         self.last_result = None
@@ -348,6 +349,7 @@ class RealProjectFlow:
         self._clear_manifest_selection()
         self.selected_export_id = None
         self._pending_export_id = None
+        self._pending_export_revision = None
         self.observation = None
         self.retained_export_report = None
         self._setup = StrategyDraft()
@@ -3942,11 +3944,36 @@ class RealProjectFlow:
                 raise ProjectFlowError('export_run_mismatch')
             self.selected_export_id = pending_id
             self._pending_export_id = None
+            self._pending_export_revision = None
+            self.retained_export_report = None
         # A definitive *absence* of a preparation receipt does not authorise
         # minting a new UUID on retry. Retain the tentative original UUID.
         # This also permits explicitly selected new folders, but only after
         # the journal has again shown no receipt for that UUID.
         self._publish()
+
+    def _preparation_revision(self, reviewed_master):
+        if self._pending_export_id is not None:
+            if (self._pending_export_revision is not None) != reviewed_master:
+                raise ProjectFlowError('export_reconciliation_required')
+            return self._pending_export_revision
+        if self.selected_export_id is not None:
+            retained = self.retained_export_report
+            if retained is None:
+                retained = self._operation('export_report', export_id=self.selected_export_id)
+                if retained.get('run', {}).get('run_id') != self.selected_run_id:
+                    raise ProjectFlowError('retained_report_run_mismatch')
+                self.retained_export_report = retained
+            if (retained.get('format_version') == 2) == reviewed_master:
+                return retained['counts']['revision'] if reviewed_master else None
+            self.selected_export_id = None
+            self.retained_export_report = None
+        if not reviewed_master:
+            return None
+        board = self._run_execution_board
+        if not board or board['run_id'] != self.selected_run_id or not board.get('reviewed_retained_master'):
+            raise ProjectFlowError('reviewed_master_unavailable')
+        return board['source_count_revision']
 
     def prepare(self, filename=None, *, reviewed_master=False):
         with self._guard:
@@ -3971,27 +3998,20 @@ class RealProjectFlow:
             if self._coord_pending is not None:
                 raise ProjectFlowError('run_coordination_reconciliation_required')
             self._reconcile_pending_before_destination()
+            revision = self._preparation_revision(reviewed_master)
             directory = self._export_directory()
-            revision = None
-            if reviewed_master:
-                board = self._run_execution_board
-                if (not board or board['run_id'] != self.selected_run_id or not board.get('reviewed_retained_master')):
-                    raise ProjectFlowError('reviewed_master_unavailable')
-                revision = board['source_count_revision']
-            if filename is None:
+            if filename is None and self.selected_export_id is not None:
+                filename = self._selected_export()['filename']
+            elif filename is None:
                 prefix = 'reviewed-master-' if reviewed_master else 'strategy-summary-'
                 filename = prefix + self.selected_run_id + '.xlsx'
-            if self.selected_export_id is not None and self.retained_export_report is not None:
-                previous_reviewed = self.retained_export_report.get('format_version') == 2
-                if previous_reviewed != reviewed_master:
-                    self.selected_export_id = None
-                    self.retained_export_report = None
             if self.selected_export_id is None:
                 if self._pending_export_id is None:
                     if any(row['run_id'] == self.selected_run_id and row['filename'] == filename
                            for row in self.snapshot['exports']):
                         raise ProjectFlowError('select_existing_request')
                     self._pending_export_id = str(uuid4())
+                    self._pending_export_revision = revision
                 export_id = self._pending_export_id
             else:
                 export_id = self.selected_export_id
@@ -4014,12 +4034,15 @@ class RealProjectFlow:
                 if self._reinspect():
                     if any(row['export_id'] == export_id for row in self.snapshot['exports']):
                         self.selected_export_id = export_id
+                        self.retained_export_report = None
                     self._pending_export_id = None
+                    self._pending_export_revision = None
                 # On inspection failure retain the tentative UUID for a safe retry.
                 self._publish()
                 raise
             self.selected_export_id = export_id
             self._pending_export_id = None
+            self._pending_export_revision = None
             try:
                 self.snapshot = self._operation('inspect', run_id=self.selected_run_id)['snapshot']
                 retained = self._operation('export_report', export_id=export_id)
@@ -4140,6 +4163,7 @@ class RealProjectFlow:
                 'manifest_offer': dict(self._manifest_offer) if self._manifest_offer else None,
                 'manifest_pending': self._manifest_pending,
                 'manifest_receipt': self._manifest_receipt,
+                'pending_reviewed_export': self._pending_export_id is not None and self._pending_export_revision is not None,
                 'manifest_save_running': self._manifest_save_operation is not None,
                 'manifest_save_result': self._manifest_save_result,
                 'manifest_save_error': self._manifest_save_error,

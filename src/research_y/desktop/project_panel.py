@@ -2050,7 +2050,8 @@ def render_project_panel(ui, flow, act, *, native, error):
                      state['selected_run_id'] + '.xlsx')
             ui.button('Prepare strategy workbook',
                       on_click=lambda: act('prepare')).props('data-testid=prepare')
-            if (state['run_execution_board'] or {}).get('reviewed_retained_master'):
+            if ((state['run_execution_board'] or {}).get('reviewed_retained_master') or state['pending_reviewed_export']
+                    or (state['retained_export_report'] or {}).get('format_version') == 2):
                 ui.button('Prepare reviewed master workbook with memberships and review receipts',
                           on_click=lambda: act('prepare_reviewed_master')).props('data-testid=prepare-reviewed-master')
         if state['export_reconciliation_required']:

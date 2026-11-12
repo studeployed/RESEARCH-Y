@@ -127,6 +127,43 @@ def test_reversing_current_match_withdraws_the_reviewed_count(tmp_path):
     assert current['reconciled_primary_run_unique_publications'] is None
 
 
+@pytest.mark.parametrize("lost_reply", [False, True])
+def test_reviewed_prepare_retry_uses_original_revision_after_board_refresh(tmp_path, monkeypatch, lost_reply):
+    from research_y.desktop.flow import ProjectFlowError
+    project, run_id, queries, ids = populated(tmp_path)
+    decide(project, ids['111'], ids['WOS:000000001'], 'confirmed_match')
+    decide(project, ids['111'], ids['222'], 'rejected_match')
+    with closing(RealProjectFlow()) as flow:
+        flow.open_native_folder(project.root)
+        flow.select_run(run_id)
+        original_revision = flow.inspect_run_execution_board()['run_execution_board']['source_count_revision']
+        original = flow._operation
+        sent = []
+        def interrupt(operation, **kwargs):
+            if operation == 'prepare_export':
+                sent.append(kwargs['export_id'])
+                original(operation, **kwargs)
+                raise ProjectFlowError('worker_interrupted')
+            if operation == 'inspect':
+                raise ProjectFlowError('worker_interrupted')
+            return original(operation, **kwargs)
+        if lost_reply:
+            monkeypatch.setattr(flow, '_operation', interrupt)
+            with pytest.raises(ProjectFlowError, match='worker_interrupted'):
+                flow.prepare(reviewed_master=True)
+            monkeypatch.setattr(flow, '_operation', original)
+            export_id, = sent
+        else:
+            export_id = flow.prepare(reviewed_master=True)['selected_export_id']
+        with closing(sqlite3.connect(project.database_path)) as db, db:
+            db.execute('UPDATE source_queries SET reported_matches=NULL WHERE query_id=?', (queries['g-rv', 'pubmed'][0],))
+        refreshed = flow.inspect_run_execution_board()['run_execution_board']
+        assert refreshed['source_count_revision'] != original_revision
+        retry = flow.prepare(reviewed_master=True)
+        assert retry['selected_export_id'] == export_id and len(retry['exports']) == 1
+        assert retry['retained_export_report']['counts']['revision'] == original_revision
+
+
 def test_unstarted_is_unknown_and_all_reconciled_empty_is_zero(tmp_path):
     project, run_id, queries = _project(tmp_path)
     assert read_run_execution_board(project, run_id)['reconciled_primary_run_unique_publications'] is None
