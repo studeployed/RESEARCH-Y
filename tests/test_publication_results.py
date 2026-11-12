@@ -1092,6 +1092,42 @@ def test_manifest_stage_recovery_of_missing_file_matches_original_digest(fixture
         ).fetchone()[0] == 2
 
 
+def test_manifest_stage_existing_non_directory_is_not_missing(fixture):
+    """A hostile regular-file replacement for the private store fails closed.
+
+    Unlike a genuinely absent directory after a staging intent, an existing
+    non-directory cannot be treated as recoverable missing storage on Windows
+    or Linux. The original file must remain byte-identical.
+    """
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    from research_y import provisional_manifest_stage as stage
+    project, run, _, _ = fixture
+    rid = insert(fixture, number=23008)
+    identity.materialise_retrieval(project, rid, actor="Fixture")
+    preview = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(
+        project, run, "guarded-stage.xlsx", export_id=export_id,
+        expected_revision=preview["original_revision"],
+        actor="Researcher", confirmed=True)
+    with stage.result_counts._read_connection(project) as db:
+        approval = stage._intent(db, project, export_id)
+    raw = stage._render(project, approval)
+    stage._writer(project, export_id, content=raw)
+    private = project.root / "exports" / stage.STORE
+    assert not private.exists()
+    assert stage.inspect_manifest_stage(project, export_id)["state"] == (
+        "staging_interrupted")
+    private.write_bytes(b"AN UNRELATED ORDINARY FILE")
+    with pytest.raises(stage.ManifestStageError, match="stage_artifact_changed"):
+        stage.inspect_manifest_stage(project, export_id)
+    with pytest.raises(stage.ManifestStageError, match="stage_artifact_changed"):
+        stage.resume_manifest_stage(project, export_id)
+    assert private.read_bytes() == b"AN UNRELATED ORDINARY FILE"
+    assert not (project.root / "exports" / "guarded-stage.xlsx").exists()
+
+
 def test_manifest_stage_partial_or_changed_file_never_overwritten(fixture):
     from research_y.provisional_manifest_intent import (
         preview_manifest_intent, prepare_manifest_intent)
