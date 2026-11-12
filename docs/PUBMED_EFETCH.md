@@ -37,3 +37,16 @@ Stored book abstracts carry the existing redistribution-review flag.
 `tests/test_pubmed_metadata.py::test_mixed_book_and_journal_metadata_reopens_without_refetch`
 and `tests/test_pubmed_metadata.py::test_malformed_book_refuses_mixed_batch_without_partial_commit`.
 These are synthetic provider responses.
+
+## Bounded OR and metadata recovery sample
+
+The separate manual `pubmed-metadata-recovery.yml` workflow tests a fixed
+clinical OR expression (ECMO or extracorporeal membrane oxygenation) with a
+count-only translation check. A second compiled OR expression uses the two
+public reporting-guideline DOIs `10.1186/s13643-020-01542-z` and
+`10.1136/bmj.n71`. The metadata experiment proceeds only for 2–20 IDs, with
+one record committed before the process exits. A fresh process rechecks the
+source count and fetches exactly the missing IDs. Total budget per dispatch
+is ten requests. Only aggregate evidence and the fixed expressions may leave
+the runner. This is an opt-in source check for AT-06/09 and SRC-04. Tests in
+`tests/test_pubmed_metadata_recovery_validation.py` use a synthetic transport.
