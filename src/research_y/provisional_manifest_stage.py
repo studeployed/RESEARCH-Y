@@ -173,6 +173,10 @@ def _file_state(project, state):
             stage = state["artifact"]
             location.read(stage["name"], digest=stage["sha256"], size=stage["size"])
             return "verified"
+    except FileNotFoundError:
+        # A crash may occur after the staging receipt was committed but
+        # before even the private stage directory could be created.
+        return "missing"
     except (ExportFileError, OSError, ValueError):
         raise ManifestStageError("stage_artifact_changed") from None
 
@@ -203,13 +207,24 @@ def _view(approved, state, file_state, *, original_current):
 
 
 def _read_state(project, export_id):
-    with result_counts._read_connection(project) as db:
-        approved = _intent(db, project, export_id)
-        state = _load(db, project, approved)
-        projection = intent._counts(db, project, approved["run_id"])
-        current = projection.revision == approved["run_revision"]
-        file_state = _file_state(project, state)
-        return approved, state, current, file_state
+    try:
+        with result_counts._read_connection(project) as db:
+            approved = _intent(db, project, export_id)
+            state = _load(db, project, approved)
+            projection = intent._counts(db, project, approved["run_id"])
+            current = projection.revision == approved["run_revision"]
+            file_state = _file_state(project, state)
+            if state is not None and state["phase"] == "staged" and file_state != "verified":
+                raise ManifestStageError("stage_artifact_changed")
+            return approved, state, current, file_state
+    except ManifestStageError:
+        raise
+    except intent.ManifestIntentError as exc:
+        raise ManifestStageError(
+            "intent_not_found" if exc.code == "intent_not_found"
+            else "stage_receipt_invalid") from None
+    except (OSError, ValueError, sqlite3.DatabaseError, TypeError):
+        raise ManifestStageError("stage_invalid") from None
 
 
 def inspect_manifest_stage(project, export_id: str) -> dict:
