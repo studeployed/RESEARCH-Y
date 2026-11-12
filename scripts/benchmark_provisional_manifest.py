@@ -13,11 +13,9 @@ import argparse
 from contextlib import closing
 from hashlib import sha256
 from io import BytesIO
-from itertools import islice
 import json
 from pathlib import Path
 import sqlite3
-import sys
 from tempfile import TemporaryDirectory
 from time import perf_counter
 from zipfile import ZipFile
@@ -53,6 +51,15 @@ def require(condition: bool, code: str) -> None:
         raise EvidenceFailure(code)
 
 
+def _original_table_hash(db, table: str) -> str:
+    if table not in ("source_retrievals", "query_retrievals"):
+        raise ValueError("Only original source evidence tables may be hashed")
+    h = sha256()
+    for row in db.execute(f"SELECT * FROM {table} ORDER BY 1"):
+        h.update(identity._json(row).encode("utf-8") + b"\\n")
+    return h.hexdigest()
+
+
 def _db_state(project) -> dict:
     """Independently inspect actual original tables and project-file bytes."""
     with closing(sqlite3.connect(project.database_path)) as db:
@@ -68,6 +75,8 @@ def _db_state(project) -> dict:
                 "WHERE event_type='publication_identity_v1'"),
             integrity=db.execute("PRAGMA integrity_check").fetchone()[0],
             foreign_keys=db.execute("PRAGMA foreign_key_check").fetchone() is None,
+            original_source_sha256=_original_table_hash(db, "source_retrievals"),
+            original_membership_sha256=_original_table_hash(db, "query_retrievals"),
             bytes_sha256=sha256(project.database_path.read_bytes()).hexdigest(),
         )
 
@@ -236,7 +245,12 @@ def run(*, records: int = MAX_RECORDS) -> dict:
                         "fixture_materialisation_incomplete")
                 project = open_project(project.root)
             before = _db_state(project)
-            require(before["provisional_publications"] == expected_pubs and
+            require(
+                    before["original_source_sha256"] ==
+                        original["original_source_sha256"] and
+                    before["original_membership_sha256"] ==
+                        original["original_membership_sha256"] and
+                    before["provisional_publications"] == expected_pubs and
                     before["links"] == before["original_identity_audits"] ==
                     expected_pubs and before["original_sources"] == records and
                     before["original_memberships"] == records and
@@ -266,6 +280,7 @@ def run(*, records: int = MAX_RECORDS) -> dict:
                 separate_workbook_verification_ms=verification_ms,
                 workbook_bytes=size,
                 source_and_membership_sqlite_unchanged=True,
+                original_source_and_membership_hashes_revalidated=True,
                 sqlite_integrity_verified=True,
                 foreign_keys_verified=True,
                 **inspected,
