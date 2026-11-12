@@ -1,4 +1,11 @@
 requirement_id,implementation,test_evidence,scope_status
+COUNT-01,reviewed union across retained source records and groups,test_reviewed_master.py::test_native_host_issues_two_reviewed_rows_and_six_memberships,current explicit within-run comparisons
+COUNT-02,sum of two group counts is four while the reviewed global retained union is two,test_reviewed_master.py::test_native_host_issues_two_reviewed_rows_and_six_memberships,offline complete primary query inventory
+AT-10,confirmed shared publication is one reviewed master row with original memberships,test_reviewed_master.py::test_native_host_issues_two_reviewed_rows_and_six_memberships,synthetic two-source two-group project
+AT-18,versioned reviewed workbook verifies original identifiers and internal links,test_reviewed_master.py::test_native_host_issues_two_reviewed_rows_and_six_memberships,optional internal-ID master export
+AT-19,source failure withholds primary-run total and stale revision refuses publication,test_reviewed_master.py::test_missing_source_coverage_or_changed_revision_never_yields_run_total,offline partial source
+DUP-04,reversing an association withdraws the current reviewed total,test_reviewed_master.py::test_reversing_current_match_withdraws_the_reviewed_count,current human pair decisions
+AT-09,reviewed master preparation retries use the original captured revision after refresh or lost reply,test_reviewed_master.py::test_reviewed_prepare_retry_uses_original_revision_after_board_refresh,offline export recovery
 RUN-04,PubMed retry deadline crosses ESearch and EFetch and survives project reopen,test_pubmed_cooldown.py::test_reopen_honors_efetch_backoff_across_both_endpoints,offline provider timing
 AT-09,prior pilot outcome can be inspected during a provider wait without dispatching a new pilot,test_pubmed_cooldown.py::test_fresh_pilot_receipt_waits_but_already_recorded_failure_can_be_reinspected,offline restart
 UI-01,installed native launcher and host-selected folders,test_desktop_launcher.py::test_desktop_starts_without_selected_paths_or_implicit_project,Phase 1 optional desktop component

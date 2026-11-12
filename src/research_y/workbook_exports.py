@@ -90,6 +90,13 @@ def _renderer():
     return RENDER_METHOD, render_strategy_workbook
 
 
+def _report_renderer(report):
+    if report.as_dict()['format_version'] == 2:
+        from research_y.strategy_workbook import REVIEWED_RENDER_METHOD, render_strategy_workbook
+        return REVIEWED_RENDER_METHOD, render_strategy_workbook
+    return _renderer()
+
+
 def _selection(project, directory, *, expected_directory_identity=None):
     """Validate an explicit host-confirmed directory *inside the worker*.
 
@@ -257,7 +264,8 @@ def _failure(project, export_id, code):
 
 def prepare_workbook_export(project: Project, run_id: str, output_name: str, *,
                             export_id: str, directory: Path | str | None = None,
-                            expected_directory_identity: tuple[int, int] | None = None) -> WorkbookExport:
+                            expected_directory_identity: tuple[int, int] | None = None,
+                            reviewed_revision: str | None = None) -> WorkbookExport:
     """Capture and journal once. Supply the same export_id to retry this request.
 
     The default destination is project-relative exports/. An external destination
@@ -268,6 +276,9 @@ def prepare_workbook_export(project: Project, run_id: str, output_name: str, *,
     _uuid(export_id)
     _uuid(run_id)
     filename(output_name, workbook=True)
+    if reviewed_revision is not None and (
+            not isinstance(reviewed_revision, str) or not re.fullmatch('[0-9a-f]{64}', reviewed_revision)):
+        raise WorkbookExportError('invalid_export', export_id)
     try:
         selection = _selection(project, directory,
                                expected_directory_identity=expected_directory_identity)
@@ -276,12 +287,20 @@ def prepare_workbook_export(project: Project, run_id: str, output_name: str, *,
             if prior is not None:
                 if (prior['run_id'], prior['filename'], prior['destination']) != (run_id, output_name, selection):
                     raise WorkbookExportError('invalid_export', export_id)
+                previous = StrategyReport(prior['report_json']).as_dict()
+                if ((previous['format_version'] == 2) != (reviewed_revision is not None) or
+                        (reviewed_revision is not None and previous['counts']['revision'] != reviewed_revision)):
+                    raise WorkbookExportError('invalid_export', export_id)
                 return _view(prior)  # Never recapture newer research evidence on retry.
             with _target(project, selection, directory) as target:
                 if target.exists(output_name):
                     raise WorkbookExportError('destination_conflict', export_id)
-            report = _capture(db, project, run_id)
-            renderer, _ = _renderer()
+            if reviewed_revision is None:
+                report = _capture(db, project, run_id)
+            else:
+                from research_y.strategy_report import _capture as capture
+                report = capture(db, project, run_id, _now(), reviewed_revision=reviewed_revision)
+            renderer, _ = _report_renderer(report)
             _append(db, export_id, None, 'prepared', dict(run_id=run_id, filename=output_name,
                 destination=selection, report_json=report.payload_json, report_sha256=report.sha256, renderer=renderer))
             state = _required(db, project, export_id)
@@ -308,11 +327,12 @@ def _new_stage(db, export_id, state, content):
 
 
 def _render(state):
-    method, render = _renderer()
+    report = StrategyReport(state['report_json'])
+    method, render = _report_renderer(report)
     if method != state['renderer']:
         raise WorkbookExportError('render_failed', state['export_id'])
     try:
-        return render(StrategyReport(state['report_json']))
+        return render(report)
     except (ValueError, TypeError, OSError, ImportError, RuntimeError):
         raise WorkbookExportError('render_failed', state['export_id']) from None
 

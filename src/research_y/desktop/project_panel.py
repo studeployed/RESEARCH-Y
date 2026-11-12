@@ -279,12 +279,19 @@ def render_project_panel(ui, flow, act, *, native, error):
                          'reconciliation of saved evidence, not a source '
                          'query or an automatic search.').props(
                              'data-testid=run-board-incomplete')
+                master = board.get('reviewed_retained_master')
+                run_unique = board.get('reconciled_primary_run_unique_publications')
                 ui.label('Saved source records, across group unions: ' +
                          str(board['totals']['source_record_sum']) +
                          '; identifiers lacking metadata: ' +
                          str(board['totals']['identifiers_missing_metadata']) +
-                         '; global UNIQUE publications: NOT ESTABLISHED.').props(
+                         '; unique publications in the reconciled primary run: ' +
+                         ('NOT ESTABLISHED' if run_unique is None else str(run_unique))).props(
                              'data-testid=run-board-totals')
+                if master:
+                    ui.label(f"Reviewed retained publications: {master['retained_unique_publications']} "
+                             f"across {master['source_count']} original records. Sum of group counts: "
+                             f"{master['group_count_sum']}.").props('data-testid=reviewed-retained-count')
                 if board.get('pubmed_retry_not_before_utc'):
                     ui.label('PubMed requested that the next request be sent at or after ' +
                              board['pubmed_retry_not_before_utc'] + ' (UTC).')
@@ -302,8 +309,9 @@ def render_project_panel(ui, flow, act, *, native, error):
                          str(board['totals']['publication_identity_hypotheses']) +
                          ' (NOT a final deduplicated result).')
                 for group in board['groups']:
-                    ui.label('Concept group ' + group['label'] +
-                             ' — group unique publications: NOT ESTABLISHED.').props(
+                    group_unique = master['group_counts'][group['group_id']] if master else (0 if run_unique == 0 and group['sources'] else None)
+                    ui.label('Concept group ' + group['label'] + ' — reviewed retained publications: ' +
+                             ('NOT ESTABLISHED' if group_unique is None else str(group_unique))).props(
                                  'data-testid=run-board-group')
                     for item in group['sources']:
                         provider = ('PubMed' if item['source_name']=='pubmed'
@@ -792,9 +800,13 @@ def render_project_panel(ui, flow, act, *, native, error):
                          str(view['unmaterialised_source_records']) +
                          '; VERIFIED global unique publications: UNKNOWN.').props(
                              'data-testid=publication-counts')
+                reviewed_count = view.get('reviewed_retained_unique_publications')
+                if reviewed_count is not None:
+                    ui.label(f'Researcher-reviewed union of retained publications: {reviewed_count}.')
+                page_status = ('All remain provisional; unseen later pages are not zero results.'
+                               if reviewed_count is None else 'The retained master is supported by recorded pair decisions.')
                 ui.label('This page has ' + str(len(view['rows'])) +
-                         ' entries, maximum 20. All remain provisional; '
-                         'unseen later pages are not zero results.').props(
+                         ' entries, maximum 20. ' + page_status).props(
                              'data-testid=publication-page-status')
                 if not view['rows']:
                     ui.label('No provisional identities on this page. '
@@ -2038,6 +2050,10 @@ def render_project_panel(ui, flow, act, *, native, error):
                      state['selected_run_id'] + '.xlsx')
             ui.button('Prepare strategy workbook',
                       on_click=lambda: act('prepare')).props('data-testid=prepare')
+            if ((state['run_execution_board'] or {}).get('reviewed_retained_master') or state['pending_reviewed_export']
+                    or (state['retained_export_report'] or {}).get('format_version') == 2):
+                ui.button('Prepare reviewed master workbook with memberships and review receipts',
+                          on_click=lambda: act('prepare_reviewed_master')).props('data-testid=prepare-reviewed-master')
         if state['export_reconciliation_required']:
             ui.label('Export journal or inventory needs reconciliation. Retry Prepare '
                      'with the original request ID; do not start another export.').props(

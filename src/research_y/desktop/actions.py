@@ -278,6 +278,8 @@ def perform_action(flow, name, value=None):
         return flow.inspect_manifest_file(value)
     if name == 'prepare':
         return flow.prepare()
+    if name == 'prepare_reviewed_master':
+        return flow.prepare(reviewed_master=True)
     if name == 'external_confirm':
         return flow.confirm_external_directory()
     if name == 'external_clear':

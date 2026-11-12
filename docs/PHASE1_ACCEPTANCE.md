@@ -19,12 +19,13 @@ outstanding.
 | P1-05 Web of Science Starter | The 1 November run observed 19,584 source records, 392 acquisition pages and 392 independent verification pages. A separate process resumed on the same runner. The bounded cross-day observation is pending. | [Observed enumeration](https://github.com/studeployed/RESEARCH-Y/actions/runs/41306953908), [source limits and quota evidence](WOS_LIVE_ACCEPTANCE.md) |
 | P1-06 Master results and Excel | Three retained sources across two groups produced two reviewed master rows, a group-count sum of four and all six source memberships. The explicitly selected workbook preserved the supporting review receipts, safe internal links and filters. A reversed match withdrew the current count. Two distinct retained abstracts sharing a supplement DOI remained separate. | [Cross-run review](https://github.com/studeployed/RESEARCH-Y/pull/110), [workbook saving](https://github.com/studeployed/RESEARCH-Y/pull/111), [reviewed master merge](https://github.com/studeployed/RESEARCH-Y/pull/116), `tests/test_phase1_acceptance.py` |
 
-The 12 workflows for the reviewed master commit passed, including both
-individual Codex reviews and the four Windows/Linux Python jobs. The local
+All 12 workflows passed for the reviewed master commit, including the
+four Windows/Linux Python jobs. Individual Codex code and security reviews
+also cleared that commit. The local
 Windows suite passed 2,360 tests with five platform-dependent skips. One
 Windows 100,000-original-source native test initially reported an unavailable
-button in the lost-reply case. Its identical-commit retry passed; both the
-failure artifact and the retry are recorded in the [PR observation](https://github.com/studeployed/RESEARCH-Y/pull/116#issuecomment-6837061044).
+button in the lost-reply case. The retry passed on the same commit. The
+[PR observation](https://github.com/studeployed/RESEARCH-Y/pull/116#issuecomment-6837061044) records both outcomes.
 
 ## Evidence boundaries
 

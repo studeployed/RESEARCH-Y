@@ -14,6 +14,7 @@ from typing import Any
 from research_y.strategy_report import ReportIntegrityError, StrategyReport, canonical, digest
 
 RENDER_METHOD = "strategy-count-xlsx/1"
+REVIEWED_RENDER_METHOD = "reviewed-master-xlsx/1"
 ROW_LIMIT = 1_048_576
 COLUMN_LIMIT = 16_384
 TEXT_UNITS = 30_000  # Below Excel's 32,767-character cell limit, including UTF-16.
@@ -70,8 +71,8 @@ def _literal(cell, value: Any) -> None:
 
 
 def _methods(data, report):
-    return [
-        ("Report method", data["method"]), ("Workbook renderer", RENDER_METHOD),
+    rows = [
+        ("Report method", data["method"]), ("Workbook renderer", REVIEWED_RENDER_METHOD if data["format_version"] == 2 else RENDER_METHOD),
         ("Software version", data["software_version"]),
         ("Project identifier", data["project"]["project_id"]), ("Project name", data["project"]["name"]),
         ("Run identifier", data["run"]["run_id"]), ("Strategy identifier", data["run"]["strategy_version_id"]),
@@ -111,10 +112,37 @@ def _methods(data, report):
         ("Publication boundary", "Internal rendered workbook only. Audited file publication and recovery are not yet implemented."),
         ("Source status", "Numeric equality does not certify source completeness or establish a frozen provider snapshot."),
     ]
+    if data["format_version"] == 2:
+        revised = {
+            "Verified unique publications": "See Reviewed Counts for the union of retained originals supported by current researcher comparisons.",
+            "Unimplemented domains": "Individual abstracts extracted from containers, society coverage and full search logs have separate acceptance criteria.",
+            "Publication boundary": "The issued file and its frozen report are verified through the workbook publication journal.",
+            "Rights boundary": "Master rows contain internal IDs, source/group memberships and review receipt references. Bibliographic text is withheld.",
+        }
+        rows = [(key, revised.get(key, value)) for key, value in rows]
+        proof = data["reviewed_master"]
+        rows.extend([
+            ("Review method", proof["method"]),
+            ("Comparison receipt digest", proof["evidence_sha256"]),
+            ("Comparisons used", proof["comparison_receipts"]),
+            ("Reviewed denominator", "All retained source records attached to queries in the selected run at capture time."),
+        ])
+    return rows
 
 
 def _tables(data, report):
     counts = data["counts"]
+    if data["format_version"] == 2:
+        master = data["reviewed_master"]
+        yield "Reviewed Master Results", ("Publication ID", "Original records in this run"), master["publications"]
+        yield "Reviewed Memberships", ("Publication ID", "Original retrieval ID", "Source", "Query ID", "Group ID"), master["memberships"]
+        yield "Review Receipts", ("Audit event", "First retrieval ID", "Second retrieval ID", "Decision",
+                                 "Comparison evidence SHA-256"), master["decisions"]
+        yield "Reviewed Counts", ("Scope", "Group ID", "Unique retained publications"), [
+            ("Across all retained groups", None, master["retained_unique_publications"]),
+            *(("Within one group", g["group_id"], master["group_counts"][g["group_id"]]) for g in counts["groups"]),
+            ("Arithmetic sum across groups", None, master["group_count_sum"]),
+        ]
     summary = []
     for group in counts["groups"]:
         for source in group["sources"]:
@@ -180,6 +208,10 @@ def render_strategy_workbook(report: StrategyReport) -> bytes:
     except ImportError:
         raise RuntimeError("The optional Excel export dependencies are not installed") from None
     data = report.as_dict()
+    first_membership = {}
+    if data["format_version"] == 2:
+        for number, row in enumerate(data["reviewed_master"]["memberships"], 5):
+            first_membership.setdefault(row[0], number)
     workbook = Workbook()
     workbook.remove(workbook.active)
     workbook.properties.creator = "RESEARCH-Y"
@@ -196,7 +228,10 @@ def render_strategy_workbook(report: StrategyReport) -> bytes:
         sheet.merge_cells(f"A1:{end}1")
         sheet.merge_cells(f"A2:{end}2")
         _literal(sheet["A1"], "RESEARCH-Y | " + name)
-        _literal(sheet["A2"], "INCOMPLETE | Whole-run strategy/count snapshot | Provisional identities are not verified publications")
+        banner = ("INCOMPLETE search | Reviewed publication counts cover retained original records in this run"
+                  if data["format_version"] == 2 else
+                  "INCOMPLETE | Whole-run strategy/count snapshot | Provisional identities are not verified publications")
+        _literal(sheet["A2"], banner)
         sheet["A1"].font = Font(name="Calibri", size=17, bold=True, color="17365D")
         sheet["A2"].font = Font(name="Calibri", size=10, bold=True, color="9C2F00")
         sheet["A2"].fill = PatternFill("solid", fgColor="FFF2CC")
@@ -230,6 +265,10 @@ def render_strategy_workbook(report: StrategyReport) -> bytes:
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
                 if row_number % 2:
                     cell.fill = PatternFill("solid", fgColor="F2F5F9")
+            if name == "Reviewed Master Results":
+                from openpyxl.worksheet.hyperlink import Hyperlink
+                cell = sheet.cell(row_number, 1)
+                cell.hyperlink = Hyperlink(ref=cell.coordinate, location=f"'Reviewed Memberships'!A{first_membership[row[0]]}")
             sheet.row_dimensions[row_number].height = 42
         sheet.freeze_panes = "A5"
         sheet.auto_filter.ref = f"A4:{end}{max(4, len(rows) + 4)}"
