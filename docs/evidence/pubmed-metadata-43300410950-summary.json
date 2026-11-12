@@ -1,0 +1,15 @@
+{
+  "run_id": 43300410950,
+  "commit_sha": "90c69d3e81aca3cecf4b3f404012f12b59784800",
+  "artifact_id": 13981541757,
+  "artifact_sha256": "e438c0bad54f9211f795240534937474b7bd962899ee162888271b88521bd411",
+  "checked_at_utc": "2026-11-12T20:27:14.341291+00:00",
+  "checked_phrase_translation": true,
+  "identifiers": 2,
+  "metadata": 2,
+  "first_batch_unchanged": true,
+  "first_record_skipped_on_resume": true,
+  "requests": 10,
+  "source_retrieval_verified": false,
+  "licensed_text_exported": false
+}

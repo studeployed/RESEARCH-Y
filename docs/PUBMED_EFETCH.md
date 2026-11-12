@@ -51,6 +51,15 @@ is ten requests. Only aggregate evidence and the fixed expressions may leave
 the runner. This is an opt-in source check for AT-06/09 and SRC-04. Tests in
 `tests/test_pubmed_metadata_recovery_validation.py` use a synthetic transport.
 
+On 12 November 2026 the authorized [live run](https://github.com/studeployed/RESEARCH-Y/actions/runs/43300410950)
+passed on `90c69d3`. PubMed accepted the clinical OR expression under the
+translation checks. The reporting-guideline query returned two identifiers.
+A fresh process verified the first committed record and acquired the one
+remaining record. Both metadata records reconciled in ten requests across
+the two processes. The checked-in aggregate summary records the independently
+verified GitHub artifact digest. This covers the fixed phrase-translation
+and controlled metadata-restart scenarios in AT-06 and AT-09.
+
 ### Evidence used when reopening retained metadata
 
 For a checkpointed query, recovery and the execution board check each linked
