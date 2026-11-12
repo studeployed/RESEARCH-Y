@@ -10,7 +10,7 @@ enumeration or metadata coverage. See `docs/GUI_RUN_EXECUTION.md` and the
 application-worker traceability table. Source-specific live evidence and
 remaining product acceptance are tracked separately in #7, #8 and #9.
 
-The next retrieval increment exercises a complete **offline** two-provider
+Merged PR #107 exercises a complete **offline** two-provider
 path. A synthetic PubMed journal citation and book contribution survive
 metadata recovery, and a saved Starter job must supply its independent
 verification/final-count observations. A reopened project with three source
@@ -18,6 +18,13 @@ records in two groups yields two reviewed/provisional identities after an
 explicit match and preserves six original query memberships in an audited
 XLSX. This provides scoped AT-08/09/10/18 evidence. Live quota behaviour,
 production Windows launch and full scientific acceptance remain separate.
+
+Issue #104 connects consent preview, explicit confirmation and durable receipt
+history to the guarded graphical prototype. The two synthetic lifecycle cases
+`manifest_consent` and `manifest_reopen` use separate host processes on the same
+project. Verify their Linux loopback and native Windows results on the PR.
+Consent alone leaves the exports directory untouched. Optional dependency
+adoption for an operational Windows launcher is tracked separately under #43.
 
 ## Current work — P1-06l8, issue #102
 

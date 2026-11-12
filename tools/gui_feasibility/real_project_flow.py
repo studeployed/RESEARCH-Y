@@ -7,9 +7,10 @@ This experimental module does not add a production GUI dependency.
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import threading
 import time
-from uuid import uuid4
+from uuid import uuid4, uuid5
 
 from research_y.application_commands import ApplicationCommand
 from research_y.application_worker import ApplicationWorker, ApplicationWorkerError
@@ -26,6 +27,7 @@ from research_y.preflight_review import (
     PreflightError, _review_payload, PRESS_ITEMS, read_preflight,
 )
 from research_y.query_compiler import QueryCompilationError
+from research_y.provisional_manifest_intent import ManifestIntentError, _actor, _output
 
 
 class ProjectFlowError(ValueError):
@@ -66,6 +68,7 @@ class RealProjectFlow:
         self.project = None
         self.snapshot = None
         self.selected_run_id = None
+        self._clear_manifest_selection()
         self.selected_export_id = None
         # A worker may die after committing the prepared receipt but before replying.
         # Retain the UUID privately until authoritative inspection reconciles it.
@@ -172,6 +175,8 @@ class RealProjectFlow:
     def _require_no_unresolved_selection(self, *, for_external_choice=False):
         if self._closed:
             raise ProjectFlowError('flow_closed')
+        if self._manifest_pending:
+            raise ProjectFlowError('manifest_reconciliation_required')
         if self._pending_admission_id is not None:
             raise ProjectFlowError('strategy_reconciliation_required')
         if self._pending_review is not None:
@@ -333,6 +338,7 @@ class RealProjectFlow:
             raise ProjectFlowError('invalid_worker_result')
         self.project = project
         self.selected_run_id = None
+        self._clear_manifest_selection()
         self.selected_export_id = None
         self._pending_export_id = None
         self.observation = None
@@ -507,6 +513,7 @@ class RealProjectFlow:
             if report.get('selected_run_id') != run_id or report.get('report') is None:
                 raise ProjectFlowError('invalid_worker_result')
             self.selected_run_id = run_id
+            self._clear_manifest_selection()
             self.selected_export_id = None
             self.observation = None
             self.retained_export_report = None
@@ -558,6 +565,125 @@ class RealProjectFlow:
             self._coord_offer = None
             self._coord_last_outcome = None
             self.snapshot = report
+            return self._publish()
+
+    def _clear_manifest_selection(self):
+        self._manifest_offer = None
+        self._manifest_pending = False
+        self._manifest_history = None
+        self._manifest_receipt = None
+
+    def preview_manifest(self, output_name, actor):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('unknown_run')
+            try:
+                _output(output_name)
+                _actor(actor)
+            except ManifestIntentError:
+                raise ProjectFlowError('invalid_manifest_request') from None
+            preview = self._operation('preview_manifest_intent', run_id=self.selected_run_id)
+            if (preview.get('project_id') != str(self.project.identifier) or
+                    preview.get('run_id') != self.selected_run_id or
+                    preview.get('requires_explicit_researcher_confirmation') is not True):
+                raise ProjectFlowError('invalid_worker_result')
+            request = json.dumps(['manifest-consent/1', self.selected_run_id, preview['original_revision'],
+                                  output_name, actor], separators=(',', ':'), ensure_ascii=True)
+            export_id = str(uuid5(self.project.identifier, request))
+            self._manifest_offer = dict(preview, output_name=output_name, actor=actor,
+                                        export_id=export_id, offer_token=str(uuid4()))
+            self._manifest_receipt = None
+            return self._publish()
+
+    def dismiss_manifest(self, offer_token):
+        with self._guard:
+            self._require_no_unresolved_selection()
+            if not self._manifest_offer or offer_token != self._manifest_offer['offer_token']:
+                raise ProjectFlowError('manifest_offer_changed')
+            self._manifest_offer = None
+            return self._publish()
+
+    def _inspect_manifest_offer(self):
+        offer = self._manifest_offer
+        if not offer or offer['run_id'] != self.selected_run_id:
+            raise ProjectFlowError('manifest_offer_changed')
+        receipt = self._operation('inspect_manifest_intent', export_id=offer['export_id'])
+        if (any(receipt.get(key) != offer[key] for key in ('run_id', 'output_name', 'export_id'))
+                or receipt.get('approved_original_revision') != offer['original_revision']
+                or receipt.get('explicit_confirmation_recorded') is not True):
+            raise ProjectFlowError('invalid_worker_result')
+        self._manifest_receipt = receipt
+        self._manifest_offer = None
+        self._manifest_pending = False
+        self._manifest_history = None
+        return self._publish()
+
+    def confirm_manifest(self, offer_token):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer = self._manifest_offer
+            if (not offer or offer['offer_token'] != offer_token or offer['run_id'] != self.selected_run_id):
+                raise ProjectFlowError('manifest_offer_changed')
+            self._manifest_pending = True
+            self._publish()
+            try:
+                self._operation('prepare_manifest_intent', run_id=offer['run_id'], export_id=offer['export_id'],
+                                output_name=offer['output_name'], manifest_actor=offer['actor'],
+                                manifest_revision=offer['original_revision'], manifest_confirmed=True)
+            except ProjectFlowError as error:
+                if str(error) in ('stale_original_revision', 'destination_conflict', 'intent_conflict'):
+                    self._manifest_offer = None
+                    self._manifest_pending = False
+                    self._publish()
+                raise
+            return self._inspect_manifest_offer()
+
+    def reconcile_manifest(self):
+        with self._guard:
+            self._require_open()
+            if not self._manifest_pending:
+                raise ProjectFlowError('no_pending_manifest')
+            try:
+                return self._inspect_manifest_offer()
+            except ProjectFlowError as error:
+                if str(error) != 'intent_not_found':
+                    raise
+                self._manifest_pending = False
+                return self._publish()
+
+    def manifest_history(self, *, older=False):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if self.selected_run_id is None:
+                raise ProjectFlowError('unknown_run')
+            cursor = None
+            if older:
+                cursor = (self._manifest_history or {}).get('next_before_event_id')
+                if cursor is None:
+                    raise ProjectFlowError('no_older_manifest_receipts')
+            history = self._operation('manifest_intent_history', run_id=self.selected_run_id,
+                                      history_before_event_id=cursor)
+            if history.get('run_id') != self.selected_run_id:
+                raise ProjectFlowError('invalid_worker_result')
+            self._manifest_history = history
+            return self._publish()
+
+    def inspect_saved_manifest(self, export_id):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            entries = (self._manifest_history or {}).get('entries', ())
+            if not any(entry['export_id'] == export_id for entry in entries):
+                raise ProjectFlowError('unknown_export')
+            receipt = self._operation('inspect_manifest_intent', export_id=export_id)
+            if receipt.get('run_id') != self.selected_run_id or receipt.get('export_id') != export_id:
+                raise ProjectFlowError('invalid_worker_result')
+            self._manifest_offer = None
+            self._manifest_receipt = receipt
             return self._publish()
 
     def select_export(self, export_id: str):
@@ -3902,6 +4028,10 @@ class RealProjectFlow:
                     'location': str(self.project.root)},
                 'runs': [] if data is None else data['runs'],
                 'selected_run_id': self.selected_run_id,
+                'manifest_offer': dict(self._manifest_offer) if self._manifest_offer else None,
+                'manifest_pending': self._manifest_pending,
+                'manifest_receipt': self._manifest_receipt,
+                'manifest_history': self._manifest_history,
                 'report': None if data is None else data['report'],
                 'exports': [] if data is None else data['exports'],
                 'selected_export_id': self.selected_export_id,

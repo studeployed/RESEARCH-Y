@@ -39,7 +39,18 @@ receipt and an exact preparation replay report either `consent_current` or
 `stale_reapproval_required`. These states describe researcher consent.
 For a staged artifact, use `inspect_manifest_publication` to determine its
 file and publication status. All three consent commands leave the export
-directory untouched. The graphical confirmation control remains future work.
+directory untouched.
+
+In the local graphical prototype, select a run and expand **Provisional source
+workbook**. Enter the basename and researcher, preview the original counts and
+revision, then record consent or cancel. After an uncertain response, **Inspect
+pending consent** reads the same UUID before offering any retry. A fresh host
+derives the same request UUID for the same project, run, revision, basename
+and actor. Each displayed preview uses a fresh confirmation token. A fresh host
+can use **Find saved consents** and **Older consents** for the selected run.
+The worker's `manifest_intent_history` operation reads up to 20 validated consent
+receipts in descending audit-event order. Selecting one rechecks its current
+revision. File publication remains a separate operation.
 
 ### Worker lifecycle and project identity
 
