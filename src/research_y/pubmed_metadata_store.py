@@ -17,9 +17,10 @@ from uuid import uuid4
 
 from research_y.projects import Project, _utc_now, _validated_project_connection
 from research_y.pubmed_checkpoint_store import inspect_pubmed_checkpoint
+from research_y.pubmed_cooldown import project_requests
 from research_y.pubmed_metadata import (
     MAX_BATCH_IDS, PubMedEFetchClient, PubMedMetadataBatch, PubMedMetadataError,
-    validate_pmids,
+    PubMedMetadataRetryNotDue, validate_pmids,
 )
 from research_y.storage import _audit
 
@@ -233,6 +234,7 @@ def commit_pubmed_metadata_batch(project: Project, query_id: str,
     return new_associations
 
 
+@project_requests
 def collect_pubmed_metadata(project: Project, query_id: str, client: PubMedEFetchClient,
                             *, batch_size: int = MAX_BATCH_IDS, max_batches: int = 10,
                             after_commit: Callable[[PubMedMetadataBatch], None] | None = None,
@@ -285,6 +287,8 @@ def collect_pubmed_metadata(project: Project, query_id: str, client: PubMedEFetc
             if after_commit is not None:
                 after_commit(result)
             remaining = missing_pubmed_metadata_pmids(project, query_id)
+        except PubMedMetadataRetryNotDue:
+            return report("paused", fetched, "PubMed provider retry not yet due")
         except Exception:
             # No untrusted provider/callback/SQLite exception messages are logged.
             return report("incomplete", fetched, "PubMed metadata batch failed; previously committed records retained")

@@ -1,4 +1,6 @@
 requirement_id,implementation,test_evidence,scope_status
+RUN-04,PubMed retry deadline crosses ESearch and EFetch and survives project reopen,test_pubmed_cooldown.py::test_reopen_honors_efetch_backoff_across_both_endpoints,offline provider timing
+AT-09,prior pilot outcome can be inspected during a provider wait without dispatching a new pilot,test_pubmed_cooldown.py::test_fresh_pilot_receipt_waits_but_already_recorded_failure_can_be_reinspected,offline restart
 ARCH-01,application_commands and application_worker independent of GUI,test_application_commands.py,partial no graphical adapter
 ARCH-02,spawned service work with responsive submit and poll,test_application_worker.py,partial no real interface or live network
 PROJ-03,expected identity retained and no saved absolute worker paths,test_application_worker_integration.py,partial local opened-project operations only

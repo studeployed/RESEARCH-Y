@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import re
+import threading
 import time
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -18,6 +19,7 @@ from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from research_y.query_compiler import CompiledSource
+from research_y.pubmed_cooldown import PubMedCooldown
 from research_y.pubmed_date_translation import internal_create_date_equivalent
 
 ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
@@ -33,6 +35,10 @@ class PubMedProbeError(RuntimeError):
         super().__init__(message)
         self.retryable = retryable
         self.http_status = http_status
+
+
+class PubMedRetryNotDue(PubMedProbeError):
+    """The provider deadline prevented this request from being sent."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,8 +76,10 @@ class _RejectRedirects(HTTPRedirectHandler):
         return None
 
 
-def _read_http(request: Request, timeout: float) -> bytes:
+def _read_http(request: Request, timeout: float, *, on_headers=None) -> bytes:
     with build_opener(_RejectRedirects()).open(request, timeout=timeout) as response:
+        if on_headers is not None:
+            on_headers(response.headers)
         body = response.read(MAX_RESPONSE_BYTES + 1)
     return body
 
@@ -246,6 +254,7 @@ class PubMedESearchProbeClient:
         transport: Callable[[Request, float], bytes] | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        utcnow: Callable[[], datetime] | None = None,
     ) -> None:
         if not isinstance(email, str) or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
             raise ValueError("Valid NCBI E-utilities contact email is required")
@@ -257,7 +266,9 @@ class PubMedESearchProbeClient:
             raise ValueError("Network timeout must be between 0 and 60 seconds")
         self._email, self._tool, self._api_key = email, tool, api_key
         self._timeout = float(timeout)
-        self._transport = transport or _read_http
+        self._transport = transport
+        self._cooldown = PubMedCooldown(utcnow or (lambda: datetime.now(timezone.utc)))
+        self._request_lock = threading.Lock()
         self._clock, self._sleep = clock, sleep
         self._next_allowed = 0.0
 
@@ -266,7 +277,24 @@ class PubMedESearchProbeClient:
         if now < self._next_allowed:
             self._sleep(self._next_allowed - now)
             now = self._clock()
+        until = self._cooldown.pending()
+        if until is not None:
+            raise PubMedRetryNotDue(f"PubMed requests paused until {until.isoformat()}", retryable=True)
         self._next_allowed = now + MIN_SECONDS_BETWEEN_REQUESTS
+
+    def _request(self, request, transport, default):
+        with self._request_lock:
+            self._pace()
+            try:
+                if transport is None:
+                    return default(request, self._timeout, on_headers=self._cooldown.observe)
+                return transport(request, self._timeout)
+            except HTTPError as exc:
+                try:
+                    self._cooldown.observe(exc.headers)
+                finally:
+                    exc.close()
+                raise
 
     def fetch_esearch_page(
         self, exact_query: str, *, retstart: int = 0, retmax: int = 0,
@@ -302,9 +330,8 @@ class PubMedESearchProbeClient:
             headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "RESEARCHY/0.1"},
             method="POST",
         )
-        self._pace()
         try:
-            return self._transport(request, self._timeout)
+            return self._request(request, self._transport, _read_http)
         except HTTPError as exc:
             raise PubMedProbeError(
                 f"PubMed ESearch HTTP {exc.code}; count or identifiers not verified",

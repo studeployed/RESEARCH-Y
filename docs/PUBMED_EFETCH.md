@@ -38,6 +38,22 @@ Stored book abstracts carry the existing redistribution-review flag.
 and `tests/test_pubmed_metadata.py::test_malformed_book_refuses_mixed_batch_without_partial_commit`.
 These are synthetic provider responses.
 
+## Provider-requested waits
+
+The count, identifier and metadata services share PubMed's `Retry-After`
+deadline for the current project. An HTTP delay in seconds or an absolute
+HTTP date is converted to UTC and recorded as an immutable event. The event
+contains only the deadline. A fresh process consults it before ESearch or
+EFetch, and a later shorter observation cannot shorten an existing wait.
+At the deadline a researcher can explicitly resume the original checkpoint.
+No timer submits another request. Failed pilots remain available under their
+original request UUID during the wait. A standalone client outside a project
+retains its observed deadline for that client session.
+
+RUN-04 and AT-09 are covered in `tests/test_pubmed_cooldown.py` with
+synthetic 429, 503 and successful responses. No additional live sample was
+consumed for the backoff cases.
+
 ## Bounded OR and metadata recovery sample
 
 The separate manual `pubmed-metadata-recovery.yml` workflow tests a fixed

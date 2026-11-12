@@ -10,6 +10,7 @@ from research_y.projects import Project, _utc_now, _validated_project_connection
 from research_y.pubmed_ids import PubMedIdentifierPage, parse_identifier_page
 from research_y.pubmed_partition import DateWindow, PubMedPartitionResult, retrieve_date_partitioned_identifiers
 from research_y.pubmed_probe import PubMedESearchProbeClient, _translation_matches_submitted
+from research_y.pubmed_cooldown import project_requests
 from research_y.pubmed_checkpoint_store import (
     CheckpointSnapshot, CheckpointResumeResult, create_pubmed_checkpoint,
     commit_pubmed_checkpoint_page, inspect_pubmed_checkpoint,
@@ -29,6 +30,7 @@ def _safe_probe(client: PubMedESearchProbeClient, query: str, *, internal: bool 
         return None
 
 
+@project_requests
 def resume_pubmed_checkpoint(
     project: Project, query_id: str, client: PubMedESearchProbeClient,
 ) -> CheckpointResumeResult:
@@ -127,6 +129,7 @@ def resume_pubmed_checkpoint(
     )
 
 
+@project_requests
 def start_checkpointed_pubmed_retrieval(
     project: Project, query_id: str, client: PubMedESearchProbeClient,
     *, date_window: DateWindow, page_size: int = 200, max_count_probes: int = 255,

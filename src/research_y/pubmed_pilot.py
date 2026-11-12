@@ -14,6 +14,7 @@ from uuid import UUID
 from research_y.export_files import project_guard
 from research_y.preflight_review import _inspect, PreflightError
 from research_y.projects import _validated_project_connection
+from research_y.pubmed_cooldown import project_requests, retry_not_before
 from research_y.pubmed_probe import (
     PubMedESearchProbeClient, PubMedCountProbe, PubMedProbeError,
 )
@@ -40,7 +41,7 @@ class PubMedPilotError(ValueError):
     def __init__(self, code):
         allowed = {"invalid_identifier", "pilot_confirmation_required",
                    "pilot_conflict", "pilot_evidence_invalid", "pilot_plan_invalid",
-                   "pilot_storage_failed", "pilot_client_invalid"}
+                   "pilot_storage_failed", "pilot_client_invalid", "provider_cooldown"}
         self.code = code if code in allowed else "pilot_evidence_invalid"
         super().__init__(self.code)
 
@@ -217,6 +218,7 @@ def _probe_outcome(report, exact_query, client):
     )
 
 
+@project_requests
 def probe_pubmed_count_once(
     project, *, pilot_id: str, run_id: str, query_id: str,
     expected_plan_sha256: str, confirmed: bool,
@@ -248,6 +250,9 @@ def probe_pubmed_count_once(
                     # here, including after project/run state changes.
                     return _view(request, outcome)
                 exact_query = _query(db, run_id, query_id, expected_plan_sha256)
+                deadline = retry_not_before(db)
+                if deadline is not None and datetime.fromisoformat(deadline) > client._cooldown.utcnow():
+                    raise PubMedPilotError("provider_cooldown")
                 start = dict(base, exact_query=exact_query,
                              status="requested_indeterminate")
                 _audit(db, kind=REQUEST_EVENT,
@@ -290,12 +295,9 @@ def probe_pubmed_count_once(
                     data = dict(status="stale_plan", error_code=None,
                                 reported_matches=None)
                 complete = dict(base, exact_query=exact_query, **data)
-                _audit(db, kind=OUTCOME_EVENT,
-                       timestamp=datetime.now(timezone.utc).isoformat(timespec="microseconds"),
-                       details=complete)
-                recorded = dict(complete,
-                    recorded_at_utc=datetime.now(timezone.utc).isoformat(timespec="microseconds"))
-                return _view(request, recorded)
+                recorded_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+                _audit(db, kind=OUTCOME_EVENT, timestamp=recorded_at, details=complete)
+                return _view(request, dict(complete, recorded_at_utc=recorded_at))
         except PubMedPilotError:
             raise
         except (sqlite3.Error, OSError, ValueError, TypeError):
