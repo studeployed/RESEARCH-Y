@@ -1,0 +1,106 @@
+name: Original-project 100k provisional workbook source-integrity evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/manifest-100k.yml'
+      - 'scripts/benchmark_provisional_manifest.py'
+      - 'scripts/benchmark_original_project.py'
+      - 'src/research_y/provisional_manifest_workbook.py'
+      - 'src/research_y/publication_identity.py'
+      - 'src/research_y/result_counts.py'
+      - 'src/research_y/strategy_workbook.py'
+      - 'src/research_y/export_files.py'
+      - 'tests/test_provisional_manifest_scale.py'
+      - 'tests/test_publication_results.py'
+      - 'docs/PROVISIONAL_MANIFEST_100K.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: original-manifest-100k-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  original-manifest:
+    name: Real 100k original-run provisional XLSX ${{ matrix.os }} / Python 3.12
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install existing optional Excel renderer
+        run: python -m pip install -e ".[excel]"
+      - name: Verify pinned Excel dependencies
+        run: python -c "from importlib.metadata import version; assert version('openpyxl')=='3.1.5' and version('et-xmlfile')=='2.0.0'"
+      - name: Benchmark original 100k partial and fully provisional workbook evidence
+        run: python -m scripts.benchmark_provisional_manifest --records 100000 --json-output .performance-evidence/original-provisional-manifest-100k.json
+      - name: Independently validate source-free aggregate evidence and limits
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          p=Path('.performance-evidence/original-provisional-manifest-100k.json')
+          data=json.loads(p.read_text(encoding='utf-8'))
+          assert data['method']=='original-provisional-manifest-100k-evidence/1'
+          assert data['passed'] is True
+          assert data['records']==100000
+          assert data['initial_provisional_identities']==128
+          assert data['scenario_count']==2
+          assert [x['scenario'] for x in data['cases']]==[
+              'partially_materialised','all_independent_provisional']
+          assert [x['provisional_identity_rows'] for x in data['cases']]==[
+              128,100000]
+          assert [x['unmaterialised_originals'] for x in data['cases']]==[
+              99872,0]
+          assert all(x['original_source_records']==100000 for x in data['cases'])
+          assert all(x['original_source_link_rows']==100000 for x in data['cases'])
+          assert all(x['original_query_membership_rows']==100000 for x in data['cases'])
+          assert all(x['workbook_bytes']>0 and
+                     x['workbook_bytes']<=128*1024*1024 for x in data['cases'])
+          assert all(x['render_elapsed_ms']>0 and
+                     x['separate_workbook_verification_ms']>0
+                     for x in data['cases'])
+          for x in data['cases']:
+              assert x['all_original_sql_rows_reconciled'] is True
+              assert x['source_and_membership_sqlite_unchanged'] is True
+              assert x['original_source_and_membership_hashes_revalidated'] is True
+              assert x['sqlite_integrity_verified'] is True
+              assert x['foreign_keys_verified'] is True
+              assert x['no_provider_metadata_exported'] is True
+              assert x['no_excel_formulas'] is True
+              assert x['incomplete_scientific_status_retained'] is True
+          assert data['source_retrieval_verified'] is False
+          assert data['deduplication_complete'] is False
+          assert data['verified_complete'] is False
+          assert data['global_unique_publications'] is None
+          assert data['final_master_results_export_implemented'] is False
+          assert data['user_published_export_or_recovery_tested'] is False
+          assert data['native_gui_interaction_tested'] is False
+          assert data['full_AT_18_acceptance'] is False
+          assert data['full_AT_22_acceptance'] is False
+          assert data['original_synthetic_fixture_only'] is True
+          assert data['no_provider_network_requests'] is True
+          # Never upload or echo full workbook, source records, local paths,
+          # source text, credentials or even a copy of the SQLite database.
+          assert 'Synthetic report ' not in p.read_text(encoding='utf-8')
+          assert '10.9300/' not in p.read_text(encoding='utf-8')
+          print('Original 100k workbook source and membership scope verified.')
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: original-provisional-manifest-100k-${{ matrix.os }}-py312
+          path: .performance-evidence/original-provisional-manifest-100k.json
+          if-no-files-found: warn
+          retention-days: 21

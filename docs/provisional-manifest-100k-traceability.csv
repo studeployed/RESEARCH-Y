@@ -1,0 +1,13 @@
+requirement,evidence,limitation
+DATA-01,scripts/benchmark_provisional_manifest.py,Partial: original source and query/group membership hashes remain unchanged before and after read-only workbook rendering
+DUP-01,tests/test_provisional_manifest_scale.py,Partial: every separately audited original provisional identity remains distinct with no automatic DOI merging or verified final unique count
+COUNT-01,scripts/benchmark_provisional_manifest.py,Partial: original source and provisional publication denominators independently checked but final globally unique publications remain unknown
+EXPORT-01,scripts/benchmark_provisional_manifest.py,Partial: four-sheet internal source provenance workbook validated; not the primary complete Master Results workbook
+EXPORT-03,tests/test_provisional_manifest_scale.py,Partial: entire selected run including unmaterialised originals is exported without user filters; filtered exports not implemented
+EXPORT-04,.github/workflows/manifest-100k.yml,Partial: 100k actual XLSX worksheets parse and reconcile exactly on Windows/Linux; no full production formatting/links/rights clearance
+SEC-03,scripts/benchmark_provisional_manifest.py,Partial: synthetic DOI/title/abstract text absent from decompressed worksheet XML; complete metadata licensing policy outstanding
+AT-10,scripts/benchmark_provisional_manifest.py,Partial: 100k independently audited provisional source links and original query memberships retained; final dedup acceptance outstanding
+AT-18,.github/workflows/manifest-100k.yml,Partial: actual 100k-row XLSX and all-row original counts tested; not audited published researcher output
+AT-19,scripts/benchmark_provisional_manifest.py,Partial: 99872 unmaterialised original records and source completeness/dedup status explicitly INCOMPLETE/UNKNOWN
+AT-21,tests/test_provisional_manifest_scale.py,Partial: original SQLite byte integrity and immutable source/membership hashes and no exported provider text verified
+AT-22,.github/workflows/manifest-100k.yml,Partial: backend render and verification timings/peak parent memory recorded with no GUI lockup evidence
