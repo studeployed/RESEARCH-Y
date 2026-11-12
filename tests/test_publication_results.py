@@ -1308,3 +1308,304 @@ def test_manifest_stage_recovery_normalises_changed_workbook_and_zip_clock(fixtu
     finally:
         workbook.close()
     assert not (project.root / "exports" / "time-safe.xlsx").exists()
+
+
+
+def _consented_staged_manifest(fixture, *, number=24001, output="approved-manifest.xlsx"):
+    """Original retained source, explicit approval, verified private XLSX stage."""
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent,
+    )
+    from research_y.provisional_manifest_stage import stage_manifest_workbook
+    project, run, _, _ = fixture
+    rid = insert(fixture, number=number,
+                 title="RESTRICTED ORIGINAL TITLE",
+                 abstract="RESTRICTED ORIGINAL ABSTRACT")
+    identity.materialise_retrieval(project, rid, actor="Fixture")
+    offer = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepared = prepare_manifest_intent(
+        project, run, output, export_id=export_id,
+        expected_revision=offer["original_revision"],
+        actor="Researcher", confirmed=True)
+    assert prepared["explicit_confirmation_recorded"] is True
+    staged = stage_manifest_workbook(project, export_id)
+    assert staged["state"] == "staged"
+    assert staged["workbook_published"] is False
+    return project, run, rid, export_id, offer
+
+
+def test_manifest_publication_requires_stage_then_reopened_audited_success(fixture):
+    from io import BytesIO
+    from zipfile import ZipFile
+    from openpyxl import load_workbook
+    from research_y import provisional_manifest_publication as publication
+    project, run, rid, export_id, offer = _consented_staged_manifest(fixture)
+    with closing(sqlite3.connect(project.database_path)) as db:
+        original = db.execute(
+            "SELECT * FROM source_retrievals ORDER BY retrieval_id").fetchall()
+        memberships = db.execute(
+            "SELECT * FROM query_retrievals ORDER BY query_id").fetchall()
+    assert publication.inspect_manifest_publication(project, export_id)["state"] == (
+        "not_published")
+    visible = project.root / "exports" / "approved-manifest.xlsx"
+    assert not visible.exists()
+    result = publication.publish_manifest_workbook(project, export_id)
+    assert result["method"] == publication.METHOD
+    assert result["state"] == "published_verified"
+    assert result["workbook_published"] is True
+    assert result["audited_publication_success"] is True
+    assert result["historical_artifact_verified"] is True
+    assert result["current_original_revision_matches"] is True
+    assert result["approved_original_revision"] == offer["original_revision"]
+    assert result["global_unique_publications"] is None
+    assert result["deduplication_complete"] is False
+    assert result["verified_complete"] is False
+    assert result["source_retrieval_verified"] is False
+    assert visible.is_file()
+    assert publication.inspect_manifest_publication(
+        open_project(project.root), export_id) == result
+    assert publication.publish_manifest_workbook(project, export_id) == result
+    assert publication.resume_manifest_publication(project, export_id) == result
+
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute(
+            "SELECT * FROM source_retrievals ORDER BY retrieval_id").fetchall() == original
+        assert db.execute(
+            "SELECT * FROM query_retrievals ORDER BY query_id").fetchall() == memberships
+        assert db.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+            ("provisional_manifest_publish_v1:" + export_id,)
+        ).fetchone()[0] == 2
+    with publication.Directory(project.root / "exports") as exports:
+        approved, stage_receipt, published, _ = _publication_receipts(
+            publication, project, export_id)
+        assert exports.same_file(published["copy_name"], visible.name) is True
+    raw = visible.read_bytes()
+    assert sha256(raw).hexdigest() == stage_receipt["artifact"]["sha256"]
+    with ZipFile(BytesIO(raw)) as archive:
+        contents = b"".join(
+            archive.read(name) for name in archive.namelist()
+            if name.startswith("xl/worksheets/"))
+        assert b"RESTRICTED ORIGINAL TITLE" not in contents
+        assert b"RESTRICTED ORIGINAL ABSTRACT" not in contents
+    wb = load_workbook(BytesIO(raw), read_only=True, data_only=False)
+    try:
+        assert wb.sheetnames == [
+            "Evidence & Limits", "Provisional Identities",
+            "Original Source Links", "Query Memberships",
+        ]
+        facts = dict(list(wb["Evidence & Limits"].values)[3:])
+        assert facts["Report status"] == "INCOMPLETE"
+        assert facts["Verified unique publications"] == "UNKNOWN"
+    finally:
+        wb.close()
+
+
+def _publication_receipts(publication, project, export_id):
+    with publication.result_counts._read_connection(project) as db:
+        approved = publication.stage._intent(db, project, export_id)
+        stage_receipt = publication.stage._load(db, project, approved)
+        published = publication._load(db, approved, stage_receipt)
+    return approved, stage_receipt, published, project
+
+
+def test_manifest_publication_crash_after_intent_before_any_file_recovers(fixture):
+    from research_y import provisional_manifest_publication as publication
+    project, _, _, export_id, _ = _consented_staged_manifest(
+        fixture, number=24002, output="crash-before-copy.xlsx")
+    assert publication._begin(project, export_id) == "publishing"
+    pending = publication.inspect_manifest_publication(project, export_id)
+    assert pending["state"] == "publishing_interrupted"
+    assert pending["workbook_published"] is False
+    assert not (project.root / "exports" / "crash-before-copy.xlsx").exists()
+    reopened = publication.resume_manifest_publication(
+        open_project(project.root), export_id)
+    assert reopened["state"] == "published_verified"
+    assert reopened["audited_publication_success"] is True
+    assert publication.inspect_manifest_publication(project, export_id) == reopened
+    assert publication.publish_manifest_workbook(project, export_id) == reopened
+
+
+def test_manifest_publication_crash_after_copy_then_link_recovers(fixture):
+    from research_y import provisional_manifest_publication as publication
+    project, _, _, export_id, _ = _consented_staged_manifest(
+        fixture, number=24003, output="crash-after-copy.xlsx")
+    publication._begin(project, export_id)
+    approved, staged, pending, _ = _publication_receipts(
+        publication, project, export_id)
+    with publication.stage._store(project) as store:
+        artifact = staged["artifact"]
+        raw = store.read(
+            artifact["name"], digest=artifact["sha256"], size=artifact["size"])
+    with publication.Directory(project.root / "exports") as dest:
+        dest.write_new(pending["copy_name"], raw)
+    midway = publication.inspect_manifest_publication(project, export_id)
+    assert midway["state"] == "publishing_copy_ready"
+    assert midway["workbook_published"] is False
+    done = publication.resume_manifest_publication(project, export_id)
+    assert done["state"] == "published_verified"
+    with publication.Directory(project.root / "exports") as dest:
+        assert dest.same_file(pending["copy_name"], approved["output_name"])
+
+
+def test_manifest_publication_crash_after_visible_hardlink_before_receipt(fixture):
+    from research_y import provisional_manifest_publication as publication
+    project, _, _, export_id, _ = _consented_staged_manifest(
+        fixture, number=24004, output="crash-after-visible.xlsx")
+    publication._begin(project, export_id)
+    approved, staged, pending, _ = _publication_receipts(
+        publication, project, export_id)
+    artifact = staged["artifact"]
+    with publication.stage._store(project) as source:
+        raw = source.read(artifact["name"],
+                          digest=artifact["sha256"], size=artifact["size"])
+    with publication.Directory(project.root / "exports") as dest:
+        dest.write_new(pending["copy_name"], raw)
+        dest.flush(pending["copy_name"])
+        dest.publish_link(pending["copy_name"], approved["output_name"])
+    observed = publication.inspect_manifest_publication(project, export_id)
+    assert observed["state"] == "awaiting_publication_receipt"
+    assert observed["workbook_published"] is False
+    assert observed["audited_publication_success"] is False
+    done = publication.resume_manifest_publication(
+        open_project(project.root), export_id)
+    assert done["state"] == "published_verified"
+    assert done["audited_publication_success"] is True
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+            ("provisional_manifest_publish_v1:" + export_id,)
+        ).fetchone()[0] == 2
+
+
+def test_manifest_publication_does_not_adopt_unrelated_identical_file(fixture):
+    from research_y import provisional_manifest_publication as publication
+    project, _, _, export_id, _ = _consented_staged_manifest(
+        fixture, number=24005, output="unrelated-identical.xlsx")
+    publication._begin(project, export_id)
+    approved, staged, pending, _ = _publication_receipts(
+        publication, project, export_id)
+    artifact = staged["artifact"]
+    with publication.stage._store(project) as source:
+        raw = source.read(artifact["name"],
+                          digest=artifact["sha256"], size=artifact["size"])
+    # Another creator's byte-identical *separate file* must not substitute
+    # for this specific request's durable destination-side copy.
+    final = project.root / "exports" / approved["output_name"]
+    final.write_bytes(raw)
+    before = sha256(final.read_bytes()).hexdigest()
+    with pytest.raises(publication.ManifestPublicationError,
+                       match="publication_destination_conflict"):
+        publication.resume_manifest_publication(project, export_id)
+    assert sha256(final.read_bytes()).hexdigest() == before
+    assert not (project.root / "exports" / pending["copy_name"]).exists()
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+            ("provisional_manifest_publish_v1:" + export_id,)
+        ).fetchone()[0] == 1
+
+
+def test_manifest_publication_rejects_changed_copy_without_overwriting(fixture):
+    from research_y import provisional_manifest_publication as publication
+    project, _, _, export_id, _ = _consented_staged_manifest(
+        fixture, number=24006, output="corrupt-copy.xlsx")
+    publication._begin(project, export_id)
+    _, _, pending, _ = _publication_receipts(publication, project, export_id)
+    with publication.Directory(project.root / "exports") as dest:
+        dest.write_new(pending["copy_name"], b"NOT THE APPROVED WORKBOOK")
+    copy = project.root / "exports" / pending["copy_name"]
+    with pytest.raises(publication.ManifestPublicationError,
+                       match="publication_artifact_changed"):
+        publication.inspect_manifest_publication(project, export_id)
+    with pytest.raises(publication.ManifestPublicationError,
+                       match="publication_artifact_changed"):
+        publication.resume_manifest_publication(project, export_id)
+    assert copy.read_bytes() == b"NOT THE APPROVED WORKBOOK"
+    assert not (project.root / "exports" / "corrupt-copy.xlsx").exists()
+
+
+def test_manifest_publication_stale_source_and_stale_historical_display(fixture):
+    from research_y import provisional_manifest_publication as publication
+    project, run, _, queries = fixture
+    rid = insert(fixture, number=24007)
+    identity.materialise_retrieval(project, rid, actor="Fixture")
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    offer = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(project, run, "stale-before.xlsx", export_id=export_id,
+                            expected_revision=offer["original_revision"],
+                            actor="Researcher", confirmed=True)
+    publication.stage.stage_manifest_workbook(project, export_id)
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute(
+            "UPDATE source_queries SET status='failed' WHERE query_id=?",
+            (queries[run, "g1", "pubmed"],))
+    before = publication.inspect_manifest_publication(project, export_id)
+    assert before["state"] == "stale_reapproval_required"
+    assert before["workbook_published"] is False
+    with pytest.raises(publication.ManifestPublicationError,
+                       match="publication_revision_stale"):
+        publication.publish_manifest_workbook(project, export_id)
+    assert not (project.root / "exports" / "stale-before.xlsx").exists()
+    # A previously published original snapshot remains demonstrably historical
+    # if the source evolves afterward, not silently made current or complete.
+# Restore source state in the same disposable fixture only to exercise a
+    # separate valid approval and the historical inspection transition.
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute(
+            "UPDATE source_queries SET status='pending' WHERE query_id=?",
+            (queries[run, "g1", "pubmed"],))
+    fresh = preview_manifest_intent(project, run)
+    subsequent = uid()
+    prepare_manifest_intent(project, run, "stale-after.xlsx",
+                            export_id=subsequent, expected_revision=fresh["original_revision"],
+                            actor="Researcher", confirmed=True)
+    publication.stage.stage_manifest_workbook(project, subsequent)
+    assert publication.publish_manifest_workbook(
+        project, subsequent)["state"] == "published_verified"
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute(
+            "UPDATE source_queries SET status='failed' WHERE query_id=?",
+            (queries[run, "g1", "pubmed"],))
+    historical = publication.inspect_manifest_publication(project, subsequent)
+    assert historical["state"] == "published_previous_revision"
+    assert historical["historical_artifact_verified"] is True
+    assert historical["audited_publication_success"] is False
+    assert historical["workbook_published"] is True
+    assert historical["verified_complete"] is False
+    with pytest.raises(publication.ManifestPublicationError,
+                       match="publication_revision_stale"):
+        publication.publish_manifest_workbook(project, subsequent)
+
+
+def test_manifest_publication_refuses_changed_source_between_intent_and_link(
+        fixture):
+    from research_y import provisional_manifest_publication as publication
+    project, run, _, queries = fixture
+    rid = insert(fixture, number=24008)
+    identity.materialise_retrieval(project, rid, actor="Fixture")
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    offer = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(project, run, "race.xlsx", export_id=export_id,
+                            expected_revision=offer["original_revision"],
+                            actor="Researcher", confirmed=True)
+    publication.stage.stage_manifest_workbook(project, export_id)
+    publication._begin(project, export_id)
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute(
+            "UPDATE source_queries SET status='failed' WHERE query_id=?",
+            (queries[run, "g1", "pubmed"],))
+    with pytest.raises(publication.ManifestPublicationError,
+                       match="publication_revision_stale"):
+        publication.resume_manifest_publication(project, export_id)
+    assert not (project.root / "exports" / "race.xlsx").exists()
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+            ("provisional_manifest_publish_v1:" + export_id,)
+        ).fetchone()[0] == 1

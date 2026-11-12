@@ -1,0 +1,13 @@
+requirement,implementation and regression,unresolved acceptance
+AUDIT-01,provisional_manifest_publication.py commits separate checksum-chained publishing and published events to the original immutable audit log,Full historical audit UI and source completion remain pending
+COUNT-01,tests/test_publication_results.py preserves source and provisional identity evidence without inferring unique publications,Final deduplicated global denominator remains UNKNOWN
+COUNT-05,publication views keep all scientific incompleteness flags false,Verified Complete requires independent provider reconciliation
+EXPORT-01,publication service publishes original source-only provisional provenance XLSX not a complete Master Results workbook,Full primary all-sheet scientific export remains pending
+EXPORT-03,original approved run revision and exact whole-run export remain bound across publication,Filtered subset export not implemented
+EXPORT-04,existing Directory write_new/flush/publish_link and same-file checksum tests prevent silent replacement,Additional formatting and complete export presentation pending
+SEC-03,unchanged rights-restricted source-only staged workbook is the sole publication payload,Metadata/abstract redistribution rights remain unverified
+SEC-04,project-relative no-overwrite destination and identity/read checks including restart and unrelated-file refusal,Not a project archive import or full hostile-filesystem security proof
+AT-18,tests/test_publication_results.py verify actual published XLSX and durable receipt against source-only scope,Full Master Results filters/links/counts not accepted
+AT-19,publication inspection retains explicit incomplete and UNKNOWN scientific counts including historical revisions,Full source completion not established
+AT-21,crash before copy/after copy/after link and corrupted/unrelated-file refusal,Hardware power-loss and full archive recovery not tested
+AT-22,internal verified workbook and original 100k renderer evidence only,Final UI responsiveness and end-to-end 100k published-export performance outstanding
