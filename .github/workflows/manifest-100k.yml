@@ -45,7 +45,7 @@ jobs:
       - name: Verify pinned Excel dependencies
         run: python -c "from importlib.metadata import version; assert version('openpyxl')=='3.1.5' and version('et-xmlfile')=='2.0.0'"
       - name: Benchmark original 100k partial and fully provisional workbook evidence
-        run: python scripts/benchmark_provisional_manifest.py --records 100000 --json-output .performance-evidence/original-provisional-manifest-100k.json
+        run: python -m scripts.benchmark_provisional_manifest --records 100000 --json-output .performance-evidence/original-provisional-manifest-100k.json
       - name: Independently validate source-free aggregate evidence and limits
         shell: python
         run: |
