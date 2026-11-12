@@ -13,7 +13,7 @@ from research_y.application_inspection import _read, ApplicationInspectionError
 from research_y import result_counts
 from research_y.preflight_review import _matched_query_plan, PreflightError
 from research_y.pubmed_checkpoint_store import _snapshot_from_db, CheckpointIntegrityError
-from research_y.wos_checkpoint_store import _job, WoSCheckpointError
+from research_y.wos_checkpoint_store import _job, _validate_verification_receipts, WoSCheckpointError
 from research_y.publication_identity import _hash, _identifier
 
 METHOD = "whole-run-execution-board/1"
@@ -77,11 +77,13 @@ def _wos(db, project, query, counts):
     try:
         db.row_factory = sqlite3.Row
         job = _job(db, project, qid)
+        count = job["baseline_count"]
+        page_size = job["plan"]["page_size"]
+        expected = None if count is None else max(1, (count + page_size - 1)//page_size)
+        if job["stage"] == "done":
+            _validate_verification_receipts(db, qid, job, expected)
     finally:
         db.row_factory = factory
-    count = job["baseline_count"]
-    page_size = job["plan"]["page_size"]
-    expected = None if count is None else max(1, (count + page_size - 1)//page_size)
     pages = db.execute(
         "SELECT COUNT(*) FROM wos_checkpoint_pages WHERE query_id=?", (qid,)
     ).fetchone()[0]

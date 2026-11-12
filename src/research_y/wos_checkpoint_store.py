@@ -323,41 +323,47 @@ def validate_wos_checkpoint(project: Project, query_id: str) -> None:
         if (job["stage"] != "acquire"
                 and (count is None or total != count or number != expected_pages)):
             raise WoSCheckpointError("incomplete_acquisition")
-        verified = 0
-        for row in db.execute("SELECT * FROM wos_checkpoint_verifications "
-                              "WHERE query_id=? AND epoch=? ORDER BY page_number", (query_id, job["verify_epoch"])):
-            verified += 1
-            current = _read_observation(db, row["attempt_id"], query_id, "verify")
-            original = db.execute("SELECT uid_sha256 FROM wos_checkpoint_pages WHERE query_id=? AND page_number=?",
-                                  (query_id, row["page_number"])).fetchone()
-            if (row["page_number"] != verified or current.page != verified or original is None
-                    or _uids(current) != original[0] or current.reported_matches != count
-                    or current.exact_query != plan["exact_query"] or current.database != plan["database"]
-                    or current.limit != plan["page_size"]):
-                raise WoSCheckpointError("verification_receipt_mismatch")
-        if job["verify_page"] != verified + 1:
-            raise WoSCheckpointError("verification_progress_mismatch")
-        if job["stage"] in ("final", "done") and verified != expected_pages:
-            raise WoSCheckpointError("incomplete_verification")
-        if job["stage"] == "done":
-            finals = db.execute("SELECT attempt_id,owner_token FROM wos_checkpoint_attempts "
-                                "WHERE query_id=? AND purpose='final' AND outcome='success' "
-                                "ORDER BY started_at_utc DESC LIMIT 1", (query_id,)).fetchone()
-            if finals is None:
-                raise WoSCheckpointError("missing_final_count_receipt")
-            final = _read_observation(db, finals["attempt_id"], query_id, "final")
-            first = db.execute("SELECT uid FROM wos_checkpoint_ids WHERE query_id=? AND page_number=1 "
-                               "ORDER BY ordinal LIMIT 1", (query_id,)).fetchone()
-            if (final.reported_matches != count or final.exact_query != plan["exact_query"]
-                    or final.database != plan["database"] or final.page != 1 or final.limit != 1
-                    or [r.uid for r in final.records] != ([] if first is None else [first[0]])):
-                raise WoSCheckpointError("invalid_final_count_receipt")
-            owners = {r[0] for r in db.execute(
-                "SELECT a.owner_token FROM wos_checkpoint_verifications v "
-                "JOIN wos_checkpoint_attempts a ON a.attempt_id=v.attempt_id "
-                "WHERE v.query_id=? AND v.epoch=?", (query_id,job["verify_epoch"]))}
-            if owners != {finals["owner_token"]}:
-                raise WoSCheckpointError("verification_not_one_session")
+        _validate_verification_receipts(db, query_id, job, expected_pages)
+
+
+def _validate_verification_receipts(db, query_id, job, expected_pages):
+    """Check the current verification epoch and its independent final count observation."""
+    plan, count = job["plan"], job["baseline_count"]
+    verified = 0
+    for row in db.execute("SELECT * FROM wos_checkpoint_verifications "
+                          "WHERE query_id=? AND epoch=? ORDER BY page_number", (query_id, job["verify_epoch"])):
+        verified += 1
+        current = _read_observation(db, row["attempt_id"], query_id, "verify")
+        original = db.execute("SELECT uid_sha256 FROM wos_checkpoint_pages WHERE query_id=? AND page_number=?",
+                              (query_id, row["page_number"])).fetchone()
+        if (row["page_number"] != verified or current.page != verified or original is None
+                or _uids(current) != original[0] or current.reported_matches != count
+                or current.exact_query != plan["exact_query"] or current.database != plan["database"]
+                or current.limit != plan["page_size"]):
+            raise WoSCheckpointError("verification_receipt_mismatch")
+    if job["verify_page"] != verified + 1:
+        raise WoSCheckpointError("verification_progress_mismatch")
+    if job["stage"] in ("final", "done") and verified != expected_pages:
+        raise WoSCheckpointError("incomplete_verification")
+    if job["stage"] == "done":
+        finals = db.execute("SELECT attempt_id,owner_token FROM wos_checkpoint_attempts "
+                            "WHERE query_id=? AND purpose='final' AND outcome='success' "
+                            "ORDER BY started_at_utc DESC LIMIT 1", (query_id,)).fetchone()
+        if finals is None:
+            raise WoSCheckpointError("missing_final_count_receipt")
+        final = _read_observation(db, finals["attempt_id"], query_id, "final")
+        first = db.execute("SELECT uid FROM wos_checkpoint_ids WHERE query_id=? AND page_number=1 "
+                           "ORDER BY ordinal LIMIT 1", (query_id,)).fetchone()
+        if (final.reported_matches != count or final.exact_query != plan["exact_query"]
+                or final.database != plan["database"] or final.page != 1 or final.limit != 1
+                or [r.uid for r in final.records] != ([] if first is None else [first[0]])):
+            raise WoSCheckpointError("invalid_final_count_receipt")
+        owners = {r[0] for r in db.execute(
+            "SELECT a.owner_token FROM wos_checkpoint_verifications v "
+            "JOIN wos_checkpoint_attempts a ON a.attempt_id=v.attempt_id "
+            "WHERE v.query_id=? AND v.epoch=?", (query_id,job["verify_epoch"]))}
+        if owners != {finals["owner_token"]}:
+            raise WoSCheckpointError("verification_not_one_session")
 
 
 def pause_wos_checkpoint(project: Project, query_id: str, *, cancel: bool = False) -> None:

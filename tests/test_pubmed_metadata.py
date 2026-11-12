@@ -300,6 +300,77 @@ def test_reopen_project_recovers_only_missing_metadata_batches(tmp_path):
     assert not second.source_retrieval_verified
 
 
+def book_xml(pmid="222"):
+    return f"""<PubmedBookArticle><BookDocument><PMID>{pmid}</PMID>
+    <ArticleIdList><ArticleId IdType="doi">10.1000/chapter</ArticleId></ArticleIdList>
+    <Book><Publisher><PublisherName>Fixture Press</PublisherName></Publisher>
+    <BookTitle>Fixture handbook</BookTitle><PubDate><Year>2025</Year></PubDate>
+    <AuthorList Type="editors"><Author><LastName>Editor</LastName></Author></AuthorList>
+    <Isbn>9780000000002</Isbn><ELocationID EIdType="doi">10.1000/book</ELocationID></Book>
+    <LocationLabel Type="chapter">4</LocationLabel><ArticleTitle>A <i>fixture</i> chapter</ArticleTitle>
+    <Language>eng</Language><AuthorList Type="authors"><Author><LastName>Writer</LastName></Author></AuthorList>
+    <PublicationType>Book Chapter</PublicationType><Abstract><AbstractText Label="Summary">Text</AbstractText>
+    <CopyrightInformation>Fixture notice</CopyrightInformation></Abstract></BookDocument>
+    <PubmedBookData><PublicationStatus>ppublish</PublicationStatus><ArticleIdList>
+    <ArticleId IdType="pubmed">{pmid}</ArticleId></ArticleIdList></PubmedBookData></PubmedBookArticle>"""
+
+
+def test_mixed_book_and_journal_metadata_reopens_without_refetch(tmp_path):
+    project, query_id = project_with_pmids(tmp_path)
+    calls = []
+
+    def transport(request, timeout):
+        pmids = parse_qs(request.data.decode())["id"][0].split(",")
+        calls.append(pmids)
+        records = "".join(book_xml(pmid) if pmid == "222" else article_xml(pmid) for pmid in pmids)
+        return f"<PubmedArticleSet>{records}</PubmedArticleSet>".encode()
+
+    client = make_client(transport)
+    partial = collect_pubmed_metadata(project, query_id, client, batch_size=2, max_batches=1)
+    assert partial.missing_pmids == ("333",)
+    reopened = open_project(project.root)
+    completed = collect_pubmed_metadata(reopened, query_id, client, batch_size=2)
+    assert completed.committed_metadata_ids == 3 and not completed.source_retrieval_verified
+    assert calls == [["111", "222"], ["333"]]
+    assert _count_db(reopened, query_id) == (3, 3, 2, "incomplete")
+    with closing(sqlite3.connect(reopened.database_path)) as db:
+        records = {pmid: json.loads(raw) for pmid, raw in db.execute(
+            "SELECT source_record_id,original_metadata_json FROM source_retrievals")}
+    assert "book" not in records["111"]["record"]
+    assert records["222"]["rights_review_required_for_abstract_redistribution"] is True
+    chapter = records["222"]["record"]
+    assert chapter["title"] == "A fixture chapter" and chapter["journal"] == {}
+    assert chapter["identifiers"]["doi"] == ["10.1000/chapter"]
+    assert chapter["authors"][0]["last_name"] == "Writer"
+    assert chapter["book"]["title"] == "Fixture handbook"
+    assert chapter["book"]["contributors"][0]["role"] == "editors"
+    assert chapter["book"]["isbns"] == ["9780000000002"]
+    assert chapter["book"]["container_ids"] == [{"type": "doi", "value": "10.1000/book"}]
+    assert chapter["abstract_sections"][0]["text"] == "Text"
+    assert chapter["abstract_copyright"] == "Fixture notice"
+
+
+def test_malformed_book_refuses_mixed_batch_without_partial_commit(tmp_path):
+    project, query_id = project_with_pmids(tmp_path, ("111", "222"))
+    book = book_xml().replace('IdType="pubmed">222', 'IdType="pubmed">333')
+    payload = f"<PubmedArticleSet>{article_xml('111')}{book}</PubmedArticleSet>".encode()
+    failed = collect_pubmed_metadata(project, query_id, make_client(lambda request, timeout: payload))
+    assert failed.status == "incomplete"
+    assert failed.missing_pmids == ("111", "222")
+    assert _count_db(project, query_id)[:3] == (0, 0, 0)
+
+
+def test_book_container_fields_do_not_become_unknown_contribution_fields():
+    payload = b"""<PubmedBookArticleSet><PubmedBookArticle><BookDocument><PMID>123</PMID>
+        <Book><BookTitle>Fixture handbook</BookTitle><AuthorList Type="editors">
+        <Author><LastName>Editor</LastName></Author></AuthorList></Book>
+        </BookDocument></PubmedBookArticle></PubmedBookArticleSet>"""
+    record, = parse_efetch_xml(payload, ["123"], retrieved_at_utc=UTC).records
+    assert record.book["title"] == "Fixture handbook" and record.title is None
+    assert record.authors == () and record.identifiers == {"pmid": ("123",)}
+    assert record.abstract_status == "not_supplied_in_response"
+
+
 def test_network_failure_after_one_batch_keeps_committed_rows_and_retries_missing(tmp_path):
     p, query_id = project_with_pmids(tmp_path)
     count = [0]
