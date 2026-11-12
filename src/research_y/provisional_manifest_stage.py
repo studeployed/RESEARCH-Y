@@ -168,15 +168,25 @@ def _file_state(project, state):
     if state is None:
         return "not_created"
     try:
-        with _store(project) as location:
-            if not location.exists(state["artifact"]["name"]):
+        # A crash after committing the *staging* receipt may precede even
+        # creation of the private directory. Test absence using the guarded
+        # EXISTING parent, not by opening the missing child: Windows'
+        # _windows_directory reports CreateFileW failure as a generic
+        # OSError, indistinguishable from a lock/access failure otherwise.
+        with Directory(project.root / "exports") as parent:
+            if not parent.exists(STORE):
                 return "missing"
-            stage = state["artifact"]
-            location.read(stage["name"], digest=stage["sha256"], size=stage["size"])
-            return "verified"
+            # Existing but linked/reparse/non-directory children MUST still
+            # fail the hardened Directory check, not become "missing".
+            with Directory(project.root / "exports" / STORE) as location:
+                if not location.exists(state["artifact"]["name"]):
+                    return "missing"
+                stage = state["artifact"]
+                location.read(stage["name"], digest=stage["sha256"], size=stage["size"])
+                return "verified"
     except FileNotFoundError:
-        # A crash may occur after the staging receipt was committed but
-        # before even the private stage directory could be created.
+        # A member file may disappear after the directory has been opened.
+        # The "staged" receipt path rejects missing artifacts in _read_state.
         return "missing"
     except (ExportFileError, OSError, ValueError):
         raise ManifestStageError("stage_artifact_changed") from None
