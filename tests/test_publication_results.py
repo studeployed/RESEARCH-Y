@@ -927,3 +927,50 @@ def test_manifest_export_intent_audit_is_append_only_and_fails_closed_on_tamperi
             expected_revision=prev["original_revision"],
             actor="Researcher", confirmed=True)
     assert sha256(project.database_path.read_bytes()).hexdigest() == unreadable
+
+
+
+def test_manifest_intent_read_services_refuse_legacy_schema_without_migration(fixture):
+    """Opening/inspection is not a schema migration or data backup request.
+
+    Exercise a deliberately downgraded user_version on the synthetic project,
+    after an actual immutable intent exists. All three services must refuse
+    without any SQLite write, backup or appended migration audit event.
+    """
+    from research_y.schema import SCHEMA_VERSION
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent,
+        inspect_manifest_intent, ManifestIntentError,
+    )
+    project, run, _, _ = fixture
+    insert(fixture, number=12008)
+    preview = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(
+        project, run, "approved.xlsx", export_id=export_id,
+        expected_revision=preview["original_revision"],
+        actor="Researcher", confirmed=True)
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        db.execute(f"PRAGMA user_version={SCHEMA_VERSION - 1}")
+    before = sha256(project.database_path.read_bytes()).hexdigest()
+    backups_before = sorted((project.root / "backups").iterdir())
+    with closing(sqlite3.connect(project.database_path)) as db:
+        audits_before = db.execute(
+            "SELECT COUNT(*) FROM audit_events"
+        ).fetchone()[0]
+
+    for check in (
+        lambda: preview_manifest_intent(project, run),
+        lambda: inspect_manifest_intent(project, export_id),
+        lambda: prepare_manifest_intent(
+            project, run, "new.xlsx", export_id=uid(),
+            expected_revision=preview["original_revision"],
+            actor="Researcher", confirmed=True),
+    ):
+        with pytest.raises(ManifestIntentError, match="source_evidence_unavailable"):
+            check()
+        assert sha256(project.database_path.read_bytes()).hexdigest() == before
+        assert sorted((project.root / "backups").iterdir()) == backups_before
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION - 1
+        assert db.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0] == audits_before
