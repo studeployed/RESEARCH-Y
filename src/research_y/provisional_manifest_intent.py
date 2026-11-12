@@ -221,13 +221,18 @@ def prepare_manifest_intent(project, run_id: str, output_name: str, *,
     _actor(actor)
     if confirmed is not True:
         raise ManifestIntentError("confirmation_required")
+    # Approval is not authorisation to migrate a legacy project. Refuse
+    # unmigrated/stale stores via the original read-only version gate before
+    # entering the journal writer. Read failures are evidence failures, not
+    # false claims of a failed journal write.
     try:
-        # Approval is not authorisation to migrate a legacy project. Refuse
-        # unmigrated/stale stores via the original read-only version gate
-        # before entering the journal writer. Opening/migration is a separate,
-        # explicit project recovery workflow.
         with result_counts._read_connection(project) as readonly:
             _counts(readonly, project, run_id)
+    except ManifestIntentError:
+        raise
+    except (sqlite3.DatabaseError, OSError, ValueError, TypeError):
+        raise ManifestIntentError("source_evidence_unavailable") from None
+    try:
         with _transaction(project) as db:
             existing = _load(db, project, export_id)
             if existing is not None:
