@@ -1,5 +1,6 @@
 """Phase 1 acceptance boundary for distinct retained conference abstract records."""
 from contextlib import closing
+import json
 import sqlite3
 
 from research_y.projects import open_project
@@ -45,7 +46,17 @@ def test_same_supplement_doi_retains_two_distinct_reviewed_abstracts(tmp_path):
     decide_candidate(project, *ids, expected_revision=pair.revision, decision='rejected_match',
                      actor='Fixture reviewer', evidence='Separate retained numbered abstracts',
                      acknowledged_warnings=pair.warnings, decision_confirmed=True)
-    board = read_run_execution_board(open_project(project.root), run_id)
+    reopened = open_project(project.root)
+    with closing(sqlite3.connect(reopened.database_path)) as db:
+        originals = db.execute(
+            'SELECT source_record_id, original_metadata_json FROM source_retrievals ORDER BY source_record_id'
+        )
+        retained = {pmid: json.loads(raw)['record'] for pmid, raw in originals}
+        for number, pmid in enumerate(pmids, 1):
+            assert retained[pmid]['publication_types'] == ['Conference Abstract']
+            assert retained[pmid]['abstract_sections'][1]['text'] == f'Original abstract number {number}.'
+        assert db.execute('SELECT COUNT(*) FROM query_retrievals').fetchone() == (4,)
+    board = read_run_execution_board(reopened, run_id)
     assert board['reconciled_primary_run_unique_publications'] == 2
     assert board['reviewed_retained_master']['group_count_sum'] == 4
     assert not board['whole_search_verified']
