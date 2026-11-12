@@ -27,6 +27,7 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                         'observe_export', 'inspect_manifest_publication',
                         'preview_manifest_intent', 'prepare_manifest_intent', 'inspect_manifest_intent',
                         'manifest_intent_history',
+                        'save_consented_manifest', 'inspect_manifest_save',
                         'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
@@ -44,6 +45,10 @@ SERVICE_ERRORS = frozenset({'candidate_pair_unavailable',
     'publication_invalid', 'publication_not_staged', 'publication_receipt_invalid',
     'publication_staging_changed', 'publication_destination_conflict',
     'publication_artifact_changed',
+    'publication_revision_stale', 'publication_storage_failed', 'publication_journal_failed',
+    'stage_invalid', 'stage_not_found', 'stage_revision_stale', 'stage_receipt_invalid',
+    'stage_artifact_changed', 'stage_busy_retry', 'stage_destination_conflict',
+    'stage_render_failed', 'stage_journal_failed', 'stage_storage_failed',
     'candidate_pair_invalid', 'candidate_pair_stale',
     'candidate_pair_index_not_ready', 'candidate_pair_confirmation_required',
     'candidate_pair_no_work', 'candidate_pair_over_limit',
@@ -249,7 +254,7 @@ class ApplicationCommand:
                 _uuid(self.run_id)
             if self.export_id is not None:
                 _uuid(self.export_id)
-            if self.operation != 'prepare_manifest_intent' and any(value is not None for value in
+            if self.operation not in ('prepare_manifest_intent', 'save_consented_manifest') and any(value is not None for value in
                     (self.manifest_revision, self.manifest_actor, self.manifest_confirmed)):
                 raise ValueError
             if self.directory is not None:
@@ -765,6 +770,12 @@ class ApplicationCommand:
                 if self.operation == 'manifest_intent_history' and self.history_before_event_id is not None:
                     if type(self.history_before_event_id) is not int or not 1 <= self.history_before_event_id < 2**63:
                         raise ValueError
+            elif self.operation == 'save_consented_manifest':
+                from research_y.provisional_manifest_intent import _revision
+                if (self.run_id is None or self.export_id is None or self.manifest_confirmed is not True
+                        or self.directory is not None or self.output_name is not None or self.manifest_actor is not None):
+                    raise ValueError
+                _revision(self.manifest_revision)
             elif self.operation == 'prepare_manifest_intent':
                 from research_y.provisional_manifest_intent import validate_manifest_request
                 if self.directory is not None:
@@ -786,7 +797,7 @@ class ApplicationCommand:
                 elif self.run_id is not None or self.output_name is not None:
                     raise ValueError
                 if self.operation in ('export_report', 'inspect_manifest_publication',
-                                      'inspect_manifest_intent') and self.directory is not None:
+                                      'inspect_manifest_intent', 'inspect_manifest_save') and self.directory is not None:
                     raise ValueError
             if self.operation not in pair_ops and any(
                     v is not None for v in pair_fields):
@@ -1253,11 +1264,16 @@ def execute_command(command: ApplicationCommand) -> dict:
                 return result
             except consent.ManifestIntentError as exc:
                 raise ApplicationCommandError(exc.code) from None
-        if command.operation == 'inspect_manifest_publication':
+        if command.operation in ('inspect_manifest_publication', 'save_consented_manifest', 'inspect_manifest_save'):
             from research_y import provisional_manifest_publication as publication
             try:
+                if command.operation == 'save_consented_manifest':
+                    return publication.save_consented_manifest(project, command.run_id, command.export_id,
+                                                               command.manifest_revision)
+                if command.operation == 'inspect_manifest_save':
+                    return publication.inspect_manifest_save(project, command.export_id)
                 return publication.inspect_manifest_publication(project, command.export_id)
-            except publication.ManifestPublicationError as exc:
+            except publication.SAVE_ERRORS as exc:
                 raise ApplicationCommandError(exc.code) from None
         if command.operation == 'export_report':
             return inspection.read_export_report(project, command.export_id).as_dict()

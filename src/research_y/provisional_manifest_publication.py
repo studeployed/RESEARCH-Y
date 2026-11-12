@@ -46,6 +46,9 @@ class ManifestPublicationError(ValueError):
         super().__init__(self.code)
 
 
+SAVE_ERRORS = (ManifestPublicationError, stage.ManifestStageError, consent.ManifestIntentError)
+
+
 def _type(export_id):
     return EVENT_PREFIX + export_id
 
@@ -137,14 +140,20 @@ def _append(db, approved, staged, earlier, action, copy_name):
     )
 
 
-def _validated(db, project, export_id, *, writing):
+def _validated(db, project, export_id, *, writing, allow_unstaged=False):
     try:
         approved = stage._intent(db, project, export_id)
         staged = stage._load(db, project, approved)
-        if staged is None or staged["phase"] != "staged":
+        stage_ready = staged is not None and staged["phase"] == "staged"
+        if not stage_ready and not allow_unstaged:
             raise ManifestPublicationError("publication_not_staged")
         projection = consent._counts(db, project, approved["run_id"])
         current = projection.revision == approved["run_revision"]
+        if not stage_ready:
+            if db.execute("SELECT 1 FROM audit_events WHERE event_type=? LIMIT 1",
+                          (_type(export_id),)).fetchone():
+                raise ManifestPublicationError("publication_receipt_invalid")
+            return approved, staged, None, current
         if writing:
             if not current:
                 raise ManifestPublicationError("publication_revision_stale")
@@ -237,11 +246,18 @@ def _view(approved, staged, publication, current, file_status):
 
 def inspect_manifest_publication(project, export_id: str) -> dict:
     """Read-only, no-migration inspection; a visible file is not a receipt."""
+    return _inspect(project, export_id, allow_unstaged=False)
+
+
+def _inspect(project, export_id, *, allow_unstaged):
     consent._uuid(export_id)
     try:
         with result_counts._read_connection(project) as db:
             approved, staged, publication, current = _validated(
-                db, project, export_id, writing=False)
+                db, project, export_id, writing=False, allow_unstaged=allow_unstaged)
+            if staged is None or staged["phase"] != "staged":
+                return stage._view(approved, staged, stage._file_state(project, staged),
+                                   original_current=current)
             file_status = _files(project, approved, staged, publication)
             if publication is not None and publication["phase"] == "published":
                 if file_status != "verified_final":
@@ -357,3 +373,19 @@ def publish_manifest_workbook(project, export_id: str) -> dict:
         return resume_manifest_publication(project, export_id)
     _begin(project, export_id)
     return resume_manifest_publication(project, export_id)
+
+
+def save_consented_manifest(project, run_id, export_id, expected_revision):
+    """Fulfil the displayed receipt using the original guarded staging and publishing services."""
+    receipt = consent.inspect_manifest_intent(project, export_id)
+    if receipt["run_id"] != run_id or receipt["approved_original_revision"] != expected_revision:
+        raise ManifestPublicationError("publication_invalid")
+    if not receipt["current_revision_matches"]:
+        raise ManifestPublicationError("publication_revision_stale")
+    stage.stage_manifest_workbook(project, export_id)
+    return publish_manifest_workbook(project, export_id)
+
+
+def inspect_manifest_save(project, export_id):
+    """Inspect the publication, or show staging progress if there is no completed stage yet."""
+    return _inspect(project, export_id, allow_unstaged=True)

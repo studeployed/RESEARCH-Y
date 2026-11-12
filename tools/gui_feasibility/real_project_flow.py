@@ -177,6 +177,8 @@ class RealProjectFlow:
             raise ProjectFlowError('flow_closed')
         if self._manifest_pending:
             raise ProjectFlowError('manifest_reconciliation_required')
+        if self._manifest_save_operation is not None:
+            raise ProjectFlowError('manifest_save_running')
         if self._pending_admission_id is not None:
             raise ProjectFlowError('strategy_reconciliation_required')
         if self._pending_review is not None:
@@ -572,6 +574,9 @@ class RealProjectFlow:
         self._manifest_pending = False
         self._manifest_history = None
         self._manifest_receipt = None
+        self._manifest_save_operation = None
+        self._manifest_save_result = None
+        self._manifest_save_error = None
 
     def preview_manifest(self, output_name, actor):
         with self._guard:
@@ -595,6 +600,8 @@ class RealProjectFlow:
             self._manifest_offer = dict(preview, output_name=output_name, actor=actor,
                                         export_id=export_id, offer_token=str(uuid4()))
             self._manifest_receipt = None
+            self._manifest_save_result = None
+            self._manifest_save_error = None
             return self._publish()
 
     def dismiss_manifest(self, offer_token):
@@ -684,6 +691,74 @@ class RealProjectFlow:
                 raise ProjectFlowError('invalid_worker_result')
             self._manifest_offer = None
             self._manifest_receipt = receipt
+            self._manifest_save_result = None
+            self._manifest_save_error = None
+            return self._publish()
+
+    def _selected_manifest_receipt(self, export_id):
+        receipt = self._manifest_receipt
+        if (not receipt or receipt['export_id'] != export_id or receipt['run_id'] != self.selected_run_id):
+            raise ProjectFlowError('unknown_export')
+        return receipt
+
+    def start_manifest_save(self, export_id):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            receipt = self._selected_manifest_receipt(export_id)
+            if not receipt['current_revision_matches']:
+                raise ProjectFlowError('stale_original_revision')
+            command = ApplicationCommand.for_project(
+                self.project, 'save_consented_manifest', run_id=self.selected_run_id, export_id=export_id,
+                manifest_revision=receipt['approved_original_revision'], manifest_confirmed=True)
+            try:
+                operation = self._worker.submit(command)
+            except ApplicationWorkerError as error:
+                raise ProjectFlowError(error.code) from None
+            self._manifest_save_operation = operation
+            self._manifest_save_error = self._manifest_save_result = None
+            return self._publish()
+
+    def _show_manifest_save(self, result):
+        receipt = self._manifest_receipt
+        if (not isinstance(result, dict) or not receipt or any(
+                result.get(key) != receipt[key] for key in
+                ('run_id', 'export_id', 'output_name', 'approved_original_revision'))):
+            raise ProjectFlowError('invalid_worker_result')
+        self._manifest_save_result = result
+
+    def poll_manifest_save(self):
+        with self._guard:
+            self._require_open()
+            if self._manifest_save_operation is None:
+                return self.state()
+            status = self._worker.poll(self._manifest_save_operation)
+            if status.state == 'running':
+                return self.state()
+            self._manifest_save_operation = None
+            if status.state == 'returned':
+                try:
+                    result = status.result()
+                    self._show_manifest_save(result)
+                except (ValueError, TypeError):
+                    self._manifest_save_error = 'invalid_worker_result'
+            else:
+                self._manifest_save_error = status.error or 'worker_interrupted'
+            return self._publish()
+
+    def inspect_manifest_file(self, export_id):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._selected_manifest_receipt(export_id)
+            self._manifest_save_result = None
+            self._manifest_save_error = None
+            try:
+                self._show_manifest_save(self._operation('inspect_manifest_save', export_id=export_id))
+            except ProjectFlowError as error:
+                self._manifest_save_error = str(error)
+                self._publish()
+                raise
             return self._publish()
 
     def select_export(self, export_id: str):
@@ -4031,6 +4106,9 @@ class RealProjectFlow:
                 'manifest_offer': dict(self._manifest_offer) if self._manifest_offer else None,
                 'manifest_pending': self._manifest_pending,
                 'manifest_receipt': self._manifest_receipt,
+                'manifest_save_running': self._manifest_save_operation is not None,
+                'manifest_save_result': self._manifest_save_result,
+                'manifest_save_error': self._manifest_save_error,
                 'manifest_history': self._manifest_history,
                 'report': None if data is None else data['report'],
                 'exports': [] if data is None else data['exports'],

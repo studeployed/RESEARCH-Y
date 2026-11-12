@@ -108,7 +108,9 @@ def run(args):
         events, clients, tasks = [], [], []
         last_error = {'code': None}
         finished = asyncio.Event()
-        sequence = (('open', 'select_run', 'manifest_preview', 'manifest_confirm')
+        sequence = (('open', 'select_run', 'manifest_history', 'manifest_inspect', 'manifest_save', 'manifest_check_file')
+                    if args.scenario == 'manifest_publish' else
+                    ('open', 'select_run', 'manifest_preview', 'manifest_confirm')
                     if args.scenario == 'manifest_consent' else
                     ('open', 'select_run', 'manifest_history', 'manifest_inspect')
                     if args.scenario == 'manifest_reopen' else
@@ -431,6 +433,12 @@ def run(args):
                             return flow.manifest_history(older=name == 'manifest_older')
                         if name == 'manifest_inspect':
                             return flow.inspect_saved_manifest(value)
+                        if name == 'manifest_save':
+                            return flow.start_manifest_save(value)
+                        if name == 'manifest_poll':
+                            return flow.poll_manifest_save()
+                        if name == 'manifest_check_file':
+                            return flow.inspect_manifest_file(value)
                         if name == 'prepare':
                             return flow.prepare()
                         if name == 'external_confirm':
@@ -500,7 +508,8 @@ def run(args):
                                         detail['redistribution_permission_established'] is not False):
                                     raise RuntimeError('results_detail_invalid')
                                 results_witness['detail_open'] = True
-                        events.append(name)
+                        if name != 'manifest_poll':
+                            events.append(name)
                     last_error['code'] = None
                 except NativeFolderError as exc:
                     last_error['code'] = str(exc)
@@ -2653,7 +2662,9 @@ def run(args):
                 # network action remains the separate explicit Confirm button.
                 # One timer per connected page, not per panel refresh.
                 if not action_lock.locked():
-                    if flow.state()['wos_verification_pending']:
+                    if flow.state()['manifest_save_running']:
+                        await act('manifest_poll')
+                    elif flow.state()['wos_verification_pending']:
                         await act('wos_verification_poll')
                     elif flow.state()['pubmed_source_pending']:
                         await act('pubmed_identifier_poll')
@@ -2693,6 +2704,15 @@ def run(args):
                 return await act(action, flow.state()['manifest_offer']['offer_token'])
             if action == 'manifest_inspect':
                 return await act(action, flow.state()['manifest_history']['entries'][0]['export_id'])
+            if action in ('manifest_save', 'manifest_check_file'):
+                result = await act(action, flow.state()['manifest_receipt']['export_id'])
+                if action == 'manifest_save':
+                    limit = time.monotonic() + 30
+                    while flow.state()['manifest_save_running'] and time.monotonic() < limit:
+                        await asyncio.to_thread(flow.poll_manifest_save)
+                        await asyncio.sleep(.05)
+                    return view()
+                return result
             if action == 'publication_window_confirm':
                 return await act(action, 'Synthetic fixture researcher')
             if args.scenario == 'publication_results_large':
@@ -2905,7 +2925,8 @@ def run(args):
                             'prepare': 'prepare', 'resume': 'resume', 'cancel': 'cancel',
                             'observe': 'observe', 'manifest_preview': 'manifest-preview',
                             'manifest_confirm': 'manifest-confirm', 'manifest_history': 'manifest-history',
-                            'manifest_inspect': 'manifest-inspect'}[action]
+                            'manifest_inspect': 'manifest-inspect', 'manifest_save': 'manifest-save',
+                            'manifest_check_file': 'manifest-check-file'}[action]
                     await until(lambda: bool(clients) and not action_lock.locked())
                     if action in ('manifest_preview', 'manifest_history'):
                         await until_native_button('manifest-panel', js)
@@ -2957,11 +2978,16 @@ def run(args):
                         return
                     if last_error['code'] is not None or events[index] != action:
                         raise RuntimeError('native_action_failed')
-                if args.scenario in ('manifest_consent', 'manifest_reopen'):
+                    if action == 'manifest_save':
+                        await until(lambda: not flow.state()['manifest_save_running'],
+                                    deadline=NATIVE_ACTION_COMPLETION_TIMEOUT)
+                if args.scenario in ('manifest_consent', 'manifest_reopen', 'manifest_publish'):
                     await until_native_button('manifest-receipt', js)
                     if not await js("document.querySelector('[data-testid=manifest-receipt]').textContent"
                                     ".includes('Current source revision')"):
                         raise RuntimeError('consent_receipt_missing')
+                    if args.scenario == 'manifest_publish':
+                        await until_native_button('manifest-file-verified', js)
                     report['native_rendering_verified'] = True
                     report['status'] = 'finished'
                     return
@@ -3063,6 +3089,7 @@ def run(args):
             state = flow.state()
             observed = state['observation']
             report.update(
+                manifest_file_verified=bool((state['manifest_save_result'] or {}).get('audited_publication_success')),
                 consent_event_id=(state['manifest_receipt'] or {}).get('audit_event_id'),
                 results_action_service_ms=(
                     list(results_witness['action_service_ms'])
@@ -3150,7 +3177,7 @@ if __name__ == '__main__':
                                                'stage_fault', 'stage_recovered',
                                                'worker_killed', 'worker_recovered',
                                                'recent_open',
-                                               'manifest_consent', 'manifest_reopen',
+                                               'manifest_consent', 'manifest_reopen', 'manifest_publish',
                                                'publication_window',
                                                'publication_window_lost_reply',
                                                'publication_results_large'), required=True)

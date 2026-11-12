@@ -1,5 +1,6 @@
 from contextlib import closing
 import sqlite3
+import time
 from uuid import uuid4
 
 import pytest
@@ -117,3 +118,61 @@ def test_saved_consent_history_cursor_is_exclusive_and_run_scoped(tmp_path):
         assert flow.manifest_history()["manifest_history"]["entries"] == []
         with pytest.raises(ProjectFlowError, match="unknown_export"):
             flow.inspect_saved_manifest(last["entries"][0]["export_id"])
+
+
+def finish_save(flow):
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        state = flow.poll_manifest_save()
+        if not state["manifest_save_running"]:
+            return state
+        time.sleep(.025)
+    pytest.fail("Manifest worker did not finish")
+
+
+def test_save_selected_consent_and_inspect_published_file_after_restart(tmp_path):
+    from openpyxl import load_workbook
+
+    project, run_id = fixture(tmp_path)
+    with closing(opened(project, run_id)) as flow:
+        offer = flow.preview_manifest("my-workbook.xlsx", "Researcher")["manifest_offer"]
+        export_id = offer["export_id"]
+        with pytest.raises(ProjectFlowError, match="unknown_export"):
+            flow.start_manifest_save(export_id)
+        flow.confirm_manifest(offer["offer_token"])
+        before = flow.inspect_manifest_file(export_id)["manifest_save_result"]
+        assert before["state"] == "not_staged" and not before["audited_publication_success"]
+        assert flow.start_manifest_save(export_id)["manifest_save_running"]
+        with pytest.raises(ProjectFlowError, match="manifest_save_running"):
+            flow.start_manifest_save(export_id)
+        done = finish_save(flow)
+        assert done["manifest_save_error"] is None
+        assert done["manifest_save_result"]["audited_publication_success"]
+    final = project.root / "exports" / "my-workbook.xlsx"
+    with closing(load_workbook(final, read_only=True)) as workbook:
+        assert dict(list(workbook["Evidence & Limits"].values)[3:])["Report status"] == "INCOMPLETE"
+    with closing(opened(open_project(project.root), run_id)) as fresh:
+        fresh.manifest_history()
+        fresh.inspect_saved_manifest(export_id)
+        assert fresh.inspect_manifest_file(export_id)["manifest_save_result"] == done["manifest_save_result"]
+        fresh.start_manifest_save(export_id)
+        assert finish_save(fresh)["manifest_save_result"] == done["manifest_save_result"]
+        final.unlink()
+        with pytest.raises(ProjectFlowError, match="publication_artifact_changed"):
+            fresh.inspect_manifest_file(export_id)
+        assert fresh.state()["manifest_save_result"] is None
+        assert not final.exists()
+
+
+def test_save_rechecks_revision_after_consent(tmp_path):
+    project, run_id = fixture(tmp_path)
+    with closing(opened(project, run_id)) as flow:
+        offer = flow.preview_manifest("stale.xlsx", "Researcher")["manifest_offer"]
+        flow.confirm_manifest(offer["offer_token"])
+        with closing(sqlite3.connect(project.database_path)) as db, db:
+            db.execute("UPDATE source_queries SET status='failed' WHERE run_id=?", (run_id,))
+        flow.start_manifest_save(offer["export_id"])
+        done = finish_save(flow)
+        assert done["manifest_save_error"] == "publication_revision_stale"
+        assert done["manifest_save_result"] is None
+        assert not list((project.root / "exports").iterdir())

@@ -50,7 +50,16 @@ and actor. Each displayed preview uses a fresh confirmation token. A fresh host
 can use **Find saved consents** and **Older consents** for the selected run.
 The worker's `manifest_intent_history` operation reads up to 20 validated consent
 receipts in descending audit-event order. Selecting one rechecks its current
-revision. File publication remains a separate operation.
+revision.
+
+**Save or resume this workbook** starts a supervised save for the displayed
+receipt. The command accepts its run, export UUID and original revision.
+Staging and publication independently revalidate the original source revision
+and verify the file and durable receipts. A long render runs in the child while
+the interface polls its status. After reopening, select the saved consent and
+use **Check workbook and publication receipt** to distinguish an unfinished
+save, a current verified workbook, a historical revision or changed files.
+Retrying the same request preserves the no-overwrite and checksum checks.
 
 ### Worker lifecycle and project identity
 

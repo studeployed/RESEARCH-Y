@@ -26,6 +26,11 @@ project. Verify their Linux loopback and native Windows results on the PR.
 Consent alone leaves the exports directory untouched. Optional dependency
 adoption for an operational Windows launcher is tracked separately under #43.
 
+The follow-up save action runs staging and guarded publication under the
+original consent in a supervised worker. The graphical `manifest_publish`
+fixture reopens a separate process, selects the saved consent, saves and
+inspects its receipt, and independently opens the resulting workbook.
+
 ## Current work — P1-06l8, issue #102
 
 PR #100 merged at `c5a6f1c` and PR #101 at `d018726`. Issue #102 extends the trusted worker with
