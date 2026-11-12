@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from research_y.projects import Project
 
 REPORT_METHOD = "strategy-count-report/1"
+REVIEWED_REPORT_METHOD = "strategy-count-report/2"
 # A report-input safety bound, NOT a source retrieval or result limit.
 MAX_REPORT_BYTES = 64 * 1024 * 1024
 _SAFE_PARAMETERS = frozenset(("database", "page_size", "max_query_bytes", "sort",
@@ -116,8 +117,9 @@ class StrategyReport:
         if len(self.payload_json.encode("utf-8")) > MAX_REPORT_BYTES:
             raise ReportIntegrityError("Report exceeds the explicit input safety limit")
         data = decode(self.payload_json)
-        if (canonical(data) != self.payload_json or data.get("method") != REPORT_METHOD
-                or data.get("format_version") != 1 or type(data.get("format_version")) is not int
+        if (canonical(data) != self.payload_json or type(data.get("format_version")) is not int
+                or (data.get("format_version"), data.get("method")) not in (
+                    (1, REPORT_METHOD), (2, REVIEWED_REPORT_METHOD))
                 or data.get("scope") != "whole_run_strategy_and_counts"
                 or data.get("status") != "incomplete"):
             raise ReportIntegrityError("Unsupported or noncanonical report input")
@@ -141,6 +143,9 @@ class StrategyReport:
                     or not isinstance(data["warnings"], list)):
                 raise ValueError
             _strategy(data["strategy"]["snapshot"], data["strategy"]["group_index"])
+            if data["format_version"] == 2:
+                from research_y.reviewed_master import validate_captured_union
+                validate_captured_union(data["reviewed_master"], counts)
         except (KeyError, TypeError, ValueError):
             raise ReportIntegrityError("Report identities, strategy or acceptance boundaries disagree") from None
 
@@ -152,11 +157,12 @@ class StrategyReport:
         return decode(self.payload_json)
 
 
-def _capture(db, project, run_id, captured_at):
+def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
     # This deliberately reuses the count implementation on the SAME handle.
     # Calling read_run_counts then opening another handle would mix snapshots.
     from research_y import result_counts
-    counts = result_counts._snapshot(db, project, run_id).as_dict()
+    projection = result_counts._snapshot(db, project, run_id)
+    counts = projection.as_dict()
     run = db.execute("SELECT run_id,strategy_version_id,created_at_utc,status,completed_at_utc "
                      "FROM search_runs WHERE run_id=?", (run_id,)).fetchone()
     if run is None:
@@ -211,6 +217,14 @@ def _capture(db, project, run_id, captured_at):
                 warnings=sorted(set(counts["warnings"]) | {"not_a_historical_run_reconstruction",
                     "licensed_record_text_not_exported", "methodology_review_not_established",
                     "source_query_translation_details_not_in_this_workbook"}))
+    if reviewed_revision is not None:
+        from research_y.reviewed_master import retained_union
+        if reviewed_revision != projection.revision:
+            raise ReportIntegrityError("Retained results changed after review")
+        reviewed = retained_union(db, projection, include_rows=True)
+        if reviewed is None:
+            raise ReportIntegrityError("The retained publication union is unresolved")
+        data.update(format_version=2, method=REVIEWED_REPORT_METHOD, reviewed_master=reviewed)
     return StrategyReport(canonical(data))
 
 

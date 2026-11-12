@@ -3948,7 +3948,7 @@ class RealProjectFlow:
         # the journal has again shown no receipt for that UUID.
         self._publish()
 
-    def prepare(self, filename=None):
+    def prepare(self, filename=None, *, reviewed_master=False):
         with self._guard:
             self._require_open()
             if self.selected_run_id is None:
@@ -3972,8 +3972,20 @@ class RealProjectFlow:
                 raise ProjectFlowError('run_coordination_reconciliation_required')
             self._reconcile_pending_before_destination()
             directory = self._export_directory()
+            revision = None
+            if reviewed_master:
+                board = self._run_execution_board
+                if (not board or board['run_id'] != self.selected_run_id or not board.get('reviewed_retained_master')):
+                    raise ProjectFlowError('reviewed_master_unavailable')
+                revision = board['source_count_revision']
             if filename is None:
-                filename = 'strategy-summary-' + self.selected_run_id + '.xlsx'
+                prefix = 'reviewed-master-' if reviewed_master else 'strategy-summary-'
+                filename = prefix + self.selected_run_id + '.xlsx'
+            if self.selected_export_id is not None and self.retained_export_report is not None:
+                previous_reviewed = self.retained_export_report.get('format_version') == 2
+                if previous_reviewed != reviewed_master:
+                    self.selected_export_id = None
+                    self.retained_export_report = None
             if self.selected_export_id is None:
                 if self._pending_export_id is None:
                     if any(row['run_id'] == self.selected_run_id and row['filename'] == filename
@@ -3989,6 +4001,8 @@ class RealProjectFlow:
             try:
                 identity_args = ({} if directory is None else
                                  {'expected_directory_identity': self._external_confirmed_identity})
+                if revision is not None:
+                    identity_args['reviewed_master_revision'] = revision
                 result = self._operation('prepare_export', run_id=self.selected_run_id,
                                          export_id=export_id, output_name=filename,
                                          directory=directory, **identity_args)

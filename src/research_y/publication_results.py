@@ -177,6 +177,8 @@ def _page_from_checked(db, project, run_id, counts, after_publication_id):
     groups = {g["group_id"]: g["label"] for g in counts.groups}
     rows = [_summary(identity._snapshot(db, pub_id), run_id, groups)
             for pub_id in page_ids]
+    from research_y.reviewed_master import retained_union
+    reviewed = retained_union(db, counts)
     return dict(
         method=METHOD, project_id=str(project.identifier), run_id=run_id,
         revision=counts.revision, rows=rows, page_size=PAGE_SIZE,
@@ -186,6 +188,7 @@ def _page_from_checked(db, project, run_id, counts, after_publication_id):
         provisional_publication_identities=counts.totals["global_publication_identities"],
         unmaterialised_source_records=counts.totals["unmaterialised_retrievals"],
         retrieved_source_records=counts.totals["metadata_source_records"],
+        reviewed_retained_unique_publications=None if reviewed is None else reviewed["retained_unique_publications"],
         global_unique_publications=None, deduplication_complete=False,
         source_retrieval_verified=False, verified_complete=False,
         no_network_requests=True,

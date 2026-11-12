@@ -11,6 +11,7 @@ import sqlite3
 
 from research_y.application_inspection import _read, ApplicationInspectionError
 from research_y import result_counts
+from research_y.reviewed_master import retained_union
 from research_y.preflight_review import _matched_query_plan, PreflightError
 from research_y.pubmed_checkpoint_store import _snapshot_from_db, CheckpointIntegrityError
 from research_y.pubmed_metadata_store import iter_retained_efetch_records
@@ -237,6 +238,13 @@ def read_run_execution_board(project, run_id: str) -> dict:
             all_metadata = all_enumerated and all(q["source_stage"] in (
                 "pubmed_no_identifiers", "pubmed_metadata_acquired",
                 "wos_enumeration_reconciled_with_warnings") for q in output)
+            reviewed = retained_union(db, projection)
+            reviewed_run_total = None
+            reconciled = all_metadata and projection.stored_run_status not in ("cancelled", "failed")
+            if reconciled and reviewed is not None:
+                reviewed_run_total = reviewed["retained_unique_publications"]
+            elif reconciled and projection.totals["source_record_sum"] == projection.totals["metadata_source_records"] == 0:
+                reviewed_run_total = 0
             revision = _hash([METHOD, projection.revision, plan_sha, output, group_rows, totals])
             return dict(
                 method=METHOD, project_id=str(project.identifier), run_id=run_id,
@@ -249,6 +257,8 @@ def read_run_execution_board(project, run_id: str) -> dict:
                 approved_query_inventory_matches=plan_sha is not None,
                 primary_source_enumerations_reconciled=all_enumerated,
                 available_primary_metadata_acquired=all_metadata,
+                reviewed_retained_master=reviewed,
+                reconciled_primary_run_unique_publications=reviewed_run_total,
                 global_unique_publications=None,
                 deduplication_complete=False, source_retrieval_verified=False,
                 whole_search_verified=False, verified_complete=False,

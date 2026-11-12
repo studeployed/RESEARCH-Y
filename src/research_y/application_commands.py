@@ -240,6 +240,7 @@ class ApplicationCommand:
     manifest_revision: str | None = None
     manifest_actor: str | None = None
     manifest_confirmed: bool | None = None
+    reviewed_master_revision: str | None = None
 
     def __post_init__(self):
         try:
@@ -255,6 +256,11 @@ class ApplicationCommand:
                 _uuid(self.run_id)
             if self.export_id is not None:
                 _uuid(self.export_id)
+            if self.reviewed_master_revision is not None and (
+                    self.operation != 'prepare_export' or type(self.reviewed_master_revision) is not str
+                    or len(self.reviewed_master_revision) != 64
+                    or any(ch not in '0123456789abcdef' for ch in self.reviewed_master_revision)):
+                raise ValueError
             if self.candidate_cross_run is not None and (
                     self.candidate_cross_run is not True or
                     self.operation not in ('candidate_review_preview', 'candidate_review_decide')):
@@ -1288,6 +1294,8 @@ def execute_command(command: ApplicationCommand) -> dict:
         elif command.operation == 'prepare_export':
             identity_args = ({} if command.expected_directory_identity is None else
                              {'expected_directory_identity': command.expected_directory_identity})
+            if command.reviewed_master_revision is not None:
+                identity_args['reviewed_revision'] = command.reviewed_master_revision
             result = exports.prepare_workbook_export(project, command.run_id, command.output_name,
                        export_id=command.export_id, directory=command.directory, **identity_args)
         elif command.operation == 'resume_export':
