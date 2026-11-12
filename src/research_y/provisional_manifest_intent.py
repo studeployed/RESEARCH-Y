@@ -205,6 +205,18 @@ def _view(receipt, *, current_revision_matches: bool) -> dict:
     )
 
 
+def validate_manifest_request(run_id, output_name, *, export_id, expected_revision,
+                              actor, confirmed) -> None:
+    """Check consent request fields without opening a project or recording an intent."""
+    _uuid(export_id)
+    _uuid(run_id)
+    _revision(expected_revision)
+    _output(output_name)
+    _actor(actor)
+    if confirmed is not True:
+        raise ManifestIntentError("confirmation_required")
+
+
 def prepare_manifest_intent(project, run_id: str, output_name: str, *,
                             export_id: str, expected_revision: str,
                             actor: str, confirmed: bool) -> dict:
@@ -214,13 +226,8 @@ def prepare_manifest_intent(project, run_id: str, output_name: str, *,
     changed or stale evidence never becomes a new approval by implicit replay.
     Existing published strategy/count export semantics are untouched.
     """
-    _uuid(export_id)
-    _uuid(run_id)
-    _revision(expected_revision)
-    _output(output_name)
-    _actor(actor)
-    if confirmed is not True:
-        raise ManifestIntentError("confirmation_required")
+    validate_manifest_request(run_id, output_name, export_id=export_id,
+                              expected_revision=expected_revision, actor=actor, confirmed=confirmed)
     # Approval is not authorisation to migrate a legacy project. Refuse
     # unmigrated/stale stores via the original read-only version gate before
     # entering the journal writer. Read failures are evidence failures, not

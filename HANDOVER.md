@@ -1,6 +1,15 @@
 # RESEARCH-Y handover
 
-## Current work — P1-06l6, issue #39
+## Current work — P1-06l8, issue #102
+
+PR #100 merged at `c5a6f1c` and PR #101 at `d018726`. Issue #102 extends the trusted worker with
+whole-run preview, explicit researcher consent and consent-receipt inspection.
+Use the selected revision and retain the export UUID across retries. Check the
+issue's PR for CI and commit-specific review evidence. The next application
+step is to present the preview and confirmation through a trusted host control.
+See `docs/APPLICATION_WORKER.md` for the command arguments and receipt states.
+
+## P1-06l6, issue #39
 
 PR #99 merged at `2ab1d0c2809b63ff737e1bdaeb055cf13c21cb07`.
 The next recovery increment exercises six abrupt process exits during provisional

@@ -15,6 +15,11 @@ one provisional workbook by export ID using the publication service merged in
 PR #99. Recovery, new publication and graphical controls are separate steps.
 See `docs/APPLICATION_WORKER.md` and `docs/application-worker-traceability.csv`.
 
+**P1-06l8 (issue #102):** preview, explicitly confirm and inspect a provisional
+workbook consent receipt through the trusted worker. The original backend
+revalidates the selected run before writing the receipt. See the same worker
+contract and test mapping for exact retry and stale-revision behaviour.
+
 - **P1-01:** Create/open/relocate project with safe versioned index and SQLite transactional metadata. Merged PR #10 (24 October 2026); 44 tests passed on Windows/Linux Python 3.12/3.13, 95% coverage at merge. AT-01/02 remain partial.
 - **P1-02:** Versioned research storage and migrations. P1-02a merged PR #12 (schema v2 and recoverable migration); P1-02b merged PR #13 (approved snapshots, pending runs and exact query plans). Historical pre-merge 74 tests/93% coverage. Post-merge allocation issue #14 resolved. Advanced provenance and multi-writer controls remain separate.
 - **P1-03:** Broad OR-only strategy/source compilation. P1-03a merged PR #15; PubMed All Fields and Web of Science Starter Topic compiler. P1-03b merged PR #17; count/translation probe. Generic live PubMed and Starter queries are accepted; broader phrase/OR cases and PRESS/pre-run interface remain partial.
