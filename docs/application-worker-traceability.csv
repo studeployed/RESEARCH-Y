@@ -6,6 +6,9 @@ PROJ-04,delegation to existing transactional export services,test_application_wo
 UI-05,ephemeral operation state distinct from durable source states,test_application_worker.py,partial no monitor screen
 UI-10,allowlisted export prepare resume observe cancel and report commands,test_application_worker_integration.py,partial no export centre screen
 AUDIT-01,inspect_manifest_publication worker command delegates to immutable receipt and artifact inspection,test_application_worker_integration.py::test_worker_inspects_manifest_without_resuming_or_repairing,partial inspection of one known provisional export
+AUDIT-01,prepare and inspect exact revision-fenced consent through the worker,test_application_worker_integration.py::test_worker_manifest_consent_replay_reopen_and_stale_revision,partial trusted host flow
+EXPORT-03,preview selected whole run and require the displayed revision for confirmation,test_application_worker_integration.py::test_worker_manifest_consent_replay_reopen_and_stale_revision,partial provisional workbook only
+UI-10,worker validates explicit researcher confirmation and rejects unrelated fields,test_application_worker_integration.py::test_worker_manifest_consent_rejects_invalid_or_unrelated_fields,partial graphical confirmation pending
 UI-10,inspect interrupted and published provisional workbooks through the supervised worker,test_application_commands.py::test_only_named_service_called_identity_arguments_unchanged and test_application_worker_integration.py::test_manifest_inspection_rejects_unrelated_fields,partial trusted host command only
 COUNT-05,domain completeness unchanged by returned worker results,test_application_worker_integration.py,partial source acceptance remains open
 EXPORT-03,whole-run service reused without view filtering,test_application_commands.py,partial existing strategy workbook only

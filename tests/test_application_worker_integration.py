@@ -215,6 +215,58 @@ def test_unknown_run_and_failed_preparation_no_new_request(application):
     assert not list((p.root/'exports').iterdir())
 
 
+def test_worker_manifest_consent_replay_reopen_and_stale_revision(application):
+    project, run_id, query_id = application
+    export_id = str(uuid4())
+    database = project.database_path.read_bytes()
+    with worker.ApplicationWorker() as pool:
+        offer = run(pool, cmd(project, "preview_manifest_intent", run_id=run_id)).result()
+        assert offer["state"] == "INCOMPLETE"
+        assert offer["selected_run_original_sources"] == 0
+        assert offer["global_unique_publications"] is None
+        assert project.database_path.read_bytes() == database
+        confirm = cmd(project, "prepare_manifest_intent", run_id=run_id, export_id=export_id,
+                      output_name="offer.xlsx", manifest_actor="Fixture", manifest_confirmed=True,
+                      manifest_revision=offer["original_revision"])
+        saved = run(pool, confirm).result()
+        assert saved["state"] == "consent_current"
+        assert saved["explicit_confirmation_recorded"] is True
+        assert "workbook_published" not in saved
+    reopened = open_project(project.root)
+    with worker.ApplicationWorker() as pool:
+        inspect = cmd(reopened, "inspect_manifest_intent", export_id=export_id)
+        assert run(pool, inspect).result() == saved
+        assert run(pool, confirm).result() == saved
+        assert run(pool, replace(confirm, output_name="another.xlsx")).error == "intent_conflict"
+        with closing(sqlite3.connect(reopened.database_path)) as db, db:
+            db.execute("UPDATE source_queries SET status='failed' WHERE query_id=?", (query_id,))
+        assert run(pool, replace(confirm, export_id=str(uuid4()))).error == "stale_original_revision"
+        stale = run(pool, inspect).result()
+        assert stale["state"] == "stale_reapproval_required"
+        assert stale["audit_event_id"] == saved["audit_event_id"]
+        assert run(pool, confirm).result() == stale
+    with closing(sqlite3.connect(reopened.database_path)) as db:
+        assert db.execute("SELECT COUNT(*) FROM audit_events WHERE event_type GLOB ?",
+                          ("provisional_manifest_intent_v1:*",)).fetchone() == (1,)
+    assert not list((reopened.root / "exports").iterdir())
+
+
+@pytest.mark.parametrize("change", [
+    {"manifest_confirmed": False}, {"manifest_confirmed": 1}, {"manifest_confirmed": None},
+    {"manifest_actor": ""}, {"manifest_revision": "invalid"}, {"output_name": "../escape.xlsx"},
+    {"directory": str(Path.cwd())}, {"pilot_api_key": "synthetic"}, {"operation": "prepare_export"},
+])
+def test_worker_manifest_consent_rejects_invalid_or_unrelated_fields(application, change):
+    from research_y.application_commands import ApplicationCommandError
+
+    project, run_id, _ = application
+    valid = cmd(project, "prepare_manifest_intent", run_id=run_id, export_id=str(uuid4()),
+                output_name="offer.xlsx", manifest_actor="Fixture", manifest_revision="a"*64,
+                manifest_confirmed=True)
+    with pytest.raises(ApplicationCommandError, match="invalid_command"):
+        replace(valid, **change)
+
+
 def test_worker_inspects_manifest_without_resuming_or_repairing(application):
     from research_y import provisional_manifest_publication as publication
     from research_y.provisional_manifest_intent import preview_manifest_intent, prepare_manifest_intent
@@ -243,6 +295,9 @@ def test_worker_inspects_manifest_without_resuming_or_repairing(application):
         published = publication.resume_manifest_publication(project, export_id)
         assert published["state"] == "published_verified"
         assert run(pool, command).result() == published
+        consent = run(pool, cmd(project, "inspect_manifest_intent", export_id=export_id)).result()
+        assert consent["state"] == "consent_current"
+        assert "workbook_published" not in consent
         destination.unlink()
         failed = run(pool, command)
         assert (failed.state, failed.error, failed.result()) == (

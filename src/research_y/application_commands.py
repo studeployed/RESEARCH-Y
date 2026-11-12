@@ -25,6 +25,7 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                         'candidate_pair_advance',
                         'prepare_export', 'resume_export', 'cancel_export',
                         'observe_export', 'inspect_manifest_publication',
+                        'preview_manifest_intent', 'prepare_manifest_intent', 'inspect_manifest_intent',
                         'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
@@ -37,6 +38,8 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                          'pubmed_identifier_pause', 'pubmed_metadata_read',
                          'pubmed_metadata_preview', 'pubmed_metadata_run'})
 SERVICE_ERRORS = frozenset({'candidate_pair_unavailable',
+    'invalid_request', 'confirmation_required', 'stale_original_revision', 'intent_conflict',
+    'intent_not_found', 'invalid_intent_receipt', 'source_evidence_unavailable', 'journal_unavailable',
     'publication_invalid', 'publication_not_staged', 'publication_receipt_invalid',
     'publication_staging_changed', 'publication_destination_conflict',
     'publication_artifact_changed',
@@ -227,6 +230,9 @@ class ApplicationCommand:
     candidate_pair_generation: str | None = None
     candidate_pair_actor: str | None = None
     candidate_pair_confirmed: bool | None = None
+    manifest_revision: str | None = None
+    manifest_actor: str | None = None
+    manifest_confirmed: bool | None = None
 
     def __post_init__(self):
         try:
@@ -242,6 +248,9 @@ class ApplicationCommand:
                 _uuid(self.run_id)
             if self.export_id is not None:
                 _uuid(self.export_id)
+            if self.operation != 'prepare_manifest_intent' and any(value is not None for value in
+                    (self.manifest_revision, self.manifest_actor, self.manifest_confirmed)):
+                raise ValueError
             if self.directory is not None:
                 _path(self.directory)
             if self.expected_directory_identity is not None:
@@ -747,11 +756,18 @@ class ApplicationCommand:
                 pass  # Validated above; no provider request or export authority.
             elif self.operation in ('run_coord_preview','run_coord_run'):
                 pass  # Validated above; not an export operation.
-            elif self.operation == 'run_board':
+            elif self.operation in ('run_board', 'preview_manifest_intent'):
                 if (self.run_id is None or any(v is not None for v in
                         (self.export_id, self.output_name, self.directory,
                          self.expected_directory_identity))):
                     raise ValueError
+            elif self.operation == 'prepare_manifest_intent':
+                from research_y.provisional_manifest_intent import validate_manifest_request
+                if self.directory is not None:
+                    raise ValueError
+                validate_manifest_request(self.run_id, self.output_name, export_id=self.export_id,
+                    expected_revision=self.manifest_revision, actor=self.manifest_actor,
+                    confirmed=self.manifest_confirmed)
             elif self.operation == 'inspect':
                 if any(v is not None for v in (self.export_id, self.output_name, self.directory)):
                     raise ValueError
@@ -765,7 +781,8 @@ class ApplicationCommand:
                     filename(self.output_name, workbook=True)
                 elif self.run_id is not None or self.output_name is not None:
                     raise ValueError
-                if self.operation in ('export_report', 'inspect_manifest_publication') and self.directory is not None:
+                if self.operation in ('export_report', 'inspect_manifest_publication',
+                                      'inspect_manifest_intent') and self.directory is not None:
                     raise ValueError
             if self.operation not in pair_ops and any(
                     v is not None for v in pair_fields):
@@ -1205,6 +1222,29 @@ def execute_command(command: ApplicationCommand) -> dict:
             except (ValueError, TypeError):
                 raise ApplicationCommandError('strategy_invalid') from None
             return dict(asdict(result), source_retrieval_verified=False)
+        if command.operation in ('preview_manifest_intent', 'prepare_manifest_intent', 'inspect_manifest_intent'):
+            from research_y import provisional_manifest_intent as consent
+            try:
+                if command.operation == 'preview_manifest_intent':
+                    return consent.preview_manifest_intent(project, command.run_id)
+                if command.operation == 'prepare_manifest_intent':
+                    receipt = consent.prepare_manifest_intent(
+                        project, command.run_id, command.output_name, export_id=command.export_id,
+                        expected_revision=command.manifest_revision, actor=command.manifest_actor,
+                        confirmed=command.manifest_confirmed)
+                else:
+                    receipt = consent.inspect_manifest_intent(project, command.export_id)
+                result = {key: receipt[key] for key in (
+                    'method', 'run_id', 'export_id', 'output_name', 'approved_original_revision',
+                    'audit_event_id', 'current_revision_matches', 'explicit_confirmation_recorded',
+                    'source_records', 'provisional_identities', 'unmaterialised_originals',
+                    'source_retrieval_verified', 'deduplication_complete', 'verified_complete',
+                    'global_unique_publications')}
+                result['state'] = ('consent_current' if receipt['current_revision_matches']
+                                   else 'stale_reapproval_required')
+                return result
+            except consent.ManifestIntentError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation == 'inspect_manifest_publication':
             from research_y import provisional_manifest_publication as publication
             try:

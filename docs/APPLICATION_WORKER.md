@@ -24,7 +24,24 @@ recovery. The host must keep the artifact verification flags separate from
 source retrieval and scientific completeness. See
 `PROVISIONAL_MANIFEST_PUBLICATION.md` for the full state contract.
 
-### Worker lifecycle
+### Preview and record workbook consent (issue #102)
+
+The trusted host can submit `preview_manifest_intent` with the selected run UUID.
+In a confirmation interface, show the returned original revision, denominators
+and incomplete status before asking the researcher to confirm a project-local workbook name.
+`prepare_manifest_intent` takes the same run, the host's stable export UUID,
+`output_name`, the displayed `manifest_revision`, `manifest_actor` and
+an explicit boolean `manifest_confirmed=True`. The existing consent service
+rechecks the revision inside its writer transaction. Keep the UUID on retry.
+
+After reopening, `inspect_manifest_intent` takes just the export UUID. Its
+receipt and an exact preparation replay report either `consent_current` or
+`stale_reapproval_required`. These states describe researcher consent.
+For a staged artifact, use `inspect_manifest_publication` to determine its
+file and publication status. All three consent commands leave the export
+directory untouched. The graphical confirmation control remains future work.
+
+### Worker lifecycle and project identity
 
 `ApplicationCommand.for_project` accepts an already-opened project from trusted
 host code. Only inspection, retained-report reading, export preparation, resume,
