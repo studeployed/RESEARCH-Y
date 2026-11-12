@@ -1191,3 +1191,84 @@ def test_manifest_stage_commit_window_rejects_source_change_after_render(fixture
             "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
             ("provisional_manifest_stage_v1:" + export_id,)
         ).fetchone()[0] == 0
+
+
+def test_manifest_stage_recovery_normalises_changed_workbook_and_zip_clock(fixture, monkeypatch):
+    """A later-day retry has the EXACT immutable staged digest, not a new ZIP.
+
+    Drive two deliberately distinct, readable generated XLSX packages whose
+    OpenPyXL core XML and ZIP entry timestamps differ, without sleeping or
+    depending on runner wall-clock speed. Only the approved original consent
+    time may determine the persisted archive's normalized metadata.
+    """
+    from io import BytesIO
+    from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
+    from xml.etree import ElementTree as ET
+    from openpyxl import load_workbook
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent)
+    from research_y import provisional_manifest_stage as stage
+
+    project, run, _, _ = fixture
+    record = insert(fixture, number=23007)
+    identity.materialise_retrieval(project, record, actor="Fixture")
+    preview = preview_manifest_intent(project, run)
+    export_id = uid()
+    prepare_manifest_intent(
+        project, run, "time-safe.xlsx", export_id=export_id,
+        expected_revision=preview["original_revision"],
+        actor="Researcher", confirmed=True)
+    with stage.result_counts._read_connection(project) as db:
+        approval = stage._intent(db, project, export_id)
+
+    original_render = stage.render_provisional_manifest
+    early = original_render(project, run)
+
+    def advanced_zip_and_core_clock(raw):
+        output = BytesIO()
+        with ZipFile(BytesIO(raw)) as source, ZipFile(
+                output, "w", compression=ZIP_DEFLATED) as target:
+            for member in source.infolist():
+                data = source.read(member)
+                if member.filename == "docProps/core.xml":
+                    root = ET.fromstring(data)
+                    for field in ("created", "modified"):
+                        node = root.find("{" + stage._CORE_NS + "}" + field)
+                        assert node is not None
+                        node.text = "2048-11-12T21:45:06Z"
+                    data = ET.tostring(root, encoding="utf-8",
+                                       xml_declaration=True)
+                altered = ZipInfo(member.filename, (2048, 11, 12, 21, 45, 6))
+                altered.compress_type = ZIP_DEFLATED
+                target.writestr(altered, data)
+        return output.getvalue()
+
+    late = advanced_zip_and_core_clock(early)
+    assert late != early
+    assert stage._stable_package(early, approval) == (
+        stage._stable_package(late, approval))
+    # Create one durable staging receipt but interrupt before file creation.
+    immutable = stage._stable_package(early, approval)
+    _, pending = stage._writer(project, export_id, content=immutable)
+    assert pending["phase"] == "staging"
+    assert stage.inspect_manifest_stage(project, export_id)["state"] == (
+        "staging_interrupted")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(stage, "render_provisional_manifest",
+                      lambda *_: advanced_zip_and_core_clock(
+                          original_render(project, run)))
+        resumed = stage.resume_manifest_stage(project, export_id)
+    assert resumed["state"] == "staged"
+    assert resumed["staged_artifact_sha256"] == sha256(immutable).hexdigest()
+    retained = list((project.root / "exports" / stage.STORE).glob("*.xlsx"))
+    assert len(retained) == 1
+    assert retained[0].read_bytes() == immutable
+    workbook = load_workbook(BytesIO(immutable), read_only=True)
+    try:
+        assert workbook.sheetnames == [
+            "Evidence & Limits", "Provisional Identities",
+            "Original Source Links", "Query Memberships"]
+    finally:
+        workbook.close()
+    assert not (project.root / "exports" / "time-safe.xlsx").exists()
