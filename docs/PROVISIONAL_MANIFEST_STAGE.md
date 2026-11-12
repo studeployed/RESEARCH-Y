@@ -19,6 +19,36 @@ A new internal backend module, `src/research_y/provisional_manifest_stage.py`, i
 
 The existing audited strategy/count workbook publisher, its journal, native output-path guards, application command allowlist, graphical interface and approved publication model remain unchanged. No new dependencies, schema migration, provider network requests or automatic source identity merges are introduced. The existing 128 MiB artifact bound applies; file/SQL commits are not asserted atomic, and the stage receipt makes the crash gap inspectable.
 
+## Reproducible XLSX bytes across recovery time
+
+The initial Codex code review identified that unchanged original scientific
+records are not enough to reproduce **the exact workbook byte SHA-256**:
+OpenPyXL's default workbook core properties and its ZIP entry timestamps can
+depend on the current clock. An interrupted staging receipt cannot be recovered
+against its original checksum unless these non-scientific bytes are stable.
+
+Before the staging checksum is committed, the internal stage service now
+repackages only the newly generated, never externally provided XLSX archive.
+It sets the core XML `created` and `modified` fields to the **original,
+immutable researcher authorisation time** and sets every ZIP entry timestamp
+to a fixed conventional ZIP epoch (1 January 1980). It enforces unique,
+non-directory, non-traversing paths and preserves the workbook's sheet/data
+XML contents, row order, original source revision, rights exclusions, and
+`INCOMPLETE/UNKNOWN` labels. It uses only the Python standard library
+`zipfile` and `ElementTree`; no new dependencies or local extraction occur.
+The same original revision and approval reproduce identical package bytes on
+later retries under this pinned renderer/compression environment.
+
+A dedicated test changes **both the OpenPyXL core XML timestamps and every
+ZIP entry timestamp** to a simulated later day without relying on wall-clock
+sleep, proves byte-identical normalized output, then exercises the real
+crash-after-receipt-before-file recovery path and opens the stored workbook
+to verify it remains valid. If a different runtime/compression environment
+still cannot reproduce the exact original SHA-256, recovery refuses safely,
+preserves the original receipt and requires explicit new authorisation;
+it never silently accepts a different artifact. Workbook file timestamps
+must not be presented as original search execution times.
+
 ## Tests and acceptance limits
 
 Real versioned SQLite and actual Excel fixture regressions require:
