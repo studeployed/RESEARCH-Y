@@ -1381,8 +1381,6 @@ def test_manifest_publication_requires_stage_then_reopened_audited_success(fixtu
         approved, stage_receipt, published, _ = _publication_receipts(
             publication, project, export_id)
         assert exports.same_file(published["copy_name"], visible.name) is True
-        with publication.stage.stage._store(project):
-            pass
     raw = visible.read_bytes()
     assert sha256(raw).hexdigest() == stage_receipt["artifact"]["sha256"]
     with ZipFile(BytesIO(raw)) as archive:
@@ -1554,8 +1552,7 @@ def test_manifest_publication_stale_source_and_stale_historical_display(fixture)
     assert not (project.root / "exports" / "stale-before.xlsx").exists()
     # A previously published original snapshot remains demonstrably historical
     # if the source evolves afterward, not silently made current or complete.
-    other, run2, _, queries2 = fixture
-    # Restore source state in the same disposable fixture only to exercise a
+# Restore source state in the same disposable fixture only to exercise a
     # separate valid approval and the historical inspection transition.
     with closing(sqlite3.connect(project.database_path)) as db, db:
         db.execute(
