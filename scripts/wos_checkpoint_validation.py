@@ -71,7 +71,7 @@ def evidence(project, query_id, stage):
     return result
 
 
-def start(workspace: Path, client: WoSStarterClient, *, now=lambda:datetime.now(timezone.utc)):
+def create_diagnostic_checkpoint(workspace: Path):
     workspace.mkdir(parents=True, mode=0o700, exist_ok=False)
     project = create_project(workspace, 'Controlled Starter validation', directory_name=PROJECT)
     version = approve_strategy(project, theme='Fixed public ECMO diagnostic',
@@ -80,6 +80,11 @@ def start(workspace: Path, client: WoSStarterClient, *, now=lambda:datetime.now(
     run = create_search_run(project, version.strategy_version_id)
     query = plan_source_query(project, run_id=run.run_id, group_id='g1', source_name='wos', exact_query=QUERY)
     create_wos_checkpoint(project, query.query_id, retention_authorized=True)
+    return project, query
+
+
+def start(workspace: Path, client: WoSStarterClient, *, now=lambda:datetime.now(timezone.utc)):
+    project, query = create_diagnostic_checkpoint(workspace)
     run_wos_checkpoint(project, query.query_id, client, max_requests=1, now=now)
     result = evidence(project, query.query_id, 'start')
     good = (result['status']=='paused' and result['pages_committed']==1
