@@ -1,0 +1,14 @@
+requirement,implementation,evidence limitation
+EXPORT-01,src/research_y/provisional_manifest_intent.py,Partial: explicitly approved intent for a provisional source-only workbook; no primary Master Results export
+EXPORT-03,tests/test_publication_results.py,Partial: exact whole named run/revision is checked; no subset export or final master list
+EXPORT-04,src/research_y/provisional_manifest_intent.py,Partial: existing safe xlsx filename and destination collision checks; no file staged or published
+AUDIT-01,tests/test_publication_results.py,Partial: exactly one durable source-free append-only preparation receipt with integrity and replay checks
+COUNT-01,src/research_y/provisional_manifest_intent.py,Partial: original source and provisional identity denominators preserve UNKNOWN verified unique publication count
+COUNT-05,src/research_y/provisional_manifest_intent.py,Partial: incomplete status cannot become verified complete due to preparation
+SEC-03,tests/test_publication_results.py,Partial: no restricted titles/abstracts/provider metadata in recorded receipt; full licensing policy outstanding
+SEC-04,tests/test_publication_results.py,Partial: project exports directory and existing safe filename checks; no arbitrary path or publication
+AT-10,tests/test_publication_results.py,Partial: source/membership and confirmed links remain original audited identities; final dedup acceptance outstanding
+AT-18,docs/PROVISIONAL_MANIFEST_INTENT.md,Not accepted: durable approval only; no audited published Excel workbook yet
+AT-19,tests/test_publication_results.py,Partial: revision-stale replay refuses implicit approval; incomplete source states unchanged
+AT-21,tests/test_publication_results.py,Partial: original immutable audit and corrupted-receipt refusal tested; full security acceptance outstanding
+AT-22,docs/PROVISIONAL_MANIFEST_INTENT.md,Not accepted: 100k bench was for renderer not staged/recoverable user export
