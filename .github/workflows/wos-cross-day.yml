@@ -1,0 +1,59 @@
+name: Bounded Starter cross-day sample (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_local_retention:
+        description: 'I authorize up to four Starter requests and temporary retention of up to 150 source records on this runner.'
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: research-y-wos-starter-live
+  cancel-in-progress: false
+jobs:
+  cross-day:
+    if: ${{ inputs.confirm_local_retention }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -e .
+      - name: Check there is time to acquire before midnight and reopen on the same runner
+        shell: python
+        run: |
+          from datetime import datetime, timezone
+          now = datetime.now(timezone.utc)
+          if not (now.hour == 23 and 45 <= now.minute <= 58):
+              raise SystemExit("Start the sample between 23:45 and 23:58 UTC. No provider requests made.")
+      - name: Acquire up to two pages and pause
+        env:
+          RESEARCHY_WOS_STARTER_API_KEY: ${{ secrets.RESEARCHY_WOS_STARTER_API_KEY }}
+          RESEARCHY_WOS_RETENTION_AUTHORIZED: 'true'
+        run: python -m scripts.wos_cross_day_validation start --workspace "$RUNNER_TEMP/ry-cross-day"
+      - name: Wait until the following UTC date
+        shell: python
+        run: |
+          from datetime import datetime, time, timedelta, timezone
+          import time as clock
+          now = datetime.now(timezone.utc)
+          if now.hour == 23:
+              midnight = datetime.combine(now.date() + timedelta(days=1), time(), timezone.utc)
+              clock.sleep((midnight - now).total_seconds() + 5)
+      - name: Reopen and check the next acquisition page
+        env:
+          RESEARCHY_WOS_STARTER_API_KEY: ${{ secrets.RESEARCHY_WOS_STARTER_API_KEY }}
+          RESEARCHY_WOS_RETENTION_AUTHORIZED: 'true'
+        run: python -m scripts.wos_cross_day_validation resume --workspace "$RUNNER_TEMP/ry-cross-day"
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: starter-cross-day-${{ github.run_id }}
+          path: ${{ runner.temp }}/ry-cross-day/cross-day-evidence.json
+          retention-days: 14
+          if-no-files-found: error
