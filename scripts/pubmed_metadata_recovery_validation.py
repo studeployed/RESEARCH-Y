@@ -33,6 +33,7 @@ class SampleClient(PubMedESearchProbeClient):
         super().__init__(**kwargs)
         self.requests = 0
         self.stage = stage
+        self.observations = []
         self.queries = {group: "(" + " OR ".join(f'"{term}"[All Fields]' for term in terms) + ")"
                         for group, terms in GROUPS.items()}
 
@@ -47,6 +48,11 @@ class SampleClient(PubMedESearchProbeClient):
 
     def probe(self, exact_query, **kwargs):
         result = super().probe(exact_query, **kwargs)
+        self.observations.append(dict(group=next(key for key, query in self.queries.items() if query == exact_query),
+                                      reported_matches=result.reported_matches,
+                                      translation_matches=result.translation_matches_submitted,
+                                      review_required=result.review_required, warnings=len(result.warnings),
+                                      translation_sha256=sha256(result.accepted_translation.encode()).hexdigest()))
         if exact_query == self.queries["reporting"] and not 2 <= result.reported_matches <= MAX_BATCH_IDS:
             raise ValueError("metadata_query_outside_sample_size")
         return result
@@ -142,11 +148,18 @@ def main(argv=None):
     if not email or os.environ.get("RESEARCHY_PUBMED_SAMPLE_AUTHORIZED") != "true":
         print("Manual sample authorization and private NCBI contact configuration required.", file=sys.stderr)
         return 2
+    client = None
     try:
         client = SampleClient(args.stage, email=email, api_key=os.environ.get("RESEARCHY_NCBI_API_KEY") or None)
         (start if args.stage == "start" else resume)(args.workspace, client, SampleEFetch(client))
-    except Exception:
-        print("Source acceptance incomplete. Sample did not pass.", file=sys.stderr)
+    except Exception as error:
+        safe_reasons = {"request_outside_sample", "metadata_query_outside_sample_size",
+                        "metadata_request_outside_sample", "compiler_output_changed", "phrase_translation_unverified",
+                        "identifiers_unverified", "metadata_pause_unverified", "wrong_project", "first_batch_changed",
+                        "source_recount_failed", "metadata_resume_unverified"}
+        print(json.dumps(dict(stage=args.stage, passed=False,
+                              reason=str(error) if str(error) in safe_reasons else "sample_unavailable",
+                              observed_counts=client.observations if client else [])), file=sys.stderr)
         return 3
     print("Completed the authorized sample stage.")
     return 0
