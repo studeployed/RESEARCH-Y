@@ -44,7 +44,10 @@ def services(monkeypatch, tmp_path):
     inspection.observe_export_request=service('observe_export',Result())
     manifest=types.ModuleType('research_y.provisional_manifest_publication')
     manifest.ManifestPublicationError=Failure
+    manifest.SAVE_ERRORS=(Failure,)
     manifest.inspect_manifest_publication=service('inspect_manifest_publication',{})
+    manifest.save_consented_manifest=service('save_consented_manifest',{})
+    manifest.inspect_manifest_save=service('inspect_manifest_save',{})
     from research_y import provisional_manifest_intent as consent
     receipt = consent._view(dict(export_id=str(uuid4()), run_id=str(uuid4()), output_name="report.xlsx",
         run_revision="a"*64, source_records=0, provisional_identities=0, unmaterialised_sources=0,
@@ -397,6 +400,8 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     if operation=='prepare_manifest_intent':
         kw.update(run_id=str(uuid4()), output_name='report.xlsx', manifest_actor='Fixture',
                   manifest_revision='a'*64, manifest_confirmed=True)
+    if operation=='save_consented_manifest':
+        kw.update(run_id=str(uuid4()), manifest_revision='a'*64, manifest_confirmed=True)
     if operation in ('prepare_export','resume_export','cancel_export','observe_export'):
         kw['directory']=str(tmp_path/'chosen')
     cmd=commands.ApplicationCommand.for_project(project,operation,**kw)
@@ -408,13 +413,15 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     if operation == 'manifest_intent_history':
         assert calls[0][1] == (project, kw['run_id'])
         assert calls[0][2] == {"before_event_id": None}
+    if operation == 'save_consented_manifest':
+        assert calls[0][1] == (project, kw['run_id'], kw['export_id'], kw['manifest_revision'])
     if operation == 'prepare_manifest_intent':
         assert calls[0][1] == (project, kw['run_id'], kw['output_name'])
         assert calls[0][2] == dict(export_id=kw['export_id'], expected_revision='a'*64,
                                    actor='Fixture', confirmed=True)
     assert not result.get('source_retrieval_verified',False)
     if operation in ('resume_export','cancel_export','observe_export','export_report',
-                     'inspect_manifest_publication', 'inspect_manifest_intent'):
+                     'inspect_manifest_publication', 'inspect_manifest_intent', 'inspect_manifest_save'):
         assert calls[0][1][1]==kw['export_id']
     if operation=='prepare_export':
         assert calls[0][1][1:]==(kw['run_id'],'report.xlsx')

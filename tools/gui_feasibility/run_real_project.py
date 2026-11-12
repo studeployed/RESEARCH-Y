@@ -505,9 +505,11 @@ def transport_steps(port, token, scenario, run_id, export_id, *,
                   if key.lower() == 'set-cookie').split(';', 1)[0]
     auth = {'Origin': origin, 'Cookie': cookie}
     require(request(port, '/', headers=auth)[0] == 200, 'nicegui_page_missing')
-    if scenario in ('manifest_consent', 'manifest_reopen'):
+    if scenario in ('manifest_consent', 'manifest_reopen', 'manifest_publish'):
         steps = (['manifest_preview', 'manifest_confirm'] if scenario == 'manifest_consent'
                  else ['manifest_history', 'manifest_inspect'])
+        if scenario == 'manifest_publish':
+            steps += ['manifest_save', 'manifest_check_file']
         actions = ['open', 'select_run', *steps]
         for action in actions:
             status, _, payload = request_action(port, auth)
@@ -525,6 +527,9 @@ def transport_steps(port, token, scenario, run_id, export_id, *,
                 receipt = state['manifest_receipt']
                 require(receipt['run_id'] == run_id and receipt['state'] == 'consent_current'
                         and receipt['explicit_confirmation_recorded'] is True, 'consent_receipt_invalid')
+                if scenario == 'manifest_publish':
+                    require(state['manifest_save_result']['audited_publication_success'] is True and
+                            state['manifest_save_result']['verified_complete'] is False, 'manifest_file_unverified')
         require(request(port, '/_probe/stop', method='POST', headers=auth)[0] == 200,
                 'consent_stop_failed')
         return actions
@@ -700,14 +705,17 @@ def run_app(mode, scenario, project, parent, run_id, expected_export, *,
                 result['observed_worker_reaped'] = report.get('worker_reaped')
                 result['observed_supervisor_stopped'] = report.get('supervisor_stopped')
                 result['observed_outcome'] = report.get('observed_outcome')
-                if scenario in ('manifest_consent', 'manifest_reopen'):
+                if scenario in ('manifest_consent', 'manifest_reopen', 'manifest_publish'):
                     expected_steps = (['manifest_preview', 'manifest_confirm'] if scenario == 'manifest_consent'
                                       else ['manifest_history', 'manifest_inspect'])
+                    if scenario == 'manifest_publish':
+                        expected_steps += ['manifest_save', 'manifest_check_file']
                     require(report['status'] == 'finished' and report['error'] is None
                             and report['actions'] == ['open', 'select_run', *expected_steps]
                             and report['selected_run_matches'] is True and report['session_revoked'] is True
                             and report['worker_reaped'] is True and report['supervisor_stopped'] is True
                             and type(report['consent_event_id']) is int and report['consent_event_id'] > 0
+                            and report['manifest_file_verified'] is (scenario == 'manifest_publish')
                             and (mode == 'transport' or report.get('native_rendering_verified') is True),
                             'manifest_consent_gui_evidence_invalid')
                     result.update(passed=True, consent_event_id=report['consent_event_id'])
@@ -1145,6 +1153,15 @@ def run_scenario(mode):
         require(rows == [(results[-1]['consent_event_id'],)] and
                 results[-2]['consent_event_id'] == results[-1]['consent_event_id'] and
                 not list((consent_project.root / 'exports').iterdir()), 'manifest_reopen_changed_evidence')
+        saved = run_app(mode, 'manifest_publish', consent_project, consent_parent, consent_run, '')
+        results.append(saved)
+        if saved['passed']:
+            from openpyxl import load_workbook
+            final = consent_project.root / 'exports' / f'provenance-{consent_run}.xlsx'
+            with closing(load_workbook(final, read_only=True)) as workbook:
+                facts = dict(list(workbook['Evidence & Limits'].values)[3:])
+                require(facts['Report status'] == 'INCOMPLETE' and
+                        facts['Verified unique publications'] == 'UNKNOWN', 'manifest_workbook_invalid')
         return results
 
 
