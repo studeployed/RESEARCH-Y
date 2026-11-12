@@ -60,6 +60,9 @@ the interface polls its status. After reopening, select the saved consent and
 use **Check workbook and publication receipt** to distinguish an unfinished
 save, a current verified workbook, a historical revision or changed files.
 Retrying the same request preserves the no-overwrite and checksum checks.
+If another read arrives before the next interface poll, the host collects
+the terminal save outcome before using the shared worker again. A running
+save retains the worker until its outcome is available.
 
 ### Worker lifecycle and project identity
 

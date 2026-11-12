@@ -164,6 +164,34 @@ def test_save_selected_consent_and_inspect_published_file_after_restart(tmp_path
         assert not final.exists()
 
 
+@pytest.mark.parametrize("stale", [False, True])
+def test_read_before_next_gui_poll_preserves_finished_save(tmp_path, stale):
+    project, run_id = fixture(tmp_path)
+    with closing(opened(project, run_id)) as flow:
+        offer = flow.preview_manifest("read-during-save.xlsx", "Researcher")["manifest_offer"]
+        flow.confirm_manifest(offer["offer_token"])
+        if stale:
+            with closing(sqlite3.connect(project.database_path)) as db, db:
+                db.execute("UPDATE source_queries SET status='failed' WHERE run_id=?", (run_id,))
+        flow.start_manifest_save(offer["export_id"])
+        deadline = time.monotonic() + 30
+        while flow._worker.poll(flow._manifest_save_operation).state == "running":
+            if time.monotonic() >= deadline:
+                pytest.fail("Save worker did not reach its terminal state")
+            time.sleep(.025)
+        assert flow.state()["manifest_save_running"]
+        flow.inspect_pilot_history()
+        state = flow.poll_manifest_save()
+        assert not state["manifest_save_running"]
+        if stale:
+            assert state["manifest_save_error"] == "publication_revision_stale"
+            assert state["manifest_save_result"] is None
+        else:
+            assert state["manifest_save_result"]["audited_publication_success"]
+            assert state["manifest_save_error"] is None
+        flow.select_run(run_id)
+
+
 def test_save_rechecks_revision_after_consent(tmp_path):
     project, run_id = fixture(tmp_path)
     with closing(opened(project, run_id)) as flow:

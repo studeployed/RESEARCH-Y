@@ -299,6 +299,12 @@ class RealProjectFlow:
 
     def _operation_for_project(self, project, name, **kwargs):
         """Run a worker against an explicit candidate without switching state."""
+        # submit() replaces a finished worker result. A user action can arrive
+        # before the GUI timer has copied the previous save into host state.
+        if self._manifest_save_operation is not None:
+            self.poll_manifest_save()
+            if self._manifest_save_operation is not None:
+                raise ProjectFlowError('manifest_save_running')
         command = ApplicationCommand.for_project(project, name, **kwargs)
         try:
             operation_id = self._worker.submit(command)
