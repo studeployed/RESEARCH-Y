@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 
-from research_y.projects import create_project
+from research_y.projects import create_project, open_project
 from research_y.storage import ApprovedTerm, StrategyGroup
 from research_y.strategy_admission import commit_approved_strategy
 from research_y.pubmed_checkpoint_store import (
@@ -112,9 +112,9 @@ class Clock:
         self.seconds+=seconds
 
 
-def _wos(project, qid, exact, *, count=1):
+def _wos(project, qid, exact, *, count=1, clock=None):
     create_wos_checkpoint(project, qid, retention_authorized=True)
-    clock=Clock()
+    clock = clock or Clock()
     calls=[]
     def send(req, timeout):
         fields=parse_qs(req.full_url.split("?",1)[1])
@@ -219,6 +219,39 @@ def test_zero_pubmed_is_real_zero_and_other_missing_queries_remain_unknown(tmp_p
     assert row["metadata_records_missing"]==0
     assert _row(board,"g-rv","pubmed")["reported_matches"] is None
     assert board["primary_source_enumerations_reconciled"] is False
+
+
+@pytest.mark.parametrize("case", ["complete", "missing_query", "unknown_count", "failed", "cancelled"])
+def test_reopened_run_reconciles_against_approved_query_inventory(tmp_path, case):
+    project, run_id, queries = _project(tmp_path)
+    clock = Clock()
+    for (group, source), (query_id, exact) in queries.items():
+        if case == "missing_query" and (group, source) == ("g-rv", "wos"):
+            with closing(sqlite3.connect(project.database_path)) as db, db:
+                db.execute("DELETE FROM source_queries WHERE query_id=?", (query_id,))
+        elif source == "pubmed":
+            _pubmed(project, query_id, exact, pmids=("111",))
+            _efetch(project, query_id, pmids=("111",))
+        else:
+            clock.sleep(60)
+            _wos(project, query_id, exact, clock=clock)
+
+    pubmed_id, _ = queries["g-rv", "pubmed"]
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        if case == "unknown_count":
+            db.execute("UPDATE source_queries SET reported_matches=NULL WHERE query_id=?", (pubmed_id,))
+        elif case in ("failed", "cancelled"):
+            db.execute("UPDATE source_queries SET status=? WHERE query_id=?", (case, pubmed_id))
+    reopened = open_project(project.root)
+    before = _digest(reopened)
+    board = read_run_execution_board(reopened, run_id)
+    assert board["primary_source_enumerations_reconciled"] is (case == "complete")
+    assert board["available_primary_metadata_acquired"] is (case == "complete")
+    assert board["approved_query_inventory_matches"] is (case != "missing_query")
+    assert ("approved_query_inventory_unverified" in board["warnings"]) is (case == "missing_query")
+    assert board["totals"]["source_records_by_provider"] == {"pubmed": 1, "wos": 1}
+    assert not board["verified_complete"]
+    assert _digest(reopened) == before
 
 
 def test_duplicate_group_memberships_are_unions_not_global_unique_publications(tmp_path):

@@ -127,22 +127,8 @@ def _previous(db, run_id, plan_sha, requested_id=None):
     return latest, requested
 
 
-def _inspect(db, run_id, requested_id=None, *, allow_started=False):
-    row = db.execute(
-        "SELECT r.strategy_version_id,r.status,v.version_number,v.snapshot_json "
-        "FROM search_runs r JOIN strategy_versions v ON "
-        "r.strategy_version_id=v.strategy_version_id WHERE r.run_id=?",
-        (run_id,)
-    ).fetchone()
-    if row is None:
-        raise PreflightError("unknown_run")
-    version_id, status, version_number, raw = row
-    # Normal pre-run review must remain STRICTLY pending. The internal
-    # execution-admission verifier instead reconstructs the same frozen hash
-    # from source identities while allowing earlier sibling groups to have
-    # progressed; it never portrays mutable counts as a pending plan.
-    if status != "pending" and (not allow_started or status not in ("incomplete", "paused")):
-        raise PreflightError("run_not_pending")
+def _matched_query_plan(db, run_id, version_id, raw, *, allow_started):
+    """Recompile the frozen strategy and match every stored source/group query."""
     try:
         strategy = decode(raw)
         indexed_groups = db.execute(
@@ -192,6 +178,23 @@ def _inspect(db, run_id, requested_id=None, *, allow_started=False):
     ]
     plan_sha = sha256(canonical(dict(run_id=run_id, version_id=version_id,
         strategy_snapshot=strategy, queries=ordered)).encode("utf-8")).hexdigest()
+    return strategy, sources, ordered, plan_sha
+
+
+def _inspect(db, run_id, requested_id=None, *, allow_started=False):
+    row = db.execute(
+        "SELECT r.strategy_version_id,r.status,v.version_number,v.snapshot_json "
+        "FROM search_runs r JOIN strategy_versions v ON "
+        "r.strategy_version_id=v.strategy_version_id WHERE r.run_id=?",
+        (run_id,)
+    ).fetchone()
+    if row is None:
+        raise PreflightError("unknown_run")
+    version_id, status, version_number, raw = row
+    if status != "pending" and (not allow_started or status not in ("incomplete", "paused")):
+        raise PreflightError("run_not_pending")
+    strategy, sources, ordered, plan_sha = _matched_query_plan(
+        db, run_id, version_id, raw, allow_started=allow_started)
     summary = dict(
         method=METHOD, run_id=run_id, strategy_version_id=version_id,
         version_number=version_number, plan_sha256=plan_sha,

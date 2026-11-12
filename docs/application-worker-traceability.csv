@@ -51,6 +51,9 @@ UI-05,whole-run read-only progress alongside original source-specific preview ac
 UI-06,per-group and per-source honest summary,test_run_execution_board.py,partial final global unique publication count not implemented
 SEC-01,credential-free worker board and revision-fenced preview selection,test_application_commands.py and test_run_execution_board.py,partial local security acceptance ongoing
 AT-19,unfinished source cannot be promoted by equal numeric count,test_run_execution_board.py,partial no live failure mix verification
+RUN-05,run-wide coverage checks the complete recompiled approved inventory and numeric reconciliation,test_run_execution_board.py::test_reopened_run_reconciles_against_approved_query_inventory,partial local checkpoint evidence
+AT-09,original group and provider unions checked after reopening a two-source project,test_run_execution_board.py::test_reopened_run_reconciles_against_approved_query_inventory,offline mixed-source coverage
+AT-19,omitted query or unknown count or failed or cancelled query prevents positive run coverage,test_run_execution_board.py::test_reopened_run_reconciles_against_approved_query_inventory,partial phase 1 run inspection
 RUN-01,run_source_coordinator previews and executes a bounded already-consented two-source stage sequence,test_run_source_coordinator.py,partial initial coordination only not full automated search job
 RUN-03,read-only whole-run board polled during separate supervised source work,test_run_source_coordinator.py,partial no persistent coordinating scheduler journal
 RUN-04,existing original transport backoff/checkpoint admission preserved by sequential source worker,test_run_source_coordinator.py,partial source-specific failure recovery and manual replanning still required

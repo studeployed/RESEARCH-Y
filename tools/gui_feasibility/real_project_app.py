@@ -799,6 +799,10 @@ def run(args):
                                  str(board['available_primary_metadata_acquired']) +
                                  '; complete research search: FALSE.').props(
                                      'data-testid=run-board-coverage')
+                        if not board['approved_query_inventory_matches']:
+                            ui.label('Stored queries could not be matched to the approved strategy. '
+                                     'Run-wide retrieval coverage is unknown.').props(
+                                         'data-testid=run-board-plan-mismatch')
                         ui.label('Provisional publication identity hypotheses: ' +
                                  str(board['totals']['publication_identity_hypotheses']) +
                                  ' (NOT a final deduplicated result).')
