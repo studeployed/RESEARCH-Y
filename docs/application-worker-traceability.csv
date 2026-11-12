@@ -53,6 +53,9 @@ SEC-01,credential-free worker board and revision-fenced preview selection,test_a
 AT-19,unfinished source cannot be promoted by equal numeric count,test_run_execution_board.py,partial no live failure mix verification
 RUN-05,run-wide coverage checks the complete recompiled approved inventory and numeric reconciliation,test_run_execution_board.py::test_reopened_run_reconciles_against_approved_query_inventory,partial local checkpoint evidence
 AT-09,original group and provider unions checked after reopening a two-source project,test_run_execution_board.py::test_reopened_run_reconciles_against_approved_query_inventory,offline mixed-source coverage
+AT-08,completed Starter board stage rechecks page observations and final count receipt,test_run_execution_board.py::test_reopened_board_requires_the_independent_wos_observations,offline reopened checkpoint
+AT-10,explicit review links two sources across two approved groups after reopened retrieval,test_run_execution_board.py::test_two_source_reopen_review_and_published_workbook_preserve_every_membership,manual confirmed fixture pair
+AT-18,actual audited provisional workbook preserves reviewed source links and every original membership,test_run_execution_board.py::test_two_source_reopen_review_and_published_workbook_preserve_every_membership,partial original provenance workbook only
 AT-19,omitted query or unknown count or failed or cancelled query prevents positive run coverage,test_run_execution_board.py::test_reopened_run_reconciles_against_approved_query_inventory,partial phase 1 run inspection
 RUN-01,run_source_coordinator previews and executes a bounded already-consented two-source stage sequence,test_run_source_coordinator.py,partial initial coordination only not full automated search job
 RUN-03,read-only whole-run board polled during separate supervised source work,test_run_source_coordinator.py,partial no persistent coordinating scheduler journal

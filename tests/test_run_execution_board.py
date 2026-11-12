@@ -112,7 +112,7 @@ class Clock:
         self.seconds+=seconds
 
 
-def _wos(project, qid, exact, *, count=1, clock=None):
+def _wos(project, qid, exact, *, count=1, clock=None, title="PRIVATE WOS TITLE"):
     create_wos_checkpoint(project, qid, retention_authorized=True)
     clock = clock or Clock()
     calls=[]
@@ -126,7 +126,7 @@ def _wos(project, qid, exact, *, count=1, clock=None):
         page=int(fields["page"][0]); size=int(fields["limit"][0])
         calls.append((page,size))
         clock.sleep(2)
-        hits=[dict(uid=f"WOS:{i+1:09d}",title="PRIVATE WOS TITLE")
+        hits=[dict(uid=f"WOS:{i+1:09d}",title=title)
               for i in range((page-1)*size,min(page*size,count))]
         body=json.dumps(dict(metadata=dict(total=count,page=page,limit=size),
                              hits=hits)).encode()
@@ -279,6 +279,93 @@ def test_corrupted_provider_checkpoint_or_query_identity_fails_closed(tmp_path):
                    ('("UNAPPROVED"[All Fields])',qid))
     with pytest.raises(ExecutionBoardError,match="run_board_unavailable"):
         read_run_execution_board(p,rid)
+
+
+@pytest.mark.parametrize("purpose", ["verify", "final"])
+def test_reopened_board_requires_the_independent_wos_observations(tmp_path, monkeypatch, purpose):
+    from dataclasses import replace
+    from research_y import wos_checkpoint_store as store
+
+    project, run_id, queries = _project(tmp_path)
+    query_id, exact = queries["g-ecmo", "wos"]
+    _wos(project, query_id, exact)
+    reopened = open_project(project.root)
+    before = _digest(reopened)
+    original = store._read_observation
+
+    def discrepant_observation(db, attempt_id, checked_query, checked_purpose):
+        page = original(db, attempt_id, checked_query, checked_purpose)
+        if checked_query == query_id and checked_purpose == purpose:
+            return replace(page, reported_matches=page.reported_matches + 1)
+        return page
+
+    monkeypatch.setattr(store, "_read_observation", discrepant_observation)
+    with pytest.raises(ExecutionBoardError, match="run_board_unavailable"):
+        read_run_execution_board(reopened, run_id)
+    assert _digest(reopened) == before
+
+
+def test_two_source_reopen_review_and_published_workbook_preserve_every_membership(tmp_path):
+    from openpyxl import load_workbook
+    from research_y.provisional_manifest_intent import prepare_manifest_intent
+    from research_y.provisional_manifest_stage import stage_manifest_workbook
+    from research_y.provisional_manifest_publication import publish_manifest_workbook
+    from research_y.publication_identity import materialise_retrieval
+    from research_y.publication_results import read_publication_page
+    from research_y.publication_review_gui import preview_candidate_review, record_candidate_review
+
+    project, run_id, queries = _project(tmp_path)
+    clock = Clock()
+    for group in ("g-ecmo", "g-rv"):
+        query_id, exact = queries[group, "pubmed"]
+        _pubmed(project, query_id, exact, pmids=("111",))
+        query_id, exact = queries[group, "wos"]
+        clock.sleep(60)
+        _wos(project, query_id, exact, clock=clock, title="PRIVATE TITLE")
+    project = open_project(project.root)
+    partial = read_run_execution_board(project, run_id)
+    assert partial["primary_source_enumerations_reconciled"]
+    assert not partial["available_primary_metadata_acquired"]
+    for group in ("g-ecmo", "g-rv"):
+        _efetch(project, queries[group, "pubmed"][0], pmids=("111",))
+
+    with closing(sqlite3.connect(project.database_path)) as db:
+        originals = dict(db.execute("SELECT source_name,retrieval_id FROM source_retrievals"))
+    assert set(originals) == {"pubmed", "wos"}
+    for retrieval_id in originals.values():
+        materialise_retrieval(project, retrieval_id, actor="Fixture")
+    page = read_publication_page(project, run_id)
+    assert len(page["rows"]) == 2
+    left, right = originals["pubmed"], originals["wos"]
+    pair = preview_candidate_review(project, run_id, left, right, run_revision=page["revision"])
+    record_candidate_review(project, run_id, left, right, run_revision=page["revision"],
+                            expected_revision=pair["revision"], decision="confirmed_match",
+                            move_retrieval_id=right, actor="Fixture", evidence="Synthetic paired citation",
+                            warnings_acknowledged=True, confirmed=True)
+    reviewed = open_project(project.root)
+    row, = read_publication_page(reviewed, run_id)["rows"]
+    board = read_run_execution_board(reviewed, run_id)
+    assert board["available_primary_metadata_acquired"] and not board["verified_complete"]
+    assert board["totals"]["source_records_by_provider"] == {"pubmed": 1, "wos": 1}
+    export_id = str(uuid4())
+    prepare_manifest_intent(reviewed, run_id, "phase-one.xlsx", export_id=export_id,
+                            expected_revision=board["source_count_revision"], actor="Fixture", confirmed=True)
+    stage_manifest_workbook(reviewed, export_id)
+    result = publish_manifest_workbook(reviewed, export_id)
+    assert result["audited_publication_success"] and not result["verified_complete"]
+    with closing(load_workbook(reviewed.root / "exports" / result["output_name"], read_only=True)) as workbook:
+        facts = dict(list(workbook["Evidence & Limits"].values)[3:])
+        assert facts["Report status"] == "INCOMPLETE" and facts["Verified unique publications"] == "UNKNOWN"
+        identity, = list(workbook["Provisional Identities"].values)[3:]
+        assert identity[:2] == (row["publication_id"], 2)
+        links = list(workbook["Original Source Links"].values)[3:]
+        assert {(link[0], link[3]) for link in links} == {
+            (retrieval_id, row["publication_id"]) for retrieval_id in originals.values()}
+        members = list(workbook["Query Memberships"].values)[3:]
+        assert len(members) == 4
+        assert {member[:5] for member in members} == {
+            (originals[source], run_id, query_id, group, source)
+            for (group, source), (query_id, _) in queries.items()}
 
 
 def test_worker_command_is_read_only_and_refuses_cross_operation_parameters(tmp_path):
