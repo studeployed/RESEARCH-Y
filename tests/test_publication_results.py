@@ -735,3 +735,195 @@ def test_failed_provisional_workbook_cleans_every_temporary_xml_file(fixture, mo
     assert all(not Path(filename).exists() for filename in created)
     assert sha256(project.database_path.read_bytes()).hexdigest() == original_database
     assert not list((project.root / "exports").glob("*.xlsx"))
+
+
+def test_manifest_export_intent_requires_exact_revision_and_researcher_consent(fixture):
+    """A source-free durable approval does not generate or publish an XLSX."""
+    from research_y import result_counts
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent, inspect_manifest_intent,
+        METHOD,
+    )
+    project, run, _, _ = fixture
+    a = insert(fixture, number=12001, groups=("g1", "g2"),
+               title="PRIVATE AUTHOR TITLE", abstract="PRIVATE ABSTRACT TEXT")
+    insert(fixture, number=12002, source="wos", groups=("g2",))
+    identity.materialise_retrieval(project, a, actor="Fixture")
+    source_digest = sha256(project.database_path.read_bytes()).hexdigest()
+    preview = preview_manifest_intent(project, run)
+    assert preview["method"] == METHOD
+    assert preview["selected_run_original_sources"] == 2
+    assert preview["provisional_publication_identities"] == 1
+    assert preview["unmaterialised_original_sources"] == 1
+    assert preview["global_unique_publications"] is None
+    assert preview["source_retrieval_verified"] is False
+    assert preview["deduplication_complete"] is False
+    assert preview["workbook_published"] is False
+    assert sha256(project.database_path.read_bytes()).hexdigest() == source_digest
+
+    request = uid()
+    kwargs = dict(export_id=request, expected_revision=preview["original_revision"],
+                  actor="Synthetic researcher", confirmed=True)
+    receipt = prepare_manifest_intent(project, run, "provisional.xlsx", **kwargs)
+    assert receipt["state"] == "authorised_not_rendered"
+    assert receipt["explicit_confirmation_recorded"] is True
+    assert receipt["workbook_published"] is False
+    assert receipt["output_bytes_written"] is False
+    assert receipt["workbook_rendered"] is False
+    assert receipt["source_records"] == 2
+    assert receipt["provisional_identities"] == 1
+    assert receipt["unmaterialised_originals"] == 1
+    assert receipt["current_revision_matches"] is True
+    assert receipt == inspect_manifest_intent(open_project(project.root), request)
+    assert prepare_manifest_intent(project, run, "provisional.xlsx", **kwargs) == receipt
+    assert "Synthetic researcher" not in repr(receipt)
+    assert "PRIVATE AUTHOR TITLE" not in repr(receipt)
+    assert not list((project.root / "exports").glob("*.xlsx"))
+    with closing(sqlite3.connect(project.database_path)) as db:
+        events = db.execute(
+            "SELECT event_type,details_json FROM audit_events WHERE "
+            "event_type=?", ("provisional_manifest_intent_v1:" + request,)
+        ).fetchall()
+        assert len(events) == 1
+        assert events[0][0].endswith(request)
+        assert "PRIVATE AUTHOR TITLE" not in events[0][1]
+        assert "PRIVATE ABSTRACT TEXT" not in events[0][1]
+        assert "source_record_id" not in events[0][1]
+    assert result_counts.read_run_counts(project, run).revision == preview["original_revision"]
+
+
+def test_manifest_export_intent_stale_revision_and_replay_never_reconsent(fixture):
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent, inspect_manifest_intent,
+        ManifestIntentError,
+    )
+    project, run, other, _ = fixture
+    insert(fixture, number=12003)
+    old = preview_manifest_intent(project, run)
+    insert(fixture, number=12004)
+    request = uid()
+    with pytest.raises(ManifestIntentError, match="stale_original_revision"):
+        prepare_manifest_intent(
+            project, run, "old.xlsx", export_id=request,
+            expected_revision=old["original_revision"], actor="Fixture",
+            confirmed=True)
+    with pytest.raises(ManifestIntentError, match="intent_not_found"):
+        inspect_manifest_intent(project, request)
+    new = preview_manifest_intent(project, run)
+    consent = prepare_manifest_intent(
+        project, run, "new.xlsx", export_id=request,
+        expected_revision=new["original_revision"], actor="Fixture",
+        confirmed=True)
+    assert consent["current_revision_matches"] is True
+    insert(fixture, number=12005)
+    old_consent = inspect_manifest_intent(project, request)
+    assert old_consent["state"] == "stale_reapproval_required"
+    assert old_consent["current_revision_matches"] is False
+    assert old_consent["approved_original_revision"] == new["original_revision"]
+    assert old_consent["workbook_published"] is False
+    assert prepare_manifest_intent(
+        project, run, "new.xlsx", export_id=request,
+        expected_revision=new["original_revision"], actor="Fixture",
+        confirmed=True) == old_consent
+    for alter in (
+        dict(output_name="other.xlsx"),
+        dict(run_id=other),
+        dict(actor="Another researcher"),
+        dict(expected_revision="1" * 64),
+    ):
+        kwargs = dict(run_id=run, output_name="new.xlsx", export_id=request,
+                      expected_revision=new["original_revision"], actor="Fixture",
+                      confirmed=True)
+        kwargs.update(alter)
+        with pytest.raises(ManifestIntentError, match="intent_conflict"):
+            prepare_manifest_intent(project, **kwargs)
+    # A new ID is the only way to request a revision-accurate new approval.
+    fresh = preview_manifest_intent(project, run)
+    after = prepare_manifest_intent(
+        project, run, "fresh.xlsx", export_id=uid(),
+        expected_revision=fresh["original_revision"],
+        actor="Fixture", confirmed=True)
+    assert after["current_revision_matches"] is True
+    assert after["audit_event_id"] != consent["audit_event_id"]
+
+
+def test_manifest_export_intent_refuses_unconfirmed_inputs_and_existing_destination(fixture):
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent, ManifestIntentError,
+    )
+    project, run, _, _ = fixture
+    insert(fixture, number=12006)
+    baseline = preview_manifest_intent(project, run)
+    request = uid()
+    original = sha256(project.database_path.read_bytes()).hexdigest()
+    for patch in (
+        dict(confirmed=False), dict(confirmed=1), dict(actor=""),
+        dict(actor="Researcher\nIMPLICIT"), dict(output_name="../escape.xlsx"),
+        dict(output_name="report.csv"), dict(export_id="not-a-uuid"),
+        dict(expected_revision="invalid"), dict(run_id="bad-run-id"),
+    ):
+        kwargs = dict(run_id=run, output_name="pending.xlsx",
+                      export_id=request, expected_revision=baseline["original_revision"],
+                      actor="Fixture", confirmed=True)
+        kwargs.update(patch)
+        with pytest.raises(ManifestIntentError):
+            prepare_manifest_intent(project, **kwargs)
+    assert sha256(project.database_path.read_bytes()).hexdigest() == original
+
+    # Existing visible files are never overwritten or adopted as an approval.
+    existing = project.root / "exports" / "pending.xlsx"
+    existing.write_bytes(b"EXISTING CONTENT NOT AN EXPORT")
+    with pytest.raises(ManifestIntentError, match="destination_conflict"):
+        prepare_manifest_intent(
+            project, run, "pending.xlsx", export_id=request,
+            expected_revision=baseline["original_revision"],
+            actor="Fixture", confirmed=True)
+    assert existing.read_bytes() == b"EXISTING CONTENT NOT AN EXPORT"
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE event_type=?",
+            ("provisional_manifest_intent_v1:" + request,)
+        ).fetchone()[0] == 0
+
+
+def test_manifest_export_intent_audit_is_append_only_and_fails_closed_on_tampering(fixture):
+    from research_y.provisional_manifest_intent import (
+        preview_manifest_intent, prepare_manifest_intent,
+        inspect_manifest_intent, ManifestIntentError,
+    )
+    project, run, _, _ = fixture
+    insert(fixture, number=12007)
+    prev = preview_manifest_intent(project, run)
+    request = uid()
+    before = prepare_manifest_intent(
+        project, run, "audit.xlsx", export_id=request,
+        expected_revision=prev["original_revision"],
+        actor="Researcher", confirmed=True)
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        trigger = db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='immutable_audit_events_update'"
+        ).fetchone()
+        assert trigger is not None and "append-only" in trigger[0]
+        with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+            db.execute("UPDATE audit_events SET details_json='{}' "
+                       "WHERE event_id=?", (before["audit_event_id"],))
+        # Deliberately corrupt ONLY this disposable fixture, then restore the
+        # exact original append-only protection before exercising the service.
+        db.execute("DROP TRIGGER immutable_audit_events_update")
+        db.execute("UPDATE audit_events SET details_json='{}' "
+                   "WHERE event_id=?", (before["audit_event_id"],))
+        db.execute(trigger[0])
+        assert db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='immutable_audit_events_update'"
+        ).fetchone() == trigger
+    unreadable = sha256(project.database_path.read_bytes()).hexdigest()
+    with pytest.raises(ManifestIntentError, match="invalid_intent_receipt"):
+        inspect_manifest_intent(project, request)
+    with pytest.raises(ManifestIntentError, match="invalid_intent_receipt"):
+        prepare_manifest_intent(
+            project, run, "audit.xlsx", export_id=request,
+            expected_revision=prev["original_revision"],
+            actor="Researcher", confirmed=True)
+    assert sha256(project.database_path.read_bytes()).hexdigest() == unreadable
