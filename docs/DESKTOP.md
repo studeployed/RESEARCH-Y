@@ -21,6 +21,30 @@ folder to update the local history. The usual research setup, preflight,
 supervised source stages, results review and workbook controls use the same
 trusted worker and SQLite services as the isolated graphical tests.
 
+## Reviewed master results
+
+Refresh the run board after recording publication comparisons. When the
+current decisions connect every retained source in each publication and
+distinguish every pair of separate publications, the board shows the group
+counts, their arithmetic sum and the union across all retained groups. The
+reconciled primary-run total also requires every approved primary query to
+have reconciled identifiers and acquired metadata. An unstarted run has an
+unknown total. A fully enumerated empty primary run has zero.
+
+**Prepare reviewed master workbook** freezes the selected revision into a
+separate export. Each publication row links to its original source and group
+memberships. The workbook also carries the internal audit references for the
+comparisons that establish its counts. It excludes provider titles,
+accessions and abstracts. Use the existing save and file-inspection actions
+to publish and verify it. **Prepare strategy workbook** continues to issue
+the original strategy and count format.
+
+Reversing an association or changing its evidence can withdraw a current
+count. Previously issued workbooks preserve their original captured inputs.
+Candidate discovery, unresolved pairs and abstract extraction keep their
+own denominators. The calculation examines existing decisions and adds no
+automatic matching rule or new review requirement.
+
 ## Source settings
 
 Offline project inspection and workbook operations work with empty source

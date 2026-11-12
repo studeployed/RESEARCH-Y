@@ -2,6 +2,12 @@
 
 ## Phase 1 delivery
 
+Issue #9 adds a reviewed master count and an explicitly selected,
+versioned workbook when the retained original records are fully distinguished
+by current researcher decisions. The ordinary strategy-only workbook and its
+existing journal receipts remain readable. See `docs/DESKTOP.md` and
+`tests/test_reviewed_master.py` for the two-source acceptance case.
+
 The owner approved optional Windows desktop adoption on 12 November. The
 normal installed entry point is `research-y`. Its ordinary local session
 shares project operations with the isolated harness and starts with an empty
