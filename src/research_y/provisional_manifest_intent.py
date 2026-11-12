@@ -118,7 +118,11 @@ def preview_manifest_intent(project, run_id: str) -> dict:
     """Read original count/identity evidence without creating any receipt."""
     _uuid(run_id)
     try:
-        with _transaction(project, write=False) as db:
+        # The workbook export writer's _transaction helper is intentionally
+        # migration-capable, even in its BEGIN (non-IMMEDIATE) mode. A read
+        # preview MUST use the count engine's strict read-only URI connection:
+        # old schema versions are refused, never silently upgraded or backed up.
+        with result_counts._read_connection(project) as db:
             return _preview(project, run_id, _counts(db, project, run_id))
     except ManifestIntentError:
         raise
@@ -218,6 +222,12 @@ def prepare_manifest_intent(project, run_id: str, output_name: str, *,
     if confirmed is not True:
         raise ManifestIntentError("confirmation_required")
     try:
+        # Approval is not authorisation to migrate a legacy project. Refuse
+        # unmigrated/stale stores via the original read-only version gate
+        # before entering the journal writer. Opening/migration is a separate,
+        # explicit project recovery workflow.
+        with result_counts._read_connection(project) as readonly:
+            _counts(readonly, project, run_id)
         with _transaction(project) as db:
             existing = _load(db, project, export_id)
             if existing is not None:
@@ -269,7 +279,9 @@ def inspect_manifest_intent(project, export_id: str) -> dict:
     """Recheck the recorded source revision without writing or resuming a job."""
     _uuid(export_id)
     try:
-        with _transaction(project, write=False) as db:
+        # Never use the export writer's migration-capable connection while
+        # merely inspecting a retained receipt.
+        with result_counts._read_connection(project) as db:
             saved = _load(db, project, export_id)
             if saved is None:
                 raise ManifestIntentError("intent_not_found")
