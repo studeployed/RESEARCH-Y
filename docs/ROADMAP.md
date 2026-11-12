@@ -71,6 +71,8 @@ The scope and gates are fixed in section 20 of the approved specification. Track
   - **P1-06l5 — current bounded increment (for review):** publish only an already researcher-approved, fully audited private provisional-source workbook stage, preserving source-only rights restrictions and exact original-run SHA-256. Commit a separate **publishing** receipt before any destination-side bytes; verify stage, exact copy SHA-256/size, exclusive no-overwrite copy, same-filesystem final hard link, actual final/copy file identity and source revision before committing the **published** receipt. Read-only no-migration inspection and explicit restart recovery distinguish file-less, copy-only and link-before-receipt crashes, and refuse corrupt/foreign—even byte-identical—destination files. A previous revision is labelled historical after source changes, never scientifically complete. This is an **internal** publication service, no GUI export button, final deduplicated master dataset, full AT-18/22 or provider-completeness claim. See `docs/PROVISIONAL_MANIFEST_PUBLICATION.md`.
 
 
+  - **P1-06l6 — process-death verification for issue #39:** PR #99 merged at `2ab1d0c`. Exercise the provisional publisher across six abrupt exits in a real child process, then reopen, inspect and retry against the approved staged bytes. See `docs/PROVISIONAL_MANIFEST_PUBLICATION.md`. Partial AT-21.
+
 ## Milestone M2 — Specialist processing (Phase 2)
 
 - **P2-01:** AI terminology/classification and reproducible biomedical benchmarks. Pass: AT-04/15/20.

@@ -1410,6 +1410,96 @@ def _publication_receipts(publication, project, export_id):
     return approved, stage_receipt, published, project
 
 
+def _interrupt_manifest_publisher(root, export_id, boundary):
+    import os
+    from unittest.mock import patch
+    from research_y import provisional_manifest_publication as publication
+
+    project = open_project(root)
+    if boundary in ("publishing_insert", "published_insert"):
+        original = publication._append
+        action = boundary.removesuffix("_insert")
+
+        def append(db, approved, staged, earlier, kind, copy_name):
+            original(db, approved, staged, earlier, kind, copy_name)
+            if kind == action:
+                os._exit(73)
+
+        hook = patch.object(publication, "_append", append)
+    else:
+        owner, method = {
+            "publishing_commit": (publication, "_begin"),
+            "copy_written": (publication.Directory, "write_new"),
+            "final_linked": (publication.Directory, "publish_link"),
+            "published_commit": (publication, "_finish"),
+        }[boundary]
+        original = getattr(owner, method)
+
+        def interrupt(*args, **kwargs):
+            original(*args, **kwargs)
+            os._exit(73)
+
+        hook = patch.object(owner, method, interrupt)
+    with hook:
+        publication.publish_manifest_workbook(project, export_id)
+
+
+@pytest.mark.parametrize(("boundary", "expected_state", "receipts", "files"), [
+    ("publishing_insert", "not_published", 0, 0),
+    ("publishing_commit", "publishing_interrupted", 1, 0),
+    ("copy_written", "publishing_copy_ready", 1, 1),
+    ("final_linked", "awaiting_publication_receipt", 1, 2),
+    ("published_insert", "awaiting_publication_receipt", 1, 2),
+    ("published_commit", "published_verified", 2, 2),
+])
+def test_manifest_publisher_process_death(fixture, boundary, expected_state, receipts, files):
+    from multiprocessing import get_context
+    from research_y import provisional_manifest_publication as publication
+
+    project, _, _, export_id, offer = _consented_staged_manifest(fixture)
+    exports = project.root / "exports"
+    existing = set(exports.iterdir())
+    _, staged, _, _ = _publication_receipts(publication, project, export_id)
+    event_type = publication.EVENT_PREFIX + export_id
+    child = get_context("spawn").Process(
+        target=_interrupt_manifest_publisher, args=(project.root, export_id, boundary))
+    child.start()
+    try:
+        child.join(45)
+        assert child.exitcode == 73
+    finally:
+        if child.is_alive():
+            child.kill()
+            child.join()
+        child.close()
+
+    reopened = open_project(project.root)
+    observed = publication.inspect_manifest_publication(reopened, export_id)
+    assert observed["state"] == expected_state
+    assert observed["audited_publication_success"] is (receipts == 2)
+    assert len([row for row in audit(reopened) if row[1] == event_type]) == receipts
+    assert len(set(exports.iterdir()) - existing) == files
+    final = exports / observed["output_name"]
+    assert final.exists() is (files == 2)
+
+    if receipts == 0:
+        with pytest.raises(publication.ManifestPublicationError, match="publication_not_started"):
+            publication.resume_manifest_publication(reopened, export_id)
+        completed = publication.publish_manifest_workbook(reopened, export_id)
+    else:
+        completed = publication.resume_manifest_publication(reopened, export_id)
+    assert completed["state"] == "published_verified"
+    assert completed["approved_original_revision"] == offer["original_revision"]
+    assert completed["global_unique_publications"] is None
+    assert sha256(final.read_bytes()).hexdigest() == staged["artifact"]["sha256"]
+    assert publication.resume_manifest_publication(reopened, export_id) == completed
+    _, _, receipt, _ = _publication_receipts(publication, reopened, export_id)
+    retained_copy = exports / receipt["copy_name"]
+    assert final.samefile(retained_copy)
+    assert set(exports.iterdir()) - existing == {final, retained_copy}
+    assert len([row for row in audit(reopened) if row[1] == event_type]) == 2
+
+
 def test_manifest_publication_crash_after_intent_before_any_file_recovers(fixture):
     from research_y import provisional_manifest_publication as publication
     project, _, _, export_id, _ = _consented_staged_manifest(
