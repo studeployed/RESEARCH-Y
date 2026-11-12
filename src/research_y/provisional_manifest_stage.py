@@ -12,10 +12,11 @@ from contextlib import contextmanager
 from datetime import datetime
 from hashlib import sha256
 from io import BytesIO
-from pathlib import Path
 import re
 import sqlite3
 from uuid import uuid4
+from xml.etree import ElementTree as ET
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from research_y import provisional_manifest_intent as intent, result_counts
 from research_y.export_files import Directory, ExportFileError, MAX_ARTIFACT_BYTES
@@ -239,6 +240,60 @@ def inspect_manifest_stage(project, export_id: str) -> dict:
         raise ManifestStageError("stage_invalid") from None
 
 
+_CORE_NS = "http://purl.org/dc/terms/"
+_ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+
+
+def _stable_package(raw: bytes, approved: dict) -> bytes:
+    """Repackage an INTERNAL generated XLSX with consent-bound core metadata.
+
+    Both OpenPyXL workbook creation timestamps AND ZIP entry timestamps differ
+    across processes. The exact-byte staging receipt must be recoverable on a
+    later day without re-approving new original records. Keep the content and
+    sheet XML untouched; normalize only package timestamps, from the immutable
+    original authorisation time (not wall-clock time at each render).
+    This is NOT an arbitrary untrusted ZIP import or archival extraction.
+    """
+    original_time = datetime.fromisoformat(approved["authorised_at_utc"])
+    if (original_time.utcoffset() is None or
+            original_time.utcoffset().total_seconds() != 0):
+        raise ManifestStageError("stage_render_failed")
+    fixed = original_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+    buffer = BytesIO()
+    with ZipFile(BytesIO(raw), "r") as source, ZipFile(
+            buffer, "w", compression=ZIP_DEFLATED, compresslevel=6) as output:
+        names = set()
+        replaced = False
+        for original in source.infolist():
+            name = original.filename
+            if (name in names or name.startswith("/") or "\\" in name or
+                    any(part in ("", ".", "..") for part in name.split("/")) or
+                    original.is_dir()):
+                raise ManifestStageError("stage_render_failed")
+            names.add(name)
+            content = source.read(original)
+            if name == "docProps/core.xml":
+                root = ET.fromstring(content)
+                for field in ("created", "modified"):
+                    node = root.find(f"{{_CORE_NS}}{field}")
+                    if node is None:
+                        raise ManifestStageError("stage_render_failed")
+                    node.text = fixed
+                content = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+                replaced = True
+            entry = ZipInfo(name, date_time=_ZIP_TIMESTAMP)
+            entry.create_system = 0
+            entry.compress_type = ZIP_DEFLATED
+            output.writestr(entry, content, compress_type=ZIP_DEFLATED,
+                            compresslevel=6)
+        if not replaced or "xl/workbook.xml" not in names:
+            raise ManifestStageError("stage_render_failed")
+    stable = buffer.getvalue()
+    if not 0 < len(stable) <= MAX_ARTIFACT_BYTES:
+        raise ManifestStageError("stage_render_failed")
+    return stable
+
+
 def _render(project, approved):
     """Revalidate before/after actual rendering; accept exact original version."""
     try:
@@ -272,11 +327,11 @@ def _render(project, approved):
             wb.close()
         with result_counts._read_connection(project) as db:
             _evidence(db, project, approved)
-        return raw
+        return _stable_package(raw, approved)
     except ManifestStageError:
         raise
     except (OSError, ValueError, TypeError, KeyError, sqlite3.DatabaseError,
-            ImportError, RecursionError):
+            ImportError, RecursionError, ET.ParseError):
         raise ManifestStageError("stage_render_failed") from None
 
 
