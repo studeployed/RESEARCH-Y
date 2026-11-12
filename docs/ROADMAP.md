@@ -10,6 +10,9 @@ The scope and gates are fixed in section 20 of the approved specification. Track
 
 ## Milestone M1 — Durable end-to-end core (Phase 1)
 
+The [Phase 1 acceptance record](PHASE1_ACCEPTANCE.md) links each roadmap
+unit to its current primary test or source observation.
+
 On 12 November 2026 the bounded live PubMed sample passed clinical OR
 translation and fresh-process recovery for two bibliographic records.
 See `docs/evidence/pubmed-metadata-43300410950-summary.json` and

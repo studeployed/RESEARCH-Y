@@ -2,6 +2,10 @@
 
 ## Phase 1 delivery
 
+Use the [Phase 1 acceptance record](docs/PHASE1_ACCEPTANCE.md) for the
+current status of the six roadmap units, native Windows evidence, live
+source limits and the distinction between publication and membership counts.
+
 Issue #9 adds a reviewed master count and an explicitly selected,
 versioned workbook when the retained original records are fully distinguished
 by current researcher decisions. The ordinary strategy-only workbook and its
