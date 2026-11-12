@@ -86,8 +86,13 @@ def run_window(stage, workspace, folder, run_id):
                 await click('[data-testid=manifest-inspect]')
                 await click('[data-testid=manifest-check-file]')
             await wait_for(lambda: visible('[data-testid=manifest-file-verified]'), 'verified_workbook', timeout=65)
-            if not flow.state()['manifest_save_result']['audited_publication_success']:
+            result = flow.state()['manifest_save_result']
+            if not result['audited_publication_success']:
                 raise RuntimeError('missing_publication_receipt')
+            (workspace / f'{stage}-verified.json').write_text(json.dumps({
+                'run_id': result['run_id'], 'export_id': result['export_id'],
+                'publication_receipt_id': result['publication_receipt_id'],
+            }), encoding='utf-8')
             passed.append(True)
         except Exception as error:
             print(f'Native {stage} stage failed: {type(error).__name__}: {error}', flush=True)
@@ -123,9 +128,14 @@ def main():
         folder = project.root
         filename = f'provenance-{run.run_id}.xlsx'
         checksums = []
+        observations = []
         for stage in ('save', 'reopen'):
             subprocess.run([sys.executable, str(Path(__file__).resolve()), stage, str(workspace), str(folder),
                             run.run_id], timeout=210, check=True)
+            observation = json.loads((workspace / f'{stage}-verified.json').read_text(encoding='utf-8'))
+            if observation['run_id'] != run.run_id or not observation['publication_receipt_id']:
+                raise RuntimeError('native_receipt_mismatch')
+            observations.append(observation)
             artifact = folder / 'exports' / filename
             checksums.append(sha256(artifact.read_bytes()).hexdigest())
             with closing(load_workbook(artifact, read_only=True)) as workbook:
@@ -135,7 +145,7 @@ def main():
                 relocated = workspace / 'relocated'
                 folder.rename(relocated)
                 folder = relocated
-        if checksums[0] != checksums[1]:
+        if checksums[0] != checksums[1] or observations[0] != observations[1]:
             raise RuntimeError('relocated_workbook_changed')
         print('Passed native create, select, save, restart, relocate and independent workbook verification.')
 
