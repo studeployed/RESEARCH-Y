@@ -215,6 +215,53 @@ def test_unknown_run_and_failed_preparation_no_new_request(application):
     assert not list((p.root/'exports').iterdir())
 
 
+def test_worker_inspects_manifest_without_resuming_or_repairing(application):
+    from research_y import provisional_manifest_publication as publication
+    from research_y.provisional_manifest_intent import preview_manifest_intent, prepare_manifest_intent
+    from research_y.provisional_manifest_stage import stage_manifest_workbook
+
+    project, run_id, _ = application
+    export_id = str(uuid4())
+    offer = preview_manifest_intent(project, run_id)
+    prepare_manifest_intent(project, run_id, "manifest.xlsx", export_id=export_id,
+                            expected_revision=offer["original_revision"], actor="Fixture", confirmed=True)
+    stage_manifest_workbook(project, export_id)
+    publication._begin(project, export_id)
+    command = cmd(project, "inspect_manifest_publication", export_id=export_id)
+    destination = project.root / "exports" / "manifest.xlsx"
+    entries = set(destination.parent.iterdir())
+    database = project.database_path.read_bytes()
+    with worker.ApplicationWorker() as pool:
+        observed = run(pool, command)
+        assert observed.state == "returned"
+        assert observed.result()["state"] == "publishing_interrupted"
+        assert observed.result()["audited_publication_success"] is False
+        assert set(destination.parent.iterdir()) == entries
+        assert not destination.exists()
+        assert project.database_path.read_bytes() == database
+
+        published = publication.resume_manifest_publication(project, export_id)
+        assert published["state"] == "published_verified"
+        assert run(pool, command).result() == published
+        destination.unlink()
+        failed = run(pool, command)
+        assert (failed.state, failed.error, failed.result()) == (
+            "failed", "publication_artifact_changed", None)
+        assert not destination.exists()
+
+
+@pytest.mark.parametrize("extra", [
+    {"output_name": "different.xlsx"}, {"run_id": str(uuid4())},
+    {"publication_confirmed": True}, {"pilot_api_key": "synthetic"}, {"directory": str(Path.cwd())},
+])
+def test_manifest_inspection_rejects_unrelated_fields(application, extra):
+    from research_y.application_commands import ApplicationCommandError
+
+    project, _, _ = application
+    with pytest.raises(ApplicationCommandError, match="invalid_command"):
+        cmd(project, "inspect_manifest_publication", export_id=str(uuid4()), **extra)
+
+
 def test_audit_failure_has_no_optimistic_success(application):
     p,r,_=application
     with closing(sqlite3.connect(p.database_path)) as db,db:

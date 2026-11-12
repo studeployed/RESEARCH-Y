@@ -24,7 +24,8 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                         'candidate_pair_preview', 'candidate_pair_start',
                         'candidate_pair_advance',
                         'prepare_export', 'resume_export', 'cancel_export',
-                        'observe_export', 'export_report', 'admit_strategy',
+                        'observe_export', 'inspect_manifest_publication',
+                        'export_report', 'admit_strategy',
                         'preflight_read', 'preflight_record',
                         'pubmed_pilot_count', 'pubmed_pilot_read',
                          'wos_pilot_sample', 'wos_pilot_read', 'pilot_history',
@@ -36,6 +37,9 @@ OPERATIONS = frozenset({'inspect', 'run_board', 'run_coord_preview', 'run_coord_
                          'pubmed_identifier_pause', 'pubmed_metadata_read',
                          'pubmed_metadata_preview', 'pubmed_metadata_run'})
 SERVICE_ERRORS = frozenset({'candidate_pair_unavailable',
+    'publication_invalid', 'publication_not_staged', 'publication_receipt_invalid',
+    'publication_staging_changed', 'publication_destination_conflict',
+    'publication_artifact_changed',
     'candidate_pair_invalid', 'candidate_pair_stale',
     'candidate_pair_index_not_ready', 'candidate_pair_confirmation_required',
     'candidate_pair_no_work', 'candidate_pair_over_limit',
@@ -761,7 +765,7 @@ class ApplicationCommand:
                     filename(self.output_name, workbook=True)
                 elif self.run_id is not None or self.output_name is not None:
                     raise ValueError
-                if self.operation == 'export_report' and self.directory is not None:
+                if self.operation in ('export_report', 'inspect_manifest_publication') and self.directory is not None:
                     raise ValueError
             if self.operation not in pair_ops and any(
                     v is not None for v in pair_fields):
@@ -1201,6 +1205,12 @@ def execute_command(command: ApplicationCommand) -> dict:
             except (ValueError, TypeError):
                 raise ApplicationCommandError('strategy_invalid') from None
             return dict(asdict(result), source_retrieval_verified=False)
+        if command.operation == 'inspect_manifest_publication':
+            from research_y import provisional_manifest_publication as publication
+            try:
+                return publication.inspect_manifest_publication(project, command.export_id)
+            except publication.ManifestPublicationError as exc:
+                raise ApplicationCommandError(exc.code) from None
         if command.operation == 'export_report':
             return inspection.read_export_report(project, command.export_id).as_dict()
         if command.operation == 'observe_export':

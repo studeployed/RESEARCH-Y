@@ -94,6 +94,14 @@ budgets. Final Starter verification still needs an uninterrupted available-quota
 
 ## Reviews
 
+**P1-06l7, prepared independently from merged PR #99:** trusted hosts can
+inspect one known provisional workbook export through the supervised worker.
+Interrupted and missing-file observations leave the project available for
+explicit recovery. Windows Python 3.12 passed 241 command and worker integration
+tests. See the P1-06l7 PR for cross-platform CI and matching review receipts.
+The next host-facing write step needs explicit researcher consent tied to the
+selected run, destination and current revision as specified in the export contract.
+
 Before merge advice retrieve current HEAD, all four required continuous integration
 (CI) results, code/security summaries, completion timestamps, matching individual
 receipts and outstanding findings. Definitive exact-HEAD code review first; then

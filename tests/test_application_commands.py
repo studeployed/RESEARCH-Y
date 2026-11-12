@@ -42,6 +42,9 @@ def services(monkeypatch, tmp_path):
     inspection.read_application_snapshot=service('inspect',Snapshot())
     inspection.read_export_report=service('export_report',Snapshot())
     inspection.observe_export_request=service('observe_export',Result())
+    manifest=types.ModuleType('research_y.provisional_manifest_publication')
+    manifest.ManifestPublicationError=Failure
+    manifest.inspect_manifest_publication=service('inspect_manifest_publication',{})
     exports=types.ModuleType('research_y.workbook_exports'); exports.WorkbookExportError=Failure
     exports.prepare_workbook_export=service('prepare_export',Result())
     exports.resume_workbook_export=service('resume_export',Result())
@@ -220,6 +223,7 @@ def services(monkeypatch, tmp_path):
         return value
     files.filename=filename
     for name,module in [('projects',projects),('application_inspection',inspection),
+                        ('provisional_manifest_publication',manifest),
                         ('workbook_exports',exports),('strategy_admission',admission),
                         ('preflight_review',preflight),('pubmed_pilot',pilot),
                         ('wos_starter_pilot',wos),('pilot_history',history),
@@ -389,7 +393,8 @@ def test_only_named_service_called_identity_arguments_unchanged(services,operati
     assert len(calls)==1 and calls[0][0]==operation
     assert calls[0][1][0]==project
     assert not result.get('source_retrieval_verified',False)
-    if operation in ('resume_export','cancel_export','observe_export','export_report'):
+    if operation in ('resume_export','cancel_export','observe_export','export_report',
+                     'inspect_manifest_publication'):
         assert calls[0][1][1]==kw['export_id']
     if operation=='prepare_export':
         assert calls[0][1][1:]==(kw['run_id'],'report.xlsx')
