@@ -1,11 +1,11 @@
 # P1-04d — PubMed EFetch bibliographic metadata and abstracts
 
-Status: feature-branch proposal, not merged or verified against live NCBI. Authoritative source: RESEARCH-Y_SPEC.md (SRC-01/04, DATA-03–06, RUN-04/07, AUDIT-01).
+The EFetch service is implemented on main. See the roadmap for the scope of existing live PubMed evidence. Authoritative source: RESEARCH-Y_SPEC.md (SRC-01/04, DATA-03–06, RUN-04/07, AUDIT-01).
 
 ## Retrieval and integrity
 
 PubMedEFetchClient uses the existing explicitly configured PubMedESearchProbeClient for runtime NCBI contact, optional API key and common request pacing. It POSTs to the fixed NCBI HTTPS EFetch endpoint, rejects redirects, requests retmode=xml and no language/species/date restrictions. Batches contain at most 20 canonical PubMed IDs and responses at most 8 MiB.
-XML parsing accepts the standard external NLM PUBLIC DTD declaration without loading it, rejects internal entity declarations, and bounds the node count. Missing, repeated, unexpected, non-journal or malformed records cause an explicit incomplete batch—not a silently shortened result.
+XML parsing accepts the standard external NLM PUBLIC DTD declaration without loading it, rejects internal entity declarations, and bounds the node count. Missing, repeated, unexpected, unsupported or malformed records leave the batch incomplete. Supported records include journal and book citations.
 Source metadata includes DOI/PMCID/PMID, titles, authors/affiliations, journal/citation/pagination, dates, structured abstract sections, languages, publication types, keywords and source MeSH indexing (for later classification, not search terms). Absent abstracts are not_supplied_in_response. Supplied copyright notices are kept and all stored abstracts are flagged for redistribution-rights review.
 Each batch retains EFetch XML SHA-256, source identity and UTC acquisition time. The complete raw provider XML is not retained in this increment; the structured legally scoped representation is. NCBI abstracts can be copyright-protected.
 
@@ -18,6 +18,7 @@ Reopening a project resumes from PMIDs without linked metadata, using bounded re
 
 Ordinary fixture tests do not call NCBI. scripts/pubmed_source_smoke.py requires RESEARCHY_NCBI_CONTACT_EMAIL set privately (optional RESEARCHY_NCBI_API_KEY). It sends one exact approved ESearch query, checks translation, fetches one returned PMID and reports only bibliographic status—not credentials or full abstract text. Developer/contact registration must follow NCBI policies. No successful live query was executed here.
 Docs: https://www.nlm.nih.gov/dataguide/eutilities/utilities.html ; https://www.ncbi.nlm.nih.gov/books/NBK25499/ ; https://eutilities.github.io/site/API_Key/usageandkey/ .
+
 ## Mixed book and journal responses
 
 The [NLM PubmedArticleSet content model](https://dtd.nlm.nih.gov/ncbi/pubmed/doc/out/250101/el-PubmedArticleSet.html)

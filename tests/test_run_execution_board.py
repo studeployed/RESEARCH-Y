@@ -81,7 +81,7 @@ def _pubmed(project, qid, exact, pmids=("111", "222")):
         "identifiers_reconciled_metadata_pending", "Synthetic checked source count")
 
 
-def _efetch(project, qid, pmids=("111", "222")):
+def _efetch(project, qid, pmids=("111", "222"), *, book_pmid=None):
     records = "".join(
         "<PubmedArticle><MedlineCitation Status='MEDLINE'>"
         f"<PMID>{pmid}</PMID><Article><ArticleTitle>PRIVATE TITLE</ArticleTitle>"
@@ -89,7 +89,14 @@ def _efetch(project, qid, pmids=("111", "222")):
         + ("<Abstract><AbstractText>PRIVATE ABSTRACT</AbstractText></Abstract>"
            if pmid == pmids[0] else "") +
         "</Article></MedlineCitation></PubmedArticle>"
-        for pmid in pmids)
+        for pmid in pmids if pmid != book_pmid)
+    if book_pmid is not None:
+        records += (
+            "<PubmedBookArticle><BookDocument>"
+            f"<PMID>{book_pmid}</PMID><ArticleIdList/><Book><Publisher>"
+            "<PublisherName>Fixture Press</PublisherName></Publisher><BookTitle>Fixture book</BookTitle>"
+            "<PubDate><Year>2025</Year></PubDate></Book><ArticleTitle>Separate chapter</ArticleTitle>"
+            "</BookDocument></PubmedBookArticle>")
     parsed = parse_efetch_xml(
         ("<?xml version='1.0'?><PubmedArticleSet>" +
          records + "</PubmedArticleSet>").encode(), pmids,
@@ -318,7 +325,7 @@ def test_two_source_reopen_review_and_published_workbook_preserve_every_membersh
     clock = Clock()
     for group in ("g-ecmo", "g-rv"):
         query_id, exact = queries[group, "pubmed"]
-        _pubmed(project, query_id, exact, pmids=("111",))
+        _pubmed(project, query_id, exact, pmids=("111", "222"))
         query_id, exact = queries[group, "wos"]
         clock.sleep(60)
         _wos(project, query_id, exact, clock=clock, title="PRIVATE TITLE")
@@ -327,26 +334,28 @@ def test_two_source_reopen_review_and_published_workbook_preserve_every_membersh
     assert partial["primary_source_enumerations_reconciled"]
     assert not partial["available_primary_metadata_acquired"]
     for group in ("g-ecmo", "g-rv"):
-        _efetch(project, queries[group, "pubmed"][0], pmids=("111",))
+        _efetch(project, queries[group, "pubmed"][0], pmids=("111", "222"), book_pmid="222")
 
     with closing(sqlite3.connect(project.database_path)) as db:
-        originals = dict(db.execute("SELECT source_name,retrieval_id FROM source_retrievals"))
-    assert set(originals) == {"pubmed", "wos"}
+        originals = dict(db.execute("SELECT source_record_id,retrieval_id FROM source_retrievals"))
+    assert set(originals) == {"111", "222", "WOS:000000001"}
     for retrieval_id in originals.values():
         materialise_retrieval(project, retrieval_id, actor="Fixture")
     page = read_publication_page(project, run_id)
-    assert len(page["rows"]) == 2
-    left, right = originals["pubmed"], originals["wos"]
+    assert len(page["rows"]) == 3
+    left, right = originals["111"], originals["WOS:000000001"]
     pair = preview_candidate_review(project, run_id, left, right, run_revision=page["revision"])
     record_candidate_review(project, run_id, left, right, run_revision=page["revision"],
                             expected_revision=pair["revision"], decision="confirmed_match",
                             move_retrieval_id=right, actor="Fixture", evidence="Synthetic paired citation",
                             warnings_acknowledged=True, confirmed=True)
     reviewed = open_project(project.root)
-    row, = read_publication_page(reviewed, run_id)["rows"]
+    rows = read_publication_page(reviewed, run_id)["rows"]
+    assert len(rows) == 2
+    by_title = {row["title"]: row["publication_id"] for row in rows}
     board = read_run_execution_board(reviewed, run_id)
     assert board["available_primary_metadata_acquired"] and not board["verified_complete"]
-    assert board["totals"]["source_records_by_provider"] == {"pubmed": 1, "wos": 1}
+    assert board["totals"]["source_records_by_provider"] == {"pubmed": 2, "wos": 1}
     export_id = str(uuid4())
     prepare_manifest_intent(reviewed, run_id, "phase-one.xlsx", export_id=export_id,
                             expected_revision=board["source_count_revision"], actor="Fixture", confirmed=True)
@@ -356,16 +365,19 @@ def test_two_source_reopen_review_and_published_workbook_preserve_every_membersh
     with closing(load_workbook(reviewed.root / "exports" / result["output_name"], read_only=True)) as workbook:
         facts = dict(list(workbook["Evidence & Limits"].values)[3:])
         assert facts["Report status"] == "INCOMPLETE" and facts["Verified unique publications"] == "UNKNOWN"
-        identity, = list(workbook["Provisional Identities"].values)[3:]
-        assert identity[:2] == (row["publication_id"], 2)
+        identities = list(workbook["Provisional Identities"].values)[3:]
+        assert {identity[:2] for identity in identities} == {
+            (by_title["PRIVATE TITLE"], 2), (by_title["Separate chapter"], 1)}
         links = list(workbook["Original Source Links"].values)[3:]
         assert {(link[0], link[3]) for link in links} == {
-            (retrieval_id, row["publication_id"]) for retrieval_id in originals.values()}
+            (left, by_title["PRIVATE TITLE"]), (right, by_title["PRIVATE TITLE"]),
+            (originals["222"], by_title["Separate chapter"])}
         members = list(workbook["Query Memberships"].values)[3:]
-        assert len(members) == 4
+        assert len(members) == 6
         assert {member[:5] for member in members} == {
-            (originals[source], run_id, query_id, group, source)
-            for (group, source), (query_id, _) in queries.items()}
+            (originals[source_id], run_id, query_id, group, source)
+            for (group, source), (query_id, _) in queries.items()
+            for source_id in (("111", "222") if source == "pubmed" else ("WOS:000000001",))}
 
 
 def test_worker_command_is_read_only_and_refuses_cross_operation_parameters(tmp_path):
