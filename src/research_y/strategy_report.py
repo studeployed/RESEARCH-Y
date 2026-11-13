@@ -162,7 +162,7 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
     # Calling read_run_counts then opening another handle would mix snapshots.
     from research_y import result_counts
     specialist = reviewed_revision is not None and db.execute(
-        "SELECT 1 FROM source_retrievals WHERE run_id=? AND source_name IN ('conference_jats','society') LIMIT 1",
+        "SELECT 1 FROM source_retrievals WHERE run_id=? AND source_name IN ('conference_jats','conference_pdf','society') LIMIT 1",
         (run_id,)).fetchone() is not None
     projection = (result_counts._snapshot(db, project, run_id, primary=True) if specialist else
                   result_counts._snapshot(db, project, run_id))

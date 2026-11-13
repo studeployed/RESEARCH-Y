@@ -1,5 +1,6 @@
 """Researcher controls for official guidance, conference documents and targeted DOI enrichment."""
 from datetime import date
+from importlib.util import find_spec
 
 from research_y.society_sources import GUIDANCE_TYPES
 
@@ -115,13 +116,17 @@ def publication_panel(ui,state,detail,act,native):
                 ui.label("Last lookup: "+specialist["lookup_result"])
     if not native:
         return
-    with ui.expansion("Conference abstract review",value=bool(specialist.get("conference") or specialist.get("conference_tasks"))):
+    with ui.expansion("Conference abstract review",value=bool(specialist.get("conference") or specialist.get("conference_tasks") or specialist.get("pdf_page"))):
         eligible={r["retrieval_id"]:r["source_name"]+" "+r["source_record_id"] for r in detail["source_retrievals"]
                   if r["run_id"]==state["selected_run_id"] and r["source_name"] in {"pubmed","wos"}}
         if not eligible:
             return
         source=ui.select(eligible,label="Original collection source",
                          value=next(iter(eligible)) if len(eligible) == 1 else None)
+        if find_spec("pypdf") is not None:
+            pdf_review_panel(ui,specialist,source,eligible,act,send)
+        else:
+            ui.label("Local PDF verification is available with the optional PDF reader.")
         ui.button("Open saved block reviews",on_click=lambda:send("conference_tasks",retrieval_id=source.value))
         task_page = specialist.get("conference_tasks")
         if task_page and task_page["retrieval_id"] in eligible:
@@ -195,3 +200,47 @@ def publication_panel(ui,state,detail,act,native):
         if specialist.get("conference_receipt"):
             receipt=specialist["conference_receipt"]
             ui.label(f'Retained {receipt["selected_count"]} of {receipt["extracted_count"]} extracted abstracts.')
+
+
+def pdf_review_panel(ui, specialist, source, eligible, act, send):
+    page_view = specialist.get("pdf_page")
+    with ui.expansion("Verify a text-based PDF page",value=bool(page_view)):
+        field = ui.number("PDF file page (first page is 1)",value=1,min=1,max=4096,step=1)
+        def choose_page():
+            if field.value is None or not float(field.value).is_integer():
+                ui.notify("Enter a whole page number.")
+                return
+            return act("native_pdf",dict(source_id=source.value,page=int(field.value)))
+        ui.button("Choose local PDF",on_click=choose_page)
+        if not page_view or page_view["retrieval_id"] not in eligible:
+            return
+        rid = page_view["retrieval_id"]
+        ui.label(f'PDF page {page_view["page"]} of {page_view["total_pages"]} · {eligible[rid]}')
+        if page_view["status"] == "no_extractable_text":
+            ui.label("No extractable text on this page. Check the source visually.")
+            return
+        ui.textarea("Page text",value=page_view["text"]).props("readonly")
+        title = ui.input("Exact abstract title")
+        excerpt = ui.textarea("Paste the complete individual abstract passage, including its title")
+        authors = ui.textarea("Authors appearing in this passage (one per line)")
+        printed = ui.input("Printed page as observed")
+        number = ui.input("Abstract or poster number as observed")
+        url = ui.input("Full supplement PDF URL, if available")
+        ui.button("Verify selected passage",on_click=lambda:send("pdf_select",retrieval_id=rid,
+                  page_revision=page_view["revision"],
+                  title=title.value,excerpt=excerpt.value,authors=_lines(authors.value),
+                  printed_page=printed.value or None,number=number.value or None,pdf_url=url.value or None))
+        block = specialist.get("pdf_block")
+        if block and block["retrieval_id"] == rid:
+            ui.label(block["title"]+" · "+block["locator"])
+            ui.label(block["text"])
+            ui.label("Printed page "+(block["printed_first_page"] or "unknown"))
+            if block["pdf_page_url"]:
+                ui.label(block["pdf_page_url"])
+            reviewer = ui.input("Researcher confirming PDF passage")
+            rights = ui.checkbox("I verified this individual abstract and may retain its text locally")
+            ui.button("Retain verified PDF abstract",on_click=lambda:send("pdf_admit",retrieval_id=rid,
+                      revision=block["revision"],actor=reviewer.value,retention_authorized=rights.value))
+        receipt = specialist.get("pdf_receipt")
+        if receipt and receipt["original_retrieval_id"] == rid:
+            ui.label("Saved PDF abstract "+receipt["admitted"][0]["locator"])

@@ -47,3 +47,24 @@ its document checksum, original retrieval, exact locator and reason.
 **Open saved block reviews** lists tasks after relaunch. Record the outcome
 and source observation there. Recording an observation creates an audit
 entry and leaves the publication count unchanged.
+
+### Verifying a local PDF
+
+Install the optional PDF extra with the desktop application using
+`python -m pip install ".[desktop,pdf]"`. The reader runs locally. Its
+version and BSD-3-Clause licence are recorded in the [pypdf release](https://pypi.org/project/pypdf/7.1.0/).
+
+In **Conference abstract review**, select the original provider record.
+Under **Verify a text-based PDF page**, enter the one-based file page and
+choose the local PDF. Copy the individual passage from the displayed page
+text, including its title. Verify its boundaries against the original page.
+Enter any observed printed label, authors, abstract number and supplement
+PDF URL. The confirmation shows the exact selected text. A successful
+admission retains that passage, the document checksum, file page, printed
+label and character range in the whitespace-normalised page text. Two
+non-overlapping passages on the same page can identify different abstracts.
+
+The supported path covers a single text-bearing page per abstract. Image-only
+pages, protected files, ambiguous repeated passages and passages spanning pages
+need manual examination. PDF text order can differ from the visual layout.
+The reader checks the selected text against the page again before saving.

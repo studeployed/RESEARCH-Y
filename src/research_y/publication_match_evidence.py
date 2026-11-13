@@ -153,7 +153,7 @@ def project_source(source: dict) -> dict:
               for name, (path, normalise, many) in paths.items()}
     warnings = []
     society = kind == "society" and payload.get("provider") == "manual_society_guidance"
-    conference = kind == "conference_jats" and payload.get("provider") == "conference_jats"
+    conference = kind in {"conference_jats","conference_pdf"} and payload.get("provider") == kind
     if (society or conference) and isinstance(payload.get("record"), dict):
         fields["title"] = _field(payload, ("record", "title"), _string)
         if society:

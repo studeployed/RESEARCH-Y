@@ -987,6 +987,12 @@ class RealProjectFlow:
                     panel.conference_page(**data)
                 elif name == "conference_detail":
                     panel.conference_detail(**data)
+                elif name in ("pdf_select","pdf_admit"):
+                    self._visible_candidate_source(data["retrieval_id"])
+                    if name == "pdf_select":
+                        panel.select_pdf(self.project,**data)
+                    else:
+                        panel.admit_pdf(self.project,**data)
                 elif name in ("conference_queue_block", "conference_tasks", "conference_finish_task"):
                     self._visible_candidate_source(data["retrieval_id"])
                     if name == "conference_queue_block":
@@ -1017,6 +1023,15 @@ class RealProjectFlow:
             self._specialist.select(self.project,self.selected_run_id)
             self._specialist.conference_preview(self.project,self.selected_run_id,source_id,path,
                       dict(terms=terms,landing_url=landing_url,pdf_url=pdf_url,pdf_pages=pdf_pages))
+            return self._publish()
+
+    def open_native_pdf(self, path, *, source_id, page):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._visible_candidate_source(source_id)
+            self._specialist.select(self.project,self.selected_run_id)
+            self._specialist.open_pdf(source_id,path,page)
             return self._publish()
 
     def inspect_study_queue(self, only_review, hide_non_english, hide_non_human_only, after=None):
