@@ -27,5 +27,22 @@ These manual actions run offline. An unavailable website leaves a documented
 task. An admitted document receives an original source record and a provisional
 publication identity, independent of primary database query counts. Different
 editions are distinct until a researcher reviews their relationship.
-Explicit manifestation links, desktop integration and directory suggestions
-are tracked in [P2-03](https://github.com/studeployed/RESEARCH-Y/issues/129).
+Use `suggest TERM [TERM ...]` for editable suggested libraries drawn from
+the official [ELSO](https://www.elso.org/ecmo-resources/elso-ecmo-guidelines.aspx),
+[SCCM](https://www.sccm.org/clinical-resources/guidelines) and
+[ATS](https://site.thoracic.org/about-us/news/official-ats-documents) sites.
+Saving a suggestion still requires researcher confirmation. Other societies
+can be entered directly.
+
+`relate` records a direction such as “this publication supersedes that
+publication” or “this publication is a companion to that publication”. Its
+JSON fields are `request_id`, `publication_id`, `other_publication_id`,
+`relation` (`supersedes` or `companion_to`), `expected_revision`,
+`other_revision`, `actor` and `rationale`. Supersession cycles are refused.
+
+Use `attach-journal` only after comparing the source evidence for a matching
+edition. Supply `society_publication_id`, `journal_retrieval_id`,
+`society_revision`, `journal_revision`, `actor` and `rationale` and pass
+`--confirm`. This operation reuses the existing reversible identity decision
+and retains the society roles and journal source. Other editions keep their
+own publication IDs. Desktop integration is tracked in [P2-03](https://github.com/studeployed/RESEARCH-Y/issues/129).
