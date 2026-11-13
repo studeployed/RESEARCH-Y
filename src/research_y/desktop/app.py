@@ -38,7 +38,12 @@ def build_page(app, ui, flow, settings_warnings=()):
                 return
             async with lock:
                 try:
-                    if action == "native_society_site":
+                    if action == "native_master_export":
+                        folder = await select_from_native_window(app.native.main_window)
+                        if folder is None:
+                            return
+                        await asyncio.to_thread(flow.export_master_to,folder,**value)
+                    elif action == "native_society_site":
                         url = flow.official_society_url(**value)
                         if not await asyncio.to_thread(webbrowser.open_new_tab, url):
                             raise ProjectFlowError("external_browser_unavailable")

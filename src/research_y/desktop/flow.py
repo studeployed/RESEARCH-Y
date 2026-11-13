@@ -933,6 +933,21 @@ class RealProjectFlow:
             draft.local_offers(gid,tid,generated,eid)
             return self._publish()
 
+    def export_master_to(self,parent,*,name,revision,scope,include_abstracts):
+        from research_y.export_files import filename
+        from research_y.master_exports import export_results
+        with self._guard:
+            self._require_open()
+            if not self._master or self._master.revision != revision or self._master.run != self.selected_run_id:
+                raise ProjectFlowError("Refresh the master results before export.")
+            filename(name)
+            try:
+                self._master_page["export"] = export_results(self.project,self._master,parent/name,self._master_page["spec"],
+                        scope=scope,include_abstracts=include_abstracts)
+            except FileExistsError:
+                raise ProjectFlowError("A file with this name already exists.") from None
+            return self._publish()
+
     def _clear_master(self):
         if self._master is not None:
             self._master.close()

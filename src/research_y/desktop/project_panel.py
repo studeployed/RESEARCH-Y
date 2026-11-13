@@ -283,7 +283,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
         else:
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
-            render_master(ui,state,act)
+            render_master(ui,state,act,native=native)
             society_panel(ui,state,act,native=native)
             data = state['report']
             if data is None:

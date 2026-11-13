@@ -108,6 +108,20 @@ def _rows(db,run):
             citation = {k:v["value"] for k,v in fields["fields"].items() if v["status"]=="present"}
             entry = dict(retrieval_id=src["retrieval_id"],source=src["source_name"],source_record_id=src["source_record_id"],
                          sha256=src["source_sha256"],fields=citation,groups=members.get(src["retrieval_id"],{}))
+            entry["abstract_text"] = _abstract(record)
+            entry["decision_event"] = src.get("association_event_id",raw[11])
+            entry["decision_status"] = src.get("decision",{}).get("status")
+            if entry["decision_status"] is None:
+                entry["decision_status"] = identity._object(raw[14])["status"]
+            if src["source_name"] in {"conference_jats","conference_pdf","society"}:
+                entry["specialist"] = {k:v for k,v in record.items() if k!="text"}
+                payload = src["original_metadata"]
+                entry["society_roles"] = payload.get("society_roles",{})
+                if payload.get("container_id"):
+                    container = db.execute("SELECT metadata_json FROM containers WHERE container_id=?",
+                                           (payload["container_id"],)).fetchone()
+                    if container:
+                        entry["container"] = identity._object(container[0])
             originals.append(entry)
             searchable.extend([entry["source_record_id"],identity._json(citation),_abstract(record)])
         row = dict(publication_id=pid,**{k:_citation(snapshot,mappings,k) for k in ("title","year","journal","doi")},
@@ -137,6 +151,7 @@ class MasterResults:
                     raise ValueError("Unknown run")
                 results.project_id,results.run,results.strategy_id,results.run_status = str(project.identifier),run,*info
                 results.captured_at = _utc_now()
+                results.audit_head = original.execute("SELECT coalesce(max(event_id),0) FROM audit_events").fetchone()[0]
                 digest = sha256(identity._json([results.project_id,run,info]).encode())
                 results.total = 0
                 for row,search_text in _rows(original,run):
@@ -234,6 +249,7 @@ class MasterResults:
                     rid:s["source_sha256"] for rid,s in sources.items()}:
                 raise ValueError("Publication evidence changed. Refresh the results.")
             for entry in row["source_evidence"]:
+                entry.pop("abstract_text",None)
                 raw = sources[entry["retrieval_id"]]["original_metadata"]
                 record = raw.get("record")
                 entry["abstract"] = _abstract(record) if isinstance(record,dict) else ""

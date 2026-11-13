@@ -12,7 +12,7 @@ def _label(value):
     return value if value is not None else "Unknown"
 
 
-def render_master(ui,state,act):
+def render_master(ui,state,act,*,native):
     view = state.get("master_results")
     with ui.expansion("Master results",value=view is not None).props("data-testid=master-panel"):
         def send(operation,**data):
@@ -25,6 +25,17 @@ def render_master(ui,state,act):
         spec = view["spec"]
         ui.label(f'{view["matching"]} of {view["total"]} publication identities match · {view["selected"]} selected')
         ui.label("Snapshot captured "+view["captured_at"])
+        if native:
+            with ui.expansion("Export master results",value="export" in view):
+                file = ui.input("Output filename (.xlsx or .ris)",value="Master Results.xlsx")
+                scope = ui.select({"entire":"Entire captured dataset","filtered":"All filtered matches",
+                                   "selected":"All selected publications"},value="entire",label="Records to export")
+                rights = ui.checkbox("Include abstract text that I am permitted to export")
+                ui.button("Choose folder and write results",on_click=lambda:act("native_master_export",dict(
+                          name=file.value,revision=view["revision"],scope=scope.value,include_abstracts=rights.value)))
+                if "export" in view:
+                    done = view["export"]
+                    ui.label(f'Saved {done["rows"]} publication rows to {done["filename"]}')
         with ui.expansion("Search, filters and columns"):
             query = ui.input("Search titles, abstracts, citations or identifiers",value=spec["text"])
             filters = {key:ui.select(values,value=spec["facets"].get(key,[]),label=key.replace("_"," ").title(),
