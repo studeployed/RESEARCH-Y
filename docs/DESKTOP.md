@@ -124,6 +124,9 @@ source first. The preview lists twenty blocks per page, shows unresolved
 blocks, and displays an individual abstract's text on request. Enter any
 verified PDF page mapping independently of the printed page. Confirm the
 selected blocks and local text retention before saving.
+The optional PDF reader also accepts an individual passage on a selected
+file page. See [conference extraction](CONFERENCE_EXTRACTION.md) for setup,
+printed labels, exact text selection and supported documents.
 
 **Crossref metadata** first inspects the DOI and cached evidence. A work
 lookup requires a contact email and an explicit click. Missing or ambiguous
@@ -138,7 +141,8 @@ Windows Credential Manager under your own Windows account, then restart the
 application. PubMed uses the entry named `RESEARCH-Y/PubMed`, with the NCBI
 contact email as its username and the optional API key as its password.
 Starter uses `RESEARCH-Y/WoS-Starter` with the institutional API key as its
-password. Only these two named entries are read. Source actions retain their
+password. The optional cloud assistant separately reads its named Anthropic
+entry as described above. Source actions retain their
 individual preview and confirmation controls.
 
 ## Acceptance evidence
