@@ -134,6 +134,10 @@ continue in **Continued Text** and full worksheets continue on numbered tabs.
 RIS preserves bibliographic fields and a scope note. Source variants, review
 history, groups and specialist provenance remain available in the project
 and workbook. The standalone search-strategy workbook remains available.
+The **Reporting Checklist** sheet records the exact stored queries, applicable
+sources, activities outside the workflow and unresolved verification.
+Programmatic PRESS validation and named researcher or peer observations have
+distinct entries with their actual recorded outcomes.
 
 Select a run and open **Professional society sources** to suggest a library
 from topic terms or add an official site. Record the pages and dates examined,

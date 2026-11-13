@@ -1,6 +1,6 @@
 requirement_id,phase,acceptance_tests,test_reference,status
-METH-01,0,"AT-17,AT-18",planned,planned
-METH-02,0,"AT-04,AT-05",planned,planned
+METH-01,0,"AT-17,AT-18",tests/test_reporting_checklist.py; tests/test_preflight_review.py (actual PRESS receipt and scoped PRISMA-S reporting evidence),partial
+METH-02,0,"AT-04,AT-05",tests/test_reporting_checklist.py; tests/test_preflight_review.py (actual PRESS receipt and scoped PRISMA-S reporting evidence),partial
 METH-03,0,"AT-05,AT-14",tests/test_query_compiler.py (no implicit exclusions; compiler only),partial
 METH-04,0,"AT-06,AT-08",tests/test_query_compiler.py; tests/test_wos_starter_smoke.py (source field and collection disclosure; UI pending),partial
 METH-05,0,"AT-16,AT-19",tests/test_wos_starter.py; tests/test_wos_checkpoints.py (unknown versus zero and conflicts retained); tests/test_publication_candidates.py (missing and malformed comparison inputs never agree); tests/test_result_counts.py; tests/test_result_count_ledger.py (unknown counts remain unknown; metadata gaps and corruption are not zero),partial
@@ -104,13 +104,13 @@ COUNT-05,1,AT-19,tests/test_wos_checkpoints.py (explicit incomplete and unknown 
 AUDIT-01,1,AT-17,tests/test_schema_migrations.py; tests/test_wos_checkpoints.py (durable approved query and request/page provenance),partial
 AUDIT-02,1,AT-17,tests/test_publication_candidates.py (prior-run match and rejection receipts preserved; full run comparison pending); tests/test_result_counts.py; tests/test_result_count_ledger.py (run-scoped present-day projection and prior-run receipts; immutable historical reports pending),partial
 AUDIT-03,1,"AT-10,AT-17",tests/test_schema_migrations.py (audit append-only); tests/test_publication_identity.py; tests/test_publication_fields.py (append-only association/reversal/field evidence and readable identity history); tests/test_publication_candidates.py (append-only explicit decision receipts and review context),partial
-AUDIT-04,1,"AT-17,AT-18",planned,planned
+AUDIT-04,1,"AT-17,AT-18",tests/test_reporting_checklist.py; tests/test_preflight_review.py (actual PRESS receipt and scoped PRISMA-S reporting evidence),partial
 EXPORT-01,3,AT-18,tests/test_strategy_workbook.py and tests/test_reviewed_master.py (initial strategy/count and reviewed master worksheets); tests/test_master_exports.py (actual scoped output and worksheet continuation),partial
 EXPORT-02,3,AT-18,planned,planned
 EXPORT-03,3,"AT-18,AT-19",tests/test_workbook_export_protocol.py and tests/test_reviewed_master.py (frozen whole-run export and revision identity); tests/test_master_exports.py (actual scoped output and worksheet continuation),partial
 EXPORT-04,3,"AT-18,AT-21",tests/test_strategy_workbook.py and tests/test_reviewed_master.py (Excel filters and safe internal links); tests/test_master_exports.py (actual scoped output and worksheet continuation),partial
 EXPORT-05,3,AT-18,tests/test_master_exports.py (scoped bibliographic records with provenance and permission choice),partial
-EXPORT-06,3,AT-18,planned,planned
+EXPORT-06,3,AT-18,tests/test_reporting_checklist.py; tests/test_preflight_review.py (actual PRESS receipt and scoped PRISMA-S reporting evidence),partial
 SEC-01,3,AT-21,tests/test_wos_checkpoints.py; tests/test_wos_checkpoint_validation.py (no key in stored provider evidence or public artifacts; credential manager pending); tests/test_desktop_launcher.py (named Windows credentials and redacted source profiles),partial
 SEC-02,3,"AT-20,AT-21",planned,planned
 SEC-03,3,AT-21,tests/test_wos_checkpoint_validation.py (explicit local retention gate; licensed contents not exported),partial
