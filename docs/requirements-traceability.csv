@@ -72,13 +72,13 @@ GUIDE-02,2,"AT-13,AT-15",planned,planned
 GUIDE-03,2,AT-13,planned,planned
 GUIDE-04,2,"AT-13,AT-15",planned,planned
 GUIDE-05,2,"AT-10,AT-13",planned,planned
-CLASS-01,2,"AT-14,AT-15",planned,planned
-CLASS-02,2,AT-15,planned,planned
-CLASS-03,2,AT-15,planned,planned
-CLASS-04,2,AT-14,planned,planned
-CLASS-05,2,"AT-15,AT-20",planned,planned
-CLASS-06,2,AT-15,planned,planned
-CLASS-07,2,"AT-15,AT-17",planned,planned
+CLASS-01,2,"AT-14,AT-15",tests/test_study_classification.py (independent dimensions and scoped source fields),partial
+CLASS-02,2,AT-15,tests/test_study_classification.py (source-tagged trial protocol and evidence synthesis),partial
+CLASS-03,2,AT-15,tests/test_study_classification.py (RCT abstract and multiple synthesis tags),partial
+CLASS-04,2,AT-14,tests/test_study_classification.py (read-only language and explicit non-human filters),partial
+CLASS-05,2,"AT-15,AT-20",tests/test_study_classification.py (original pointers and versioned deterministic proposals),partial
+CLASS-06,2,AT-15,tests/test_study_classification.py (uncertainty and transactional researcher decisions; desktop queue pending),partial
+CLASS-07,2,"AT-15,AT-17",tests/test_study_classification.py (override survives new source links and stale requests are declined),partial
 AI-01,2,AT-20,planned,planned
 AI-02,2,"AT-20,AT-21",planned,planned
 AI-03,2,"AT-20,AT-21",planned,planned
