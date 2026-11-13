@@ -90,7 +90,13 @@ def score_case(case, response):
     if not design or not design <= labels(list(DESIGNS)):
         raise ValueError("Unknown study design")
     expected = case["expected"]
-    matches = {"design": design == labels(expected["design"])}
+    # The specification defines SRMA as the combination of these two tags.
+    # Preserve exact-set scoring for every other study design.
+    def expand_srma(values):
+        if "srma" in values:
+            return (values - {"srma"}) | {"systematic review", "meta-analysis"}
+        return values
+    matches = {"design": expand_srma(design) == expand_srma(labels(expected["design"]))}
     for key, allowed in (("original_research", ("yes", "no", "unclear")),
                          ("format", FORMATS), ("population", POPULATIONS)):
         value = normalized(answer[key])

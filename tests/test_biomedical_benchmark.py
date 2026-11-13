@@ -48,6 +48,16 @@ def test_preserves_spacing_hyphenation_and_distinct_case_inventory():
         benchmark.evaluate(cases, {})
 
 
+@pytest.mark.parametrize(("design", "correct"), [
+    (["SRMA"], True), (["SRMA", "systematic review", "meta-analysis"], True),
+    (["systematic review"], False), (["SRMA", "RCT"], False),
+])
+def test_combined_and_separate_srma_labels_are_equivalent(design, correct):
+    case = next(case for case in benchmark.corpus() if case["id"] == "s04")
+    response = json.dumps({**case["expected"], "design": design})
+    assert benchmark.score_case(case, response)["matches"]["design"] is correct
+
+
 def test_cli_roundtrip_preserves_raw_output_hashes_and_refuses_duplicate_ids(tmp_path, capsys):
     benchmark.main(["prompts"])
     prompts = json.loads(capsys.readouterr().out)

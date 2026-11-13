@@ -30,7 +30,9 @@ Terminology scores report required variants recovered, known incorrect
 substitutions and unlisted proposals. Unlisted proposals need review before
 interpretation. Case and repeated whitespace are normalized. Hyphenated,
 spaced and unspaced expressions stay distinct. Study scores report exact
-agreement by dimension and across all four dimensions. Invalid JSON or a
+agreement by dimension and across all four dimensions. The combined SRMA
+label is equivalent to specifying both systematic review and meta-analysis.
+Invalid JSON or a
 malformed answer gets zero credit and stays in its denominator.
 
 The benchmark includes a protocol without results, a new analysis of
