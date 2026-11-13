@@ -144,6 +144,8 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
     # outer keys, separators and indentation. Reject a whole oversized
     # preview rather than silently truncating the scientific record.
     preview_bytes = size(container) + 1024
+    if preview_bytes > MAX_PREVIEW_BYTES:
+        raise ConferenceInputError("Preview exceeds supported output size")
     doi_blocks = Counter()
     for child in children:
         own_ids = child.findall("front-stub/article-id") + child.findall("front/article-meta/article-id")
@@ -210,5 +212,8 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
         result.append(item)
     if not children:
         pending.append({"locator": "/article", "reason": "no_explicit_sub_articles"})
-    return dict(source_sha256=sha256(payload).hexdigest(), container=container,
-                abstracts=result, unresolved=pending)
+    preview = dict(source_sha256=sha256(payload).hexdigest(), container=container,
+                   abstracts=result, unresolved=pending)
+    if size(preview) > MAX_PREVIEW_BYTES:
+        raise ConferenceInputError("Preview exceeds supported output size")
+    return preview

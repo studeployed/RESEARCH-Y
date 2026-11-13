@@ -119,6 +119,16 @@ def test_container_fields_are_emitted_once_and_oversized_preview_fails_as_a_unit
         inspect_conference_jats(XML)
 
 
+def test_output_limit_also_covers_container_and_unresolved_rows(monkeypatch):
+    from research_y import conference_jats
+    monkeypatch.setattr(conference_jats, "MAX_PREVIEW_BYTES", 2300)
+    container = "<front><article-meta><title-group><article-title>{}</article-title></title-group></article-meta></front>"
+    with pytest.raises(ConferenceInputError, match="output size"):
+        inspect_conference_jats(("<article>"+container.format("é"*500)+"</article>").encode())
+    with pytest.raises(ConferenceInputError, match="output size"):
+        inspect_conference_jats(("<article>"+container.format("small")+"<sub-article/>"*100+"</article>").encode())
+
+
 @pytest.mark.parametrize("url", ["file:///c:/a.pdf", "javascript:alert(1)", "https://x@y.test/",
                                  "https://example.test/\r\nx", "https://example.test:broken/"])
 def test_untrusted_locator_schemes_credentials_and_controls_are_refused(url):
