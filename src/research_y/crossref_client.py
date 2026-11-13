@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
+from http.client import HTTPException
 import re
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -88,7 +89,7 @@ def enrich_publication(project, publication_id, *, contact, actor, expected_revi
     status, headers, body = 0, {}, b""
     try:
         status, headers, body = transport(request)
-    except (OSError, URLError):
+    except (OSError, URLError, HTTPException):
         pass
     finished = now().astimezone(timezone.utc)
     try:

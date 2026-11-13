@@ -2,6 +2,7 @@ from contextlib import closing
 import json
 import sqlite3
 from datetime import datetime, timezone, timedelta
+from http.client import IncompleteRead
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -109,3 +110,18 @@ def test_missing_doi_never_opens_transport(store):
     result = enrich_publication(p,pub,contact="test@example.org",actor="Reviewer",expected_revision=target["revision"],
                      confirmed=True,transport=lambda _:pytest.fail("Unexpected request"))
     assert result == {"status":"missing_doi", "requested":False}
+
+
+def test_interrupted_read_finishes_reservation_and_never_uses_partial_body(store):
+    p,pub = setup_target(store)
+    view = inspect_enrichment(p,pub)["target"]
+    def interrupted(request):
+        raise IncompleteRead(b"partial",20)
+    args=dict(contact="test@example.org",actor="Reviewer",expected_revision=view["revision"],confirmed=True,
+              transport=interrupted, now=lambda:datetime(2026,11,13,tzinfo=timezone.utc))
+    result = enrich_publication(p,pub,**args)
+    assert result == {"status":"unknown_request_outcome","requested":True}
+    assert inspect_enrichment(p,pub)["current"] is None
+    assert enrich_publication(p,pub,**args)["status"] == "provider_hold"
+    logs = db_rows(p,"audit_events")
+    assert logs[-1][2] == "crossref_request_finished_v1" and "partial" not in logs[-1][3]
