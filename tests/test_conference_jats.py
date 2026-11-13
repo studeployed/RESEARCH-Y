@@ -85,6 +85,13 @@ def test_front_abstract_and_body_are_both_retained_inside_subarticle():
     assert b["matched_terms"] == ["ECMO", "Preliminary findings"] and a["matched_terms"] == []
 
 
+def test_indentation_in_inline_markup_does_not_break_phrase_matching():
+    xml = XML.replace(b"<italic>ventricle", b"<italic>\n  ventricle")
+    first = inspect_conference_jats(xml, terms=["right ventricle"])["abstracts"][0]
+    assert first["text"] == "Right ventricle assessment.\nRehabilitation."
+    assert first["matched_terms"] == ["right ventricle"]
+
+
 @pytest.mark.parametrize("url", ["file:///c:/a.pdf", "javascript:alert(1)", "https://x@y.test/",
                                  "https://example.test/\r\nx", "https://example.test:broken/"])
 def test_untrusted_locator_schemes_credentials_and_controls_are_refused(url):

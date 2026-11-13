@@ -92,7 +92,7 @@ def _body_text(node):
         if element.tag in blocks:
             parts.append("\n")
     collect(node)
-    return "\n".join(line.strip() for line in "".join(parts).splitlines() if line.strip()) or None
+    return "\n".join(" ".join(line.split()) for line in "".join(parts).splitlines() if line.strip()) or None
 
 
 def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None, pdf_pages=None):
