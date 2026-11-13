@@ -78,6 +78,11 @@ def build_page(app, ui, flow, settings_warnings=()):
                         if chosen is None:
                             return
                         await asyncio.to_thread(flow.open_native_ris,chosen)
+                    elif action == "native_attach_pdf":
+                        chosen = await select_conference_document(app.native.main_window,pdf=True)
+                        if chosen is None:
+                            return
+                        await asyncio.to_thread(flow.attach_master_pdf,chosen,**value)
                     elif action == "native_master_export":
                         folder = await select_from_native_window(app.native.main_window)
                         if folder is None:

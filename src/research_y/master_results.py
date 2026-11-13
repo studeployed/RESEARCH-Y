@@ -270,6 +270,8 @@ class MasterResults:
                                            (raw["container_id"],)).fetchone()
                     if container:
                         entry["container"] = identity._object(container[0])
+        from research_y.project_documents import list_attachments
+        row["attachments"] = list_attachments(project,pid)
         return row
 
 
