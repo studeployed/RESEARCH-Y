@@ -43,6 +43,8 @@ def test_ris_and_manual_are_distinct_sources_and_preserve_primary_counts(tmp_pat
 
 
 def test_incomplete_or_invalid_ris_never_returns_partial_citations():
+    original=bib.parse_ris(b"TY  - JOUR\nTI  - Long\n  original title\nER  - ")[0]
+    assert original["TI"]==["Long\noriginal title"] and bib._record(original)["title"]=="Long original title"
     for payload in (b"",b"TY  - JOUR\nTI  - Partial",b"TI  - Without type\nER  - "):
         with pytest.raises(ValueError):
             bib.preview_ris(payload)
