@@ -65,8 +65,8 @@ needs researcher judgement. The structured schema contains the public
 classification vocabulary and no case answers. All model-derived results
 remain provisional. This comparison provides no validated confidence threshold
 for autonomous scientific classification. The 1.7B structured candidate
-is the stronger of these two for an opt-in research preview. Selection for
-bundling is deferred pending broader evaluation and integration evidence.
+is the stronger of these two for a research preview. The owner approved
+this model for the optional [local desktop assistant](DESKTOP.md).
 
 Run `python -m scripts.run_biomedical_candidate --help` for paths and checksum
 arguments. Repeat with `--structured` to constrain answer format. The model

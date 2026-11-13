@@ -1,6 +1,10 @@
 """Published source denominators and specialist outcomes on one reopened project."""
+from contextlib import closing
 from uuid import uuid4
 
+from openpyxl import load_workbook
+from research_y import local_assistant
+from research_y.desktop.flow import RealProjectFlow
 from research_y.conference_project import admit_extraction, preview_extraction
 from research_y.crossref_metadata import inspect_enrichment
 from research_y.projects import open_project
@@ -59,3 +63,25 @@ def test_joint_specialist_sources_preserve_primary_workbook_and_attributable_lab
     assert labels["evidence"]["design"][0]["path"] == ["record","document_types",0]
     assert inspect_enrichment(project,pid)["target"]["status"] == "missing_doi"
     assert read_study_page(project,run,only_review=False)["examined"] == 5
+
+
+def test_missing_local_model_and_disabled_cloud_preserve_core_search_and_export(tmp_path):
+    project, run, queries, ids = populated(tmp_path)
+    assert len(queries) == 4
+    decide(project,ids["111"],ids["WOS:000000001"],"confirmed_match")
+    decide(project,ids["111"],ids["222"],"rejected_match")
+    missing = local_assistant.LocalAssistant(tmp_path/"absent-model")
+    assert not missing.installed
+    with closing(RealProjectFlow(local_assistant=missing)) as flow:
+        flow.open_native_folder(project.root)
+        state = flow.select_run(run)
+        assert not state["local_assistant_enabled"] and not state["cloud_enabled"]
+        board = flow.inspect_run_execution_board()["run_execution_board"]
+        assert board["reconciled_primary_run_unique_publications"] == 2
+        flow.prepare(reviewed_master=True)
+        flow.resume()
+        assert flow.observe()["observation"]["audited_success"]
+    output = project.root / "exports" / f"reviewed-master-{run}.xlsx"
+    with closing(load_workbook(output,read_only=True)) as book:
+        assert len(list(book["Reviewed Master Results"].values)[4:]) == 2
+        assert len(list(book["Reviewed Memberships"].values)[4:]) == 6
