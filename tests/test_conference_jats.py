@@ -68,6 +68,16 @@ def test_nested_boundaries_are_reported_without_claiming_the_nested_item_text():
     assert {"locator": "/article/sub-article[2]", "reason": "nested_sub_articles_require_review"} in output["unresolved"]
 
 
+def test_mixed_text_table_and_list_stay_with_their_original_abstract():
+    xml = XML.replace(b"<p>ECMO activity.</p>",
+                      b"Lead <italic>in</italic>.<p>Introduction.</p><table-wrap><caption>Results</caption>"
+                      b"<table><tr><td>ECMO</td><td>12</td></tr></table></table-wrap>"
+                      b"<list><list-item>Recovery</list-item></list>Following text.")
+    a, b = inspect_conference_jats(xml, terms=["ECMO", "Recovery"])["abstracts"]
+    assert b["text"].splitlines() == ["Lead in.", "Introduction.", "Results", "ECMO", "12", "Recovery", "Following text."]
+    assert b["matched_terms"] == ["ECMO", "Recovery"] and a["matched_terms"] == []
+
+
 @pytest.mark.parametrize("url", ["file:///c:/a.pdf", "javascript:alert(1)", "https://x@y.test/",
                                  "https://example.test/\r\nx", "https://example.test:broken/"])
 def test_untrusted_locator_schemes_credentials_and_controls_are_refused(url):

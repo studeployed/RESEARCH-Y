@@ -73,22 +73,26 @@ def _authors(meta):
     return result
 
 
-def _paragraphs(node):
-    # A paragraph may contain inline formatting. Preserve word boundaries in
-    # the original mixed content; never search text in other sub-articles.
+def _body_text(node):
+    # Separate block boundaries, retain inline typography and every text/tail
+    # (including unwrapped introductions, captions, table cells and lists).
+    blocks = {"p", "sec", "title", "label", "list", "list-item", "table-wrap", "table", "tr",
+              "th", "td", "caption", "fig", "disp-quote", "statement", "def-item", "def", "term"}
     parts = []
     def collect(element):
-        if element.tag in {"sub-article", "response"}:
-            return
-        if element.tag == "p":
-            value = _text(element, ".")
-            if value:
-                parts.append(value)
-            return
+        if element.tag in blocks:
+            parts.append("\n")
+        if element.text:
+            parts.append(re.sub(r"\s+", " ", element.text))
         for child in element:
-            collect(child)
+            if child.tag not in {"sub-article", "response"}:
+                collect(child)
+            if child.tail:
+                parts.append(re.sub(r"\s+", " ", child.tail))
+        if element.tag in blocks:
+            parts.append("\n")
     collect(node)
-    return "\n".join(parts) or (node.text or "").strip() or None
+    return "\n".join(line.strip() for line in "".join(parts).splitlines() if line.strip()) or None
 
 
 def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None, pdf_pages=None):
@@ -152,7 +156,7 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
         blocks = front.findall("abstract")
         if not blocks:
             blocks = node.findall("body")
-        body = "\n".join(value for block in blocks if (value := _paragraphs(block))) or None
+        body = "\n".join(value for block in blocks if (value := _body_text(block))) or None
         identifier = node.get("id")
         page = pages.get(identifier)
         pdf_link = None
