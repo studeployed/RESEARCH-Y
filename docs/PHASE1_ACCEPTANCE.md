@@ -6,9 +6,11 @@ tracks the six roadmap units. The source observations below have different
 denominators. PubMed identifiers, retained metadata, Starter source records,
 group memberships and reviewed publications are counted separately.
 
-**Current gate:** the Windows shell, reviewed master, workbook and PubMed
-recovery are on main. The authorized live Starter cross-day sample remains
-outstanding.
+**The Phase 1 core retrieval and recovery gate passed.** All six units have
+evidence on main. [P1-05's acceptance criteria](https://github.com/studeployed/RESEARCH-Y/issues/8)
+call for controlled cross-day fixtures and a live institutional entitlement
+check. The additional live two-date observation remains open in
+[issue #119](https://github.com/studeployed/RESEARCH-Y/issues/119).
 
 | Roadmap unit | Verified observation | Evidence |
 |---|---|---|
@@ -16,7 +18,7 @@ outstanding.
 | P1-02 Storage and migration | The versioned SQLite project preserves approved strategy versions, source records, query/group memberships and audit receipts. Recovery tests cover transactional rollback and reopening mixed-source data. | [Storage closeout](https://github.com/studeployed/RESEARCH-Y/issues/5#issuecomment-6833173579), [mixed-source reopen](https://github.com/studeployed/RESEARCH-Y/pull/107) |
 | P1-03 Strategy and compilers | Two-provider compilation preserves the approved OR groups and exact stored expressions. The live PubMed sample accepted the ECMO synonym and phrase expression through the translation check. Starter accepted the fixed Topic query under institutional entitlement. Missing an approved query keeps run-wide coverage unknown. | [Compiler closeout](https://github.com/studeployed/RESEARCH-Y/issues/6#issuecomment-6835708603), [frozen query coverage](https://github.com/studeployed/RESEARCH-Y/pull/106) |
 | P1-04 PubMed | On 31 October, 19,483 unique PMIDs reconciled across 43 pages and six leaf partitions after a controlled restart. On 12 November, a separate sample returned two IDs and both metadata records in ten requests. The first record persisted unchanged and the fresh process fetched only the missing one. Offline fixtures exercise damaged evidence and provider-requested waits across ESearch and EFetch. | [Large identifier run](https://github.com/studeployed/RESEARCH-Y/actions/runs/41235232458), [metadata restart](https://github.com/studeployed/RESEARCH-Y/actions/runs/43300410950), [retained EFetch evidence](https://github.com/studeployed/RESEARCH-Y/pull/112), [backoff](https://github.com/studeployed/RESEARCH-Y/pull/115) |
-| P1-05 Web of Science Starter | The 1 November run observed 19,584 source records, 392 acquisition pages and 392 independent verification pages. A separate process resumed on the same runner. The bounded cross-day observation is pending. | [Observed enumeration](https://github.com/studeployed/RESEARCH-Y/actions/runs/41306953908), [source limits and quota evidence](WOS_LIVE_ACCEPTANCE.md) |
+| P1-05 Web of Science Starter | Starter reported a 5,000-request daily allowance. The 1 November run reconciled 19,584 records across 392 acquisition pages and 392 verification pages. A separate process resumed without reacquiring the first page. Controlled cross-day tests verified quota exhaustion, the saved cooldown, fresh quota observation and acquisition of only the next page. | [Live entitlement](https://github.com/studeployed/RESEARCH-Y/actions/runs/41254004073), [live enumeration](https://github.com/studeployed/RESEARCH-Y/actions/runs/41306953908), [cross-day tests and reviews](https://github.com/studeployed/RESEARCH-Y/pull/118), [four post-merge jobs](https://github.com/studeployed/RESEARCH-Y/actions/runs/43325839192) |
 | P1-06 Master results and Excel | Three retained sources across two groups produced two reviewed master rows, a group-count sum of four and all six source memberships. The explicitly selected workbook preserved the supporting review receipts, safe internal links and filters. A reversed match withdrew the current count. Two distinct retained abstracts sharing a supplement DOI remained separate. | [Cross-run review](https://github.com/studeployed/RESEARCH-Y/pull/110), [workbook saving](https://github.com/studeployed/RESEARCH-Y/pull/111), [reviewed master merge](https://github.com/studeployed/RESEARCH-Y/pull/116), `tests/test_phase1_acceptance.py` |
 
 All 12 workflows passed for the reviewed master commit, including the

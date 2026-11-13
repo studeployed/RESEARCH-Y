@@ -2,9 +2,11 @@
 
 ## Phase 1 delivery
 
-Use the [Phase 1 acceptance record](docs/PHASE1_ACCEPTANCE.md) for the
-current status of the six roadmap units, native Windows evidence, live
-source limits and the distinction between publication and membership counts.
+Use the [Phase 1 acceptance record](docs/PHASE1_ACCEPTANCE.md) for
+the completed six-unit core gate, native Windows evidence, live source
+limits and the distinction between publication and membership counts.
+The additional live Web of Science cross-day observation is tracked in
+[issue #119](https://github.com/studeployed/RESEARCH-Y/issues/119).
 
 Issue #9 adds a reviewed master count and an explicitly selected,
 versioned workbook when the retained original records are fully distinguished
@@ -16,15 +18,15 @@ The owner approved optional Windows desktop adoption on 12 November. The
 normal installed entry point is `research-y`. Its ordinary local session
 shares project operations with the isolated harness and starts with an empty
 selection. See `docs/DESKTOP.md` for source settings and the dedicated native
-two-process acceptance test. The full phase remains tracked in #105.
+two-process acceptance test.
 
-[Issue #105](https://github.com/studeployed/RESEARCH-Y/issues/105) tracks all six
-roadmap units, existing evidence and remaining gates from main `cf331c2`.
+[Issue #105](https://github.com/studeployed/RESEARCH-Y/issues/105) records the
+six roadmap units and their closeout evidence from baseline `cf331c2`.
 The first retrieval regression concerns a reopened run missing an approved
 source/group query. The run board now checks the frozen plan before reporting
 enumeration or metadata coverage. See `docs/GUI_RUN_EXECUTION.md` and the
-application-worker traceability table. Source-specific live evidence and
-remaining product acceptance are tracked separately in #7, #8 and #9.
+application-worker traceability table. The scope of the completed source
+and workbook tests is recorded in #7, #8 and #9.
 
 Merged PR #107 exercises a complete **offline** two-provider
 path. A synthetic PubMed journal citation and book contribution survive
