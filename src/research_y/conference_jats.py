@@ -33,12 +33,11 @@ class _BoundedTree(ET.TreeBuilder):
         self.depth -= 1
         return super().end(tag)
 
-
 def _text(node, path):
     item = node.find(path)
     if item is None:
         return None
-    return " ".join("".join(item.itertext()).split()) or None
+    return _body_text(item)
 
 
 def _link(value):
@@ -80,6 +79,9 @@ def _body_text(node):
               "th", "td", "caption", "fig", "disp-quote", "statement", "def-item", "def", "term"}
     parts = []
     def collect(element):
+        if element.tag == "break":
+            parts.append(" ")
+            return
         if element.tag in blocks:
             parts.append("\n")
         if element.text:

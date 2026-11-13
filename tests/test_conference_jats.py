@@ -92,6 +92,14 @@ def test_indentation_in_inline_markup_does_not_break_phrase_matching():
     assert first["matched_terms"] == ["right ventricle"]
 
 
+def test_explicit_break_preserves_words_in_titles_and_abstracts():
+    xml = XML.replace(b"Right <italic>ventricle</italic>", b"Right<break/>ventricle")
+    xml = xml.replace(b"Short abstract", b"Short<break/>abstract")
+    a, b = inspect_conference_jats(xml, terms=["Right ventricle", "Short abstract"])["abstracts"]
+    assert a["title"] == b["title"] == "Short abstract"
+    assert a["text"].startswith("Right ventricle") and a["matched_terms"] == ["Right ventricle", "Short abstract"]
+
+
 @pytest.mark.parametrize("url", ["file:///c:/a.pdf", "javascript:alert(1)", "https://x@y.test/",
                                  "https://example.test/\r\nx", "https://example.test:broken/"])
 def test_untrusted_locator_schemes_credentials_and_controls_are_refused(url):
