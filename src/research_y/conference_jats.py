@@ -131,8 +131,13 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
                      issue=_text(meta, "issue"), supplement=_text(meta, "supplement"),
                      identifiers=_ids(meta), landing_url=landing_url, pdf_url=pdf_url,
                      conference=_text(meta, "conference/conf-name"), conference_date=_text(meta, "conference/conf-date"))
-    shared_dois = {i["value"].casefold() for i in container["identifiers"] if i["type"] == "doi"}
+    shared_dois = {i["value"].casefold() for i in container["identifiers"] if (i["type"] or "").casefold() == "doi"}
     children = root.findall("sub-article")
+    doi_blocks = Counter()
+    for child in children:
+        own_ids = child.findall("front-stub/article-id") + child.findall("front/article-meta/article-id")
+        doi_blocks.update({v.casefold() for elem in own_ids
+                           if elem.get("pub-id-type", "").casefold() == "doi" and (v := _text(elem, "."))})
     # In the supported profile individual abstracts are immediate sub-articles.
     # Never fold an unhandled nested article into a neighbouring result.
     ids = Counter(n.get("id") for n in root.iter() if n.get("id"))
@@ -164,15 +169,17 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
             parsed = urlsplit(pdf_url)
             pdf_link = urlunsplit(parsed._replace(fragment=f"page={page}"))
         original_ids = _ids(front)
-        individual_doi = [item["value"] for item in original_ids
-                          if item["type"] == "doi" and item["value"].casefold() not in shared_dois]
+        source_dois = [item["value"] for item in original_ids if (item["type"] or "").casefold() == "doi"]
+        individual_doi = [v for v in source_dois if v.casefold() not in shared_dois and doi_blocks[v.casefold()] == 1]
         direct = front.find("self-uri")
         direct_url = _link(direct.get(XLINK)) if direct is not None else None
         warnings = []
         if not ((identifier and ids[identifier] == 1) or individual_doi):
             warnings.append("unresolved_individual_identity")
-        if any(i["type"] == "doi" and i["value"].casefold() in shared_dois for i in original_ids):
+        if any(v.casefold() in shared_dois for v in source_dois):
             warnings.append("doi_shared_with_container")
+        if any(doi_blocks[v.casefold()] > 1 for v in source_dois):
+            warnings.append("doi_shared_across_sub_articles")
         for field, value in (("title", title), ("text", body), ("printed_page", _text(front, "fpage")),
                              ("pdf_page", page), ("individual_link", direct_url)):
             if not value:

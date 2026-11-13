@@ -100,6 +100,15 @@ def test_explicit_break_preserves_words_in_titles_and_abstracts():
     assert a["text"].startswith("Right ventricle") and a["matched_terms"] == ["Right ventricle", "Short abstract"]
 
 
+def test_repeated_child_doi_is_ambiguous_even_if_missing_from_parent():
+    xml = XML.replace(b'<article-id pub-id-type="doi">10.1234/supp</article-id>', b'', 1)
+    xml = xml.replace(b'10.1234/report', b'10.1234/SUPP').replace(b' id="a"', b'').replace(b' id="b"', b'')
+    a, b = inspect_conference_jats(xml)["abstracts"]
+    for item in (a, b):
+        assert not item["individual_dois"] and item["source_identifiers"][0]["value"].lower() == "10.1234/supp"
+        assert {"unresolved_individual_identity", "doi_shared_across_sub_articles"} <= set(item["warnings"])
+
+
 @pytest.mark.parametrize("url", ["file:///c:/a.pdf", "javascript:alert(1)", "https://x@y.test/",
                                  "https://example.test/\r\nx", "https://example.test:broken/"])
 def test_untrusted_locator_schemes_credentials_and_controls_are_refused(url):
