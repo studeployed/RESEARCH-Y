@@ -169,7 +169,7 @@ class StrategyDraft:
             if any(t["text"].casefold() == final.casefold() for t in group["terms"]):
                 raise DraftError("duplicate_draft_term")
             if offer["origin"] == "ai":
-                rationale = f'{offer["method"]}: {offer["reason"]}; local generation receipt {offer["event_id"]}'
+                rationale = f'{offer["method"]}: {offer["reason"]}; generation receipt {offer["event_id"]}'
             else:
                 rationale = f'{offer["method"]}: {offer["reason"]}; seed: {offer["seed"]}'
             self.add_term(offer["group_id"], final, origin=offer["origin"], rationale=rationale)

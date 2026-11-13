@@ -9,6 +9,7 @@ from research_y.desktop.wos_profile import WoSHostProfile
 
 PUBMED_TARGET = 'RESEARCH-Y/PubMed'
 STARTER_TARGET = 'RESEARCH-Y/WoS-Starter'
+CLOUD_TARGET = 'RESEARCH-Y/Anthropic'
 
 
 class _Credential(ctypes.Structure):
@@ -23,7 +24,7 @@ class _Credential(ctypes.Structure):
 
 
 def _read(target):
-    if target not in (PUBMED_TARGET, STARTER_TARGET):
+    if target not in (PUBMED_TARGET, STARTER_TARGET, CLOUD_TARGET):
         raise ValueError('unknown_source_setting')
     library = ctypes.WinDLL('Advapi32.dll', use_last_error=True, winmode=0x800)
     pointer = ctypes.POINTER(_Credential)()
@@ -63,3 +64,12 @@ def source_profiles():
     except (ValueError, OSError):
         warnings.append('Web of Science settings could not be loaded.')
     return pubmed, starter, tuple(warnings)
+
+
+def cloud_profile():
+    from research_y.cloud_terms import CloudTerms
+    try:
+        entry = _read(CLOUD_TARGET)
+        return (CloudTerms(*entry) if entry else None), ()
+    except (ValueError, OSError):
+        return None, ("Optional cloud settings could not be loaded.",)
