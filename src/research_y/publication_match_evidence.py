@@ -161,7 +161,15 @@ def project_source(source: dict) -> dict:
             for key,fn in (("doi",_doi),("year",_year),("journal",_string),("pages",_string)):
                 fields[key]=_field(payload,("record",key),fn)
             fields["document_types"]=_field(payload,("record","types"),_tags)
-            fields["authors"]=_field(payload,("record","authors"),_tags)
+            def imported_authors(names):
+                if not isinstance(names,list) or not names:
+                    return None
+                ordered=[_string(name) for name in names]
+                if any(name is None for name in ordered):
+                    return None
+                from research_y.publication_identity import _json
+                return _json(ordered)
+            fields["authors"]=_field(payload,("record","authors"),imported_authors)
         elif society:
             fields["doi"] = _field(payload, ("record", "doi"), _doi)
             fields["document_types"] = _field(payload, ("record", "document_types"), _tags)

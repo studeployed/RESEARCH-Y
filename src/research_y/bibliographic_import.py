@@ -56,10 +56,12 @@ def _record(fields):
     def single(*keys):
         value=first(*keys)
         return " ".join(value.split()) if value else None
+    start,end=single("SP"),single("EP")
+    pages=f"{start}-{end}" if start and end and end!=start else start or end
     return dict(title=single("TI","T1","CT"),authors=[" ".join(a.split()) for a in fields.get("AU",fields.get("A1",[]))],
                 year=year[1] if year else None,journal=single("JO","JF","T2"),doi=single("DO"),
                 text=first("AB","N2"),url=first("UR"),types=[TYPES.get(first("TY"),"other")],
-                pages=first("SP"),last_page=first("EP"),language=first("LA"))
+                pages=pages,last_page=end,language=first("LA"))
 
 
 def preview_ris(payload):

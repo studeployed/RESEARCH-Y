@@ -43,6 +43,12 @@ def test_ris_and_manual_are_distinct_sources_and_preserve_primary_counts(tmp_pat
 
 
 def test_incomplete_or_invalid_ris_never_returns_partial_citations():
+    from research_y.publication_match_evidence import project_source
+    fields=bib.parse_ris(b"TY  - JOUR\nAU  - Zed, A\nAU  - Able, B\nSP  - 123\nEP  - 129\nER  - ")[0]
+    raw=bib._record(fields)
+    evidence=project_source(dict(source_name="manual_bibliographic",source_sha256="a"*64,retrieval_id="r",
+                                 original_metadata=dict(provider="manual_bibliographic",record=raw)))["fields"]
+    assert evidence["authors"]["normalised"]=='["zed, a","able, b"]' and evidence["pages"]["value"]=="123-129"
     original=bib.parse_ris(b"TY  - JOUR\nTI  - Long\n  original title\nER  - ")[0]
     assert original["TI"]==["Long\noriginal title"] and bib._record(original)["title"]=="Long original title"
     for payload in (b"",b"TY  - JOUR\nTI  - Partial",b"TI  - Without type\nER  - "):
