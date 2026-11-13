@@ -144,6 +144,12 @@ def test_invalid_documents_are_rejected_before_producing_any_abstract():
             inspect_conference_jats(xml)
 
 
+def test_document_type_declarations_are_refused_before_xml_processing():
+    for declaration in [b"<!DOCTYPE article>", b'<!DOCTYPE article SYSTEM "example.dtd">']:
+        with pytest.raises(ConferenceInputError, match="declaration"):
+            inspect_conference_jats(declaration + XML)
+
+
 def test_local_preview_requires_unambiguous_supplied_page(tmp_path, capsys):
     source = tmp_path / "supp.xml"
     source.write_bytes(XML)

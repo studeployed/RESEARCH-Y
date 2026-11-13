@@ -105,7 +105,7 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
         raise ConferenceInputError("Invalid document size")
     try:
         xml = payload.decode("utf-8-sig")
-        if "\0" in xml or re.search(r"<!\s*ENTITY\b|<!DOCTYPE\b[^>]*\[", xml, re.I):
+        if "\0" in xml or re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", xml, re.I):
             raise ConferenceInputError("Unsupported XML declaration")
         root = ET.fromstring(xml, parser=ET.XMLParser(target=_BoundedTree()))
     except (ET.ParseError, UnicodeError) as exc:
