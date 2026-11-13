@@ -1,0 +1,1695 @@
+{
+  "engine_release": "b12360",
+  "engine_archive_sha256": "eae1726047e0eaa707b1302929d196c999b96c2f243b21aea6e93bcebacc4e17",
+  "cpu": "Intel Core i9-14900HX",
+  "gpu_used": false,
+  "source": "Original synthetic RESEARCH-Y biomedical-v1 inputs",
+  "runs": [
+    {
+      "engine": "llama-completion.exe",
+      "engine_sha256": "76c35f5c396026f16f5771a80d5a1e9fa58a33ec5d5ba8a30a0b90cd6759e980",
+      "model": "Qwen3-0.6B-Q8_0.gguf",
+      "model_sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
+      "model_revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+      "renderer": "qwen3-chatml-no-thinking-v1",
+      "engine_options": [
+        "--offline",
+        "--no-conversation",
+        "--no-display-prompt",
+        "--no-escape",
+        "--no-warmup",
+        "--no-perf",
+        "--simple-io",
+        "-ngl",
+        "0",
+        "-t",
+        "6",
+        "-c",
+        "2048",
+        "-n",
+        "256",
+        "--temp",
+        "0",
+        "--seed",
+        "19"
+      ],
+      "os": "Windows",
+      "os_release": "11",
+      "os_version": "10.0.26300",
+      "architecture": "AMD64",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "python": "3.12.10",
+      "responses": [
+        {
+          "id": "t01",
+          "rendered_sha256": "a2c9054abb94aa2f5246cdbb9866931a64aa9ab201746939a797efe640c58107",
+          "seconds": 1.39,
+          "output": "```json\r\n{\r\n  \"terms\": [\"ECMO\", \"cardiopulmonary support\", \"ECMO support\", \"cardiopulmonary management\", \"ECMO therapy\", \"ECMO system\", \"ECMO device\", \"ECMO support modality\"]\r\n}\r\n```",
+          "stdout_sha256": "4f3e69e342b5ecaec38b2567a2f8b207b7bd1f5623f6fde3661228e5671d9230",
+          "schema_sha256": null
+        },
+        {
+          "id": "t02",
+          "rendered_sha256": "f3720b35c2a6cf26c75b062c4ac99e6611330d263598b4a9493f997a66e0da25",
+          "seconds": 0.969,
+          "output": "```json\r\n{\r\n  \"terms\": [\r\n    \"venovenous ECMO\",\r\n    \"venovenous ECMO\"\r\n  ]\r\n}\r\n```",
+          "stdout_sha256": "ac1510a284b5a4522b50d9c06b3690623482bc8e81e4cef87e9324ed0c7a31fa",
+          "schema_sha256": null
+        },
+        {
+          "id": "t03",
+          "rendered_sha256": "c45f957c41f8d731ab81c756b9e384eb5de9969f96db833179c14ad54c8dc768",
+          "seconds": 1.188,
+          "output": "```json\r\n{\r\n  \"terms\": [\r\n    \"venoarterial ECMO\",\r\n    \"veno-arterial ECMO\",\r\n    \"veno-arterial ECMO\"\r\n  ]\r\n}\r\n```",
+          "stdout_sha256": "95a326c05a6a5797319e56a23cd377f359de2efd84c22978eadfbaba37b5ba49",
+          "schema_sha256": null
+        },
+        {
+          "id": "t04",
+          "rendered_sha256": "ad8b7451474df7b8089988a93ac1321fddafb1f73c09651dae9296fa1b298b02",
+          "seconds": 1.218,
+          "output": "```json\r\n{\r\n  \"terms\": [\r\n    \"right ventricular dysfunction\",\r\n    \"right ventricular dysfunction\",\r\n    \"right ventricular dysfunction\",\r\n    \"right ventricular dysfunction\",\r\n    \"right ventricular dysfunction\"\r\n  ]\r\n}\r\n```",
+          "stdout_sha256": "b0d63a81e31e13fcf8b951b5f38dccd3e3d12af974fb8342b17cb52be110776c",
+          "schema_sha256": null
+        },
+        {
+          "id": "t05",
+          "rendered_sha256": "5247627d55e6944f85dbfbbca3c8bc5d2471be9f876ef12c435166fc6cdd6ce6",
+          "seconds": 0.891,
+          "output": "{\r\n  \"terms\": [\"oxygen-carrying blood protein\", \"oxygen-carrying blood protein\"]\r\n}",
+          "stdout_sha256": "a83362788d3259c4a624b53645130f44d2d271f37970e6d74a304c596fc7193c",
+          "schema_sha256": null
+        },
+        {
+          "id": "t06",
+          "rendered_sha256": "a414f119ceb80d2269a0ab7be7a8b3cc6643a403bf618f8e3d78a2ffb6832722",
+          "seconds": 0.906,
+          "output": "```json\r\n{\r\n  \"terms\": [\"Acute Kidney Injury (AKI)\", \"Renal Critical Care\"]\r\n}\r\n```",
+          "stdout_sha256": "68dba010a5193eb934d3f5237fc9a9c5355bde622fa9a35e804c60001a2490ff",
+          "schema_sha256": null
+        },
+        {
+          "id": "t07",
+          "rendered_sha256": "5c1b3ea9e10d9df32c16046696a57a52ef85f0e5a5f7133e44783966a0edda4d",
+          "seconds": 0.985,
+          "output": "```json\r\n{\r\n  \"terms\": [\"ICU\", \"ICU\", \"ICU\", \"ICU\", \"ICU\"]\r\n}\r\n```",
+          "stdout_sha256": "44b2edf327a37bb9df57e0b89bfc0767253b9af09e8f4ae331fb67aa76aa5d4e",
+          "schema_sha256": null
+        },
+        {
+          "id": "t08",
+          "rendered_sha256": "9bdcf010f533b21cc0f3e7d4f697264053269a8cbe31d21e710bc3214941b0f0",
+          "seconds": 0.859,
+          "output": "```json\r\n{\r\n  \"terms\": [\"randomized controlled trial\", \"randomized controlled trial\"]\r\n}\r\n```",
+          "stdout_sha256": "f39ebc6be6052f1fcbdfb4d0c5295fb8ba800a05bbba86d53543b0ee6b81b51a",
+          "schema_sha256": null
+        },
+        {
+          "id": "s01",
+          "rendered_sha256": "213c5825130cb8a538c37c23681c97f2ec7a916dc23cd32d262adc580f59fde9",
+          "seconds": 1.375,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"randomized controlled trial\"],\r\n  \"format\": \"journal article\",\r\n  \"population\": \"adults\"\r\n}",
+          "stdout_sha256": "8596ba7f7464e60aab7c44b5330891e0cdbea98d9f507a38ea628a1fc574adae",
+          "schema_sha256": null
+        },
+        {
+          "id": "s02",
+          "rendered_sha256": "4654f9f9d1a6096b094a40d7d5ea15367c7ba770a0269808ea82aa8334dcff3b",
+          "seconds": 1.5,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"conference paper\",\r\n  \"population\": \"human\"\r\n}",
+          "stdout_sha256": "6a6fb581aee7ebef8bb5fd96dccd51127233b76b19d666a2c34fc315e32a8776",
+          "schema_sha256": null
+        },
+        {
+          "id": "s03",
+          "rendered_sha256": "6c0e03df60163b7d32374c616ff74ffd0f6824ea82898f4882999d45a5562f72",
+          "seconds": 1.391,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"other\",\r\n  \"population\": \"adults\"\r\n}",
+          "stdout_sha256": "66314c03bcd5e76e269a4fec1e098f76176e6fa83f028375a2eeadeebb2435b2",
+          "schema_sha256": null
+        },
+        {
+          "id": "s04",
+          "rendered_sha256": "75a81514010155832c62ddb0351d5fc26afd488393ca6c80977d10d94d1c158a",
+          "seconds": 1.421,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"population\": \"adults\"\r\n}",
+          "stdout_sha256": "a5bad7f8b495d05d2067c2d38d38aedebea2d18edea5114fb7bfc42d11f7f6a8",
+          "schema_sha256": null
+        },
+        {
+          "id": "s05",
+          "rendered_sha256": "7cf9b21d865ed6b73d8b5c35c003796a9fb99e6aed919d056d2bf514d65a0eef",
+          "seconds": 1.485,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"population\": \"adults\"\r\n}",
+          "stdout_sha256": "a5bad7f8b495d05d2067c2d38d38aedebea2d18edea5114fb7bfc42d11f7f6a8",
+          "schema_sha256": null
+        },
+        {
+          "id": "s06",
+          "rendered_sha256": "a5bf204aae9a1b27c5919f5eea8b10c91d41e5887179b724ae3e63763ce4601e",
+          "seconds": 1.344,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"conference paper\",\r\n  \"population\": \"human\"\r\n}",
+          "stdout_sha256": "6a6fb581aee7ebef8bb5fd96dccd51127233b76b19d666a2c34fc315e32a8776",
+          "schema_sha256": null
+        },
+        {
+          "id": "s07",
+          "rendered_sha256": "3614d7b21b28f26c3e3c20b70d554e7dcec7be87cb7cd06013ddb47b9cb76210",
+          "seconds": 1.375,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"protocol\"],\r\n  \"format\": \"other\",\r\n  \"population\": \"not applicable\"\r\n}",
+          "stdout_sha256": "d65ca10efdce6f726aa8b95be51e26e0cb9df9b976d44063c46bf0508819303b",
+          "schema_sha256": null
+        },
+        {
+          "id": "s08",
+          "rendered_sha256": "142ce0059edc9514cf57a8428b044133c1d7ea2b32b908e6f18e423e02706485",
+          "seconds": 1.39,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"population\": \"adults\"\r\n}",
+          "stdout_sha256": "a5bad7f8b495d05d2067c2d38d38aedebea2d18edea5114fb7bfc42d11f7f6a8",
+          "schema_sha256": null
+        },
+        {
+          "id": "s09",
+          "rendered_sha256": "b75cff099ee773ec9f5dd3704863baa4c583c7903e970fe7004dcb7a4f3bea7f",
+          "seconds": 1.438,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"population\": \"mixed human/non-human\"\r\n}",
+          "stdout_sha256": "e37aaba75cdbb4832cc34f436242ac7071e7d31fe7f3adf13d0d8c857a550959",
+          "schema_sha256": null
+        },
+        {
+          "id": "s10",
+          "rendered_sha256": "def0996d36351b471d00f9698b15a558d9aed4e146c46be862f2a19c5f290ef9",
+          "seconds": 1.422,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"population\": \"adult patients\"\r\n}",
+          "stdout_sha256": "6a6b2e9aa1ab0b1776794f0c056d69362153d5858c1ad0ae08737e7386f95f49",
+          "schema_sha256": null
+        },
+        {
+          "id": "s11",
+          "rendered_sha256": "7257586a28320bf2b51fc24073d4f62e563fd50c1d495cc67e55e8023afbd4cc",
+          "seconds": 1.437,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"conference paper\",\r\n  \"population\": \"mixed human/non-human\"\r\n}",
+          "stdout_sha256": "b669efef55214bcd9c218e304db8a39d4e6c78e66093fa7294181e028b6e2815",
+          "schema_sha256": null
+        },
+        {
+          "id": "s12",
+          "rendered_sha256": "cfae870114617ccbd94b483a77272bd3324c6addbe87d083c6d9a5f1de63e7f1",
+          "seconds": 1.469,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"population\": \"mixed human/non-human\"\r\n}",
+          "stdout_sha256": "e37aaba75cdbb4832cc34f436242ac7071e7d31fe7f3adf13d0d8c857a550959",
+          "schema_sha256": null
+        }
+      ],
+      "scores": {
+        "version": "biomedical-v1",
+        "corpus_sha256": "46154071fc42b9cce23d1b09018f8b52dc6fd1e1457d5013df474c5d5953f78f",
+        "cases": [
+          {
+            "id": "t01",
+            "task": "terms",
+            "prompt_sha256": "27fac2c1ccdbbaa735e91cee4346be34ea73e86b18ca6aad993ba36f2b20b771",
+            "response_sha256": "36efd03c75f6cab75689467fa637e72c2606343162392b1e1a1af4516c19988c",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t02",
+            "task": "terms",
+            "prompt_sha256": "c29bd52312474b37efe7ccd060d1f79d8d3cfeab1bea9c0606a5d7d75dce15f2",
+            "response_sha256": "df876e80bcd1b68fb857d5e0ce9bea159c0beaa75d829b332ea3f88b73ad96af",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t03",
+            "task": "terms",
+            "prompt_sha256": "c1eea1ba969d77555ce3daed41606f157a8a34c5a0a630d5c1754eac9c3758bc",
+            "response_sha256": "12daf04dfd5d1d2e9447d8c95d00ab36d4e95c76fa8b9afe3911bf2a14bc82b7",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t04",
+            "task": "terms",
+            "prompt_sha256": "dda7e3f391b4391266605b9265e278925064f025c271c9ce02cd88553b12202e",
+            "response_sha256": "3349a0e79aa5beac092e5d83f3e046449a7c668f8ad551b59293846232508b26",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t05",
+            "task": "terms",
+            "prompt_sha256": "da30f8931d8d6cf9a33749b6988f2fad217cf18b30a1fa7cc5705df8d95c7a59",
+            "response_sha256": "ecd0354b4fed34e6ca11bfab6f7979e2bc6eea6989a6417da60cb858ec0a3ba9",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 1,
+            "status": "scored"
+          },
+          {
+            "id": "t06",
+            "task": "terms",
+            "prompt_sha256": "45ebedba2ba5afcbe21a426405f9af14dde40eae37a15c8a349cd9d1352108e4",
+            "response_sha256": "d8c7cea6153aef3c17a05dea59aefdecaccfbe2dfbcbfbc564684ce356eba493",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t07",
+            "task": "terms",
+            "prompt_sha256": "a04a64535678eab0f191361f162b02ec8051ff2ac58212f936e11bb67c4f1ce0",
+            "response_sha256": "7203e480d31b6d38508cbed57b2dedf1a4f00caecb104a84e36c3872431a5282",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t08",
+            "task": "terms",
+            "prompt_sha256": "8331ded523cca4104494d09ec5b21730e01ce5980a5251203712edecd5b18891",
+            "response_sha256": "e6ff50e86ad6a26c747cab9416e67077b6697514b9b9116a4d1208cb7d93ae9c",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s01",
+            "task": "study",
+            "prompt_sha256": "4504f3175000b6447fde30ae6c8f714ea2e4625570fdd7a77031600c1f044a80",
+            "response_sha256": "7776a839221157631eeb086d5ae5505d66779c472d11afa789430f8c4824a58f",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s02",
+            "task": "study",
+            "prompt_sha256": "8cd3ae34ecb4b915bbca5f92980c13cadcd596aaed452512f56d5b3341737a82",
+            "response_sha256": "8a8c88e77055def593061e961b1606765bb00635e5057b9587bb49d1214755d5",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s03",
+            "task": "study",
+            "prompt_sha256": "893c1fa10b85e062f1e7e0541017944e3d6e60e1a3a148342e5a36493fc5a395",
+            "response_sha256": "49b25b45ac726d97a3e6d82fae9496c1160daece5082946f4aa8d4ef5518c612",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s04",
+            "task": "study",
+            "prompt_sha256": "5f5de0a15f70a4c0ce752ae12a29c1e259c041f81afe8fcfdff0c102f6a612c3",
+            "response_sha256": "a2a307e15d58094d91f0ea7ea79ff8e7d1a18a4f58e911562e9dcbe8413f0f9e",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s05",
+            "task": "study",
+            "prompt_sha256": "9713ba940e67e7688ba6d97914c132d7517e67b784df5ad10c5fe4708995acf4",
+            "response_sha256": "a2a307e15d58094d91f0ea7ea79ff8e7d1a18a4f58e911562e9dcbe8413f0f9e",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s06",
+            "task": "study",
+            "prompt_sha256": "520457a7a90a7fb94dead576d3ce98a28ed6779142e2176e6c08a2fce32ce29d",
+            "response_sha256": "8a8c88e77055def593061e961b1606765bb00635e5057b9587bb49d1214755d5",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s07",
+            "task": "study",
+            "prompt_sha256": "442771d95c03e0d9c57e0bf4056c275b9ebad728e2107e79a145d3c93508a9ca",
+            "response_sha256": "be2655f58933a0ab6add2b7c190156c4d8752873f37935f67b80d1a10f66a85a",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s08",
+            "task": "study",
+            "prompt_sha256": "b84c097cb87e1b14babb68aa0d56f8642851ea1f55b69343f98b62b4af6e4a1d",
+            "response_sha256": "a2a307e15d58094d91f0ea7ea79ff8e7d1a18a4f58e911562e9dcbe8413f0f9e",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s09",
+            "task": "study",
+            "prompt_sha256": "50349cbdca53c178f0f412071f56f6b8bbd7d3f1c6d9885ff0b5a3ed7094bd0f",
+            "response_sha256": "aa716a0abf416430ec23e993e0a2b52258f251a00d8388bbb49b92c5f4cc23d3",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s10",
+            "task": "study",
+            "prompt_sha256": "50136d9c393c360086ea323bca07b30fdc4fa0cfe4b3288be1fe8b6cf581f42c",
+            "response_sha256": "7a2a87d295aa4fec53afbe8f6441fe0ebaf0252be1bf11d16eec166187782f5e",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s11",
+            "task": "study",
+            "prompt_sha256": "7f7329fcee01230f540e1094110b12772171e922ada85e7c9d4187216a0c55e5",
+            "response_sha256": "8281d5e3bea6ec9589a1a7c01ec6cecb4a4465ce4b5608d14b55384efd8c6a64",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s12",
+            "task": "study",
+            "prompt_sha256": "28425d6e00a33d42dae37a17e1b0034418c533d6b2fa5e9388f23fec2a02386d",
+            "response_sha256": "aa716a0abf416430ec23e993e0a2b52258f251a00d8388bbb49b92c5f4cc23d3",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          }
+        ],
+        "counts": {
+          "term_cases": 8,
+          "expected_terms": 17,
+          "recovered": 0,
+          "prohibited": 0,
+          "unlisted": 1,
+          "study_cases": 12,
+          "all_dimensions_correct": 0,
+          "invalid_outputs": 13
+        },
+        "correct_by_dimension": {
+          "original_research": 4,
+          "design": 0,
+          "format": 0,
+          "population": 2
+        }
+      },
+      "structured": false
+    },
+    {
+      "engine": "llama-completion.exe",
+      "engine_sha256": "76c35f5c396026f16f5771a80d5a1e9fa58a33ec5d5ba8a30a0b90cd6759e980",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "model_sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+      "model_revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+      "renderer": "qwen3-chatml-no-thinking-v1",
+      "structured": false,
+      "engine_options": [
+        "--offline",
+        "--no-conversation",
+        "--no-display-prompt",
+        "--no-escape",
+        "--no-warmup",
+        "--no-perf",
+        "--simple-io",
+        "-ngl",
+        "0",
+        "-t",
+        "6",
+        "-c",
+        "2048",
+        "-n",
+        "256",
+        "--temp",
+        "0",
+        "--seed",
+        "19"
+      ],
+      "os": "Windows",
+      "os_release": "11",
+      "os_version": "10.0.26300",
+      "architecture": "AMD64",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "python": "3.12.10",
+      "responses": [
+        {
+          "id": "t01",
+          "rendered_sha256": "a2c9054abb94aa2f5246cdbb9866931a64aa9ab201746939a797efe640c58107",
+          "stdout_sha256": "233c50464cc8a4041e5e50b5387d8e1882c3ea2d203342535e071eea4bb302b9",
+          "schema_sha256": null,
+          "seconds": 5.5,
+          "output": "```json\r\n{\r\n  \"terms\": [\r\n    \"ECMO\",\r\n    \"extracorporeal membrane oxygenation\",\r\n    \"extracorporeal membrane oxygenation\",\r\n    \"extracorporeal membrane oxygenation support\",\r\n    \"extracorporeal membrane oxygenation therapy\",\r\n    \"extracorporeal membrane oxygenation support system\",\r\n    \"extracorporeal membrane oxygenation support device\",\r\n    \"extracorporeal membrane oxygenation support modality\",\r\n    \"extracorporeal membrane oxygenation support technique\",\r\n    \"extracorporeal membrane oxygenation support protocol\"\r\n  ]\r\n}\r\n```"
+        },
+        {
+          "id": "t02",
+          "rendered_sha256": "f3720b35c2a6cf26c75b062c4ac99e6611330d263598b4a9493f997a66e0da25",
+          "stdout_sha256": "ac1510a284b5a4522b50d9c06b3690623482bc8e81e4cef87e9324ed0c7a31fa",
+          "schema_sha256": null,
+          "seconds": 2.14,
+          "output": "```json\r\n{\r\n  \"terms\": [\r\n    \"venovenous ECMO\",\r\n    \"venovenous ECMO\"\r\n  ]\r\n}\r\n```"
+        },
+        {
+          "id": "t03",
+          "rendered_sha256": "c45f957c41f8d731ab81c756b9e384eb5de9969f96db833179c14ad54c8dc768",
+          "stdout_sha256": "7bcd7e98ea4b498ac40929b3ae029b5347dda2b0d93a3eb986b217469ecc774d",
+          "schema_sha256": null,
+          "seconds": 1.766,
+          "output": "```json\r\n{\r\n  \"terms\": [\r\n    \"venoarterial\"\r\n  ]\r\n}\r\n```"
+        },
+        {
+          "id": "t04",
+          "rendered_sha256": "ad8b7451474df7b8089988a93ac1321fddafb1f73c09651dae9296fa1b298b02",
+          "stdout_sha256": "2c03df86bfce6aebc810f301bbaf28772a1b6a3ce221bf3b0938a0b36b31f6a4",
+          "schema_sha256": null,
+          "seconds": 2.859,
+          "output": "{\r\n  \"terms\": [\r\n    \"right ventricular dysfunction\",\r\n    \"right ventricular failure\",\r\n    \"right ventricular insufficiency\",\r\n    \"right ventricular dysfunction syndrome\",\r\n    \"right ventricular dysfunction in patients\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t05",
+          "rendered_sha256": "5247627d55e6944f85dbfbbca3c8bc5d2471be9f876ef12c435166fc6cdd6ce6",
+          "stdout_sha256": "97d3174bc4a082a8d2d014aefb9f9ac9a9788453cfeafdb2d36f1b98e08c7966",
+          "schema_sha256": null,
+          "seconds": 1.86,
+          "output": "```json\r\n{\r\n  \"terms\": [\r\n    \"hemoglobin\",\r\n    \"haemoglobin\"\r\n  ]\r\n}\r\n```"
+        },
+        {
+          "id": "t06",
+          "rendered_sha256": "a414f119ceb80d2269a0ab7be7a8b3cc6643a403bf618f8e3d78a2ffb6832722",
+          "stdout_sha256": "2952b0ff53c3648b007e6c7ffabe4492c69633e388b20222fe623186fcf412df",
+          "schema_sha256": null,
+          "seconds": 3.609,
+          "output": "```json\r\n{\r\n  \"terms\": [\"acute kidney injury\", \"renal critical care\", \"acute kidney failure\", \"acute renal failure\", \"acute kidney disease\", \"acute renal disease\", \"acute kidney injury\", \"acute renal injury\", \"acute kidney failure\", \"acute renal failure\", \"acute kidney disease\", \"acute renal disease\"]\r\n}\r\n```"
+        },
+        {
+          "id": "t07",
+          "rendered_sha256": "5c1b3ea9e10d9df32c16046696a57a52ef85f0e5a5f7133e44783966a0edda4d",
+          "stdout_sha256": "88cf5d96d7dfc212a701c2a72cd58d4b5f9b2b3107d2978021ba5275883d118e",
+          "schema_sha256": null,
+          "seconds": 1.5,
+          "output": "{\r\n  \"terms\": [\r\n    \"ICU\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t08",
+          "rendered_sha256": "9bdcf010f533b21cc0f3e7d4f697264053269a8cbe31d21e710bc3214941b0f0",
+          "stdout_sha256": "f7e4975a33888c74f8fee9c8ef1585ecbdc323e01e6953ab209b3f8fe6b3c6fd",
+          "schema_sha256": null,
+          "seconds": 1.578,
+          "output": "{\r\n  \"terms\": [\r\n    \"randomized controlled trial\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "s01",
+          "rendered_sha256": "213c5825130cb8a538c37c23681c97f2ec7a916dc23cd32d262adc580f59fde9",
+          "stdout_sha256": "1e75e21ae1d5cb331a5f85efafd7f8942d234ea6bf9107c25423030ee3ba6599",
+          "schema_sha256": null,
+          "seconds": 3.266,
+          "output": "```json\r\n{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"RCT\"],\r\n  \"format\": \"journal article\",\r\n  \"population\": \"human\"\r\n}\r\n```"
+        },
+        {
+          "id": "s02",
+          "rendered_sha256": "4654f9f9d1a6096b094a40d7d5ea15367c7ba770a0269808ea82aa8334dcff3b",
+          "stdout_sha256": "ac54548fdd6b0ca5fa632ca03fcf9e68265a0321650283162b58660720df1073",
+          "schema_sha256": null,
+          "seconds": 3.187,
+          "output": "```json\r\n{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"RCT\"],\r\n  \"format\": \"conference abstract\",\r\n  \"population\": \"human\"\r\n}\r\n```"
+        },
+        {
+          "id": "s03",
+          "rendered_sha256": "6c0e03df60163b7d32374c616ff74ffd0f6824ea82898f4882999d45a5562f72",
+          "stdout_sha256": "5bd7671d7473b1667979aa9ee3135667c608259005f43a6a2c46e6ca26483193",
+          "schema_sha256": null,
+          "seconds": 3.25,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"randomized controlled trial (RCT)\"],\r\n  \"format\": \"journal article\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s04",
+          "rendered_sha256": "75a81514010155832c62ddb0351d5fc26afd488393ca6c80977d10d94d1c158a",
+          "stdout_sha256": "7033d67d3172604cb64794c3a4531bb91952c513e041ba431d8173d73203e2f0",
+          "schema_sha256": null,
+          "seconds": 3.219,
+          "output": "```json\r\n{\r\n  \"original_research\": \"yes\",\r\n  \"design\": \"meta-analysis\",\r\n  \"format\": \"journal article\",\r\n  \"population\": \"human\"\r\n}\r\n```"
+        },
+        {
+          "id": "s05",
+          "rendered_sha256": "7cf9b21d865ed6b73d8b5c35c003796a9fb99e6aed919d056d2bf514d65a0eef",
+          "stdout_sha256": "c147174976760fa8a4f37eb0390596165843835e0988b4d0e5ed83d68514150e",
+          "schema_sha256": null,
+          "seconds": 3.141,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": \"journal article\",\r\n  \"population\": \"human\",\r\n  \"format\": \"journal article\"\r\n}"
+        },
+        {
+          "id": "s06",
+          "rendered_sha256": "a5bf204aae9a1b27c5919f5eea8b10c91d41e5887179b724ae3e63763ce4601e",
+          "stdout_sha256": "516fb66d4d23b2cbd4d421725fb8e4ef184c69a7619d8e94c7bb3ac9611e8b09",
+          "schema_sha256": null,
+          "seconds": 3.156,
+          "output": "```json\r\n{\r\n  \"original_research\": \"no\",\r\n  \"design\": [\"conference abstract\"],\r\n  \"format\": \"conference abstract\",\r\n  \"population\": \"human\"\r\n}\r\n```"
+        },
+        {
+          "id": "s07",
+          "rendered_sha256": "3614d7b21b28f26c3e3c20b70d554e7dcec7be87cb7cd06013ddb47b9cb76210",
+          "stdout_sha256": "1e998ad8ab4ec6d09a8a8dbff247cd1acb2e1e5c71cda7042742a1a526aa2553",
+          "schema_sha256": null,
+          "seconds": 3.141,
+          "output": "{\r\n  \"original_research\": \"no\",\r\n  \"design\": [\"guideline\"],\r\n  \"format\": \"society web document\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s08",
+          "rendered_sha256": "142ce0059edc9514cf57a8428b044133c1d7ea2b32b908e6f18e423e02706485",
+          "stdout_sha256": "58533d2c559b793ffd85c6c4a7c9f58720a8037f454d577af5dbd2f5dbee6a2d",
+          "schema_sha256": null,
+          "seconds": 3.343,
+          "output": "```json\r\n{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal article\",\r\n  \"population\": \"human\"\r\n}\r\n```"
+        },
+        {
+          "id": "s09",
+          "rendered_sha256": "b75cff099ee773ec9f5dd3704863baa4c583c7903e970fe7004dcb7a4f3bea7f",
+          "stdout_sha256": "67756179a191257a2a8c70544ddf6bbcbb22b94f33c4f97a82e2f62193dfd7fd",
+          "schema_sha256": null,
+          "seconds": 3.235,
+          "output": "```json\r\n{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"case series\"],\r\n  \"format\": \"journal article\",\r\n  \"population\": \"human\"\r\n}\r\n```"
+        },
+        {
+          "id": "s10",
+          "rendered_sha256": "def0996d36351b471d00f9698b15a558d9aed4e146c46be862f2a19c5f290ef9",
+          "stdout_sha256": "1f57f65324e6b180dd82d3f0221a07780e68550fa4e51eb5548de750a7447e9f",
+          "schema_sha256": null,
+          "seconds": 3.25,
+          "output": "```json\r\n{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"qualitative study\"],\r\n  \"format\": \"journal article\",\r\n  \"population\": \"human\"\r\n}\r\n```"
+        },
+        {
+          "id": "s11",
+          "rendered_sha256": "7257586a28320bf2b51fc24073d4f62e563fd50c1d495cc67e55e8023afbd4cc",
+          "stdout_sha256": "10841f14596ec677d589667df22dc8bbc7641fc97cf95fd177c619d602c7bc15",
+          "schema_sha256": null,
+          "seconds": 3.328,
+          "output": "```json\r\n{\r\n  \"original_research\": \"no\",\r\n  \"design\": [\"conference abstract\"],\r\n  \"population\": \"not applicable\",\r\n  \"format\": \"conference abstract\"\r\n}\r\n```"
+        },
+        {
+          "id": "s12",
+          "rendered_sha256": "cfae870114617ccbd94b483a77272bd3324c6addbe87d083c6d9a5f1de63e7f1",
+          "stdout_sha256": "5a74cde0572394becd54a30824d13479327c3799af78d6193e01de94ec5610ee",
+          "schema_sha256": null,
+          "seconds": 3.0,
+          "output": "{\r\n  \"original_research\": \"yes\",\r\n  \"design\": [\"case series\"],\r\n  \"format\": \"journal article\",\r\n  \"population\": \"human\"\r\n}"
+        }
+      ],
+      "scores": {
+        "version": "biomedical-v1",
+        "corpus_sha256": "46154071fc42b9cce23d1b09018f8b52dc6fd1e1457d5013df474c5d5953f78f",
+        "cases": [
+          {
+            "id": "t01",
+            "task": "terms",
+            "prompt_sha256": "27fac2c1ccdbbaa735e91cee4346be34ea73e86b18ca6aad993ba36f2b20b771",
+            "response_sha256": "28912af4b63ed4e6a53e9252cd3537b14f22d209b951e79a642af20ddfd974df",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t02",
+            "task": "terms",
+            "prompt_sha256": "c29bd52312474b37efe7ccd060d1f79d8d3cfeab1bea9c0606a5d7d75dce15f2",
+            "response_sha256": "df876e80bcd1b68fb857d5e0ce9bea159c0beaa75d829b332ea3f88b73ad96af",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t03",
+            "task": "terms",
+            "prompt_sha256": "c1eea1ba969d77555ce3daed41606f157a8a34c5a0a630d5c1754eac9c3758bc",
+            "response_sha256": "a03bf1f8843e0cbb10f12fc43d6516702e942fa62a42579d497b5e936fef6b59",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t04",
+            "task": "terms",
+            "prompt_sha256": "dda7e3f391b4391266605b9265e278925064f025c271c9ce02cd88553b12202e",
+            "response_sha256": "60d6acd1fd1f97a217ba78925dbe00045237e731609e623e634a9aea7b296405",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 5,
+            "status": "scored"
+          },
+          {
+            "id": "t05",
+            "task": "terms",
+            "prompt_sha256": "da30f8931d8d6cf9a33749b6988f2fad217cf18b30a1fa7cc5705df8d95c7a59",
+            "response_sha256": "b402fdc9f47cf6edb866a9b8c363dfad39b44c70d268123021293ae62c5494f0",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t06",
+            "task": "terms",
+            "prompt_sha256": "45ebedba2ba5afcbe21a426405f9af14dde40eae37a15c8a349cd9d1352108e4",
+            "response_sha256": "e77a151c5027b104e1be323ff1114ed482ee1a4cbabf9ddfb3ebd7efa44cd597",
+            "status": "invalid_output"
+          },
+          {
+            "id": "t07",
+            "task": "terms",
+            "prompt_sha256": "a04a64535678eab0f191361f162b02ec8051ff2ac58212f936e11bb67c4f1ce0",
+            "response_sha256": "26f6357e33c7949cc7087c3169778d46aadfbd0ee2bc92f0a8ca28ccde7c7710",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 1,
+            "status": "scored"
+          },
+          {
+            "id": "t08",
+            "task": "terms",
+            "prompt_sha256": "8331ded523cca4104494d09ec5b21730e01ce5980a5251203712edecd5b18891",
+            "response_sha256": "07b8f0169328fb46c580e633818240b8cb317aeee6b44e671acd8f46f041e11d",
+            "recovered": 1,
+            "prohibited": 0,
+            "unlisted": 0,
+            "status": "scored"
+          },
+          {
+            "id": "s01",
+            "task": "study",
+            "prompt_sha256": "4504f3175000b6447fde30ae6c8f714ea2e4625570fdd7a77031600c1f044a80",
+            "response_sha256": "fe0a716c7a8caf848b990c4769f146569944da7d700f6356f2b511145e645f6d",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s02",
+            "task": "study",
+            "prompt_sha256": "8cd3ae34ecb4b915bbca5f92980c13cadcd596aaed452512f56d5b3341737a82",
+            "response_sha256": "d4e566fca29116c7ef5d3062fe2f36192dca62d229f97b20cc45aaeba325390b",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s03",
+            "task": "study",
+            "prompt_sha256": "893c1fa10b85e062f1e7e0541017944e3d6e60e1a3a148342e5a36493fc5a395",
+            "response_sha256": "8243a6b42c3b914dc3d994a8144ba70be5c999d0d5dff30863901ef763f513af",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s04",
+            "task": "study",
+            "prompt_sha256": "5f5de0a15f70a4c0ce752ae12a29c1e259c041f81afe8fcfdff0c102f6a612c3",
+            "response_sha256": "5ab654fb1dc3c64f7544907a08595b626164db20135951e5c2556b521d568a23",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s05",
+            "task": "study",
+            "prompt_sha256": "9713ba940e67e7688ba6d97914c132d7517e67b784df5ad10c5fe4708995acf4",
+            "response_sha256": "86eb5fb01be580fe825749368e84ff54e08a3a1336f79f837d878f4dcb788de3",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s06",
+            "task": "study",
+            "prompt_sha256": "520457a7a90a7fb94dead576d3ce98a28ed6779142e2176e6c08a2fce32ce29d",
+            "response_sha256": "a7768194cbf9cdbc3ba4f976cd5e6d7c85121761f0d60532e1365ed2a7587727",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s07",
+            "task": "study",
+            "prompt_sha256": "442771d95c03e0d9c57e0bf4056c275b9ebad728e2107e79a145d3c93508a9ca",
+            "response_sha256": "fecd229178d228bca219158dd5883d3f5eed34c41dc44ec354e543bf159cd76b",
+            "matches": {
+              "design": true,
+              "original_research": true,
+              "format": true,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s08",
+            "task": "study",
+            "prompt_sha256": "b84c097cb87e1b14babb68aa0d56f8642851ea1f55b69343f98b62b4af6e4a1d",
+            "response_sha256": "75436874e160b06236905b023ce28b8252188a2273b293333f88c0029bc6af90",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s09",
+            "task": "study",
+            "prompt_sha256": "50349cbdca53c178f0f412071f56f6b8bbd7d3f1c6d9885ff0b5a3ed7094bd0f",
+            "response_sha256": "bf0ee3d60ca66428c9dcc6ae1744d64ae9565de23a63243b86a62af663cfb4c8",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s10",
+            "task": "study",
+            "prompt_sha256": "50136d9c393c360086ea323bca07b30fdc4fa0cfe4b3288be1fe8b6cf581f42c",
+            "response_sha256": "c76011f447c83e837cac134b12440b67952216f3e6ce85735cc810e0c9393aae",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s11",
+            "task": "study",
+            "prompt_sha256": "7f7329fcee01230f540e1094110b12772171e922ada85e7c9d4187216a0c55e5",
+            "response_sha256": "312aab4e601dbc2665e27e93868e31e0c1ac3978ae7c4f45bc7ea09f2e898d9e",
+            "status": "invalid_output"
+          },
+          {
+            "id": "s12",
+            "task": "study",
+            "prompt_sha256": "28425d6e00a33d42dae37a17e1b0034418c533d6b2fa5e9388f23fec2a02386d",
+            "response_sha256": "f510967c88fd12846ce5eddc85c7fd105178bef1b8629158055426d32ce8a0b0",
+            "status": "invalid_output"
+          }
+        ],
+        "counts": {
+          "term_cases": 8,
+          "expected_terms": 17,
+          "recovered": 1,
+          "prohibited": 0,
+          "unlisted": 6,
+          "study_cases": 12,
+          "all_dimensions_correct": 1,
+          "invalid_outputs": 16
+        },
+        "correct_by_dimension": {
+          "original_research": 1,
+          "design": 1,
+          "format": 1,
+          "population": 1
+        }
+      }
+    },
+    {
+      "engine": "llama-completion.exe",
+      "engine_sha256": "76c35f5c396026f16f5771a80d5a1e9fa58a33ec5d5ba8a30a0b90cd6759e980",
+      "model": "Qwen3-0.6B-Q8_0.gguf",
+      "model_sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
+      "model_revision": "23749fefcc72300e3a2ad315e1317431b06b590a",
+      "renderer": "qwen3-chatml-no-thinking-v1",
+      "structured": true,
+      "engine_options": [
+        "--offline",
+        "--no-conversation",
+        "--no-display-prompt",
+        "--no-escape",
+        "--no-warmup",
+        "--no-perf",
+        "--simple-io",
+        "-ngl",
+        "0",
+        "-t",
+        "6",
+        "-c",
+        "2048",
+        "-n",
+        "256",
+        "--temp",
+        "0",
+        "--seed",
+        "19"
+      ],
+      "os": "Windows",
+      "os_release": "11",
+      "os_version": "10.0.26300",
+      "architecture": "AMD64",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "python": "3.12.10",
+      "responses": [
+        {
+          "id": "t01",
+          "rendered_sha256": "a2c9054abb94aa2f5246cdbb9866931a64aa9ab201746939a797efe640c58107",
+          "stdout_sha256": "5f054b15a763ee09dde53bbcacb2538b0f00b19c416e4c3db25842be1d7fc338",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 1.109,
+          "output": "{\r\n  \"terms\": [\"ECMO\", \"cardiopulmonary support\", \"ECMO support\", \"ECMO therapy\", \"cardiopulmonary support modality\"]\r\n}"
+        },
+        {
+          "id": "t02",
+          "rendered_sha256": "f3720b35c2a6cf26c75b062c4ac99e6611330d263598b4a9493f997a66e0da25",
+          "stdout_sha256": "cbd85835b529218d0f38a7d06530dc2b545f96f16611230ce36cc9924b705295",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 1.078,
+          "output": "{\r\n  \"terms\": [\r\n    \"venovenous ECMO\",\r\n    \"venovenous-ECMO\",\r\n    \"venovenous-ECMO\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t03",
+          "rendered_sha256": "c45f957c41f8d731ab81c756b9e384eb5de9969f96db833179c14ad54c8dc768",
+          "stdout_sha256": "d561b4ddc75cadbae83221adff3a0e0237177752baddd972d79e76ba873a6869",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 0.969,
+          "output": "{\r\n  \"terms\": [\r\n    \"venoarterial ECMO\",\r\n    \"veno-arterial ECMO\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t04",
+          "rendered_sha256": "ad8b7451474df7b8089988a93ac1321fddafb1f73c09651dae9296fa1b298b02",
+          "stdout_sha256": "f1e406ec5a318f5198818092730e22bed4ef752a34b56f32e4971cb9d7c58bd9",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 1.016,
+          "output": "{\r\n  \"terms\": [\r\n    \"right ventricular dysfunction\",\r\n    \"right ventricular dysfunction\",\r\n    \"right ventricular dysfunction\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t05",
+          "rendered_sha256": "5247627d55e6944f85dbfbbca3c8bc5d2471be9f876ef12c435166fc6cdd6ce6",
+          "stdout_sha256": "a83362788d3259c4a624b53645130f44d2d271f37970e6d74a304c596fc7193c",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 0.906,
+          "output": "{\r\n  \"terms\": [\"oxygen-carrying blood protein\", \"oxygen-carrying blood protein\"]\r\n}"
+        },
+        {
+          "id": "t06",
+          "rendered_sha256": "a414f119ceb80d2269a0ab7be7a8b3cc6643a403bf618f8e3d78a2ffb6832722",
+          "stdout_sha256": "9a1528441e0a118502d697213d3c33d400a06d9b212b8ba3e45681b7d740b934",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 0.875,
+          "output": "{\r\n  \"terms\": [\"Acute Kidney Injury (AKI)\", \"Renal Critical Care\"]\r\n}"
+        },
+        {
+          "id": "t07",
+          "rendered_sha256": "5c1b3ea9e10d9df32c16046696a57a52ef85f0e5a5f7133e44783966a0edda4d",
+          "stdout_sha256": "1dff07514a4c468697a04d40ab251f4f13d6c5845d06e73693855c6e569f6cf4",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 0.922,
+          "output": "{\r\n  \"terms\": [\"icu\", \"icu\", \"icu\", \"icu\", \"icu\"]\r\n}"
+        },
+        {
+          "id": "t08",
+          "rendered_sha256": "9bdcf010f533b21cc0f3e7d4f697264053269a8cbe31d21e710bc3214941b0f0",
+          "stdout_sha256": "75eefc0090f504cd2ba607ae5ef671ac1b37894ed102de16d3049816b0ab27fe",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 0.875,
+          "output": "{\r\n  \"terms\": [\"randomized controlled trial\", \"randomized controlled trial\", \"RCT\"]\r\n}"
+        },
+        {
+          "id": "s01",
+          "rendered_sha256": "213c5825130cb8a538c37c23681c97f2ec7a916dc23cd32d262adc580f59fde9",
+          "stdout_sha256": "e73073b512a1a4bf781ea0b6e50145317183be68b3ca61e84f23d963a15b6b4d",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.437,
+          "output": "{\r\n  \"design\": [\"RCT\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s02",
+          "rendered_sha256": "4654f9f9d1a6096b094a40d7d5ea15367c7ba770a0269808ea82aa8334dcff3b",
+          "stdout_sha256": "638852eb055f4e149b3716e1b5176f483d75ada3445425aee350f0782b342062",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.391,
+          "output": "{\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"conference paper\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s03",
+          "rendered_sha256": "6c0e03df60163b7d32374c616ff74ffd0f6824ea82898f4882999d45a5562f72",
+          "stdout_sha256": "30be906323961baa036b43045f9215d513bf35cb34a030eef99107915a842369",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.468,
+          "output": "{\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"other\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"mixed human/non-human\"\r\n}"
+        },
+        {
+          "id": "s04",
+          "rendered_sha256": "75a81514010155832c62ddb0351d5fc26afd488393ca6c80977d10d94d1c158a",
+          "stdout_sha256": "e2ad2bbcedf0fe9655e5a52c58ae75fa08b97e5767bb863f3c2f3e698c83df23",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.5,
+          "output": "{\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s05",
+          "rendered_sha256": "7cf9b21d865ed6b73d8b5c35c003796a9fb99e6aed919d056d2bf514d65a0eef",
+          "stdout_sha256": "e2ad2bbcedf0fe9655e5a52c58ae75fa08b97e5767bb863f3c2f3e698c83df23",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.469,
+          "output": "{\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s06",
+          "rendered_sha256": "a5bf204aae9a1b27c5919f5eea8b10c91d41e5887179b724ae3e63763ce4601e",
+          "stdout_sha256": "638852eb055f4e149b3716e1b5176f483d75ada3445425aee350f0782b342062",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.469,
+          "output": "{\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"conference paper\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s07",
+          "rendered_sha256": "3614d7b21b28f26c3e3c20b70d554e7dcec7be87cb7cd06013ddb47b9cb76210",
+          "stdout_sha256": "04fff6f32bc057c0b499337e7c42ba8d19bacec8c547c71fffd2f2a1d2dd2eb0",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.406,
+          "output": "{\r\n  \"design\": [\"protocol\"],\r\n  \"format\": \"other\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"not applicable\"\r\n}"
+        },
+        {
+          "id": "s08",
+          "rendered_sha256": "142ce0059edc9514cf57a8428b044133c1d7ea2b32b908e6f18e423e02706485",
+          "stdout_sha256": "e2ad2bbcedf0fe9655e5a52c58ae75fa08b97e5767bb863f3c2f3e698c83df23",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.438,
+          "output": "{\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s09",
+          "rendered_sha256": "b75cff099ee773ec9f5dd3704863baa4c583c7903e970fe7004dcb7a4f3bea7f",
+          "stdout_sha256": "17bcb381a91033057563ab78fe34f32664f2c1b40182d803c5c11c8a61cf0662",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.468,
+          "output": "{\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"mixed human/non-human\"\r\n}"
+        },
+        {
+          "id": "s10",
+          "rendered_sha256": "def0996d36351b471d00f9698b15a558d9aed4e146c46be862f2a19c5f290ef9",
+          "stdout_sha256": "17bcb381a91033057563ab78fe34f32664f2c1b40182d803c5c11c8a61cf0662",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.485,
+          "output": "{\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"mixed human/non-human\"\r\n}"
+        },
+        {
+          "id": "s11",
+          "rendered_sha256": "7257586a28320bf2b51fc24073d4f62e563fd50c1d495cc67e55e8023afbd4cc",
+          "stdout_sha256": "a4ee7ec3613e28bb3f27f7701b2dd26626d01a7d3f14a04c3cab70f901663dfd",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.484,
+          "output": "{\r\n  \"design\": [\"prospective cohort\"],\r\n  \"format\": \"conference paper\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"mixed human/non-human\"\r\n}"
+        },
+        {
+          "id": "s12",
+          "rendered_sha256": "cfae870114617ccbd94b483a77272bd3324c6addbe87d083c6d9a5f1de63e7f1",
+          "stdout_sha256": "72b7f7a5d502fd98a5ca76aad6ae340b0feb087fdcae3a7ddfd4aba800112aca",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 1.453,
+          "output": "{\r\n  \"design\": [\"case series\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"mixed human/non-human\"\r\n}"
+        }
+      ],
+      "scores": {
+        "version": "biomedical-v1",
+        "corpus_sha256": "46154071fc42b9cce23d1b09018f8b52dc6fd1e1457d5013df474c5d5953f78f",
+        "cases": [
+          {
+            "id": "t01",
+            "task": "terms",
+            "prompt_sha256": "27fac2c1ccdbbaa735e91cee4346be34ea73e86b18ca6aad993ba36f2b20b771",
+            "response_sha256": "47322f121251b8928624d5a4f7a8af8be70c8332b45b787767a3ac2b0d8d65d1",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 5,
+            "status": "scored"
+          },
+          {
+            "id": "t02",
+            "task": "terms",
+            "prompt_sha256": "c29bd52312474b37efe7ccd060d1f79d8d3cfeab1bea9c0606a5d7d75dce15f2",
+            "response_sha256": "f86b8209a4c1f37dd9972a2b159c229e9b88115421f845c8ffed01b82c071649",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 2,
+            "status": "scored"
+          },
+          {
+            "id": "t03",
+            "task": "terms",
+            "prompt_sha256": "c1eea1ba969d77555ce3daed41606f157a8a34c5a0a630d5c1754eac9c3758bc",
+            "response_sha256": "0dcf28c981598b1cb430d109704374df35db7ec0afd9d0148fa5fd2a000e4ae9",
+            "recovered": 1,
+            "prohibited": 0,
+            "unlisted": 1,
+            "status": "scored"
+          },
+          {
+            "id": "t04",
+            "task": "terms",
+            "prompt_sha256": "dda7e3f391b4391266605b9265e278925064f025c271c9ce02cd88553b12202e",
+            "response_sha256": "1cd590498700a9cfc36fa70435dbf5f0164aebba17888695c06ae6478f87f1a0",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 1,
+            "status": "scored"
+          },
+          {
+            "id": "t05",
+            "task": "terms",
+            "prompt_sha256": "da30f8931d8d6cf9a33749b6988f2fad217cf18b30a1fa7cc5705df8d95c7a59",
+            "response_sha256": "ecd0354b4fed34e6ca11bfab6f7979e2bc6eea6989a6417da60cb858ec0a3ba9",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 1,
+            "status": "scored"
+          },
+          {
+            "id": "t06",
+            "task": "terms",
+            "prompt_sha256": "45ebedba2ba5afcbe21a426405f9af14dde40eae37a15c8a349cd9d1352108e4",
+            "response_sha256": "7a534ccb49bb52f229a555db5fdc7adb40de20492f7f6acb9a67655544ad3703",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 2,
+            "status": "scored"
+          },
+          {
+            "id": "t07",
+            "task": "terms",
+            "prompt_sha256": "a04a64535678eab0f191361f162b02ec8051ff2ac58212f936e11bb67c4f1ce0",
+            "response_sha256": "48683408390e765c45966840019cf76fe304902da293d7573be534dbb34e89b1",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 1,
+            "status": "scored"
+          },
+          {
+            "id": "t08",
+            "task": "terms",
+            "prompt_sha256": "8331ded523cca4104494d09ec5b21730e01ce5980a5251203712edecd5b18891",
+            "response_sha256": "fab5346ed4ab357c30b01fe6dfe2d1ba9c6f5212db9dccb6c5162ce54db192ab",
+            "recovered": 2,
+            "prohibited": 0,
+            "unlisted": 0,
+            "status": "scored"
+          },
+          {
+            "id": "s01",
+            "task": "study",
+            "prompt_sha256": "4504f3175000b6447fde30ae6c8f714ea2e4625570fdd7a77031600c1f044a80",
+            "response_sha256": "b728268a4f5a5b6099c8ae8416386c67d412d9c16098919075251ae569a5ebed",
+            "matches": {
+              "design": true,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s02",
+            "task": "study",
+            "prompt_sha256": "8cd3ae34ecb4b915bbca5f92980c13cadcd596aaed452512f56d5b3341737a82",
+            "response_sha256": "2f60f725bd7dca1bad6db80dd3c887be54f3fb111dd140b5f0a078301e330355",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s03",
+            "task": "study",
+            "prompt_sha256": "893c1fa10b85e062f1e7e0541017944e3d6e60e1a3a148342e5a36493fc5a395",
+            "response_sha256": "47492cdc85ffc89e1ff52bc0d0e2927caf95f5aa817854e4e7d571dc68397c36",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s04",
+            "task": "study",
+            "prompt_sha256": "5f5de0a15f70a4c0ce752ae12a29c1e259c041f81afe8fcfdff0c102f6a612c3",
+            "response_sha256": "349bb20727a0118cb7819b095ba61da4a603c0287c4ee2ffbca337c6c62b96c5",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s05",
+            "task": "study",
+            "prompt_sha256": "9713ba940e67e7688ba6d97914c132d7517e67b784df5ad10c5fe4708995acf4",
+            "response_sha256": "349bb20727a0118cb7819b095ba61da4a603c0287c4ee2ffbca337c6c62b96c5",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s06",
+            "task": "study",
+            "prompt_sha256": "520457a7a90a7fb94dead576d3ce98a28ed6779142e2176e6c08a2fce32ce29d",
+            "response_sha256": "2f60f725bd7dca1bad6db80dd3c887be54f3fb111dd140b5f0a078301e330355",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s07",
+            "task": "study",
+            "prompt_sha256": "442771d95c03e0d9c57e0bf4056c275b9ebad728e2107e79a145d3c93508a9ca",
+            "response_sha256": "1fa848057b0c828c761f17cee606b83f0af24faee5a36ca70027367b1bf4107b",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s08",
+            "task": "study",
+            "prompt_sha256": "b84c097cb87e1b14babb68aa0d56f8642851ea1f55b69343f98b62b4af6e4a1d",
+            "response_sha256": "349bb20727a0118cb7819b095ba61da4a603c0287c4ee2ffbca337c6c62b96c5",
+            "matches": {
+              "design": true,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s09",
+            "task": "study",
+            "prompt_sha256": "50349cbdca53c178f0f412071f56f6b8bbd7d3f1c6d9885ff0b5a3ed7094bd0f",
+            "response_sha256": "2a602861915e25117454e7f4d21a6d9444f9793624c5c3b0f704836a02862b57",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s10",
+            "task": "study",
+            "prompt_sha256": "50136d9c393c360086ea323bca07b30fdc4fa0cfe4b3288be1fe8b6cf581f42c",
+            "response_sha256": "2a602861915e25117454e7f4d21a6d9444f9793624c5c3b0f704836a02862b57",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s11",
+            "task": "study",
+            "prompt_sha256": "7f7329fcee01230f540e1094110b12772171e922ada85e7c9d4187216a0c55e5",
+            "response_sha256": "312f5121b0ccb90ebbd04252495ac4108b94083d4e206df9383cc0bc3074e0c0",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s12",
+            "task": "study",
+            "prompt_sha256": "28425d6e00a33d42dae37a17e1b0034418c533d6b2fa5e9388f23fec2a02386d",
+            "response_sha256": "771b4307de13737413d8814221831ad519aabdbb4e33d498ebcbf3391666d9a6",
+            "matches": {
+              "design": true,
+              "original_research": true,
+              "format": false,
+              "population": false
+            },
+            "status": "scored"
+          }
+        ],
+        "counts": {
+          "term_cases": 8,
+          "expected_terms": 17,
+          "recovered": 3,
+          "prohibited": 0,
+          "unlisted": 13,
+          "study_cases": 12,
+          "all_dimensions_correct": 0,
+          "invalid_outputs": 0
+        },
+        "correct_by_dimension": {
+          "original_research": 8,
+          "design": 3,
+          "format": 0,
+          "population": 6
+        }
+      }
+    },
+    {
+      "engine": "llama-completion.exe",
+      "engine_sha256": "76c35f5c396026f16f5771a80d5a1e9fa58a33ec5d5ba8a30a0b90cd6759e980",
+      "model": "Qwen3-1.7B-Q8_0.gguf",
+      "model_sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a",
+      "model_revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+      "renderer": "qwen3-chatml-no-thinking-v1",
+      "structured": true,
+      "engine_options": [
+        "--offline",
+        "--no-conversation",
+        "--no-display-prompt",
+        "--no-escape",
+        "--no-warmup",
+        "--no-perf",
+        "--simple-io",
+        "-ngl",
+        "0",
+        "-t",
+        "6",
+        "-c",
+        "2048",
+        "-n",
+        "256",
+        "--temp",
+        "0",
+        "--seed",
+        "19"
+      ],
+      "os": "Windows",
+      "os_release": "11",
+      "os_version": "10.0.26300",
+      "architecture": "AMD64",
+      "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+      "python": "3.12.10",
+      "responses": [
+        {
+          "id": "t01",
+          "rendered_sha256": "a2c9054abb94aa2f5246cdbb9866931a64aa9ab201746939a797efe640c58107",
+          "stdout_sha256": "d8ab5ddc06a755141080d7cd5d2ef0ecd0fe89f4456970a84a1d781eec4c307b",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 4.547,
+          "output": "{\r\n  \"terms\": [\r\n    \"ECMO\",\r\n    \"extracorporeal membrane oxygenation\",\r\n    \"extracorporeal membrane oxygenation support\",\r\n    \"extracorporeal membrane oxygenation therapy\",\r\n    \"extracorporeal membrane oxygenation support system\",\r\n    \"extracorporeal membrane oxygenation therapy system\",\r\n    \"extracorporeal membrane oxygenation support device\",\r\n    \"extracorporeal membrane oxygenation therapy device\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t02",
+          "rendered_sha256": "f3720b35c2a6cf26c75b062c4ac99e6611330d263598b4a9493f997a66e0da25",
+          "stdout_sha256": "8a2f145b721798ac9c81e234a8e4f16b20383b4976f32b3ac19e7d37f873f865",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 1.656,
+          "output": "{\r\n  \"terms\": [\r\n    \"venovenous ECMO\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t03",
+          "rendered_sha256": "c45f957c41f8d731ab81c756b9e384eb5de9969f96db833179c14ad54c8dc768",
+          "stdout_sha256": "59a95eff1c16c73d6a10f2c44197e17ff7401ef4dbf7f89c3749dfefe5292751",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 1.703,
+          "output": "{\r\n  \"terms\": [\r\n    \"venoarterial\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t04",
+          "rendered_sha256": "ad8b7451474df7b8089988a93ac1321fddafb1f73c09651dae9296fa1b298b02",
+          "stdout_sha256": "2c03df86bfce6aebc810f301bbaf28772a1b6a3ce221bf3b0938a0b36b31f6a4",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 2.782,
+          "output": "{\r\n  \"terms\": [\r\n    \"right ventricular dysfunction\",\r\n    \"right ventricular failure\",\r\n    \"right ventricular insufficiency\",\r\n    \"right ventricular dysfunction syndrome\",\r\n    \"right ventricular dysfunction in patients\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t05",
+          "rendered_sha256": "5247627d55e6944f85dbfbbca3c8bc5d2471be9f876ef12c435166fc6cdd6ce6",
+          "stdout_sha256": "164e7f93316b9c1086528d1671255518103d3b1520590ab304d847d9128ba69d",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 1.515,
+          "output": "{\r\n  \"terms\": [\r\n    \"hemoglobin\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t06",
+          "rendered_sha256": "a414f119ceb80d2269a0ab7be7a8b3cc6643a403bf618f8e3d78a2ffb6832722",
+          "stdout_sha256": "88625976e1332828237211cd2a33cdb9f3510c30049f6cc469a3848d463b6d1f",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 2.469,
+          "output": "{\r\n  \"terms\": [\r\n    \"acute kidney injury\",\r\n    \"renal failure\",\r\n    \"acute renal failure\",\r\n    \"acute kidney disease\",\r\n    \"acute renal insufficiency\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t07",
+          "rendered_sha256": "5c1b3ea9e10d9df32c16046696a57a52ef85f0e5a5f7133e44783966a0edda4d",
+          "stdout_sha256": "88cf5d96d7dfc212a701c2a72cd58d4b5f9b2b3107d2978021ba5275883d118e",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 1.531,
+          "output": "{\r\n  \"terms\": [\r\n    \"ICU\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "t08",
+          "rendered_sha256": "9bdcf010f533b21cc0f3e7d4f697264053269a8cbe31d21e710bc3214941b0f0",
+          "stdout_sha256": "f7e4975a33888c74f8fee9c8ef1585ecbdc323e01e6953ab209b3f8fe6b3c6fd",
+          "schema_sha256": "946f96bdaf777c46704eef4d279b170529a638e400193683501ca9561132b9b4",
+          "seconds": 1.547,
+          "output": "{\r\n  \"terms\": [\r\n    \"randomized controlled trial\"\r\n  ]\r\n}"
+        },
+        {
+          "id": "s01",
+          "rendered_sha256": "213c5825130cb8a538c37c23681c97f2ec7a916dc23cd32d262adc580f59fde9",
+          "stdout_sha256": "e73073b512a1a4bf781ea0b6e50145317183be68b3ca61e84f23d963a15b6b4d",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.156,
+          "output": "{\r\n  \"design\": [\"RCT\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s02",
+          "rendered_sha256": "4654f9f9d1a6096b094a40d7d5ea15367c7ba770a0269808ea82aa8334dcff3b",
+          "stdout_sha256": "4950f3412edd36ee8e51758e2b738706ff31da40b584ae950f651509b2e16f4a",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.157,
+          "output": "{\r\n  \"design\": [\"RCT\"],\r\n  \"format\": \"conference abstract\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s03",
+          "rendered_sha256": "6c0e03df60163b7d32374c616ff74ffd0f6824ea82898f4882999d45a5562f72",
+          "stdout_sha256": "e73073b512a1a4bf781ea0b6e50145317183be68b3ca61e84f23d963a15b6b4d",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.203,
+          "output": "{\r\n  \"design\": [\"RCT\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s04",
+          "rendered_sha256": "75a81514010155832c62ddb0351d5fc26afd488393ca6c80977d10d94d1c158a",
+          "stdout_sha256": "687a2792cc6f452c9cbdddde07e78cb9ad6263ff6ef08e7a082d6530389a347a",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.203,
+          "output": "{\r\n  \"design\": [\"meta-analysis\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s05",
+          "rendered_sha256": "7cf9b21d865ed6b73d8b5c35c003796a9fb99e6aed919d056d2bf514d65a0eef",
+          "stdout_sha256": "2f711c32e570eac326c1dfef1300badc9ce4c52e51a3f25dcb525297be65fb53",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.344,
+          "output": "{\r\n  \"design\": [\"other\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s06",
+          "rendered_sha256": "a5bf204aae9a1b27c5919f5eea8b10c91d41e5887179b724ae3e63763ce4601e",
+          "stdout_sha256": "5c6000fd55f06a0e6c37ac8108ba83b1dd208fbe437a6d7837e52ff7bb0e589b",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.047,
+          "output": "{\r\n  \"design\": [\"other\"],\r\n  \"format\": \"conference abstract\",\r\n  \"original_research\": \"no\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s07",
+          "rendered_sha256": "3614d7b21b28f26c3e3c20b70d554e7dcec7be87cb7cd06013ddb47b9cb76210",
+          "stdout_sha256": "cf8fa05675c6ddd8c3e34b9a71f445c50ddf0ebbb1d020fadf358f0e551c51ed",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.265,
+          "output": "{\r\n  \"design\": [\"guideline\"],\r\n  \"format\": \"society web document\",\r\n  \"original_research\": \"no\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s08",
+          "rendered_sha256": "142ce0059edc9514cf57a8428b044133c1d7ea2b32b908e6f18e423e02706485",
+          "stdout_sha256": "49947dc82a4a034ad4684251e5c5d055a2d8fa2728249ca431f76cf43d40862c",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.422,
+          "output": "{\r\n  \"design\": [\"non-randomised interventional study\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s09",
+          "rendered_sha256": "b75cff099ee773ec9f5dd3704863baa4c583c7903e970fe7004dcb7a4f3bea7f",
+          "stdout_sha256": "49947dc82a4a034ad4684251e5c5d055a2d8fa2728249ca431f76cf43d40862c",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.328,
+          "output": "{\r\n  \"design\": [\"non-randomised interventional study\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s10",
+          "rendered_sha256": "def0996d36351b471d00f9698b15a558d9aed4e146c46be862f2a19c5f290ef9",
+          "stdout_sha256": "42685053c13ab2d93a8cbe2e531411a3ffb0df058ff55f85f913b63daff58d2e",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.188,
+          "output": "{\r\n  \"design\": [\"qualitative study\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"human\"\r\n}"
+        },
+        {
+          "id": "s11",
+          "rendered_sha256": "7257586a28320bf2b51fc24073d4f62e563fd50c1d495cc67e55e8023afbd4cc",
+          "stdout_sha256": "e948724588e50947cadaf87f35dc25bf8544ea9def1568a361894e759b012efd",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.218,
+          "output": "{\r\n  \"design\": [\"other\"],\r\n  \"format\": \"conference abstract\",\r\n  \"original_research\": \"no\",\r\n  \"population\": \"unclear\"\r\n}"
+        },
+        {
+          "id": "s12",
+          "rendered_sha256": "cfae870114617ccbd94b483a77272bd3324c6addbe87d083c6d9a5f1de63e7f1",
+          "stdout_sha256": "348722ebbe54517ad6f362562420e2382206e21d4b1c50db3eb53fb7145be481",
+          "schema_sha256": "a06800ef929a683b1826b94dce3568609a411a4b55df4546461cb18a98168550",
+          "seconds": 3.204,
+          "output": "{\r\n  \"design\": [\"case series\"],\r\n  \"format\": \"journal supplement item\",\r\n  \"original_research\": \"yes\",\r\n  \"population\": \"non-human\"\r\n}"
+        }
+      ],
+      "scores": {
+        "version": "biomedical-v1",
+        "corpus_sha256": "46154071fc42b9cce23d1b09018f8b52dc6fd1e1457d5013df474c5d5953f78f",
+        "cases": [
+          {
+            "id": "t01",
+            "task": "terms",
+            "prompt_sha256": "27fac2c1ccdbbaa735e91cee4346be34ea73e86b18ca6aad993ba36f2b20b771",
+            "response_sha256": "172e9988b417520aa2c1ae5d0541e17ae610a61dacac35ef3ea1a08e21758c87",
+            "recovered": 1,
+            "prohibited": 0,
+            "unlisted": 7,
+            "status": "scored"
+          },
+          {
+            "id": "t02",
+            "task": "terms",
+            "prompt_sha256": "c29bd52312474b37efe7ccd060d1f79d8d3cfeab1bea9c0606a5d7d75dce15f2",
+            "response_sha256": "edbbc1f0acfb9d2df9aaacef9e7ea819184f37505e4e394e59f25c0a9f64dd04",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 1,
+            "status": "scored"
+          },
+          {
+            "id": "t03",
+            "task": "terms",
+            "prompt_sha256": "c1eea1ba969d77555ce3daed41606f157a8a34c5a0a630d5c1754eac9c3758bc",
+            "response_sha256": "134c78ebcd3f8ec65648da2580a0a610345b89113010fa4bf3cc1f7fa7e97ab5",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 1,
+            "status": "scored"
+          },
+          {
+            "id": "t04",
+            "task": "terms",
+            "prompt_sha256": "dda7e3f391b4391266605b9265e278925064f025c271c9ce02cd88553b12202e",
+            "response_sha256": "60d6acd1fd1f97a217ba78925dbe00045237e731609e623e634a9aea7b296405",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 5,
+            "status": "scored"
+          },
+          {
+            "id": "t05",
+            "task": "terms",
+            "prompt_sha256": "da30f8931d8d6cf9a33749b6988f2fad217cf18b30a1fa7cc5705df8d95c7a59",
+            "response_sha256": "0f22921e4ce700fbea3c154c33a98a4c18c0e7a3276223bb54c61c97c19bf007",
+            "recovered": 1,
+            "prohibited": 0,
+            "unlisted": 0,
+            "status": "scored"
+          },
+          {
+            "id": "t06",
+            "task": "terms",
+            "prompt_sha256": "45ebedba2ba5afcbe21a426405f9af14dde40eae37a15c8a349cd9d1352108e4",
+            "response_sha256": "877d045b1df2960bf007d74e1e8cdd49c6251cfb2d58964ee5f7507f13a8e86e",
+            "recovered": 1,
+            "prohibited": 0,
+            "unlisted": 4,
+            "status": "scored"
+          },
+          {
+            "id": "t07",
+            "task": "terms",
+            "prompt_sha256": "a04a64535678eab0f191361f162b02ec8051ff2ac58212f936e11bb67c4f1ce0",
+            "response_sha256": "26f6357e33c7949cc7087c3169778d46aadfbd0ee2bc92f0a8ca28ccde7c7710",
+            "recovered": 0,
+            "prohibited": 0,
+            "unlisted": 1,
+            "status": "scored"
+          },
+          {
+            "id": "t08",
+            "task": "terms",
+            "prompt_sha256": "8331ded523cca4104494d09ec5b21730e01ce5980a5251203712edecd5b18891",
+            "response_sha256": "07b8f0169328fb46c580e633818240b8cb317aeee6b44e671acd8f46f041e11d",
+            "recovered": 1,
+            "prohibited": 0,
+            "unlisted": 0,
+            "status": "scored"
+          },
+          {
+            "id": "s01",
+            "task": "study",
+            "prompt_sha256": "4504f3175000b6447fde30ae6c8f714ea2e4625570fdd7a77031600c1f044a80",
+            "response_sha256": "b728268a4f5a5b6099c8ae8416386c67d412d9c16098919075251ae569a5ebed",
+            "matches": {
+              "design": true,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s02",
+            "task": "study",
+            "prompt_sha256": "8cd3ae34ecb4b915bbca5f92980c13cadcd596aaed452512f56d5b3341737a82",
+            "response_sha256": "b18ab526ca46383f79b1abd70ab84c125cbf38be3acccfb145d736248f71d0ca",
+            "matches": {
+              "design": true,
+              "original_research": true,
+              "format": true,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s03",
+            "task": "study",
+            "prompt_sha256": "893c1fa10b85e062f1e7e0541017944e3d6e60e1a3a148342e5a36493fc5a395",
+            "response_sha256": "b728268a4f5a5b6099c8ae8416386c67d412d9c16098919075251ae569a5ebed",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s04",
+            "task": "study",
+            "prompt_sha256": "5f5de0a15f70a4c0ce752ae12a29c1e259c041f81afe8fcfdff0c102f6a612c3",
+            "response_sha256": "fd8b5c46d708839997e8a3c3bd710ab88ef031b8099b8d00b583e02fb1d11f2b",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s05",
+            "task": "study",
+            "prompt_sha256": "9713ba940e67e7688ba6d97914c132d7517e67b784df5ad10c5fe4708995acf4",
+            "response_sha256": "be919cd067ee9626ba20738c842fe225399f5ea68694baa0a92a4e6f42e13841",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s06",
+            "task": "study",
+            "prompt_sha256": "520457a7a90a7fb94dead576d3ce98a28ed6779142e2176e6c08a2fce32ce29d",
+            "response_sha256": "f2450af57f21d059ed38869ce6952e45d094a2778f47b5e0ee053f47088dd722",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": true,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s07",
+            "task": "study",
+            "prompt_sha256": "442771d95c03e0d9c57e0bf4056c275b9ebad728e2107e79a145d3c93508a9ca",
+            "response_sha256": "903bd71e4cc98dd81b2a706b05365c6d0f2754c535cb75bcb6972e17f50ca69e",
+            "matches": {
+              "design": true,
+              "original_research": true,
+              "format": true,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s08",
+            "task": "study",
+            "prompt_sha256": "b84c097cb87e1b14babb68aa0d56f8642851ea1f55b69343f98b62b4af6e4a1d",
+            "response_sha256": "b0e4fb2bbe5dc6d696291b107bc9ea5d1d068bc3e875f2cd4ba9a2cbf7e4efda",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s09",
+            "task": "study",
+            "prompt_sha256": "50349cbdca53c178f0f412071f56f6b8bbd7d3f1c6d9885ff0b5a3ed7094bd0f",
+            "response_sha256": "b0e4fb2bbe5dc6d696291b107bc9ea5d1d068bc3e875f2cd4ba9a2cbf7e4efda",
+            "matches": {
+              "design": false,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s10",
+            "task": "study",
+            "prompt_sha256": "50136d9c393c360086ea323bca07b30fdc4fa0cfe4b3288be1fe8b6cf581f42c",
+            "response_sha256": "2b0a11e8ae8aa40b824485b474c48ad4382d810ddad9ac4973dfdb30d825256c",
+            "matches": {
+              "design": true,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s11",
+            "task": "study",
+            "prompt_sha256": "7f7329fcee01230f540e1094110b12772171e922ada85e7c9d4187216a0c55e5",
+            "response_sha256": "cab58ec20b312a7b89e07e6a9c083e2c32e340e802a6232aa0d17eabeff6f68e",
+            "matches": {
+              "design": false,
+              "original_research": false,
+              "format": true,
+              "population": true
+            },
+            "status": "scored"
+          },
+          {
+            "id": "s12",
+            "task": "study",
+            "prompt_sha256": "28425d6e00a33d42dae37a17e1b0034418c533d6b2fa5e9388f23fec2a02386d",
+            "response_sha256": "0b3a204550fc84b2594e2d26988ea253f5e71aad1d92f8c28a657abb262cffdb",
+            "matches": {
+              "design": true,
+              "original_research": true,
+              "format": false,
+              "population": true
+            },
+            "status": "scored"
+          }
+        ],
+        "counts": {
+          "term_cases": 8,
+          "expected_terms": 17,
+          "recovered": 4,
+          "prohibited": 0,
+          "unlisted": 19,
+          "study_cases": 12,
+          "all_dimensions_correct": 2,
+          "invalid_outputs": 0
+        },
+        "correct_by_dimension": {
+          "original_research": 8,
+          "design": 5,
+          "format": 4,
+          "population": 12
+        }
+      }
+    }
+  ]
+}
