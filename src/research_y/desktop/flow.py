@@ -808,6 +808,8 @@ class RealProjectFlow:
         'edit_term': 'edit_term',
         'remove_term': 'remove_term',
         'move_term': 'move_term',
+        'suggest_variants': 'suggest_variants',
+        'review_variant': 'review_variant',
     }
 
     def edit_setup(self, action: str, data: dict):

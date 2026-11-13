@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from research_y.query_compiler import compile_both
 from research_y.storage import ApprovedTerm, StrategyGroup, _groups_snapshot
+from research_y.terminology import VERSION, lexical_variants
 
 
 class DraftError(ValueError):
@@ -33,6 +34,7 @@ class StrategyDraft:
         self.theme = ''
         self.approved_by = ''
         self.groups = []
+        self.suggestions = {}
         self.preview_data = None
 
     def _invalidate(self):
@@ -73,6 +75,7 @@ class StrategyDraft:
 
     def remove_group(self, group_id):
         self._group(group_id)
+        self.suggestions = {k: v for k, v in self.suggestions.items() if v['group_id'] != group_id}
         self.groups = [g for g in self.groups if g['group_id'] != group_id]
         self._invalidate()
 
@@ -120,17 +123,54 @@ class StrategyDraft:
         if any(t is not term and t['text'] == fields['text'] for t in group['terms']):
             raise DraftError('duplicate_draft_term')
         term.update(fields)
+        self._forget_suggestions(term_id)
         self._invalidate()
 
     def remove_term(self, group_id, term_id):
         group = self._group(group_id)
         self._term(group, term_id)
         group['terms'] = [term for term in group['terms'] if term['term_id'] != term_id]
+        self._forget_suggestions(term_id)
         self._invalidate()
 
     def move_term(self, group_id, term_id, direction):
         group = self._group(group_id)
         self._move(group['terms'], 'term_id', term_id, direction, 'unknown_draft_term')
+        self._invalidate()
+
+    def _forget_suggestions(self, term_id):
+        self.suggestions = {k: v for k, v in self.suggestions.items() if v['source_term_id'] != term_id}
+
+    def suggest_variants(self, group_id, term_id):
+        group = self._group(group_id)
+        seed = self._term(group, term_id)
+        if not seed["enabled"]:
+            raise DraftError("inactive_source_term")
+        existing = {t["text"].casefold() for t in group["terms"]}
+        known = {s["text"].casefold() for s in self.suggestions.values() if s["source_term_id"] == term_id}
+        for text, reason in lexical_variants(seed["text"]):
+            if text.casefold() in existing or text.casefold() in known:
+                continue
+            key = str(uuid4())
+            self.suggestions[key] = dict(suggestion_id=key, group_id=group_id, source_term_id=term_id,
+                                         text=text, seed=seed["text"], origin="deterministic", reason=reason,
+                                         method=VERSION, status="pending")
+        self._invalidate()
+
+    def review_variant(self, suggestion_id, decision, text=None):
+        offer = self.suggestions.get(suggestion_id)
+        if not offer or offer["status"] != "pending" or decision not in ("accept", "reject"):
+            raise DraftError("invalid_suggestion_review")
+        if decision == "reject":
+            offer["status"] = "rejected"
+        else:
+            final = _text(text if text is not None else offer["text"])
+            group = self._group(offer["group_id"])
+            if any(t["text"].casefold() == final.casefold() for t in group["terms"]):
+                raise DraftError("duplicate_draft_term")
+            rationale = f'{offer["method"]}: {offer["reason"]}; seed: {offer["seed"]}'
+            self.add_term(offer["group_id"], final, origin=offer["origin"], rationale=rationale)
+            offer["status"] = "accepted" if final == offer["text"] else "edited"
         self._invalidate()
 
     def approved_groups(self):
@@ -182,6 +222,7 @@ class StrategyDraft:
     def state(self):
         # Defensive snapshot: browser rendering cannot mutate the draft.
         return dict(theme=self.theme, approved_by=self.approved_by,
+                    suggestions=[dict(s) for s in self.suggestions.values()],
                     groups=[dict(group_id=group['group_id'], label=group['label'],
                                  terms=[dict(term) for term in group['terms']])
                             for group in self.groups],
