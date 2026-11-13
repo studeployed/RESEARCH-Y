@@ -83,5 +83,31 @@ def list_attachments(project,publication_id):
             event=identity._event(db,pointer,EVENT)
             if (event["document_id"],event["publication_id"],event["relative_path"],event["source_url"])!=(doc,publication_id,path,url):
                 raise ValueError("Attachment source and audit disagree")
+            _check_location(event)
+            with Directory(project.root/"documents") as docs:
+                docs.read(Path(path).name,digest=event["source_sha256"],size=event["size"])
             rows.append(dict(event,verified_provenance=True))
         return rows
+
+
+def _check_location(event):
+    digest=event["source_sha256"]
+    if (not isinstance(digest,str) or len(digest)!=64 or any(ch not in "0123456789abcdef" for ch in digest)
+            or event["relative_path"]!="documents/"+digest+".pdf" or type(event["size"]) is not int
+            or not 0<event["size"]<=MAX_ARTIFACT_BYTES):
+        raise ValueError("Invalid attachment file receipt")
+
+
+def expected_archived_files(db):
+    rows=db.execute("SELECT event_id FROM audit_events WHERE event_type=?",(EVENT,))
+    expected={}
+    for eid, in rows:
+        event=identity._event(db,eid,EVENT)
+        _check_location(event)
+        doc=db.execute("SELECT publication_id,relative_path,external_url,provenance_json FROM documents WHERE document_id=?",
+                       (event["document_id"],)).fetchone()
+        if (doc is None or doc[:3]!=(event["publication_id"],event["relative_path"],event["source_url"])
+                or identity._object(doc[3]).get("event_id")!=eid):
+            raise ValueError("Missing or inconsistent archive attachment evidence")
+        expected[event["relative_path"]]=dict(sha256=event["source_sha256"],size=event["size"])
+    return expected
