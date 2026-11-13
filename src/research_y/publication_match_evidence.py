@@ -152,7 +152,18 @@ def project_source(source: dict) -> dict:
     fields = {name: _field(payload if supported else {}, path, normalise, many=many)
               for name, (path, normalise, many) in paths.items()}
     warnings = []
-    if not supported:
+    society = kind == "society" and payload.get("provider") == "manual_society_guidance"
+    conference = kind == "conference_jats" and payload.get("provider") == "conference_jats"
+    if (society or conference) and isinstance(payload.get("record"), dict):
+        fields["title"] = _field(payload, ("record", "title"), _string)
+        if society:
+            fields["doi"] = _field(payload, ("record", "doi"), _doi)
+            fields["document_types"] = _field(payload, ("record", "document_types"), _tags)
+        else:
+            fields["doi"] = _field(payload, ("record", "individual_dois"), _doi, many=True)
+            fields["pages"] = _field(payload, ("record", "printed_first_page"), _string)
+            warnings.append("abstract_or_container_scope_requires_review")
+    elif not supported:
         warnings.append("unsupported_source_layout")
     else:
         identity = fields["pmid" if pubmed else "accession"]
