@@ -53,8 +53,11 @@ def _record(fields):
         return next((v for k in keys for v in fields.get(k,[]) if v),None)
     date=first("PY","Y1")
     year=re.match(r"^([0-9]{4})(?:$|[/ -])",date.strip()) if date else None
-    return dict(title=first("TI","T1","CT"),authors=fields.get("AU",fields.get("A1",[])),
-                year=year[1] if year else None,journal=first("JO","JF","T2"),doi=first("DO"),
+    def single(*keys):
+        value=first(*keys)
+        return " ".join(value.split()) if value else None
+    return dict(title=single("TI","T1","CT"),authors=[" ".join(a.split()) for a in fields.get("AU",fields.get("A1",[]))],
+                year=year[1] if year else None,journal=single("JO","JF","T2"),doi=single("DO"),
                 text=first("AB","N2"),url=first("UR"),types=[TYPES.get(first("TY"),"other")],
                 pages=first("SP"),last_page=first("EP"),language=first("LA"))
 

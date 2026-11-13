@@ -338,7 +338,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             if native:
                 with ui.expansion("Import or enter additional citations",value=bool(state.get("bibliography_preview") or state.get("import_receipt"))):
                     origin=ui.input("Source or collection name")
-                    reviewer=ui.input("Researcher importing records")
+                    import_actor=ui.input("Researcher importing records")
                     rights=ui.checkbox("I reviewed these records and may retain their contents")
                     ui.button("Choose local RIS file",on_click=lambda:act("native_ris"))
                     bibliographic=state.get("bibliography_preview")
@@ -347,7 +347,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                         for title in bibliographic["titles"]:
                             ui.label(title)
                         ui.button("Import all records in this file",on_click=lambda:act("import_bibliography",
-                            dict(label=origin.value,actor=reviewer.value,confirmed=rights.value,
+                            dict(label=origin.value,actor=import_actor.value,confirmed=rights.value,
                             indices=list(range(bibliographic["total"])),revision=bibliographic["revision"])))
                     with ui.expansion("Enter one citation"):
                         title_input=ui.input("Publication title")
@@ -357,7 +357,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                         url_input=ui.input("Source URL")
                         abstract_input=ui.textarea("Abstract, if permitted")
                         ui.button("Save manually entered citation",on_click=lambda:act("import_bibliography",
-                            dict(label=origin.value,actor=reviewer.value,confirmed=rights.value,indices=[0],revision=None,
+                            dict(label=origin.value,actor=import_actor.value,confirmed=rights.value,indices=[0],revision=None,
                                  manual=dict(title=title_input.value,authors=(authors_input.value or "").splitlines(),
                                      year=year_input.value,doi=doi_input.value,url=url_input.value,abstract=abstract_input.value))))
                     if state.get("import_receipt"):
