@@ -251,8 +251,13 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
         report = strategy_report._capture(db,project,results.run,results.captured_at)
         comparisons = publication_candidates._receipts(db,None) if path.suffix.lower()==".xlsx" else ()
         press = _press(db,results.run) if path.suffix.lower()==".xlsx" else None
+        from research_y.run_acceptance import EVENT,_state
+        prior=db.execute("SELECT 1 FROM audit_events WHERE event_type=? AND json_extract(details_json,'$.run_id')=? LIMIT 1",
+                         (EVENT,results.run)).fetchone()
+        acceptance=_state(db,project,results.run) if prior else None
     context = dict(project=results.project_id,run=results.run,strategy=results.strategy_id,
-                   status="Incomplete",stored_run_status=results.run_status,scope=scope,
+                   status=acceptance["status"] if acceptance else "Incomplete",stored_run_status=results.run_status,scope=scope,
+                   verified_scope=acceptance["receipt"] if acceptance else None,
                    snapshot_time=results.captured_at,snapshot_revision=results.revision,
                    entire_publication_identities=results.total,view=spec if scope=="filtered" else None,
                    include_abstracts=include_abstracts)

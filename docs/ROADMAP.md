@@ -105,6 +105,10 @@ units to the Windows benchmark, project reopen tests and source-specific evidenc
 
 ## Milestone M3 — Complete workflow and release verification (Phase 3)
 
+The [release acceptance matrix](PHASE3_ACCEPTANCE.md) links all 22 mandatory
+scenarios to scoped observations and tests. The [Windows installer](WINDOWS_INSTALLER.md)
+includes the runtime and a per-user update path.
+
 - **P3-01:** Full UI, tables, review queues and accessible results.
 - **P3-02:** Archive import/export, migration recovery and complete Excel/bibliographic reporting. Pass: AT-03/18/21.
 - **P3-03:** Windows packaging, security review, 100,000-record performance and complete AT-01–22 evidence. Pass: all mandatory acceptance gates verified and exceptions documented.

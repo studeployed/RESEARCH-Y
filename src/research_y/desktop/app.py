@@ -83,6 +83,12 @@ def build_page(app, ui, flow, settings_warnings=()):
                         if chosen is None:
                             return
                         await asyncio.to_thread(flow.attach_master_pdf,chosen,**value)
+                    elif action == "native_diagnostics":
+                        parent=await select_from_native_window(app.native.main_window)
+                        if parent is None:
+                            return
+                        await asyncio.to_thread(flow.save_project_diagnostic,parent,value)
+                        ui.notify("Saved project diagnostic report.")
                     elif action == "native_master_export":
                         folder = await select_from_native_window(app.native.main_window)
                         if folder is None:

@@ -2,6 +2,13 @@
 
 ## Phase 3 delivery
 
+See the [release matrix](docs/PHASE3_ACCEPTANCE.md) for all 22 scenarios,
+the [installation guide](docs/WINDOWS_INSTALLER.md) for the Windows build
+and [desktop guide](docs/DESKTOP.md) for researcher workflows. The full
+master workbook can record a researcher-verified complete scope once all
+mandatory retrievals and the retained identity union have reconciled.
+The project diagnostic is a separate local JSON export with fixed fields.
+
 [Issue #142](https://github.com/studeployed/RESEARCH-Y/issues/142) tracks
 the three approved Phase 3 units. The [portable project workflow](docs/PROJECT_ARCHIVES.md)
 includes a Windows restore action, a consistent database snapshot and selected

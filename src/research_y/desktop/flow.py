@@ -82,6 +82,8 @@ class RealProjectFlow:
         self._coord_worker = ApplicationWorker()
         self._closed = False
         self.project = None
+        self._audit_page = None
+        self._run_acceptance = None
         self._run_comparison = None
         self._ris_preview = self._import_receipt = None
         self._master = self._master_page = None
@@ -367,6 +369,8 @@ class RealProjectFlow:
             raise ProjectFlowError('invalid_worker_result')
         self._clear_master()
         self.project = project
+        self._run_acceptance = None
+        self._audit_page = None
         self._run_comparison = None
         self._ris_preview = self._import_receipt = None
         self._archive_receipt = None
@@ -556,6 +560,37 @@ class RealProjectFlow:
             except FileExistsError:
                 raise ProjectFlowError("A project folder with this name already exists. Choose a new folder name.") from None
             return self.open_native_folder(restored.root)
+
+    def run_acceptance(self,decision=None):
+        from research_y.run_acceptance import accept_run,read_acceptance
+        with self._guard:
+            self._require_open()
+            if not self.selected_run_id:
+                raise ProjectFlowError("Select a run first")
+            if decision is None:
+                self._run_acceptance=read_acceptance(self.project,self.selected_run_id)
+            else:
+                if not self._run_acceptance or self._run_acceptance["run_id"]!=self.selected_run_id:
+                    raise ProjectFlowError("Inspect current source verification first")
+                self._run_acceptance=accept_run(self.project,self.selected_run_id,**decision)
+            return self._publish()
+
+    def read_project_audit(self,after=0):
+        from research_y.release_evidence import audit_page
+        with self._guard:
+            self._require_open()
+            if after and (not self._audit_page or self._audit_page["next_after"]!=after):
+                raise ProjectFlowError("Refresh the project audit.")
+            self._audit_page=audit_page(self.project,after)
+            return self._publish()
+
+    def save_project_diagnostic(self,parent,name):
+        from research_y.release_evidence import export_diagnostic
+        from research_y.export_files import filename
+        with self._guard:
+            self._require_open()
+            filename(name)
+            return export_diagnostic(self.project,parent/name)
 
     def compare_run_history(self, earlier, later, category="all",offset=0):
         from research_y.run_comparison import compare_runs
@@ -4658,6 +4693,9 @@ class RealProjectFlow:
                 'master_results': self._master_page,
                 'archive_receipt': self._archive_receipt,
                 'run_comparison': self._run_comparison,
+                'project_audit': self._audit_page,
+                'run_acceptance': self._run_acceptance if self._run_acceptance and
+                    self._run_acceptance["run_id"]==self.selected_run_id else None,
                 'project': None if self.project is None else {
                     'project_id': str(self.project.identifier), 'name': self.project.name,
                     'location': str(self.project.root)},

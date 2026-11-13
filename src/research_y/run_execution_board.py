@@ -7,6 +7,7 @@ source and group evidence comes from one validated SQLite read transaction.
 from __future__ import annotations
 
 from dataclasses import asdict
+from contextlib import nullcontext
 import sqlite3
 
 from research_y.application_inspection import _read, ApplicationInspectionError
@@ -141,6 +142,10 @@ def _wos(db, project, query, counts):
 
 
 def read_run_execution_board(project, run_id: str) -> dict:
+    return _read_board(project,run_id)
+
+
+def _read_board(project, run_id, connection=None):
     """One coherent source/group execution view, with NO network or writes.
 
     Existing result-count and provider checkpoint validators remain the single
@@ -154,7 +159,7 @@ def read_run_execution_board(project, run_id: str) -> dict:
     except (TypeError, ValueError):
         raise ExecutionBoardError("run_board_invalid") from None
     try:
-        with _read(project) as db:
+        with (_read(project) if connection is None else nullcontext(connection)) as db:
             supplements = dict(db.execute("SELECT source_name,COUNT(*) FROM source_retrievals WHERE run_id=? "
                     "AND source_name IN ('conference_jats','conference_pdf','society','manual_bibliographic') GROUP BY source_name", (run_id,)))
             projection = (result_counts._snapshot(db, project, run_id, primary=True) if supplements else

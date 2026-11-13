@@ -10,6 +10,18 @@ from research_y.desktop.specialist_panel import society_panel, publication_panel
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
     state = flow.state()
     project = state['project']
+    if project is not None:
+        audit=state.get("project_audit")
+        with ui.expansion("Project audit and diagnostics",value=bool(audit)):
+            ui.button("Inspect audit history",on_click=lambda:act("project_audit",0))
+            if audit:
+                for event in audit["rows"]:
+                    ui.label(f'{event["event_id"]} · {event["utc"]} · {event["event_type"]} · {event["fields"]}')
+                if audit["next_after"]:
+                    ui.button("Next audit events",on_click=lambda:act("project_audit",audit["next_after"]))
+            if native:
+                diagnostic=ui.input("Diagnostic filename",value="Project diagnostic.json")
+                ui.button("Choose folder and save diagnostic",on_click=lambda:act("native_diagnostics",diagnostic.value))
     if native and project is not None:
         with ui.expansion("Export project archive",value=bool(state.get("archive_receipt"))):
             archive_name = ui.input("Archive filename",value="Project.researchy")
@@ -23,7 +35,11 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             if receipt:
                 ui.label(f'Saved {receipt["filename"]} with {receipt["files"]} files.')
     if project is not None:
-        ui.label('INCOMPLETE — no source retrieval is verified.').props('data-testid=incomplete')
+        if state.get("run_acceptance",None) and state["run_acceptance"]["receipt"]:
+            ui.label("Selected run verification at "+state["run_acceptance"]["receipt"]["at_utc"]+
+                     " · Verified Complete").props("data-testid=run-accepted")
+        else:
+            ui.label('INCOMPLETE — current source-scope verification required.').props('data-testid=incomplete')
     ui.label('Recent Projects (explicit selection; locations verified on open).').props(
         'data-testid=recent-heading')
     if state['recent_history_error']:
@@ -335,6 +351,24 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
             render_master(ui,state,act,native=native)
+            with ui.expansion("Verify final run scope",value=bool(state.get("run_acceptance"))):
+                ui.button("Check all source and identity evidence",on_click=lambda:act("run_acceptance"))
+                scope=state.get("run_acceptance")
+                if scope:
+                    ui.label("Verification result · "+scope["status"])
+                    for reason in scope["reasons"]:
+                        ui.label(reason)
+                    ui.label("Source warnings · "+str(scope["source_warnings"]))
+                    if scope["receipt"]:
+                        ui.label("Recorded limitations · "+scope["receipt"]["limitations"])
+                    if scope["eligible"]:
+                        ui.label("Reviewed retained publications · "+str(scope["global_unique_publications"]))
+                        verifier=ui.input("Researcher confirming source coverage")
+                        limitation=ui.input("Material source limitations and coverage reviewed")
+                        confirmed=ui.checkbox("I verified the reported scope and the disclosed limitations")
+                        ui.button("Record final run verification",on_click=lambda:act("run_acceptance",dict(
+                                  expected_revision=scope["revision"],actor=verifier.value,
+                                  limitations=limitation.value,confirmed=confirmed.value)))
             if native:
                 with ui.expansion("Import or enter additional citations",value=bool(state.get("bibliography_preview") or state.get("import_receipt"))):
                     origin=ui.input("Source or collection name")
