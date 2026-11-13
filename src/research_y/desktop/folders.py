@@ -61,10 +61,19 @@ async def select_from_native_window(window) -> Path | None:
 
 
 async def select_conference_document(window, *, pdf=False):
+    return await _select_document(window,("PDF (*.pdf)",) if pdf else ("JATS XML (*.xml;*.nxml)",),
+                                  {".pdf"} if pdf else {".xml",".nxml"})
+
+
+async def select_project_archive(window):
+    return await _select_document(window,("RESEARCH-Y project archive (*.researchy)",),{".researchy"})
+
+
+async def _select_document(window, filters, extensions):
     try:
         import webview
         result = await window.create_file_dialog(dialog_type=webview.FileDialog.OPEN, allow_multiple=False,
-                                                 file_types=("PDF (*.pdf)",) if pdf else ("JATS XML (*.xml;*.nxml)",))
+                                                 file_types=filters)
     except Exception:
         raise NativeFolderError("native_dialog_unavailable") from None
     if not result:
@@ -72,7 +81,7 @@ async def select_conference_document(window, *, pdf=False):
     if type(result) not in (tuple,list) or len(result)!=1 or type(result[0]) is not str:
         raise NativeFolderError("native_selection_invalid")
     path = Path(result[0])
-    if not path.is_absolute() or path.suffix.lower() not in ({".pdf"} if pdf else {".xml",".nxml"}):
+    if not path.is_absolute() or path.suffix.lower() not in extensions:
         raise NativeFolderError("native_selection_invalid")
     checked_folder([str(path.parent)])
     return path
