@@ -58,3 +58,21 @@ async def select_from_native_window(window) -> Path | None:
     except Exception:
         raise NativeFolderError('native_dialog_unavailable') from None
     return checked_folder(result)
+
+
+async def select_conference_document(window):
+    try:
+        import webview
+        result = await window.create_file_dialog(dialog_type=webview.FileDialog.OPEN, allow_multiple=False,
+                                                 file_types=("JATS XML (*.xml;*.nxml)",))
+    except Exception:
+        raise NativeFolderError("native_dialog_unavailable") from None
+    if not result:
+        return None
+    if type(result) not in (tuple,list) or len(result)!=1 or type(result[0]) is not str:
+        raise NativeFolderError("native_selection_invalid")
+    path = Path(result[0])
+    if not path.is_absolute() or path.suffix.lower() not in {".xml",".nxml"}:
+        raise NativeFolderError("native_selection_invalid")
+    checked_folder([str(path.parent)])
+    return path

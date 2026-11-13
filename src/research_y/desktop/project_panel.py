@@ -3,6 +3,7 @@ from datetime import date
 
 from research_y.desktop.manifest_consent import render_manifest_consent
 from research_y.desktop.study_panel import render_study_panel, render_study_queue
+from research_y.desktop.specialist_panel import society_panel, publication_panel
 
 
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
@@ -281,6 +282,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
         else:
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
+            society_panel(ui,state,act)
             data = state['report']
             if data is None:
                 ui.label('Report not available.')
@@ -900,6 +902,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                              'bibliographic identity or export rights.').props(
                                  'data-testid=publication-detail-heading')
                     render_study_panel(ui, state, detail, act, study_edits)
+                    publication_panel(ui,state,detail,act,native)
                     for omitted in detail['suppressed_chosen_fields']:
                         ui.label('Saved field ' + omitted['field'] +
                                  ' deliberately WITHHELD: its source path '
