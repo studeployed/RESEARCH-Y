@@ -129,6 +129,14 @@ def test_output_limit_also_covers_container_and_unresolved_rows(monkeypatch):
         inspect_conference_jats(("<article>"+container.format("small")+"<sub-article/>"*100+"</article>").encode())
 
 
+def test_matching_budget_is_cumulative_and_fails_before_returning_truncated_matches(monkeypatch):
+    from research_y import conference_jats
+    monkeypatch.setattr(conference_jats,"MAX_MATCH_CHARACTERS",65)
+    with pytest.raises(ConferenceInputError,match="work budget"):
+        inspect_conference_jats(XML,terms=["ECMO","RV"])
+    assert len(inspect_conference_jats(XML)["abstracts"]) == 2
+
+
 @pytest.mark.parametrize("url", ["file:///c:/a.pdf", "javascript:alert(1)", "https://x@y.test/",
                                  "https://example.test/\r\nx", "https://example.test:broken/"])
 def test_untrusted_locator_schemes_credentials_and_controls_are_refused(url):

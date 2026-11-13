@@ -10,6 +10,7 @@ from xml.etree import ElementTree as ET
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_PREVIEW_BYTES = 16 * 1024 * 1024
+MAX_MATCH_CHARACTERS = 32 * 1024 * 1024
 XLINK = "{http://www.w3.org/1999/xlink}href"
 ABSTRACT_TYPES = {"abstract", "meeting-abstract", "conference-abstract"}
 
@@ -165,6 +166,7 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
         raise ConferenceInputError("PDF mapping requires a unique abstract XML ID")
     result = []
     pending = []
+    match_work = 0
     for pos, node in enumerate(children, 1):
         path = f"/article/sub-article[{pos}]"
         if node.get("article-type") not in ABSTRACT_TYPES:
@@ -204,6 +206,9 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
             if not value:
                 warnings.append("missing_" + field)
         searchable = [v for v in (title, body) if v]
+        match_work += len(patterns) * sum(map(len, searchable))
+        if match_work > MAX_MATCH_CHARACTERS:
+            raise ConferenceInputError("Term matching exceeds the supported work budget")
         item = dict(locator=path, xml_id=identifier, title=title, text=body, authors=_authors(front),
                            source_identifiers=original_ids, individual_dois=individual_doi,
                            number=_text(front, "elocation-id"), printed_first_page=_text(front, "fpage"),
