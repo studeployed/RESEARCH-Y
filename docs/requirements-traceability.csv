@@ -12,7 +12,7 @@ PROJ-01,1,AT-01,tools/desktop_lifecycle.py (installed Windows create/open/recent
 PROJ-02,1,"AT-01,AT-02",tests/test_projects.py,partial
 PROJ-03,1,AT-02,tests/test_projects.py; tools/desktop_lifecycle.py (relocated project and workbook reinspection),partial
 PROJ-04,1,"AT-01,AT-09",tests/test_projects.py; tests/test_wos_checkpoints.py; tests/test_project_initialisation.py (atomic new schema/header/identity/audit creation and rollback); tests/test_publication_identity.py; tests/test_publication_fields.py (atomic identity/field/audit rollback); tests/test_publication_candidates.py (candidate receipt and association commit or roll back together); tests/test_result_counts.py; tests/test_result_count_ledger.py (consistent read-only transaction and explicit recovery before count retry),partial
-PROJ-05,1,"AT-03,AT-21",planned,planned
+PROJ-05,1,"AT-03,AT-21",tests/test_project_archive.py (verified portable database and selected supporting files),partial
 PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py; tests/test_wos_migration.py (recoverable v1/v2/v3 to v4; archives pending),partial
 PROJ-07,1,"AT-01,AT-09",planned,planned
 SEARCH-01,1,AT-04,planned,planned
@@ -86,7 +86,7 @@ AI-04,2,"AT-15,AT-20",tests/test_biomedical_benchmark.py; tests/test_biomedical_
 AI-05,2,"AT-20,AT-21",tests/test_cloud_terms.py (default off; selected seed payload and costs previewed; separately confirmed transport),partial
 AI-06,2,"AT-04,AT-15",tests/test_optional_local_assistant.py (original generation parameters and linked review receipts),partial
 AI-07,2,"AT-04,AT-19",tests/test_optional_local_assistant.py (only approved draft terms reach pending source queries),partial
-UI-01,3,AT-01,tools/desktop_lifecycle.py (installed Windows launcher and host-selected folders),partial
+UI-01,3,AT-01,tools/desktop_lifecycle.py (installed Windows launcher and host-selected folders); tests/test_project_archive.py (portable transfer and guarded restore),partial
 UI-02,3,AT-04,planned,planned
 UI-03,3,AT-04,planned,planned
 UI-04,3,AT-05,planned,planned
@@ -114,11 +114,11 @@ EXPORT-06,3,AT-18,planned,planned
 SEC-01,3,AT-21,tests/test_wos_checkpoints.py; tests/test_wos_checkpoint_validation.py (no key in stored provider evidence or public artifacts; credential manager pending); tests/test_desktop_launcher.py (named Windows credentials and redacted source profiles),partial
 SEC-02,3,"AT-20,AT-21",planned,planned
 SEC-03,3,AT-21,tests/test_wos_checkpoint_validation.py (explicit local retention gate; licensed contents not exported),partial
-SEC-04,3,"AT-03,AT-21",planned,planned
+SEC-04,3,"AT-03,AT-21",tests/test_project_archive.py (verified portable database and selected supporting files),partial
 SEC-05,3,"AT-09,AT-21",tests/test_pubmed_probe.py; tests/test_wos_starter.py; tests/test_wos_checkpoints.py (static error codes and durable recovery),partial
 AT-01,1,AT-01,tests/test_projects.py; tests/test_project_initialisation.py (project metadata and single-transaction creation only); tests/test_publication_identity.py; tests/test_publication_fields.py (identity/provenance reopening; full interface pending); tests/test_publication_candidates.py (candidate decisions reopen durably); tests/test_result_counts.py; tests/test_result_count_ledger.py (count projection reopens; complete application workflow pending); tools/desktop_lifecycle.py (installed project reopen and original file/receipt check),partial
 AT-02,1,AT-02,tests/test_projects.py (partial: metadata path relocation only); tests/test_publication_identity.py; tests/test_publication_fields.py (identity/provenance relocation fixture); tests/test_publication_candidates.py (candidate receipts survive relocation); tests/test_result_counts.py; tests/test_result_count_ledger.py (unchanged count projection after relocation); tools/desktop_lifecycle.py (actual folder relocation between native processes),partial
-AT-03,3,AT-03,planned,planned
+AT-03,3,AT-03,tests/test_project_archive.py (verified portable database and selected supporting files),partial
 AT-04,2,AT-04,tests/test_optional_local_assistant.py; tests/test_cloud_terms.py (only individually approved terms reach frozen queries),verified
 AT-05,1,AT-05,tests/test_query_compiler.py (offline OR union fixture only); tests/test_query_compiler.py and tests/test_run_execution_board.py (exact approved inventory and multi-group source memberships),partial
 AT-06,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_translation.py; tests/test_pubmed_date_translation.py (observed source alias fixture; broader live phrases pending); docs/evidence/pubmed-metadata-43300410950-summary.json (live clinical OR expression passed the translation check),partial

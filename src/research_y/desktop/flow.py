@@ -83,6 +83,7 @@ class RealProjectFlow:
         self._closed = False
         self.project = None
         self._master = self._master_page = None
+        self._archive_receipt = None
         self.snapshot = None
         self.selected_run_id = None
         self._clear_manifest_selection()
@@ -364,6 +365,7 @@ class RealProjectFlow:
             raise ProjectFlowError('invalid_worker_result')
         self._clear_master()
         self.project = project
+        self._archive_receipt = None
         self._specialist = SpecialistWorkbench()
         self._cloud_offer = None
         self._cloud_enabled = False
@@ -523,6 +525,33 @@ class RealProjectFlow:
             self._root = path
             self._remember_project(project)
             return self._publish()
+
+    def export_native_archive(self, parent, *, basename, supporting_files, transfer_confirmed):
+        from research_y import project_archive
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._archive_receipt = None
+            project_archive._component(basename)
+            if not basename.lower().endswith(".researchy"):
+                basename += ".researchy"
+            try:
+                receipt = project_archive.export_archive(self.project,parent/basename,
+                          supporting_files=supporting_files,transfer_confirmed=transfer_confirmed)
+            except FileExistsError:
+                raise ProjectFlowError("An archive with this name already exists in that folder.") from None
+            self._archive_receipt = dict(filename=basename,**receipt)
+            return self._publish()
+
+    def import_native_archive(self, path, parent, *, directory_name=None):
+        from research_y import project_archive
+        with self._guard:
+            self._require_no_unresolved_selection()
+            try:
+                restored = project_archive.import_archive(path,parent,directory_name=directory_name)
+            except FileExistsError:
+                raise ProjectFlowError("A project folder with this name already exists. Choose a new folder name.") from None
+            return self.open_native_folder(restored.root)
 
     def create_native_parent(self, selected: Path, name: str):
         """Create exclusively in a host-selected parent, never a browser path."""
@@ -4564,6 +4593,7 @@ class RealProjectFlow:
         data = self.snapshot
         return {
                 'master_results': self._master_page,
+                'archive_receipt': self._archive_receipt,
                 'project': None if self.project is None else {
                     'project_id': str(self.project.identifier), 'name': self.project.name,
                     'location': str(self.project.root)},

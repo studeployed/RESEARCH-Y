@@ -10,6 +10,18 @@ from research_y.desktop.specialist_panel import society_panel, publication_panel
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
     state = flow.state()
     project = state['project']
+    if native and project is not None:
+        with ui.expansion("Export project archive",value=bool(state.get("archive_receipt"))):
+            archive_name = ui.input("Archive filename",value="Project.researchy")
+            files = ui.textarea("Supporting files to transfer (one project-relative path per line)")
+            ui.label("Include linked documents and any permitted files from documents, exports or data/raw.")
+            permission = ui.checkbox("I may transfer the project database and selected files")
+            ui.button("Choose destination and create archive",on_click=lambda:act("native_export_archive",dict(
+                basename=archive_name.value,supporting_files=[s.strip() for s in (files.value or "").splitlines() if s.strip()],
+                transfer_confirmed=permission.value)))
+            receipt = state.get("archive_receipt")
+            if receipt:
+                ui.label(f'Saved {receipt["filename"]} with {receipt["files"]} files.')
     if project is not None:
         ui.label('INCOMPLETE — no source retrieval is verified.').props('data-testid=incomplete')
     ui.label('Recent Projects (explicit selection; locations verified on open).').props(
