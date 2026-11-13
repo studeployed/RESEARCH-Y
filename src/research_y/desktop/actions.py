@@ -3,6 +3,12 @@ from research_y.desktop.flow import ProjectFlowError
 
 
 def perform_action(flow, name, value=None):
+    if name == 'local_mode':
+        return flow.set_local_mode(value)
+    if name == 'local_suggest':
+        if type(value) is not dict or set(value) != {'group_id', 'term_id'}:
+            raise ProjectFlowError('invalid_setup_action')
+        return flow.propose_local_terms(**value)
     if name == 'recent_open':
         return flow.open_recent(value)
     if name == 'recent_refresh':

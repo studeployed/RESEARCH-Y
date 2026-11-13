@@ -23,6 +23,40 @@ trusted worker and SQLite services as the isolated graphical tests.
 
 ## Term variant review
 
+### Optional Windows local assistant
+
+The approved local package contains Qwen3-1.7B Q8_0 (1,834,426,016 bytes)
+and the Windows x64 CPU build of llama.cpp b12360. Inference uses six CPU
+threads. Allow about 1.9 GB for the installed package, plus space for the
+downloaded files during installation. The supplied model is Apache-2.0
+licensed. See the [model and licence](https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/tree/90862c4b9d2787eaed51d12237eafdfe7c5f6077)
+and the [official engine release](https://github.com/ggml-org/llama.cpp/releases/tag/b12360).
+
+Use the official `llama-b12360-bin-win-cpu-x64.zip` and
+`Qwen3-1.7B-Q8_0.gguf` with the installed Python package:
+
+```text
+python -m research_y.install_local_assistant --archive llama-b12360-bin-win-cpu-x64.zip --model Qwen3-1.7B-Q8_0.gguf
+```
+
+The installer verifies the archive, extracted native files and weights,
+then installs the package under the user's local application data. Restart
+the app after installation. **Ask local AI for terms** uses only the
+selected seed. Review the wording of each returned proposal. **Use no AI**
+turns inference off for this session. Core search and export are available
+without the optional package. The model can suggest a related condition or
+an overly broad term. A researcher decides which proposals enter the draft
+and separately approves the exact query.
+
+Each generation receipt retains the model and engine versions, weights and
+prompt hashes, settings, proposed terms and UTC timestamp. Decisions link
+to that receipt. The acceptance test can be run on a machine with the package
+installed by setting `RESEARCHY_TEST_INSTALLED_MODEL=1` and running
+`tests/test_optional_local_assistant.py`. Cloud mode and model-assisted
+classification remain tracked separately in [P2-01](https://github.com/studeployed/RESEARCH-Y/issues/122).
+
+### Deterministic variants
+
 In Research Setup, **Suggest term variants** proposes lexical changes to an
 enabled atomic term. The draft shows each candidate and its reason. Edit
 the wording before accepting or reject it. Only accepted terms appear in

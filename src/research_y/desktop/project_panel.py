@@ -105,6 +105,11 @@ def render_project_panel(ui, flow, act, *, native, error):
         # All draft edits are host-memory mutations. A new preview is
         # mandatory after any edit, before the separate approval click.
         draft = state['strategy_draft']
+        if state.get('local_assistant_installed'):
+            enabled = state['local_assistant_enabled']
+            ui.label('Assistant mode: ' + ('Local Qwen3-1.7B' if enabled else 'No AI'))
+            ui.button('Use no AI' if enabled else 'Use local AI',
+                      on_click=lambda: act('local_mode', not enabled))
         ui.separator()
         ui.label('Research Setup — draft only until explicitly approved').props(
             'data-testid=setup-heading')
@@ -162,6 +167,9 @@ def render_project_panel(ui, flow, act, *, native, error):
                             with ui.card():
                                 term_input = ui.input('Atomic term', value=term['text'])
                                 if term['enabled']:
+                                    if state.get('local_assistant_enabled'):
+                                        ui.button('Ask local AI for terms', on_click=lambda gid=gid, tid=tid:
+                                                  act('local_suggest', dict(group_id=gid, term_id=tid)))
                                     ui.button('Suggest term variants', on_click=lambda gid=gid, tid=tid:
                                               act('setup_edit', dict(action='suggest_variants',
                                                   data=dict(group_id=gid, term_id=tid))))

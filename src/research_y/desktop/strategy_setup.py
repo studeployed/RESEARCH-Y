@@ -168,9 +168,28 @@ class StrategyDraft:
             group = self._group(offer["group_id"])
             if any(t["text"].casefold() == final.casefold() for t in group["terms"]):
                 raise DraftError("duplicate_draft_term")
-            rationale = f'{offer["method"]}: {offer["reason"]}; seed: {offer["seed"]}'
+            if offer["origin"] == "ai":
+                rationale = f'{offer["method"]}: {offer["reason"]}; local generation receipt {offer["event_id"]}'
+            else:
+                rationale = f'{offer["method"]}: {offer["reason"]}; seed: {offer["seed"]}'
             self.add_term(offer["group_id"], final, origin=offer["origin"], rationale=rationale)
             offer["status"] = "accepted" if final == offer["text"] else "edited"
+        self._invalidate()
+
+    def local_offers(self, group_id, term_id, generated, event_id):
+        group = self._group(group_id)
+        seed = self._term(group, term_id)
+        known = {t["text"].casefold() for t in group["terms"]}
+        known.update(s["text"].casefold() for s in self.suggestions.values()
+                     if s["source_term_id"] == term_id and s["origin"] == "ai")
+        for text in generated["terms"]:
+            if text.casefold() in known:
+                continue
+            key = str(uuid4())
+            self.suggestions[key] = dict(suggestion_id=key, group_id=group_id, source_term_id=term_id,
+                    text=text, seed=seed["text"], origin="ai", method=generated["model"], event_id=event_id,
+                    reason="Suggested alternative for this seed; verify biomedical equivalence", status="pending")
+            known.add(text.casefold())
         self._invalidate()
 
     def approved_groups(self):
