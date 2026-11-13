@@ -40,6 +40,7 @@ def test_default_off_and_specific_transfer_authorization_in_desktop(tmp_path):
         assert offer["model"] == "fixture-model" and "charge" in offer["cost_notice"] and calls == []
         with pytest.raises(ProjectFlowError,match="changed"):
             perform_action(flow,"cloud_confirm","stale")
+        assert flow.state()["cloud_offer"] is None and not calls
         perform_action(flow,"cloud_offer",payload)
         draft=perform_action(flow,"cloud_confirm",offer["revision"])["strategy_draft"]
         assert len(calls)==1 and calls[0].data == offer["payload"].encode()

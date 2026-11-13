@@ -892,6 +892,7 @@ class RealProjectFlow:
             self._require_open()
             self._require_no_unresolved_selection()
             offer, self._cloud_offer = self._cloud_offer, None
+            self._publish()  # Consume the one-shot preview even when validation or the provider fails.
             if not self._cloud_enabled or not offer:
                 raise ProjectFlowError("cloud_transfer_confirmation_required")
             project,draft,gid,tid,seed,preview = offer
