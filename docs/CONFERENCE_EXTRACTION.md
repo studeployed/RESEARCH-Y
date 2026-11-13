@@ -1,6 +1,6 @@
 # Inspecting a JATS conference supplement
 
-Use a locally permitted UTF-8 JATS article document with direct
+Use a locally permitted UTF-8 JATS article document without a DTD, with direct
 `sub-article` children explicitly typed as abstracts. Each child keeps
 its own title, authors, abstract text, source identifiers and printed page
 range. The parent retains its own bibliographic information. The source

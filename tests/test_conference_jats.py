@@ -46,7 +46,8 @@ def test_separate_original_abstracts_with_local_matches_source_ids_and_independe
     assert a["individual_url"] == "https://example.test/abstract/P12"
     assert a["pdf_page_url"] == "https://example.test/proceedings.pdf#page=8"
     assert b["pdf_page_url"] is None and "missing_pdf_page" in b["warnings"]
-    assert b["conference"] == "Demo meeting" and b["conference_date"] == "February 2025"
+    assert b["conference"] is None and b["conference_date"] is None
+    assert output["container"]["conference"] == "Demo meeting" and output["container"]["conference_date"] == "February 2025"
     assert output["unresolved"] == [{"locator": "/article/sub-article[3]", "reason": "unclassified_sub_article"}]
 
 
@@ -109,6 +110,25 @@ def test_repeated_child_doi_is_ambiguous_even_if_missing_from_parent():
         assert {"unresolved_individual_identity", "doi_shared_across_sub_articles"} <= set(item["warnings"])
 
 
+def test_container_fields_are_emitted_once_and_oversized_preview_fails_as_a_unit(monkeypatch):
+    from research_y import conference_jats
+    output = inspect_conference_jats(XML)
+    assert json.dumps(output).count("Demo meeting") == 1
+    monkeypatch.setattr(conference_jats, "MAX_PREVIEW_BYTES", 2000)
+    with pytest.raises(ConferenceInputError, match="output size"):
+        inspect_conference_jats(XML)
+
+
+def test_output_limit_also_covers_container_and_unresolved_rows(monkeypatch):
+    from research_y import conference_jats
+    monkeypatch.setattr(conference_jats, "MAX_PREVIEW_BYTES", 2300)
+    container = "<front><article-meta><title-group><article-title>{}</article-title></title-group></article-meta></front>"
+    with pytest.raises(ConferenceInputError, match="output size"):
+        inspect_conference_jats(("<article>"+container.format("é"*500)+"</article>").encode())
+    with pytest.raises(ConferenceInputError, match="output size"):
+        inspect_conference_jats(("<article>"+container.format("small")+"<sub-article/>"*100+"</article>").encode())
+
+
 @pytest.mark.parametrize("url", ["file:///c:/a.pdf", "javascript:alert(1)", "https://x@y.test/",
                                  "https://example.test/\r\nx", "https://example.test:broken/"])
 def test_untrusted_locator_schemes_credentials_and_controls_are_refused(url):
@@ -122,6 +142,12 @@ def test_invalid_documents_are_rejected_before_producing_any_abstract():
                 b'<article>' + b'<s>' * 120 + b'</s>' * 120 + b'</article>'):
         with pytest.raises(ConferenceInputError):
             inspect_conference_jats(xml)
+
+
+def test_document_type_declarations_are_refused_before_xml_processing():
+    for declaration in [b"<!DOCTYPE article>", b'<!DOCTYPE article SYSTEM "example.dtd">']:
+        with pytest.raises(ConferenceInputError, match="declaration"):
+            inspect_conference_jats(declaration + XML)
 
 
 def test_local_preview_requires_unambiguous_supplied_page(tmp_path, capsys):
