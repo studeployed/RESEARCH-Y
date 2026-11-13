@@ -61,12 +61,12 @@ DUP-02,1,"AT-10,AT-11",tests/test_publication_candidates.py (conservative source
 DUP-03,1,AT-10,tests/test_publication_identity.py; tests/test_publication_fields.py (retrieval-level review_required and confirmed_match); tests/test_publication_candidates.py (bounded candidates with explicit confirmed_match and rejected_match; automatic matching disabled),partial
 DUP-04,1,"AT-10,AT-17",tests/test_publication_identity.py; tests/test_publication_fields.py (current retrieval association reversal; annotated publication merge/split and rerun propagation pending); tests/test_publication_candidates.py (prior-run receipts visible without automatic propagation; reversal invalidates stale decisions); tests/test_publication_candidate_queue.py and tests/test_reviewed_master.py (explicit cross-run action and count withdrawal on reversal),partial
 DUP-05,1,AT-11,tests/test_publication_identity.py; tests/test_publication_fields.py (no automatic shared-container or abstract/full-paper merge); tests/test_publication_candidates.py (shared supplement and abstract/full-paper candidates never merge automatically),partial
-CONF-01,2,AT-11,planned,planned
-CONF-02,2,AT-11,planned,planned
-CONF-03,2,AT-12,planned,planned
-CONF-04,2,AT-12,planned,planned
-CONF-05,2,"AT-11,AT-12",planned,planned
-CONF-06,2,AT-12,planned,planned
+CONF-01,2,AT-11,tests/test_conference_jats.py (explicit local JATS children and unclassified blocks),partial
+CONF-02,2,AT-11,tests/test_conference_jats.py (per-abstract term scope and distinct preview rows; persisted extraction pending),partial
+CONF-03,2,AT-12,tests/test_conference_jats.py (printed pages and explicit PDF file page mappings in JATS preview),partial
+CONF-04,2,AT-12,tests/test_conference_jats.py (original supplement bibliographic fields and supplied landing and PDF links),partial
+CONF-05,2,"AT-11,AT-12",tests/test_conference_jats.py (container DOI scope and uncertain identity or locator flags),partial
+CONF-06,2,AT-12,tests/test_conference_jats.py (source digest and XML locator plus unresolved reasons; durable review pending),partial
 GUIDE-01,2,AT-13,tests/test_society_sources.py (capture without DOI or journal and explicit guidance type),partial
 GUIDE-02,2,"AT-13,AT-15",tests/test_society_sources.py (explicit guidance document types),partial
 GUIDE-03,2,AT-13,tests/test_society_sources.py (source-captured society roles and original directory revisions),partial
@@ -127,7 +127,7 @@ AT-08,1,AT-08,tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py; do
 AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py; tests/test_wos_live_evidence.py; tests/test_project_initialisation.py; docs/evidence/wos-recovery-41306953908-summary.json (controlled live restarts and initialisation crash fixtures; broader live recovery remains open); tests/test_publication_identity.py; tests/test_publication_fields.py (identity transaction crash rollback; source acceptance remains partial); tests/test_publication_candidates.py (abrupt exit between identity and receipt rolls back; broader recovery still partial); tests/test_result_counts.py; tests/test_result_count_ledger.py (hot-journal read refusal then explicit existing recovery; broader source recovery partial); docs/evidence/pubmed-metadata-43300410950-summary.json and tests/test_pubmed_cooldown.py (live metadata restart and offline provider wait),partial
 AT-10,1,AT-10,tests/test_publication_identity.py; tests/test_publication_fields.py (explicit two-source/group association; automatic matching pending); tests/test_publication_candidates.py (explicit candidate confirmation retains two-source/group memberships; global discovery pending); tests/test_result_counts.py; tests/test_result_count_ledger.py (two-source/two-group explicit identity gives global union one and group sum two; exhaustive deduplication pending); tests/test_reviewed_master.py (reviewed master rows retain every original membership),partial
 AT-11,2,AT-11,tests/test_publication_identity.py; tests/test_publication_fields.py (shared-container and abstract/full-paper separation; extraction pending); tests/test_publication_candidates.py (shared-container and abstract/full-paper comparison warnings; extraction pending); tests/test_phase1_acceptance.py (distinct retained abstract records sharing a supplement DOI),partial
-AT-12,2,AT-12,planned,planned
+AT-12,2,AT-12,tests/test_conference_jats.py (explicit printed page and mapped PDF link; full operational acceptance pending),partial
 AT-13,2,AT-13,tests/test_society_sources.py (transactional manual society-only guideline fixture and reopen),partial
 AT-14,2,AT-14,planned,planned
 AT-15,2,AT-15,planned,planned
