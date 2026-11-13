@@ -114,6 +114,8 @@ def run_window(stage, workspace, folder, run_id):
             passed.append(True)
         except Exception as error:
             print(f'Native {stage} stage failed: {type(error).__name__}: {error}', flush=True)
+            if hasattr(flow,"desktop_startup_stages"):
+                print("Local startup stages:",flow.desktop_startup_stages(),flush=True)
         finally:
             try:
                 await asyncio.wait_for(app.native.main_window.destroy(), timeout=10)

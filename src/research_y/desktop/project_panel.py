@@ -127,6 +127,12 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.button('Use no AI', on_click=lambda: act('local_mode', False))
         if state.get('local_assistant_installed') and not local_on:
             ui.button('Use local AI', on_click=lambda: act('local_mode', True))
+        if native and not state.get('local_assistant_installed'):
+            with ui.expansion("Set up optional local AI"):
+                ui.label("Qwen3-1.7B Q8_0 from Qwen (Apache 2.0) and llama.cpp from GitHub (MIT). "
+                         "Download about 1.86 GB. Allow 4 GB free during setup. The model runs on your CPU.")
+                consent = ui.checkbox("Download and verify these components on this computer")
+                ui.button("Install optional local assistant",on_click=lambda:act("native_install_local_model",consent.value))
         if state.get('cloud_configured') and not cloud_on:
             ui.button('Choose optional cloud AI', on_click=lambda: act('cloud_mode'))
         if state.get('cloud_offer'):
