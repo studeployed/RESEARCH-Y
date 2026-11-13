@@ -73,8 +73,13 @@ its own completed, authorized dispatch.
 | DATA-03–06; SRC-07 | Supplied source metadata retained by the tested implementation | Independent field-level completeness, full abstracts and permitted enrichment |
 | AT-21 | Offline safeguards and aggregate-only evidence | Full security/release acceptance, including deferred issue #11 |
 
-The traceability matrix deliberately keeps these broad requirements **partial**. Parent issue #8 stays open. Offline quota/failure fixtures remain useful but are not relabelled live evidence.
-
-## Next ready work
-
-P1-06 under issue #9 follows: publication identity, reversible conservative deduplication, reconciled master counts, initial Excel output and a minimal application flow. Initiate a narrow P1-06a publication-identity/provenance increment first, with explicit anti-false-merge fixtures; do not combine all of P1-06 into one unreviewable change. Preparing that increment does not depend on pretending that the remaining source-acceptance gaps are closed. No new source call or repeat smoke test is needed to record the completed scenario.
+The traceability matrix keeps these product-wide requirements **partial**.
+The Phase 1 source milestone specifies controlled cross-day recovery and a
+live entitlement check. The 5,000/day institutional smoke check, the observed
+enumeration above and the [reviewed cross-day fixtures](https://github.com/studeployed/RESEARCH-Y/pull/118)
+satisfy its core acceptance criteria. The separate
+[live two-date check](https://github.com/studeployed/RESEARCH-Y/issues/119)
+remains pending. Its 23:45 UTC start window lets one temporary runner span
+midnight and keep its private SQLite project through the restart.
+The [Phase 1 acceptance record](PHASE1_ACCEPTANCE.md) links the master list,
+initial workbook and installed Windows application evidence.
