@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from collections import Counter
 from hashlib import sha256
+import json
 import re
 from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
 MAX_BYTES = 8 * 1024 * 1024
+MAX_PREVIEW_BYTES = 16 * 1024 * 1024
 XLINK = "{http://www.w3.org/1999/xlink}href"
 ABSTRACT_TYPES = {"abstract", "meeting-abstract", "conference-abstract"}
 
@@ -133,6 +135,15 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
                      conference=_text(meta, "conference/conf-name"), conference_date=_text(meta, "conference/conf-date"))
     shared_dois = {i["value"].casefold() for i in container["identifiers"] if (i["type"] or "").casefold() == "doi"}
     children = root.findall("sub-article")
+    if len(children) > 10_000:
+        raise ConferenceInputError("Too many sub-articles for one preview")
+    def size(value):
+        return len(json.dumps(value, ensure_ascii=True, indent=2))
+    # Account for every retained row, including repeated matched terms. Count
+    # escaped JSON characters since the CLI emits ASCII. Leave headroom for
+    # outer keys, separators and indentation. Reject a whole oversized
+    # preview rather than silently truncating the scientific record.
+    preview_bytes = size(container) + 1024
     doi_blocks = Counter()
     for child in children:
         own_ids = child.findall("front-stub/article-id") + child.findall("front/article-meta/article-id")
@@ -185,14 +196,18 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
             if not value:
                 warnings.append("missing_" + field)
         searchable = [v for v in (title, body) if v]
-        result.append(dict(locator=path, xml_id=identifier, title=title, text=body, authors=_authors(front),
+        item = dict(locator=path, xml_id=identifier, title=title, text=body, authors=_authors(front),
                            source_identifiers=original_ids, individual_dois=individual_doi,
                            number=_text(front, "elocation-id"), printed_first_page=_text(front, "fpage"),
                            printed_last_page=_text(front, "lpage"), pdf_page=page, pdf_page_url=pdf_link,
-                           individual_url=direct_url, conference=_text(front, "conference/conf-name") or container["conference"],
-                           conference_date=_text(front, "conference/conf-date") or container["conference_date"],
+                           individual_url=direct_url, conference=_text(front, "conference/conf-name"),
+                           conference_date=_text(front, "conference/conf-date"),
                            matched_terms=[term for term, pattern in patterns if any(pattern.search(v) for v in searchable)],
-                           warnings=warnings))
+                           warnings=warnings)
+        preview_bytes += size(item) + 256
+        if preview_bytes > MAX_PREVIEW_BYTES:
+            raise ConferenceInputError("Preview exceeds supported output size")
+        result.append(item)
     if not children:
         pending.append({"locator": "/article", "reason": "no_explicit_sub_articles"})
     return dict(source_sha256=sha256(payload).hexdigest(), container=container,
