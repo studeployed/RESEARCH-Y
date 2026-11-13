@@ -7,6 +7,18 @@ from research_y.run_execution_board import read_run_execution_board
 from test_reviewed_master import populated,decide
 
 
+def test_alternate_abstract_and_canonical_chosen_year():
+    from types import SimpleNamespace
+    assert master_results._abstract({"abstract_sections":[],"other_abstracts":[
+        {"sections":[{"text":"Translated abstract"}]}]}) == "Translated abstract"
+    dates=[{"kind":"article_electronic","year":"2025"}]
+    source=dict(source_name="pubmed",source_record_id="111",source_sha256="0"*64,retrieval_id="retained",
+                original_metadata={"source":"NCBI PubMed EFetch XML","record":{"publication_dates":dates}})
+    selected=dict(value=dates,provenance=dict(retrieval_id="retained",path=["record","publication_dates"]))
+    snapshot=SimpleNamespace(retrievals=[source],chosen_fields={"year":selected})
+    assert master_results._citation(snapshot,[],"year") == "2025"
+
+
 def test_frozen_master_search_facets_selection_and_saved_views(tmp_path):
     project,run,_,ids = populated(tmp_path)
     before = read_run_execution_board(project,run)
