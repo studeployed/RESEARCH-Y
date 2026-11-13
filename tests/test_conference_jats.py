@@ -78,6 +78,13 @@ def test_mixed_text_table_and_list_stay_with_their_original_abstract():
     assert b["matched_terms"] == ["ECMO", "Recovery"] and a["matched_terms"] == []
 
 
+def test_front_abstract_and_body_are_both_retained_inside_subarticle():
+    xml = XML.replace(b"</title-group></front-stub>", b"</title-group><abstract><p>Preliminary findings.</p></abstract></front-stub>")
+    a, b = inspect_conference_jats(xml, terms=["ECMO", "Preliminary findings"])["abstracts"]
+    assert b["text"] == "Preliminary findings.\nECMO activity."
+    assert b["matched_terms"] == ["ECMO", "Preliminary findings"] and a["matched_terms"] == []
+
+
 @pytest.mark.parametrize("url", ["file:///c:/a.pdf", "javascript:alert(1)", "https://x@y.test/",
                                  "https://example.test/\r\nx", "https://example.test:broken/"])
 def test_untrusted_locator_schemes_credentials_and_controls_are_refused(url):

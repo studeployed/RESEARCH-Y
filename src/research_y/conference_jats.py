@@ -153,9 +153,7 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
             pending.append({"locator": path, "reason": "nested_sub_articles_require_review"})
             continue
         title = _text(front, "title-group/article-title")
-        blocks = front.findall("abstract")
-        if not blocks:
-            blocks = node.findall("body")
+        blocks = front.findall("abstract") + node.findall("body")
         body = "\n".join(value for block in blocks if (value := _body_text(block))) or None
         identifier = node.get("id")
         page = pages.get(identifier)
