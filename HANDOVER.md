@@ -2,6 +2,15 @@
 
 ## Phase 2 delivery
 
+The combined specialist acceptance case is in `tests/test_phase2_acceptance.py`.
+It begins with a reviewed two-publication primary master, then admits two
+separately located conference abstracts and an official society-only guideline.
+After reopen, the five publications can be inspected independently, while
+the reviewed primary count and workbook still cover the original two. The
+supplementary sources retain separate denominators and source-backed names
+and classification evidence. See `docs/CONFERENCE_EXTRACTION.md`,
+`docs/SOCIETY_SOURCES.md` and `docs/CROSSREF_ENRICHMENT.md`.
+
 [Issue #121](https://github.com/studeployed/RESEARCH-Y/issues/121) tracks
 the four specialist-processing milestones. The first P2-01 increment adds a
 [biomedical benchmark](docs/BIOMEDICAL_BENCHMARK.md) with blind prompts,

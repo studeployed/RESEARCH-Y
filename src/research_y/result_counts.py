@@ -142,14 +142,15 @@ def _review_counts(db, sources):
     return counts, identity._hash(relevant)
 
 
-def _source_rows(db, run_id):
+def _source_rows(db, run_id, *, primary=False):
     """Validate original selected-run sources in one ordered SQLite stream."""
     result = {}
     sql = (
         'SELECT r.retrieval_id,r.run_id,r.source_name,r.source_record_id,'
         'r.retrieved_at_utc,r.original_metadata_json,s.status '
         'FROM source_retrievals r LEFT JOIN search_runs s ON s.run_id=r.run_id '
-        'WHERE r.run_id=? ORDER BY r.retrieval_id'
+        'WHERE r.run_id=? ' + ("AND r.source_name NOT IN ('conference_jats','society') " if primary else "") +
+        'ORDER BY r.retrieval_id'
     )
     for row in db.execute(sql, (run_id,)):
         rid = identity._identifier(row[0])
@@ -191,7 +192,7 @@ class _ValidatedRevision:
     revision: str
 
 
-def _identity_rows(db, sources):
+def _identity_rows(db, sources, *, primary=False):
     """Read every current identity and its original provenance, without a cache.
 
     Small runs use the existing canonical snapshot path. Large runs stream the
@@ -215,10 +216,10 @@ def _identity_rows(db, sources):
                     identity._identifier(link[0])
                     snapshots[link[0]] = identity._snapshot(db, link[0])
         return links, snapshots
-    return _streamed_identity_rows(db, sources)
+    return _streamed_identity_rows(db, sources, primary=True) if primary else _streamed_identity_rows(db, sources)
 
 
-def _streamed_identity_rows(db, sources):
+def _streamed_identity_rows(db, sources, *, primary=False):
     """Validate original links and memberships in two ordered, co-snapshot streams.
 
     Each original source and its immutable association event is still verified.
@@ -251,7 +252,8 @@ def _streamed_identity_rows(db, sources):
         'LEFT JOIN publications p ON p.publication_id=l.publication_id '
         'LEFT JOIN audit_events a ON a.event_id='
         "json_extract(l.decision_provenance_json,'$.event_id') "
-        'WHERE r.run_id=? ORDER BY r.retrieval_id'
+        'WHERE r.run_id=? ' + ("AND r.source_name NOT IN ('conference_jats','society') " if primary else "") +
+        'ORDER BY r.retrieval_id'
     )
     member_sql = (
         'SELECT m.retrieval_id,q.query_id,q.run_id,q.strategy_version_id,'
@@ -359,7 +361,7 @@ def _query_rows(db, run_id, sources):
     return queries, members, identifiers, scopes
 
 
-def _snapshot(db, project, run_id):
+def _snapshot(db, project, run_id, *, primary=False):
     run = db.execute('SELECT strategy_version_id,created_at_utc,status,completed_at_utc '
                      'FROM search_runs WHERE run_id=?', (run_id,)).fetchone()
     if run is None:
@@ -372,8 +374,8 @@ def _snapshot(db, project, run_id):
     identity._object(strategy[0])
     group_rows = db.execute('SELECT group_id,label,group_order FROM strategy_groups '
                             'WHERE strategy_version_id=? ORDER BY group_order,group_id', (strategy_id,)).fetchall()
-    sources = _source_rows(db, run_id)
-    links, snapshots = _identity_rows(db, sources)
+    sources = _source_rows(db, run_id, primary=True) if primary else _source_rows(db, run_id)
+    links, snapshots = _identity_rows(db, sources, primary=True) if primary else _identity_rows(db, sources)
     queries, members, identifiers, scopes = _query_rows(db, run_id, sources)
     warnings = {'source_acceptance_not_established', 'candidate_discovery_incomplete',
                 'publication_counts_are_identity_hypotheses', 'current_not_historical_projection',

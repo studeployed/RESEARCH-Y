@@ -2,7 +2,7 @@
 from datetime import date
 
 from research_y.desktop.manifest_consent import render_manifest_consent
-from research_y.desktop.study_panel import render_study_panel
+from research_y.desktop.study_panel import render_study_panel, render_study_queue
 
 
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
@@ -106,11 +106,21 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
         # All draft edits are host-memory mutations. A new preview is
         # mandatory after any edit, before the separate approval click.
         draft = state['strategy_draft']
-        if state.get('local_assistant_installed'):
-            enabled = state['local_assistant_enabled']
-            ui.label('Assistant mode: ' + ('Local Qwen3-1.7B' if enabled else 'No AI'))
-            ui.button('Use no AI' if enabled else 'Use local AI',
-                      on_click=lambda: act('local_mode', not enabled))
+        local_on = state.get('local_assistant_enabled', False)
+        cloud_on = state.get('cloud_enabled', False)
+        ui.label('Assistant mode: ' + ('Optional cloud AI' if cloud_on else 'Local Qwen3-1.7B' if local_on else 'No AI'))
+        if local_on or cloud_on:
+            ui.button('Use no AI', on_click=lambda: act('local_mode', False))
+        if state.get('local_assistant_installed') and not local_on:
+            ui.button('Use local AI', on_click=lambda: act('local_mode', True))
+        if state.get('cloud_configured') and not cloud_on:
+            ui.button('Choose optional cloud AI', on_click=lambda: act('cloud_mode'))
+        if state.get('cloud_offer'):
+            offer = state['cloud_offer']
+            ui.label(offer['provider'] + ' · ' + offer['model'] + ' · ' + offer['cost_notice'])
+            ui.label('Exact data to send')
+            ui.label(offer['payload'])
+            ui.button('Authorize and send this request', on_click=lambda rev=offer['revision']: act('cloud_confirm',rev))
         ui.separator()
         ui.label('Research Setup — draft only until explicitly approved').props(
             'data-testid=setup-heading')
@@ -168,6 +178,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                             with ui.card():
                                 term_input = ui.input('Atomic term', value=term['text'])
                                 if term['enabled']:
+                                    if cloud_on:
+                                        ui.button('Preview cloud term request', on_click=lambda gid=gid, tid=tid:
+                                                  act('cloud_offer', dict(group_id=gid,term_id=tid)))
                                     if state.get('local_assistant_enabled'):
                                         ui.button('Ask local AI for terms', on_click=lambda gid=gid, tid=tid:
                                                   act('local_suggest', dict(group_id=gid, term_id=tid)))
@@ -267,6 +280,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.label('No run selected (explicit selection required).')
         else:
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
+            render_study_queue(ui,state,act,study_edits)
             data = state['report']
             if data is None:
                 ui.label('Report not available.')

@@ -62,7 +62,21 @@ labels. The project keeps the source paths, input hash, result and generation
 settings. The model can misclassify original research even when it identifies
 an RCT. Confirm or correct each dimension individually and provide the
 supporting evidence. A model proposal alone leaves the classifications
-untouched. Cloud mode remains tracked in [P2-01](https://github.com/studeployed/RESEARCH-Y/issues/122).
+untouched.
+
+### Optional cloud term suggestions
+
+For the Anthropic Messages provider, create a generic credential in Windows
+Credential Manager named `RESEARCH-Y/Anthropic`. Its username is your chosen
+provider model ID and its password is your API key. Restart the app.
+Cloud mode starts disabled. **Choose optional cloud AI** enables previews
+for the current project session. **Preview cloud term request** shows the
+provider, model, exact seed-only JSON payload and potential token charges.
+Only **Authorize and send this request** submits it. Each request needs a
+fresh preview and confirmation. Opening another project resets the mode.
+Returned suggestions use the normal individual researcher approval controls.
+An offline transport fixture verifies this path. The [Messages API](https://platform.claude.com/docs/en/api/messages/create)
+is the first supported cloud provider.
 
 ### Deterministic variants
 

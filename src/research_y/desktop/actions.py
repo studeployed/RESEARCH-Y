@@ -3,6 +3,22 @@ from research_y.desktop.flow import ProjectFlowError
 
 
 def perform_action(flow, name, value=None):
+    if name == 'cloud_mode':
+        return flow.select_cloud_mode()
+    if name == 'cloud_offer':
+        if type(value) is not dict or set(value) != {'group_id','term_id'}:
+            raise ProjectFlowError('invalid_setup_action')
+        return flow.offer_cloud_terms(**value)
+    if name == 'cloud_confirm':
+        return flow.confirm_cloud_terms(value)
+    if name == 'study_queue':
+        if type(value) is not dict or set(value) != {'only_review','hide_non_english','hide_non_human_only','after'}:
+            raise ProjectFlowError('invalid_study_queue')
+        return flow.inspect_study_queue(**value)
+    if name == 'study_queue_open':
+        if type(value) is not dict or set(value) != {'publication_id','revision'}:
+            raise ProjectFlowError('invalid_study_queue')
+        return flow.open_queued_study(**value)
     if name == 'study_inspect':
         return flow.inspect_study()
     if name == 'study_suggest':

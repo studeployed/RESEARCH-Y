@@ -19,7 +19,7 @@ DESIGN_TAGS = {
 DESIGNS = set(DESIGN_TAGS.values()) | {
     "non-randomised interventional study", "prospective cohort", "retrospective cohort", "case-control",
     "cross-sectional", "case series", "diagnostic study", "qualitative study", "SRMA", "narrative review",
-    "other", "unclear",
+    "other", "unclear", "position statement", "practice recommendation",
 }
 FORMATS = {"full journal article", "conference abstract", "conference paper", "journal supplement item",
            "society web document", "preprint", "book/chapter", "other", "unclear"}
@@ -48,12 +48,29 @@ def _proposals(snapshot):
         record = payload.get("record")
         pubmed = source["source_name"] == "pubmed" and payload.get("source") == "NCBI PubMed EFetch XML"
         wos = source["source_name"] == "wos" and payload.get("provider") == "wos_starter"
-        if not isinstance(record, dict) or not (pubmed or wos):
+        society = source["source_name"] == "society" and payload.get("provider") == "manual_society_guidance"
+        conference = source["source_name"] == "conference_jats" and payload.get("provider") == "conference_jats"
+        if not isinstance(record, dict) or not (pubmed or wos or society or conference):
             warnings.add("unsupported_source_metadata")
             continue
         def add(dimension, label, path, value):
             support[dimension].append(dict(label=label, path=["record", *path], source_sha256=source["source_sha256"],
                                            retrieval_id=source["retrieval_id"], value=value))
+        if conference:
+            add("format", "conference abstract", ["locator"], record.get("locator"))
+            if not record.get("text"):
+                warnings.add("abstract_unavailable")
+            continue
+        if society:
+            add("format", "society web document", ["landing_url"], record.get("landing_url"))
+            for index, kind in enumerate(record.get("document_types", [])):
+                label = {"clinical practice guideline":"guideline", "practice recommendation":"practice recommendation",
+                         "guideline":"guideline", "consensus statement":"consensus statement",
+                         "position statement":"position statement"}.get(kind)
+                if label:
+                    add("design", label, ["document_types",index], kind)
+                    add("original_research", "no", ["document_types",index], kind)
+            continue
         tag_path = "publication_types" if pubmed else "types"
         tags = record.get(tag_path)
         if isinstance(tags, list):

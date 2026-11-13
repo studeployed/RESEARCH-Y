@@ -25,6 +25,7 @@ from research_y.desktop.wos_profile import WoSHostProfile
 from research_y.desktop.strategy_setup import StrategyDraft, DraftError
 from research_y.local_assistant import LocalAssistantError
 from research_y import local_study_review, study_classification
+from research_y.study_review_queue import read_study_page
 from research_y.projects import _utc_now, _validated_project_connection
 from research_y.publication_identity import _audit as append_audit
 from research_y.preflight_review import (
@@ -42,7 +43,7 @@ class RealProjectFlow:
     def __init__(self, *, selected_root: Path | None = None, selected_parent: Path | None = None,
                  recent_parent: Path | None = None,
                  pubmed_profile: PubMedHostProfile | None = None,
-                 wos_profile: WoSHostProfile | None = None, local_assistant=None):
+                 wos_profile: WoSHostProfile | None = None, local_assistant=None, cloud_assistant=None):
         self._root = Path(selected_root) if selected_root is not None else None
         self._parent = Path(selected_parent) if selected_parent is not None else None
         if any(path is not None and not path.is_absolute() for path in (self._root, self._parent)):
@@ -54,9 +55,14 @@ class RealProjectFlow:
         self._pubmed_profile = pubmed_profile
         self._wos_profile = wos_profile
         self._local_assistant = local_assistant
+        self._cloud_assistant = cloud_assistant
+        self._cloud_enabled = False
+        self._cloud_offer = None
         self._local_enabled = local_assistant is not None and local_assistant.installed
         self._study_view = None
         self._study_proposal = None
+        self._study_queue = None
+        self._queue_study_id = None
         self._guard = threading.RLock()
         self._worker = ApplicationWorker()
         # Separate supervised process: verification may run longer than
@@ -354,6 +360,10 @@ class RealProjectFlow:
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get('runs'), list) or not isinstance(snapshot.get('exports'), list):
             raise ProjectFlowError('invalid_worker_result')
         self.project = project
+        self._cloud_offer = None
+        self._cloud_enabled = False
+        self._local_enabled = bool(self._local_assistant and self._local_assistant.installed)
+        self._study_queue = self._queue_study_id = self._study_view = self._study_proposal = None
         self.selected_run_id = None
         self._clear_manifest_selection()
         self.selected_export_id = None
@@ -855,19 +865,107 @@ class RealProjectFlow:
             if type(enabled) is not bool or (enabled and not (self._local_assistant and self._local_assistant.installed)):
                 raise ProjectFlowError("local_assistant_unavailable")
             self._local_enabled = enabled
+            self._cloud_enabled = False
+            self._cloud_offer = None
+            return self._publish()
+
+    def select_cloud_mode(self):
+        with self._guard:
+            self._require_open()
+            if self._cloud_assistant is None:
+                raise ProjectFlowError("cloud_settings_required")
+            self._local_enabled = False
+            self._cloud_enabled = True
+            self._cloud_offer = None
+            return self._publish()
+
+    def offer_cloud_terms(self, group_id, term_id):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            draft = self._setup
+            seed = dict(draft._term(draft._group(group_id),term_id))
+            if not self._cloud_enabled or not seed["enabled"] or draft.preview_data is not None:
+                raise ProjectFlowError("cloud_preview_unavailable")
+            preview = self._cloud_assistant.preview(seed["text"])
+            self._cloud_offer = (self.project,draft,group_id,term_id,seed,preview)
+            return self._publish()
+
+    def confirm_cloud_terms(self, revision):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer, self._cloud_offer = self._cloud_offer, None
+            self._publish()  # Consume the one-shot preview even when validation or the provider fails.
+            if not self._cloud_enabled or not offer:
+                raise ProjectFlowError("cloud_transfer_confirmation_required")
+            project,draft,gid,tid,seed,preview = offer
+            if (project is not self.project or draft is not self._setup or draft.preview_data is not None
+                    or seed != draft._term(draft._group(gid),tid) or revision != preview["revision"]):
+                raise ProjectFlowError("cloud_preview_changed")
+            with _validated_project_connection(project) as db:
+                db.execute("BEGIN IMMEDIATE")
+                authorization = append_audit(db,"cloud_terms_authorized_v1",dict(version=1,at_utc=_utc_now(),
+                     provider=preview["provider"],model=preview["model"],request_sha256=revision,
+                     actor=draft.approved_by or None,group_id=gid,term_id=tid))
+        try:
+            generated = self._cloud_assistant.generate(seed["text"],expected_revision=revision,confirmed=True)
+        except LocalAssistantError:
+            with _validated_project_connection(project) as db:
+                db.execute("BEGIN IMMEDIATE")
+                append_audit(db,"cloud_terms_unknown_outcome_v1",dict(version=1,at_utc=_utc_now(),authorization=authorization))
+            raise ProjectFlowError("cloud_response_unavailable") from None
+        with self._guard:
+            with _validated_project_connection(project) as db:
+                db.execute("BEGIN IMMEDIATE")
+                eid = append_audit(db,"cloud_term_proposal_v1",dict(version=1,at_utc=_utc_now(),
+                     authorization=authorization,group_id=gid,term_id=tid,**generated))
+            if (not self._cloud_enabled or project is not self.project or draft is not self._setup
+                    or draft.preview_data is not None or seed != draft._term(draft._group(gid),tid)):
+                raise ProjectFlowError("cloud_preview_changed")
+            draft.local_offers(gid,tid,generated,eid)
             return self._publish()
 
     def _visible_study(self):
         self._require_open()
         self._require_no_unresolved_selection()
+        if self._queue_study_id and self._study_queue and self._study_queue["run_id"] == self.selected_run_id:
+            return self._queue_study_id
         detail = self._publication_detail
         if (not detail or detail.get("project_id") != str(self.project.identifier)
                 or not self.selected_run_id or detail.get("run_id") != self.selected_run_id):
             raise ProjectFlowError("publication_view_stale")
         return detail["publication"]["publication_id"]
 
+    def inspect_study_queue(self, only_review, hide_non_english, hide_non_human_only, after=None):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if after and (not self._study_queue or self._study_queue["run_id"] != self.selected_run_id or
+                          after != self._study_queue["next_after"] or
+                          (only_review,hide_non_english,hide_non_human_only) != tuple(self._study_queue[k] for k in
+                              ("only_review","hide_non_english","hide_non_human_only"))):
+                raise ProjectFlowError("study_queue_changed")
+            self._study_queue=read_study_page(self.project,self.selected_run_id,after=after,only_review=only_review,
+                hide_non_english=hide_non_english,hide_non_human_only=hide_non_human_only)
+            self._queue_study_id = self._study_view = self._study_proposal = None
+            return self._publish()
+
+    def open_queued_study(self, publication_id, revision):
+        with self._guard:
+            self._require_open()
+            if (not self._study_queue or self._study_queue["run_id"] != self.selected_run_id or not any(
+                    r["publication_id"] == publication_id and r["revision"] == revision for r in self._study_queue["rows"])):
+                raise ProjectFlowError("study_queue_changed")
+            checked = study_classification.read_classification(self.project,publication_id)
+            if checked["revision"] != revision:
+                raise ProjectFlowError("study_queue_changed")
+            self._queue_study_id, self._study_view, self._study_proposal = publication_id, checked, None
+            return self._publish()
+
     def inspect_study(self):
         with self._guard:
+            self._queue_study_id = None
             pub_id = self._visible_study()
             self._study_view = study_classification.read_classification(self.project, pub_id)
             self._study_proposal = None
@@ -907,6 +1005,14 @@ class RealProjectFlow:
                     raise ProjectFlowError("local_assistant_study_unavailable")
                 result = local_study_review.review(self.project, pub_id, event_id=event_id, **args)
             self._study_view = result
+            page = self._study_queue
+            if page and page["run_id"] == self.selected_run_id:
+                self._study_queue = read_study_page(self.project, self.selected_run_id, after=page["after"],
+                    only_review=page["only_review"], hide_non_english=page["hide_non_english"],
+                    hide_non_human_only=page["hide_non_human_only"])
+                if self._queue_study_id and not any(row["publication_id"] == self._queue_study_id
+                                                     for row in self._study_queue["rows"]):
+                    self._queue_study_id = self._study_view = self._study_proposal = None
             return self._publish()
 
     def propose_local_terms(self, group_id, term_id):
@@ -4297,6 +4403,10 @@ class RealProjectFlow:
                 'strategy_draft': self._setup.state(),
                 'local_assistant_installed': bool(self._local_assistant and self._local_assistant.installed),
                 'local_assistant_enabled': self._local_enabled,
+                'cloud_configured': self._cloud_assistant is not None,
+                'cloud_enabled': self._cloud_enabled,
+                'cloud_offer': self._cloud_offer[-1].copy() if self._cloud_offer and
+                    self._cloud_offer[0] is self.project and self._cloud_offer[1] is self._setup else None,
                 'strategy_reconciliation_required': self._pending_admission_id is not None,
                 'last_strategy_admission': self._last_strategy_admission,
                 'preflight_report': self._preflight,
@@ -4335,7 +4445,10 @@ class RealProjectFlow:
                 'run_execution_board': self._run_execution_board,
                 'publication_page': self._publication_page,
                 'publication_detail': self._publication_detail,
-                'study_view': self._study_view if self._publication_detail and self._study_view and
+                'study_queue': self._study_queue if self._study_queue and self._study_queue["run_id"] == self.selected_run_id else None,
+                'queued_study': self._study_view if self._queue_study_id and self._study_queue and
+                    self._study_queue["run_id"] == self.selected_run_id else None,
+                'study_view': self._study_view if not self._queue_study_id and self._publication_detail and self._study_view and
                     self._study_view["publication_id"] == self._publication_detail["publication"]["publication_id"] else None,
                 'study_proposal': self._study_proposal if self._publication_detail and self._study_proposal and
                     self._study_proposal["publication_id"] == self._publication_detail["publication"]["publication_id"] else None,
