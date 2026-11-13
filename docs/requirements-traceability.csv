@@ -42,7 +42,7 @@ SRC-10,2,AT-13,tests/test_society_sources.py (guided manual capture from an obse
 SRC-11,2,"AT-13,AT-19",tests/test_society_sources.py (dated site observations and explicit limitations),partial
 SRC-12,2,AT-16,tests/test_crossref_metadata.py (targeted DOI transport and persisted cache and cooldown; fixture source),partial
 SRC-13,2,AT-16,tests/test_crossref_metadata.py (positive and unavailable enrichment preserves publication and source counts),partial
-SRC-14,2,AT-16,planned,planned
+SRC-14,2,AT-16,tests/test_bibliographic_import.py (manual and RIS source records with attribution and independent identifiers and original counts),verified
 RUN-01,1,AT-09,tests/test_pubmed_metadata.py; tests/test_wos_checkpoints.py (durable source stages; full GUI job engine pending),partial
 RUN-02,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py (durable paused/incomplete/cancelled and scoped warnings),partial
 RUN-03,1,"AT-08,AT-09",tests/test_pubmed_partition.py; tests/test_wos_checkpoints.py (source counts and attempted/unknown request progress; UI pending); tests/test_run_execution_board.py and tests/test_pubmed_cooldown.py (per-query observed stages and UTC retry deadline),partial

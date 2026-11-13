@@ -121,6 +121,14 @@ provider, database and record ID across runs and keeps the original retrieval,
 timestamp and actor. An absent record may reflect incomplete retrieval or
 changed coverage.
 
+**Import or enter additional citations** accepts a locally selected UTF-8
+RIS file or one manually entered citation. Give the source a name and
+confirm permission to retain its contents. The app keeps each original
+record and its position and records the researcher and time. Repeating
+the same import with the same source name reuses the records. Imported
+citations have their own provisional identities, independent of primary
+database hit counts. They appear in master results and classification.
+
 The selected run's **Master results** panel captures a local snapshot of its
 publication identities. Use **Search, filters and columns** to search original
 titles, citation fields, identifiers or available abstract text. Combine

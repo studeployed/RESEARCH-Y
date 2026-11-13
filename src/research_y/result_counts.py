@@ -149,7 +149,7 @@ def _source_rows(db, run_id, *, primary=False):
         'SELECT r.retrieval_id,r.run_id,r.source_name,r.source_record_id,'
         'r.retrieved_at_utc,r.original_metadata_json,s.status '
         'FROM source_retrievals r LEFT JOIN search_runs s ON s.run_id=r.run_id '
-        'WHERE r.run_id=? ' + ("AND r.source_name NOT IN ('conference_jats','conference_pdf','society') " if primary else "") +
+        'WHERE r.run_id=? ' + ("AND r.source_name NOT IN ('conference_jats','conference_pdf','society','manual_bibliographic') " if primary else "") +
         'ORDER BY r.retrieval_id'
     )
     for row in db.execute(sql, (run_id,)):
@@ -252,7 +252,7 @@ def _streamed_identity_rows(db, sources, *, primary=False):
         'LEFT JOIN publications p ON p.publication_id=l.publication_id '
         'LEFT JOIN audit_events a ON a.event_id='
         "json_extract(l.decision_provenance_json,'$.event_id') "
-        'WHERE r.run_id=? ' + ("AND r.source_name NOT IN ('conference_jats','conference_pdf','society') " if primary else "") +
+        'WHERE r.run_id=? ' + ("AND r.source_name NOT IN ('conference_jats','conference_pdf','society','manual_bibliographic') " if primary else "") +
         'ORDER BY r.retrieval_id'
     )
     member_sql = (

@@ -7,6 +7,8 @@ def perform_action(flow, name, value=None):
         return flow.compare_run_history(**value)
     if name == "note_comparison_source":
         return flow.note_comparison_source(**value)
+    if name == "import_bibliography":
+        return flow.import_bibliography(value)
     if name == "master_results":
         return flow.master_action(value["operation"],value.get("data",{}))
     if name == 'specialist':
