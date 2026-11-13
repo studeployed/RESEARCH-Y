@@ -940,6 +940,14 @@ class RealProjectFlow:
                     raise ProjectFlowError("local_assistant_study_unavailable")
                 result = local_study_review.review(self.project, pub_id, event_id=event_id, **args)
             self._study_view = result
+            page = self._study_queue
+            if page and page["run_id"] == self.selected_run_id:
+                self._study_queue = read_study_page(self.project, self.selected_run_id, after=page["after"],
+                    only_review=page["only_review"], hide_non_english=page["hide_non_english"],
+                    hide_non_human_only=page["hide_non_human_only"])
+                if self._queue_study_id and not any(row["publication_id"] == self._queue_study_id
+                                                     for row in self._study_queue["rows"]):
+                    self._queue_study_id = self._study_view = self._study_proposal = None
             return self._publish()
 
     def propose_local_terms(self, group_id, term_id):

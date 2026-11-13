@@ -22,12 +22,10 @@ def read_study_page(project, run_id, *, after=None, only_review=True, hide_non_e
             "ORDER BY p.publication_id LIMIT ?",(run_id,after,after,page_size+1))]
         selected = ids[:page_size]
         results=[]
-        hidden=0
         for pid in selected:
             view=classification._view(db,pid)
             if not classification.visible_in_filtered_view(view,hide_non_english=hide_non_english,
                                                           hide_non_human_only=hide_non_human_only):
-                hidden+=1
                 continue
             unresolved=[k for k,v in view["review_status"].items() if v=="requires-review"]
             conflicts=[v for v in view["warnings"] if v.startswith(("conflicting_","reviewed_"))]
@@ -35,6 +33,6 @@ def read_study_page(project, run_id, *, after=None, only_review=True, hide_non_e
                 continue
             results.append(dict(publication_id=pid,revision=view["revision"],dimensions=view["current"],
                                 unresolved=unresolved,warnings=view["warnings"]))
-        return dict(run_id=run_id,rows=results,examined=len(selected),hidden_by_filter=hidden,
+        return dict(run_id=run_id,rows=results,after=after,examined=len(selected),hidden_by_filter=len(selected)-len(results),
                     displayed=len(results),only_review=only_review,hide_non_english=hide_non_english,
                     hide_non_human_only=hide_non_human_only,next_after=selected[-1] if len(ids)>page_size else None)

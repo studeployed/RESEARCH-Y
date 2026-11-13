@@ -34,7 +34,7 @@ def test_desktop_review_queue_uses_visible_run_and_revision_fenced_decision(tmp_
     with closing(RealProjectFlow()) as flow:
         flow.open_native_folder(project.root)
         flow.select_run(run)
-        opts=dict(only_review=False,hide_non_english=False,hide_non_human_only=False,after=None)
+        opts=dict(only_review=False,hide_non_english=False,hide_non_human_only=True,after=None)
         state=perform_action(flow,"study_queue",opts)
         page=state["study_queue"]
         assert page["examined"]==page["displayed"]==len(ids)
@@ -43,7 +43,18 @@ def test_desktop_review_queue_uses_visible_run_and_revision_fenced_decision(tmp_
         assert state["queued_study"]["publication_id"]==row["publication_id"]
         state=perform_action(flow,"study_confirm",dict(dimension="population",labels=["non-human"],actor="Reviewer",
                      rationale="Checked the original study",revision=row["revision"],event_id=None))
-        assert state["queued_study"]["explicit_non_human_only"]
-        page=perform_action(flow,"study_queue",{**opts,"hide_non_human_only":True})["study_queue"]
+        assert state["queued_study"] is None
+        page=state["study_queue"]
         assert page["hidden_by_filter"]==1 and page["displayed"]==len(ids)-1
     assert protected_rows(project)==before
+
+
+def test_review_only_exclusions_contribute_to_page_denominator(store):
+    project, ids = store
+    paper = set_record(project, ids[0], types=["Randomized Controlled Trial","Journal Article"])
+    view = service.read_classification(project,paper.publication_id)
+    for dim,labels in view["current"].items():
+        view = review(project,view,dim,*labels)
+    page = read_study_page(project,paper.retrievals[0]["run_id"],only_review=True)
+    assert page["examined"] == page["hidden_by_filter"] == 1
+    assert page["displayed"] == 0
