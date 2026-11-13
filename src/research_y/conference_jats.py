@@ -25,11 +25,17 @@ class _BoundedTree(ET.TreeBuilder):
         self.nodes = 0
 
     def start(self, tag, attrs):
+        if len(tag) > 512 or any(len(key) > 512 for key in attrs):
+            raise ConferenceInputError("XML name exceeds the supported size")
         self.depth += 1
         self.nodes += 1
         if self.depth > 96 or self.nodes > 120_000:
             raise ConferenceInputError("XML structure exceeds the supported size")
         return super().start(tag, attrs)
+
+    def start_ns(self, prefix, uri):
+        if len(uri) > 384 or len(prefix or "") > 128:
+            raise ConferenceInputError("XML namespace exceeds the supported size")
 
     def end(self, tag):
         self.depth -= 1

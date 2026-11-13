@@ -150,6 +150,15 @@ def test_document_type_declarations_are_refused_before_xml_processing():
             inspect_conference_jats(declaration + XML)
 
 
+def test_namespace_and_expanded_field_names_have_profile_limits():
+    sample = XML.replace(b"<article ",b'<article xmlns:custom="urn:example" ')
+    assert len(inspect_conference_jats(sample)["abstracts"]) == 2
+    with pytest.raises(ConferenceInputError,match="namespace"):
+        inspect_conference_jats(sample.replace(b"urn:example",b"z"*385))
+    with pytest.raises(ConferenceInputError,match="name"):
+        inspect_conference_jats(XML.replace(b"<front>",b"<front "+b"a"*513+b'="x">'))
+
+
 def test_local_preview_requires_unambiguous_supplied_page(tmp_path, capsys):
     source = tmp_path / "supp.xml"
     source.write_bytes(XML)
