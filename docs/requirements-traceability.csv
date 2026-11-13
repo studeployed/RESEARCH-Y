@@ -75,9 +75,9 @@ GUIDE-05,2,"AT-10,AT-13",tests/test_society_sources.py; tests/test_society_guida
 CLASS-01,2,"AT-14,AT-15",tests/test_study_classification.py (independent dimensions and scoped source fields),partial
 CLASS-02,2,AT-15,tests/test_study_classification.py (source-tagged trial protocol and evidence synthesis),partial
 CLASS-03,2,AT-15,tests/test_study_classification.py (RCT abstract and multiple synthesis tags),partial
-CLASS-04,2,AT-14,tests/test_study_classification.py (read-only language and explicit non-human filters),partial
+CLASS-04,2,AT-14,tests/test_study_classification.py; tests/test_study_review_queue.py (desktop filters and page denominators preserve source rows),partial
 CLASS-05,2,"AT-15,AT-20",tests/test_study_classification.py; tests/test_local_study_review.py (source-backed rules and provisional local-model suggestions),partial
-CLASS-06,2,AT-15,tests/test_study_classification.py (uncertainty and transactional researcher decisions; desktop queue pending),partial
+CLASS-06,2,AT-15,tests/test_study_classification.py; tests/test_study_review_queue.py (uncertainty and revision-checked decisions from the desktop queue),partial
 CLASS-07,2,"AT-15,AT-17",tests/test_study_classification.py (override survives new source links and stale requests are declined),partial
 AI-01,2,AT-20,tests/test_optional_local_assistant.py; tests/test_cloud_terms.py (separate optional cloud and installed local or no-AI controls),partial
 AI-02,2,"AT-20,AT-21",tests/test_optional_local_assistant.py (Windows managed offline inference from pinned engine and weights),partial

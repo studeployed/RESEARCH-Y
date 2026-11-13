@@ -2,7 +2,7 @@
 from datetime import date
 
 from research_y.desktop.manifest_consent import render_manifest_consent
-from research_y.desktop.study_panel import render_study_panel
+from research_y.desktop.study_panel import render_study_panel, render_study_queue
 
 
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
@@ -280,6 +280,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.label('No run selected (explicit selection required).')
         else:
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
+            render_study_queue(ui,state,act,study_edits)
             data = state['report']
             if data is None:
                 ui.label('Report not available.')
