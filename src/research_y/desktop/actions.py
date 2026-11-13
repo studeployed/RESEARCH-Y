@@ -3,6 +3,8 @@ from research_y.desktop.flow import ProjectFlowError
 
 
 def perform_action(flow, name, value=None):
+    if name == "master_results":
+        return flow.master_action(value["operation"],value.get("data",{}))
     if name == 'specialist':
         if type(value) is not dict or set(value) != {'action','data'}:
             raise ProjectFlowError('invalid_specialist_action')

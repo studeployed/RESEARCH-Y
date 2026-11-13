@@ -113,6 +113,28 @@ automatic matching rule or new review requirement.
 
 ## Specialist sources
 
+The selected run's **Master results** panel captures a local snapshot of its
+publication identities. Use **Search, filters and columns** to search original
+titles, citation fields, identifiers or available abstract text. Combine
+source, group and classification filters, sort by title, year or ID and
+choose the displayed columns. Save an applied view by name to reuse it
+after reopening the project. Results distinguish the number matched, the
+entire snapshot and a separate bulk selection.
+
+**Open source evidence** displays locally retained abstract text, original
+citations, source hashes, group memberships and specialist evidence for the
+chosen record. Refresh the snapshot after editing the project.
+
+In **Export master results**, choose the entire snapshot, all filtered matches,
+or the publications in your selection. Use an `.xlsx` filename for the
+workbook and a `.ris` filename for reference-manager exchange. Abstract text
+requires an explicit permission choice. The workbook records the selected
+scope, run, filtering criteria and separate source denominators. Long cells
+continue in **Continued Text** and full worksheets continue on numbered tabs.
+RIS preserves bibliographic fields and a scope note. Source variants, review
+history, groups and specialist provenance remain available in the project
+and workbook. The standalone search-strategy workbook remains available.
+
 Select a run and open **Professional society sources** to suggest a library
 from topic terms or add an official site. Record the pages and dates examined,
 the outcome, and any limitations. A visit with a guidance discovery can be

@@ -1,5 +1,14 @@
 # RESEARCH-Y handover
 
+## Phase 3 delivery
+
+[Issue #142](https://github.com/studeployed/RESEARCH-Y/issues/142) tracks
+the three approved Phase 3 units. The [portable project workflow](docs/PROJECT_ARCHIVES.md)
+includes a Windows restore action, a consistent database snapshot and selected
+supporting files. The archive tests restore a reviewed project, compare every
+database table and independently read a linked document. They also check a
+concurrent SQLite writer and interruption before publication.
+
 ## Phase 2 delivery
 
 The [Phase 2 acceptance record](docs/PHASE2_ACCEPTANCE.md) links the eight
