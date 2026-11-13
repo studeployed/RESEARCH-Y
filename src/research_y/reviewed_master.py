@@ -44,7 +44,7 @@ def _supported_partition(owners, evidence):
     return by_publication
 
 
-def retained_union(db, counts, *, include_rows=False, primary=False):
+def retained_union(db, counts, *, include_rows=False, primary=False, supplementary_reconciliation=False):
     """Return a supported union or None. No new pairs are generated or decided.
 
     Each retained original must have current evidence. Sources grouped into a
@@ -57,7 +57,13 @@ def retained_union(db, counts, *, include_rows=False, primary=False):
     n = totals['metadata_source_records']
     k = totals['global_publication_identities']
     distinct = k * (k - 1) // 2
-    if (not n or not k or totals['unmaterialised_retrievals'] or totals['queryless_source_records']
+    queryless=totals['queryless_source_records']
+    if queryless and supplementary_reconciliation:
+        queryless=db.execute("SELECT COUNT(*) FROM source_retrievals r WHERE r.run_id=? AND r.source_name NOT IN "
+                    "('society','conference_jats','conference_pdf','manual_bibliographic') AND NOT EXISTS "
+                    "(SELECT 1 FROM query_retrievals m WHERE m.retrieval_id=r.retrieval_id AND m.run_id=r.run_id)",
+                    (counts.run_id,)).fetchone()[0]
+    if (not n or not k or totals['unmaterialised_retrievals'] or queryless
             or reviews['stale_decisions'] or reviews['decisions_conflicting_with_current_links']
             or not reviews['recorded_pair_decisions'] or reviews['current_confirmed_matches'] < n - k
             or reviews['current_rejected_matches'] < distinct):

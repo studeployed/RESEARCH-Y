@@ -39,3 +39,7 @@ Search outputs retain per-source limitations, including Starter coverage,
 available metadata and unverified peer review. The Phase 3 benchmark measures
 the frozen master service and interaction latency on synthetic originals.
 Separate native workflows exercise the desktop window and earlier 100k source views.
+The [native master observation](evidence/phase3-native-master-windows-20261113.json)
+also exercised the final table itself. It displayed the first 25 rows in
+15.168 s while its browser timer fired 151 times. The researcher controls
+moved to the next page and selected all 100,000 original publications.

@@ -573,7 +573,7 @@ class RealProjectFlow:
                 if not self._run_acceptance or self._run_acceptance["run_id"]!=self.selected_run_id:
                     raise ProjectFlowError("Inspect current source verification first")
                 self._run_acceptance=accept_run(self.project,self.selected_run_id,**decision)
-            return self._publish()
+            return self._publish(verified_scope=True)
 
     def read_project_audit(self,after=0):
         from research_y.release_evidence import audit_page
@@ -4821,9 +4821,11 @@ class RealProjectFlow:
                 'production_adoption_approved': False,
             }
 
-    def _publish(self):
+    def _publish(self,*,verified_scope=False):
         # Publish a complete immutable-by-convention read-model reference only
         # after each bounded operation. Never hold the work lock on a GUI read.
+        if not verified_scope:
+            self._run_acceptance = None
         self._public_state = self._build_state()
         return self.state()
 

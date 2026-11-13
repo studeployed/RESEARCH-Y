@@ -24,10 +24,15 @@ def _state(db,project,run):
     counts=result_counts._snapshot(db,project,run)
     if counts.totals["identifiers_without_metadata"] or counts.totals["unmaterialised_retrievals"]:
         reasons.append("Some source records lack metadata or publication identity")
-    proof=retained_union(db,counts)
+    proof=retained_union(db,counts,supplementary_reconciliation=True)
     total=0 if counts.totals["source_record_sum"]==0 else None
     if proof is not None:
         total=proof["retained_unique_publications"]
+    elif (counts.totals["metadata_source_records"]==counts.totals["source_record_sum"]==1
+          and counts.totals["global_publication_identities"]==1 and not counts.totals["unmaterialised_retrievals"]
+          and not counts.reviews["stale_decisions"] and not counts.reviews["decisions_conflicting_with_current_links"]
+          and (not counts.totals["queryless_source_records"] or sum(board["supplementary_source_records"].values())==1)):
+        total=1
     if total is None:
         reasons.append("The complete retained publication union has outstanding identity review")
     revision=identity._hash([board["revision"],counts.revision,total,reasons])

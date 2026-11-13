@@ -1,0 +1,11 @@
+{
+  "records": 100000,
+  "selected": 100000,
+  "page_rows": 25,
+  "second_page_offset": 25,
+  "browser_timer_ticks": 151,
+  "native_capture_seconds": 15.168,
+  "platform": "Windows-11-10.0.26300-SP0",
+  "python": "3.12.10",
+  "scope": "Real WebView2 window and production master controls on 100000 synthetic original publications"
+}
