@@ -25,6 +25,7 @@ from research_y.desktop.wos_profile import WoSHostProfile
 from research_y.desktop.strategy_setup import StrategyDraft, DraftError
 from research_y.local_assistant import LocalAssistantError
 from research_y import local_study_review, study_classification
+from research_y.study_review_queue import read_study_page
 from research_y.projects import _utc_now, _validated_project_connection
 from research_y.publication_identity import _audit as append_audit
 from research_y.preflight_review import (
@@ -57,6 +58,8 @@ class RealProjectFlow:
         self._local_enabled = local_assistant is not None and local_assistant.installed
         self._study_view = None
         self._study_proposal = None
+        self._study_queue = None
+        self._queue_study_id = None
         self._guard = threading.RLock()
         self._worker = ApplicationWorker()
         # Separate supervised process: verification may run longer than
@@ -354,6 +357,7 @@ class RealProjectFlow:
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get('runs'), list) or not isinstance(snapshot.get('exports'), list):
             raise ProjectFlowError('invalid_worker_result')
         self.project = project
+        self._study_queue = self._queue_study_id = self._study_view = self._study_proposal = None
         self.selected_run_id = None
         self._clear_manifest_selection()
         self.selected_export_id = None
@@ -860,14 +864,43 @@ class RealProjectFlow:
     def _visible_study(self):
         self._require_open()
         self._require_no_unresolved_selection()
+        if self._queue_study_id and self._study_queue and self._study_queue["run_id"] == self.selected_run_id:
+            return self._queue_study_id
         detail = self._publication_detail
         if (not detail or detail.get("project_id") != str(self.project.identifier)
                 or not self.selected_run_id or detail.get("run_id") != self.selected_run_id):
             raise ProjectFlowError("publication_view_stale")
         return detail["publication"]["publication_id"]
 
+    def inspect_study_queue(self, only_review, hide_non_english, hide_non_human_only, after=None):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if after and (not self._study_queue or self._study_queue["run_id"] != self.selected_run_id or
+                          after != self._study_queue["next_after"] or
+                          (only_review,hide_non_english,hide_non_human_only) != tuple(self._study_queue[k] for k in
+                              ("only_review","hide_non_english","hide_non_human_only"))):
+                raise ProjectFlowError("study_queue_changed")
+            self._study_queue=read_study_page(self.project,self.selected_run_id,after=after,only_review=only_review,
+                hide_non_english=hide_non_english,hide_non_human_only=hide_non_human_only)
+            self._queue_study_id = self._study_view = self._study_proposal = None
+            return self._publish()
+
+    def open_queued_study(self, publication_id, revision):
+        with self._guard:
+            self._require_open()
+            if (not self._study_queue or self._study_queue["run_id"] != self.selected_run_id or not any(
+                    r["publication_id"] == publication_id and r["revision"] == revision for r in self._study_queue["rows"])):
+                raise ProjectFlowError("study_queue_changed")
+            checked = study_classification.read_classification(self.project,publication_id)
+            if checked["revision"] != revision:
+                raise ProjectFlowError("study_queue_changed")
+            self._queue_study_id, self._study_view, self._study_proposal = publication_id, checked, None
+            return self._publish()
+
     def inspect_study(self):
         with self._guard:
+            self._queue_study_id = None
             pub_id = self._visible_study()
             self._study_view = study_classification.read_classification(self.project, pub_id)
             self._study_proposal = None
@@ -4335,7 +4368,10 @@ class RealProjectFlow:
                 'run_execution_board': self._run_execution_board,
                 'publication_page': self._publication_page,
                 'publication_detail': self._publication_detail,
-                'study_view': self._study_view if self._publication_detail and self._study_view and
+                'study_queue': self._study_queue if self._study_queue and self._study_queue["run_id"] == self.selected_run_id else None,
+                'queued_study': self._study_view if self._queue_study_id and self._study_queue and
+                    self._study_queue["run_id"] == self.selected_run_id else None,
+                'study_view': self._study_view if not self._queue_study_id and self._publication_detail and self._study_view and
                     self._study_view["publication_id"] == self._publication_detail["publication"]["publication_id"] else None,
                 'study_proposal': self._study_proposal if self._publication_detail and self._study_proposal and
                     self._study_proposal["publication_id"] == self._publication_detail["publication"]["publication_id"] else None,
