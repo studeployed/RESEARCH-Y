@@ -156,7 +156,7 @@ def read_run_execution_board(project, run_id: str) -> dict:
     try:
         with _read(project) as db:
             supplements = dict(db.execute("SELECT source_name,COUNT(*) FROM source_retrievals WHERE run_id=? "
-                    "AND source_name IN ('conference_jats','conference_pdf','society') GROUP BY source_name", (run_id,)))
+                    "AND source_name IN ('conference_jats','conference_pdf','society','manual_bibliographic') GROUP BY source_name", (run_id,)))
             projection = (result_counts._snapshot(db, project, run_id, primary=True) if supplements else
                           result_counts._snapshot(db, project, run_id))
             snapshot = db.execute("SELECT snapshot_json FROM strategy_versions WHERE strategy_version_id=?",

@@ -82,6 +82,7 @@ class RealProjectFlow:
         self._coord_worker = ApplicationWorker()
         self._closed = False
         self.project = None
+        self._ris_preview = self._import_receipt = None
         self._master = self._master_page = None
         self._archive_receipt = None
         self.snapshot = None
@@ -365,6 +366,7 @@ class RealProjectFlow:
             raise ProjectFlowError('invalid_worker_result')
         self._clear_master()
         self.project = project
+        self._ris_preview = self._import_receipt = None
         self._archive_receipt = None
         self._specialist = SpecialistWorkbench()
         self._cloud_offer = None
@@ -960,6 +962,32 @@ class RealProjectFlow:
                     or draft.preview_data is not None or seed != draft._term(draft._group(gid),tid)):
                 raise ProjectFlowError("cloud_preview_changed")
             draft.local_offers(gid,tid,generated,eid)
+            return self._publish()
+
+    def open_native_ris(self,path):
+        from research_y import bibliographic_import as bib
+        with self._guard:
+            self._require_open()
+            if not self.selected_run_id:
+                raise ProjectFlowError("Select a run before importing records.")
+            self._ris_preview = self._import_receipt = None
+            with Directory(path.parent) as directory:
+                payload=directory.read_selected(path.name,limit=bib.MAX_BYTES)
+            view=bib.preview_ris(payload)
+            self._ris_preview=(self.selected_run_id,payload,view)
+            return self._publish()
+
+    def import_bibliography(self,data):
+        from research_y import bibliographic_import as bib
+        with self._guard:
+            self._require_open()
+            if data.get("manual") is None:
+                if not self._ris_preview or self._ris_preview[0]!=self.selected_run_id:
+                    raise ProjectFlowError("Reopen the RIS file for this run.")
+                data=dict(data,payload=self._ris_preview[1])
+            receipt=bib.admit_records(self.project,self.selected_run_id,**data)
+            self._ris_preview=None
+            self._import_receipt=dict(run_id=self.selected_run_id,source=receipt["source"],count=len(receipt["admitted"]))
             return self._publish()
 
     def export_master_to(self,parent,*,name,revision,scope,include_abstracts):
@@ -4592,6 +4620,10 @@ class RealProjectFlow:
     def _build_state(self):
         data = self.snapshot
         return {
+                'bibliography_preview': dict(total=self._ris_preview[2]["total"],revision=self._ris_preview[2]["sha256"],
+                    titles=[r.get("TI",r.get("T1",["Untitled"]))[0] for r in self._ris_preview[2]["records"][:25]])
+                    if self._ris_preview and self._ris_preview[0]==self.selected_run_id else None,
+                'import_receipt': self._import_receipt if self._import_receipt and self._import_receipt["run_id"]==self.selected_run_id else None,
                 'master_results': self._master_page,
                 'archive_receipt': self._archive_receipt,
                 'project': None if self.project is None else {

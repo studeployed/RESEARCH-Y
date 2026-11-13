@@ -69,6 +69,10 @@ async def select_project_archive(window):
     return await _select_document(window,("RESEARCH-Y project archive (*.researchy)",),{".researchy"})
 
 
+async def select_ris_document(window):
+    return await _select_document(window,("RIS citation file (*.ris)",),{".ris"})
+
+
 async def _select_document(window, filters, extensions):
     try:
         import webview

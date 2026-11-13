@@ -296,6 +296,33 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
             render_master(ui,state,act,native=native)
+            if native:
+                with ui.expansion("Import or enter additional citations",value=bool(state.get("bibliography_preview") or state.get("import_receipt"))):
+                    origin=ui.input("Source or collection name")
+                    reviewer=ui.input("Researcher importing records")
+                    rights=ui.checkbox("I reviewed these records and may retain their contents")
+                    ui.button("Choose local RIS file",on_click=lambda:act("native_ris"))
+                    bibliographic=state.get("bibliography_preview")
+                    if bibliographic:
+                        ui.label(f'{bibliographic["total"]} records in file · first {len(bibliographic["titles"])} titles')
+                        for title in bibliographic["titles"]:
+                            ui.label(title)
+                        ui.button("Import all records in this file",on_click=lambda:act("import_bibliography",
+                            dict(label=origin.value,actor=reviewer.value,confirmed=rights.value,
+                            indices=list(range(bibliographic["total"])),revision=bibliographic["revision"])))
+                    with ui.expansion("Enter one citation"):
+                        title_input=ui.input("Publication title")
+                        authors_input=ui.textarea("Authors (one per line)")
+                        year_input=ui.input("Publication year")
+                        doi_input=ui.input("Individual DOI")
+                        url_input=ui.input("Source URL")
+                        abstract_input=ui.textarea("Abstract, if permitted")
+                        ui.button("Save manually entered citation",on_click=lambda:act("import_bibliography",
+                            dict(label=origin.value,actor=reviewer.value,confirmed=rights.value,indices=[0],revision=None,
+                                 manual=dict(title=title_input.value,authors=(authors_input.value or "").splitlines(),
+                                     year=year_input.value,doi=doi_input.value,url=url_input.value,abstract=abstract_input.value))))
+                    if state.get("import_receipt"):
+                        ui.label(f'Saved {state["import_receipt"]["count"]} records from {state["import_receipt"]["source"]}.')
             society_panel(ui,state,act,native=native)
             data = state['report']
             if data is None:

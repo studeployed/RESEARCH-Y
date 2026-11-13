@@ -15,6 +15,7 @@ from research_y.desktop.actions import perform_action
 from research_y.desktop.flow import ProjectFlowError, RealProjectFlow
 from research_y.desktop.folders import NativeFolderError, select_from_native_window, select_conference_document
 from research_y.desktop.folders import select_project_archive
+from research_y.desktop.folders import select_ris_document
 from research_y.project_archive import ArchiveError
 from research_y.desktop.native import open_desktop_window
 from research_y.desktop.project_panel import render_project_panel
@@ -40,7 +41,12 @@ def build_page(app, ui, flow, settings_warnings=()):
                 return
             async with lock:
                 try:
-                    if action == "native_master_export":
+                    if action == "native_ris":
+                        chosen = await select_ris_document(app.native.main_window)
+                        if chosen is None:
+                            return
+                        await asyncio.to_thread(flow.open_native_ris,chosen)
+                    elif action == "native_master_export":
                         folder = await select_from_native_window(app.native.main_window)
                         if folder is None:
                             return

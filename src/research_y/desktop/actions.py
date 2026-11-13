@@ -3,6 +3,8 @@ from research_y.desktop.flow import ProjectFlowError
 
 
 def perform_action(flow, name, value=None):
+    if name == "import_bibliography":
+        return flow.import_bibliography(value)
     if name == "master_results":
         return flow.master_action(value["operation"],value.get("data",{}))
     if name == 'specialist':
