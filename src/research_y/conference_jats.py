@@ -5,6 +5,7 @@ from collections import Counter
 from hashlib import sha256
 import json
 import re
+from research_y.publication_match_evidence import _doi
 from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree as ET
 
@@ -112,6 +113,11 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
         raise ConferenceInputError("Invalid document size")
     try:
         xml = payload.decode("utf-8-sig")
+        # Bound potential attribute declarations before the XML library builds
+        # any attribute maps. This conservative lexical limit also counts
+        # equals signs in text and URLs.
+        if xml.count("=") > 80_000:
+            raise ConferenceInputError("Document exceeds the attribute budget")
         if "\0" in xml or re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", xml, re.I):
             raise ConferenceInputError("Unsupported XML declaration")
         root = ET.fromstring(xml, parser=ET.XMLParser(target=_BoundedTree()))
@@ -140,7 +146,8 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
                      issue=_text(meta, "issue"), supplement=_text(meta, "supplement"),
                      identifiers=_ids(meta), landing_url=landing_url, pdf_url=pdf_url,
                      conference=_text(meta, "conference/conf-name"), conference_date=_text(meta, "conference/conf-date"))
-    shared_dois = {i["value"].casefold() for i in container["identifiers"] if (i["type"] or "").casefold() == "doi"}
+    shared_dois = {key for i in container["identifiers"] if (i["type"] or "").casefold() == "doi"
+                   and (key := _doi(i["value"]))}
     children = root.findall("sub-article")
     if len(children) > 10_000:
         raise ConferenceInputError("Too many sub-articles for one preview")
@@ -156,8 +163,8 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
     doi_blocks = Counter()
     for child in children:
         own_ids = child.findall("front-stub/article-id") + child.findall("front/article-meta/article-id")
-        doi_blocks.update({v.casefold() for elem in own_ids
-                           if elem.get("pub-id-type", "").casefold() == "doi" and (v := _text(elem, "."))})
+        doi_blocks.update({key for elem in own_ids if elem.get("pub-id-type", "").casefold() == "doi"
+                           and (key := _doi(_text(elem, ".")))})
     # In the supported profile individual abstracts are immediate sub-articles.
     # Never fold an unhandled nested article into a neighbouring result.
     ids = Counter(n.get("id") for n in root.iter() if n.get("id"))
@@ -191,15 +198,15 @@ def inspect_conference_jats(payload, *, terms=(), landing_url=None, pdf_url=None
             pdf_link = urlunsplit(parsed._replace(fragment=f"page={page}"))
         original_ids = _ids(front)
         source_dois = [item["value"] for item in original_ids if (item["type"] or "").casefold() == "doi"]
-        individual_doi = [v for v in source_dois if v.casefold() not in shared_dois and doi_blocks[v.casefold()] == 1]
+        individual_doi = [v for v in source_dois if (key := _doi(v)) and key not in shared_dois and doi_blocks[key] == 1]
         direct = front.find("self-uri")
         direct_url = _link(direct.get(XLINK)) if direct is not None else None
         warnings = []
         if not ((identifier and ids[identifier] == 1) or individual_doi):
             warnings.append("unresolved_individual_identity")
-        if any(v.casefold() in shared_dois for v in source_dois):
+        if any(_doi(v) in shared_dois for v in source_dois):
             warnings.append("doi_shared_with_container")
-        if any(doi_blocks[v.casefold()] > 1 for v in source_dois):
+        if any(doi_blocks[_doi(v)] > 1 for v in source_dois):
             warnings.append("doi_shared_across_sub_articles")
         for field, value in (("title", title), ("text", body), ("printed_page", _text(front, "fpage")),
                              ("pdf_page", page), ("individual_link", direct_url)):
