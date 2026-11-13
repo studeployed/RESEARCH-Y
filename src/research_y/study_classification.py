@@ -27,6 +27,7 @@ LABELS = {"original_research": {"yes", "no", "unclear"}, "design": DESIGNS, "for
           "language": {"English", "non-English", "multilingual", "unknown"},
           "population": {"human", "non-human", "mixed human/non-human", "not applicable", "unclear"}}
 FORMAT_TAGS = {"conference abstract": "conference abstract", "meeting abstract": "conference abstract",
+               "conference paper":"conference paper","book":"book/chapter","chapter":"book/chapter",
                "proceedings paper": "conference paper", "preprint": "preprint",
                "journal article": "full journal article"}
 # Undetermined, collective, multiple or malformed codes cannot establish a

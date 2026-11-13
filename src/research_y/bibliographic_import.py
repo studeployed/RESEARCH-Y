@@ -51,8 +51,10 @@ def parse_ris(payload):
 def _record(fields):
     def first(*keys):
         return next((v for k in keys for v in fields.get(k,[]) if v),None)
+    date=first("PY","Y1")
+    year=re.match(r"^([0-9]{4})(?:$|[/ -])",date.strip()) if date else None
     return dict(title=first("TI","T1","CT"),authors=fields.get("AU",fields.get("A1",[])),
-                year=first("PY","Y1"),journal=first("JO","JF","T2"),doi=first("DO"),
+                year=year[1] if year else None,journal=first("JO","JF","T2"),doi=first("DO"),
                 text=first("AB","N2"),url=first("UR"),types=[TYPES.get(first("TY"),"other")],
                 pages=first("SP"),last_page=first("EP"),language=first("LA"))
 

@@ -16,7 +16,7 @@ def test_ris_and_manual_are_distinct_sources_and_preserve_primary_counts(tmp_pat
     before=read_run_execution_board(project,run)
     path=tmp_path/"From library.ris"
     path.write_bytes(b"TY  - CONF\nTI  - Separate report\nAU  - Lee, A\nAB  - One paragraph\n  next line\n"
-                     b"DO  - 10.5555/unique\nER  - \n\nTY  - JOUR\nTI  - Another report\nER  - \n")
+                     b"DO  - 10.5555/unique\nY1  - 2024/03/15/\nER  - \n\nTY  - CHAP\nTI  - Another report\nER  - \n")
     with closing(RealProjectFlow()) as flow:
         flow.open_native_folder(project.root)
         flow.select_run(run)
@@ -37,7 +37,8 @@ def test_ris_and_manual_are_distinct_sources_and_preserve_primary_counts(tmp_pat
         rows=list(master.records(DEFAULT,"entire"))
         assert len(rows)==5
         item=next(r for r in rows if r["title"]=="Separate report")
-        assert item["doi"]=="10.5555/unique" and item["format"]==["conference abstract"]
+        assert item["doi"]=="10.5555/unique" and item["format"]==["conference abstract"] and item["year"]=="2024"
+        assert next(r for r in rows if r["title"]=="Another report")["format"]==["book/chapter"]
         assert master.detail(reopened,item["publication_id"])["source_evidence"][0]["abstract"]=="One paragraph\nnext line"
 
 
