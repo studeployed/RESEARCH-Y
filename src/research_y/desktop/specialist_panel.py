@@ -107,10 +107,10 @@ def publication_panel(ui,state,detail,act,native):
             if target["request_url"] and not specialist.get("lookup_result"):
                 ui.label("Crossref will receive this DOI and your contact email: "+target["doi"])
                 contact=ui.input("Contact email for Crossref")
-                actor=ui.input("Researcher requesting lookup")
+                lookup_actor=ui.input("Researcher requesting lookup")
                 refresh=ui.checkbox("Request fresh metadata even if a response is cached")
                 ui.button("Confirm DOI lookup",on_click=lambda:send("enrichment_lookup",contact=contact.value,
-                          actor=actor.value,revision=target["revision"],refresh=refresh.value))
+                          actor=lookup_actor.value,revision=target["revision"],refresh=refresh.value))
             if specialist.get("lookup_result"):
                 ui.label("Last lookup: "+specialist["lookup_result"])
     if not native:
