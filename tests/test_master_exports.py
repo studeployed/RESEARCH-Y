@@ -36,7 +36,13 @@ def test_real_workbook_preserves_sources_scope_raw_counts_and_abstract_permissio
         assert receipt["rows"]==5 and sha256(file.read_bytes()).hexdigest()==receipt["sha256"]
         with closing(load_workbook(file)) as workbook:
             assert {"Search Summary","Master Results","Methods","Source Records","Society Guidelines",
-                    "Conference Abstracts","Deduplication Audit","Search Log","Search Terms","Executed Queries"} <= set(workbook.sheetnames)
+                    "Conference Abstracts","Deduplication Audit","Search Log","Search Terms","Executed Queries",
+                    "Reporting Checklist"} <= set(workbook.sheetnames)
+            evidence={row[1]:row[2] for row in list(workbook["Reporting Checklist"].values)[1:]}
+            assert evidence["Independent peer review"]=="awaiting verification"
+            source_item=next(r for r in workbook["Reporting Checklist"].values if r[1]=="Information sources")
+            assert "society" in source_item[3] and "conference_jats" in source_item[3]
+            assert "strategy/count report only" not in str(list(workbook["Methods"].values))
             assert workbook["Master Results"].max_row==6 and workbook["Master Results"].freeze_panes=="B2"
             assert workbook["Master Results"].auto_filter.ref=="A1:O6"
             chosen=next(c for c in workbook["Master Results"]["B"] if c.value=="=Example guidance")

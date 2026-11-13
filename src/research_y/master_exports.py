@@ -12,6 +12,7 @@ from research_y.application_inspection import _read
 from research_y.export_files import Directory, filename
 from research_y.master_results import evidence_head, specification
 from research_y import publication_candidates
+from research_y import preflight_review
 
 
 def _value(value):
@@ -22,6 +23,35 @@ def _value(value):
 
 def _one_line(value):
     return " ".join(str(value).split())
+
+
+def _press(db,run):
+    version,raw=db.execute("SELECT v.strategy_version_id,v.snapshot_json FROM search_runs r JOIN strategy_versions v "
+                           "ON v.strategy_version_id=r.strategy_version_id WHERE r.run_id=?",(run,)).fetchone()
+    try:
+        _,_,_,plan=preflight_review._matched_query_plan(db,run,version,raw,allow_started=True)
+    except preflight_review.PreflightError:
+        return "awaiting verification",[]
+    preflight_review._previous(db,run,plan)
+    receipts=[]
+    for raw,stamp in db.execute("SELECT details_json,occurred_at_utc FROM audit_events WHERE event_type=? "
+                 "AND json_extract(details_json,'$.run_id')=? ORDER BY event_id",(preflight_review.EVENT,run)):
+        receipts.append(dict(identity._object(raw),occurred_at_utc=stamp))
+    return "verified",receipts
+
+
+def _method_rows(data,context):
+    return [
+        ("Workbook","RESEARCH-Y publication workbook v1"),("Software",data["software_version"]),
+        ("Project and run",context.get("run",data["run"]["run_id"])),("Scope",context.get("scope","entire")),
+        ("Original query counts","Whole-run counts remain separate from the number of rows exported."),
+        ("Publication ID","A retained identity can link multiple source records and query memberships."),
+        ("Source evidence","Each retrieval retains its own source identifier, SHA-256 and original fields."),
+        ("Comparison decision","Researcher decision for a particular pair, with timestamp, rationale and warnings."),
+        ("Abstract rights","Text inclusion follows the export's explicit permission choice."),
+        ("Continued Text","Concatenate parts in numeric order for the listed worksheet, logical row and column."),
+        ("Methods scope","Reporting evidence is limited to the selected run and the stored search activities."),
+    ]
 
 
 def _ris(out, rows, context, include_abstracts):
@@ -108,7 +138,7 @@ class _Sheets:
         self.written += 1
 
 
-def _workbook(path, results, rows, report, context, include_abstracts, row_limit, comparisons=()):
+def _workbook(path, results, rows, report, context, include_abstracts, row_limit, comparisons=(),press=("awaiting verification",())):
     from openpyxl import Workbook
     book = Workbook(write_only=True)
     sheets = []
@@ -137,9 +167,33 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     for name,headers,values in strategy_workbook._tables(data,report):
         if name=="Report Snapshot":
             continue
+        if name=="Methods":
+            values=_method_rows(data,context)
+        if name=="Warnings":
+            values=[r for r in values if r[1] not in {"licensed_record_text_not_exported","methodology_review_not_established"}]
         tab=sheet(name,headers)
         for value in values:
             append(tab,value)
+    checklist=sheet("Reporting Checklist",("Framework","Item","Evidence status","Observation"))
+    query_sources={q["source_name"] for q in data["queries"]}
+    retained_sources={r["source_name"] for r in data["counts"]["sources"] if r["metadata_source_records"]}
+    append(checklist,("PRISMA-S","Information sources","recorded",dict(database_queries=sorted(query_sources),
+                     additional_retained_sources=sorted(retained_sources-query_sources))))
+    for q in data["queries"]:
+        append(checklist,("PRISMA-S","Query "+q["query_id"],"recorded" if q["executed_at_utc"] else "awaiting verification",
+                          dict(source=q["source_name"],strategy=q["exact_query"],timestamp=q["executed_at_utc"],
+                               status=q["status"],execution_evidence=q["execution_evidence"])))
+    append(checklist,("PRISMA-S","Deduplication method","recorded","Current source associations and applicable comparison receipts in Deduplication Audit."))
+    append(checklist,("PRISMA-S","Citation chasing","not undertaken in this workflow","No citation-chasing stage is recorded."))
+    append(checklist,("PRISMA-S","Registry search","not applicable to these source connectors","Coverage is described for the selected databases."))
+    status,reviews=press
+    append(checklist,("PRESS","Programmatic plan validation",status,"Match to the approved stored source query inventory."))
+    for review in reviews:
+        for key,value in review["press_items"].items():
+            append(checklist,("PRESS",key,value,dict(reviewer=review["reviewer_name"],role=review["reviewer_role"],
+                                                    recorded_utc=review["occurred_at_utc"],notes=review["review_note"])))
+    peer="reported by researcher" if any(r["reviewer_role"]=="independent_peer_reported" for r in reviews) else "awaiting verification"
+    append(checklist,("PRESS","Independent peer review",peer,"The project records the researcher's account of peer review."))
     master = sheet("Master Results",("Publication ID","Title","Year","Journal","DOI","DOI link","Sources","Groups",
                       "Original research","Design","Format","Language","Population","Review status","Warnings"))
     sources = sheet("Source Records",("Publication ID","Retrieval ID","Provider","Source record","Citation fields",
@@ -196,6 +250,7 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
             raise ValueError("Project changed. Refresh master results before exporting.")
         report = strategy_report._capture(db,project,results.run,results.captured_at)
         comparisons = publication_candidates._receipts(db,None) if path.suffix.lower()==".xlsx" else ()
+        press = _press(db,results.run) if path.suffix.lower()==".xlsx" else None
     context = dict(project=results.project_id,run=results.run,strategy=results.strategy_id,
                    status="Incomplete",stored_run_status=results.run_status,scope=scope,
                    snapshot_time=results.captured_at,snapshot_revision=results.revision,
@@ -210,7 +265,7 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
             with stage.open("x",encoding="utf-8",newline="") as out:
                 count = _ris(out,rows,identity._json(context),include_abstracts)
         else:
-            count = _workbook(stage,results,rows,report,context,include_abstracts,row_limit,comparisons)
+            count = _workbook(stage,results,rows,report,context,include_abstracts,row_limit,comparisons,press)
         digest = sha256()
         with stage.open("r+b") as out:
             for chunk in iter(lambda:out.read(1024*1024),b""):
