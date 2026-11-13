@@ -1,5 +1,13 @@
 # RESEARCH-Y handover
 
+## Phase 2 delivery
+
+[Issue #121](https://github.com/studeployed/RESEARCH-Y/issues/121) tracks
+the four specialist-processing milestones. The first P2-01 increment adds a
+[biomedical benchmark](docs/BIOMEDICAL_BENCHMARK.md) with blind prompts,
+versioned answers and per-dimension scoring. Model evaluation and the
+researcher approval flow have separate evidence under issue #122.
+
 ## Phase 1 delivery
 
 Use the [Phase 1 acceptance record](docs/PHASE1_ACCEPTANCE.md) for
