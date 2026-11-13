@@ -332,12 +332,15 @@ def materialise_retrieval(project: Project, retrieval_id: str, *, actor: str) ->
         return _snapshot(db, publication_id)
 
 
-def _movable(db: sqlite3.Connection, snapshot: PublicationSnapshot, retrieval_id: str) -> None:
+def _movable(db: sqlite3.Connection, snapshot: PublicationSnapshot, retrieval_id: str, *,
+             retain_society_roles=False) -> None:
     if any(v["provenance"]["retrieval_id"] == retrieval_id for v in snapshot.chosen_fields.values()):
         raise ValueError("Clear source-backed field choices before moving their retrieval")
     # Do not silently move or strand future specialist annotations. A later
     # publication-level merge/split workflow must explicitly disposition them.
     for table in ("classifications", "documents", "publication_containers", "publication_organisations"):
+        if table == "publication_organisations" and retain_society_roles:
+            continue
         if db.execute(f"SELECT 1 FROM {table} WHERE publication_id=? LIMIT 1",
                       (snapshot.publication_id,)).fetchone():
             raise ValueError("Publication annotations require dedicated merge/split review")
@@ -427,7 +430,19 @@ def reverse_association(project: Project, retrieval_id: str, decision_event_id: 
         current, restored = _snapshot(db, link[0]), _snapshot(db, original["before"])
         _expect(current, expected_current_revision)
         _expect(restored, expected_restored_revision)
-        _movable(db, current, retrieval_id)
+        retained_roles = set()
+        journal = next(s for s in current.retrievals if s["retrieval_id"] == retrieval_id)
+        if journal["source_name"] in ("pubmed","wos"):
+            # Only roles still independently attributable to retained society
+            # originals may stay behind when reversing the journal link.
+            for s in current.retrievals:
+                original = s["original_metadata"]
+                if s["source_name"] == "society" and original.get("provider") == "manual_society_guidance":
+                    for role, orgs in original.get("society_roles", {}).items():
+                        retained_roles.update((o["society_id"],role) for o in orgs)
+        actual_roles = set(db.execute("SELECT organisation_id,role FROM publication_organisations WHERE publication_id=?",
+                                      (current.publication_id,)))
+        _movable(db, current, retrieval_id, retain_society_roles=bool(actual_roles) and actual_roles <= retained_roles)
         _record_link(db, _source(db, retrieval_id), before=current.publication_id,
                      after=restored.publication_id, previous_event_id=link[1], status=previous["status"],
                      action="reverse", actor=actor, evidence=evidence, request_sha256=request,

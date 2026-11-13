@@ -2,7 +2,7 @@ from uuid import uuid4
 
 import pytest
 
-from research_y.publication_identity import materialise_retrieval, read_publication
+from research_y.publication_identity import materialise_retrieval, read_publication, reverse_association
 from research_y.society_guidance_review import suggest_societies, relate_guidance, attach_journal_manifestation
 from research_y.society_sources import record_society_visit, import_guidance, list_societies
 from test_publication_identity import store,db_rows
@@ -49,3 +49,12 @@ def test_explicit_version_and_journal_manifestation_keep_sources_distinct(store)
     assert attach_journal_manifestation(project,**attach_args).revision==combined.revision
     assert read_publication(project,first.publication_id).active
     assert primary==(db_rows(project,"query_retrievals"),db_rows(project,"source_queries"))
+    roles=db_rows(project,"publication_organisations")
+    entry=next(r for r in combined.retrievals if r["retrieval_id"]==ids[0])
+    restored=reverse_association(project,ids[0],entry["association_event_id"],
+                  expected_current_revision=combined.revision,
+                  expected_restored_revision=read_publication(project,journal.publication_id).revision,
+                  actor="Reviewer",evidence="Correcting a manifestation association")
+    assert restored.publication_id==journal.publication_id
+    assert {r["source_name"] for r in read_publication(project,second.publication_id).retrievals}=={"society"}
+    assert roles==db_rows(project,"publication_organisations")
