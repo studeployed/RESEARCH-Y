@@ -14,6 +14,8 @@ import webbrowser
 from research_y.desktop.actions import perform_action
 from research_y.desktop.flow import ProjectFlowError, RealProjectFlow
 from research_y.desktop.folders import NativeFolderError, select_from_native_window, select_conference_document
+from research_y.desktop.folders import select_project_archive
+from research_y.project_archive import ArchiveError
 from research_y.desktop.native import open_desktop_window
 from research_y.desktop.project_panel import render_project_panel
 from research_y.desktop.session import DesktopGuard, LaunchSession
@@ -38,7 +40,20 @@ def build_page(app, ui, flow, settings_warnings=()):
                 return
             async with lock:
                 try:
-                    if action == "native_society_site":
+                    if action == "native_import_archive":
+                        path = await select_project_archive(app.native.main_window)
+                        if path is None:
+                            return
+                        parent = await select_from_native_window(app.native.main_window)
+                        if parent is None:
+                            return
+                        await asyncio.to_thread(flow.import_native_archive,path,parent,directory_name=value or None)
+                    elif action == "native_export_archive":
+                        parent = await select_from_native_window(app.native.main_window)
+                        if parent is None:
+                            return
+                        await asyncio.to_thread(flow.export_native_archive,parent,**value)
+                    elif action == "native_society_site":
                         url = flow.official_society_url(**value)
                         if not await asyncio.to_thread(webbrowser.open_new_tab, url):
                             raise ProjectFlowError("external_browser_unavailable")
@@ -65,7 +80,7 @@ def build_page(app, ui, flow, settings_warnings=()):
                     else:
                         await asyncio.to_thread(perform_action, flow, action, value)
                     error = None
-                except (ProjectFlowError, NativeFolderError) as exc:
+                except (ProjectFlowError, NativeFolderError, ArchiveError) as exc:
                     error = str(exc)
                 except Exception:
                     error = 'operation_unavailable'
@@ -89,6 +104,10 @@ def build_page(app, ui, flow, settings_warnings=()):
         for warning in settings_warnings:
             ui.label(warning)
         ui.button('Open project folder', on_click=lambda: act('native_open')).props('data-testid=desktop-open')
+        with ui.expansion("Import project archive").props("data-testid=import-archive-panel"):
+            restored_name = ui.input("New folder name (optional)")
+            ui.button("Choose .researchy archive and destination folder",on_click=lambda:
+                      act("native_import_archive",restored_name.value)).props("data-testid=import-archive")
         with ui.row().classes('items-center'):
             name = ui.input('New project name').props('data-testid=desktop-name')
             ui.button('Create project in folder', on_click=lambda: act('native_create', name.value)).props(
