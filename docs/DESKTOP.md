@@ -113,6 +113,14 @@ automatic matching rule or new review requirement.
 
 ## Specialist sources
 
+Use **Compare search runs** when a project has at least two runs. Select
+their order to inspect new, retained and absent original source identifiers
+and the bibliographic fields that changed. Current publication-identity
+counts appear separately. A source-scoped researcher note follows the same
+provider, database and record ID across runs and keeps the original retrieval,
+timestamp and actor. An absent record may reflect incomplete retrieval or
+changed coverage.
+
 The selected run's **Master results** panel captures a local snapshot of its
 publication identities. Use **Search, filters and columns** to search original
 titles, citation fields, identifiers or available abstract text. Combine
