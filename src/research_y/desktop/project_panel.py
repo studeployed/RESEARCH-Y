@@ -2,6 +2,7 @@
 from datetime import date
 
 from research_y.desktop.manifest_consent import render_manifest_consent
+from research_y.desktop.study_panel import render_study_panel
 
 
 def render_project_panel(ui, flow, act, *, native, error):
@@ -884,6 +885,7 @@ def render_project_panel(ui, flow, act, *, native, error):
                              '. A displayed value is not validation of '
                              'bibliographic identity or export rights.').props(
                                  'data-testid=publication-detail-heading')
+                    render_study_panel(ui, state, detail, act)
                     for omitted in detail['suppressed_chosen_fields']:
                         ui.label('Saved field ' + omitted['field'] +
                                  ' deliberately WITHHELD: its source path '

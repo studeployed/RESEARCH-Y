@@ -52,8 +52,17 @@ Each generation receipt retains the model and engine versions, weights and
 prompt hashes, settings, proposed terms and UTC timestamp. Decisions link
 to that receipt. The acceptance test can be run on a machine with the package
 installed by setting `RESEARCHY_TEST_INSTALLED_MODEL=1` and running
-`tests/test_optional_local_assistant.py`. Cloud mode and model-assisted
-classification remain tracked separately in [P2-01](https://github.com/studeployed/RESEARCH-Y/issues/122).
+`tests/test_optional_local_assistant.py` and `tests/test_local_study_review.py`.
+
+In a selected publication's detail view, **Review study classifications**
+shows the source-backed rules, original field references and the current
+researcher decisions. Choose **Ask local AI** for a specific retained source
+to request provisional design, original-research, format and population
+labels. The project keeps the source paths, input hash, result and generation
+settings. The model can misclassify original research even when it identifies
+an RCT. Confirm or correct each dimension individually and provide the
+supporting evidence. A model proposal alone leaves the classifications
+untouched. Cloud mode remains tracked in [P2-01](https://github.com/studeployed/RESEARCH-Y/issues/122).
 
 ### Deterministic variants
 

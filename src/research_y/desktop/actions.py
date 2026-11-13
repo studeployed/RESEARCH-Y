@@ -3,6 +3,14 @@ from research_y.desktop.flow import ProjectFlowError
 
 
 def perform_action(flow, name, value=None):
+    if name == 'study_inspect':
+        return flow.inspect_study()
+    if name == 'study_suggest':
+        return flow.propose_local_study(value)
+    if name == 'study_confirm':
+        if type(value) is not dict or set(value) != {'dimension','labels','actor','rationale','revision','event_id'}:
+            raise ProjectFlowError('invalid_study_review')
+        return flow.decide_study(**value)
     if name == 'local_mode':
         return flow.set_local_mode(value)
     if name == 'local_suggest':
