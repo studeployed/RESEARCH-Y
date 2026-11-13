@@ -30,3 +30,10 @@ def test_selected_pdf_is_attributed_and_verified_after_archive_and_relocation(tm
     restored=project_archive.import_archive(archive,tmp_path,directory_name="MovedProject")
     assert docs.list_attachments(restored,pid)==[file]
     assert (restored.root/file["relative_path"]).read_bytes()==pdf.read_bytes()
+    (project.root/file["relative_path"]).write_bytes(b"%PDF-1.4\nchanged fixture")
+    with pytest.raises(ValueError):
+        docs.list_attachments(project,pid)
+    with pytest.raises(ValueError,match="recorded attachment"):
+        project_archive.export_archive(project,tmp_path/"Changed.researchy",supporting_files=[file["relative_path"]],
+                                       transfer_confirmed=True)
+    assert not (tmp_path/"Changed.researchy").exists()
