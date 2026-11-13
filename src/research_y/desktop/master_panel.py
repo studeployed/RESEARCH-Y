@@ -78,6 +78,17 @@ def render_master(ui,state,act,*,native):
         detail = view.get("detail")
         if detail:
             with ui.expansion(detail["title"] or detail["publication_id"],value=True):
+                with ui.expansion("Project documents"):
+                    for attachment in detail.get("attachments",[]):
+                        ui.label(attachment.get("original_filename") or attachment.get("relative_path") or "Linked document")
+                        ui.label(attachment.get("relative_path") or attachment.get("source_url"))
+                    if native:
+                        who=ui.input("Researcher attaching PDF")
+                        origin=ui.input("Document source URL (optional)")
+                        permission=ui.checkbox("I may retain this PDF in the project")
+                        ui.button("Choose and attach local PDF",on_click=lambda:act("native_attach_pdf",
+                                  dict(publication_id=detail["publication_id"],actor=who.value,
+                                       source_url=origin.value or None,permission_confirmed=permission.value)))
                 for item in detail["source_evidence"]:
                     ui.label(item["source"]+" · "+item["source_record_id"])
                     ui.label(item["abstract"] or "Abstract unavailable from this source")

@@ -124,6 +124,10 @@ entire snapshot and a separate bulk selection.
 **Open source evidence** displays locally retained abstract text, original
 citations, source hashes, group memberships and specialist evidence for the
 chosen record. Refresh the snapshot after editing the project.
+Under **Project documents**, choose a PDF and record its source and permission
+to retain it. The project stores a verified content-addressed copy and keeps
+its original name and link. Include the displayed project-relative path when
+exporting a portable archive.
 
 In **Export master results**, choose the entire snapshot, all filtered matches,
 or the publications in your selection. Use an `.xlsx` filename for the

@@ -962,6 +962,18 @@ class RealProjectFlow:
             draft.local_offers(gid,tid,generated,eid)
             return self._publish()
 
+    def attach_master_pdf(self,path,*,publication_id,actor,source_url,permission_confirmed):
+        from research_y.project_documents import attach_pdf
+        with self._guard:
+            self._require_open()
+            if (not self._master_page or self._master is None or
+                    self._master_page.get("detail",{}).get("publication_id")!=publication_id):
+                raise ProjectFlowError("Open the publication before attaching a PDF.")
+            self._master.detail(self.project,publication_id)
+            attach_pdf(self.project,publication_id,path,actor=actor,source_url=source_url,permission_confirmed=permission_confirmed)
+            self._master_page["detail"] = self._master.detail(self.project,publication_id)
+            return self._publish()
+
     def export_master_to(self,parent,*,name,revision,scope,include_abstracts):
         from research_y.export_files import filename
         from research_y.master_exports import export_results
