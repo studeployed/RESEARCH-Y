@@ -53,6 +53,10 @@ def test_desktop_official_guidance_and_native_extraction_end_to_end(tmp_path):
         saved=action("conference_admit",revision=prev["revision"],locators=locators,actor="Reviewer",retention_authorized=True)
         assert saved["conference_receipt"]["selected_count"]==2
         page=flow.inspect_publications()["publication_page"]
+        queue = flow.inspect_study_queue(False,False,False)["study_queue"]
+        other = next(row for row in queue["rows"] if row["publication_id"] != gid)
+        flow.open_queued_study(other["publication_id"],other["revision"])
         flow.inspect_publication_detail(publication_id=gid,revision=page["revision"])
-        assert action("enrichment_offer")["enrichment"]["target"]["status"]=="missing_doi"
+        target = action("enrichment_offer")["enrichment"]["target"]
+        assert target["publication_id"] == gid and target["status"] == "missing_doi"
     assert read_classification(open_project(project.root),gid)["current"]["format"]==["society web document"]

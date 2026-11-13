@@ -935,6 +935,9 @@ class RealProjectFlow:
         self._require_no_unresolved_selection()
         if self._queue_study_id and self._study_queue and self._study_queue["run_id"] == self.selected_run_id:
             return self._queue_study_id
+        return self._detail_publication_id()
+
+    def _detail_publication_id(self):
         detail = self._publication_detail
         if (not detail or detail.get("project_id") != str(self.project.identifier)
                 or not self.selected_run_id or detail.get("run_id") != self.selected_run_id):
@@ -967,9 +970,9 @@ class RealProjectFlow:
                 elif name == "conference_detail":
                     panel.conference_detail(**data)
                 elif name == "enrichment_offer":
-                    panel.offer_lookup(self.project,self._visible_study())
+                    panel.offer_lookup(self.project,self._detail_publication_id())
                 elif name == "enrichment_lookup":
-                    panel.lookup_work(self.project,self._visible_study(),**data)
+                    panel.lookup_work(self.project,self._detail_publication_id(),**data)
                 else:
                     raise ValueError("Unknown operation")
             except (KeyError, ValueError, TypeError):
