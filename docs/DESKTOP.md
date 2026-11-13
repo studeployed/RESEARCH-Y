@@ -21,6 +21,15 @@ folder to update the local history. The usual research setup, preflight,
 supervised source stages, results review and workbook controls use the same
 trusted worker and SQLite services as the isolated graphical tests.
 
+## Term variant review
+
+In Research Setup, **Suggest term variants** proposes lexical changes to an
+enabled atomic term. The draft shows each candidate and its reason. Edit
+the wording before accepting or reject it. Only accepted terms appear in
+the exact source-query preview. The separate strategy approval freezes the
+term, deterministic origin, rule version, seed and rationale. Editing or
+removing a seed withdraws its pending suggestions. This path works offline.
+
 ## Reviewed master results
 
 Refresh the run board after recording publication comparisons. When the

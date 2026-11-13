@@ -161,6 +161,22 @@ def render_project_panel(ui, flow, act, *, native, error):
                             tid = term['term_id']
                             with ui.card():
                                 term_input = ui.input('Atomic term', value=term['text'])
+                                if term['enabled']:
+                                    ui.button('Suggest term variants', on_click=lambda gid=gid, tid=tid:
+                                              act('setup_edit', dict(action='suggest_variants',
+                                                  data=dict(group_id=gid, term_id=tid))))
+                                for offer in draft['suggestions']:
+                                    if offer['source_term_id'] != tid or offer['status'] != 'pending':
+                                        continue
+                                    sid = offer['suggestion_id']
+                                    ui.label(offer['reason'])
+                                    wording = ui.input('Proposed variant', value=offer['text'])
+                                    ui.button('Accept wording', on_click=lambda sid=sid, box=wording:
+                                              act('setup_edit', dict(action='review_variant',
+                                                  data=dict(suggestion_id=sid, decision='accept', text=box.value))))
+                                    ui.button('Reject variant', on_click=lambda sid=sid:
+                                              act('setup_edit', dict(action='review_variant',
+                                                  data=dict(suggestion_id=sid, decision='reject'))))
                                 origin_input = ui.select(
                                     {'researcher': 'Researcher', 'deterministic': 'Deterministic',
                                      'ai': 'AI-assisted (requires rationale)'},
