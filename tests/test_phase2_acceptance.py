@@ -5,6 +5,7 @@ from research_y.conference_project import admit_extraction, preview_extraction
 from research_y.crossref_metadata import inspect_enrichment
 from research_y.projects import open_project
 from research_y.publication_results import read_publication_page
+from research_y.result_counts import read_run_counts
 from research_y.run_execution_board import read_run_execution_board
 from research_y.society_sources import import_guidance, record_society_visit
 from research_y.study_classification import read_classification
@@ -39,6 +40,9 @@ def test_joint_specialist_sources_preserve_primary_workbook_and_attributable_lab
     assert board["source_count_revision"] == primary["source_count_revision"]
     assert board["reconciled_primary_run_unique_publications"] == 2
     assert board["supplementary_source_records"] == {"conference_jats":2,"society":1}
+    counts = read_run_counts(project,run)
+    assert counts.totals["extracted_individual_abstracts"] == 2
+    assert counts.totals["extracted_abstract_count_status"] == "retained_individual_blocks"
     assert prepare_workbook_export(project,run,"Reviewed.xlsx",export_id=str(uuid4()),
                                    reviewed_revision=board["source_count_revision"]).export_id
     results = read_publication_page(project,run)

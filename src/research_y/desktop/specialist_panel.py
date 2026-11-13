@@ -8,28 +8,33 @@ def _lines(value):
     return [line.strip() for line in (value or "").splitlines() if line.strip()]
 
 
-def society_panel(ui,state,act):
+def society_panel(ui,state,act,*,native):
     specialist = state.get("specialist", {})
     def send(operation, **data):
         return act("specialist", {"action":operation, "data":data})
 
-    with ui.expansion("Professional society sources"):
-        terms = ui.textarea("Topic terms (one per line)")
+    with ui.expansion("Professional society sources", value="directory" in specialist).props("data-testid=society-panel"):
+        terms = ui.textarea("Topic terms (one per line)", value="\n".join(specialist.get("society_terms", []))).props("data-testid=society-terms")
         ui.button("Find society libraries and open directory", on_click=lambda:
-                  send("directory",terms=_lines(terms.value)))
+                  send("directory",terms=_lines(terms.value))).props("data-testid=society-search")
         if "directory" not in specialist:
             return
-        actor = ui.input("Researcher")
+        actor = ui.input("Researcher").props("data-testid=society-actor")
         directory = {r["society_id"]:r["name"] for r in specialist["directory"]}
         for candidate in specialist["suggestions"]:
             with ui.row():
                 ui.label(candidate["name"])
-                ui.link("Official library", candidate["official_url"], new_tab=True)
+                if native:
+                    ui.button("Open official library in browser",on_click=lambda c=candidate:act("native_society_site",
+                              dict(kind="suggestion",key=c["name"]))).props("data-testid=society-library")
+                else:
+                    ui.link("Official library",candidate["official_url"],new_tab=True)
                 ui.button("Add to directory",on_click=lambda c=candidate:
                     send("society_save",name=c["name"],official_url=c["official_url"],actor=actor.value))
-        name, url = ui.input("Society name"), ui.input("Official website")
+        name = ui.input("Society name").props("data-testid=society-name")
+        url = ui.input("Official website").props("data-testid=society-url")
         ui.button("Confirm new society",on_click=lambda:
-                  send("society_save",name=name.value,official_url=url.value,actor=actor.value))
+                  send("society_save",name=name.value,official_url=url.value,actor=actor.value)).props("data-testid=society-save")
         if not directory:
             return
         selection=ui.select(directory,label="Project society")
@@ -37,8 +42,12 @@ def society_panel(ui,state,act):
         current=specialist.get("society")
         if not current:
             return
-        ui.label(current["name"])
-        ui.link("Visit confirmed official website",current["official_url"],new_tab=True)
+        ui.label(current["name"]).props("data-testid=current-society")
+        if native:
+            ui.button("Open confirmed website in browser",on_click=lambda:act("native_society_site",
+                      dict(kind="selected",key=current["society_id"])))
+        else:
+            ui.link("Visit confirmed official website",current["official_url"],new_tab=True)
         edit_name=ui.input("Directory name",value=current["name"])
         edit_url=ui.input("Directory URL",value=current["official_url"])
         ui.button("Save directory changes", on_click=lambda:send("society_save",society_id=current["society_id"],
@@ -106,12 +115,38 @@ def publication_panel(ui,state,detail,act,native):
                 ui.label("Last lookup: "+specialist["lookup_result"])
     if not native:
         return
-    with ui.expansion("Conference abstract review"):
+    with ui.expansion("Conference abstract review",value=bool(specialist.get("conference") or specialist.get("conference_tasks"))):
         eligible={r["retrieval_id"]:r["source_name"]+" "+r["source_record_id"] for r in detail["source_retrievals"]
                   if r["run_id"]==state["selected_run_id"] and r["source_name"] in {"pubmed","wos"}}
         if not eligible:
             return
-        source=ui.select(eligible,label="Original collection source")
+        source=ui.select(eligible,label="Original collection source",
+                         value=next(iter(eligible)) if len(eligible) == 1 else None)
+        ui.button("Open saved block reviews",on_click=lambda:send("conference_tasks",retrieval_id=source.value))
+        task_page = specialist.get("conference_tasks")
+        if task_page and task_page["retrieval_id"] in eligible:
+            source_id = task_page["retrieval_id"]
+            ui.label("Saved block reviews for "+eligible[source_id])
+            if not task_page["tasks"]:
+                ui.label("No saved block reviews on this page.")
+            for task in task_page["tasks"]:
+                with ui.expansion(task["locator"]+" · "+task["reason"]):
+                    ui.label("Document SHA-256 "+task["document_sha256"])
+                    if task["decision"]:
+                        decision = task["decision"]
+                        ui.label(decision["disposition"]+" · "+decision["actor"]+" · "+decision["note"])
+                    elif task["original_current"]:
+                        reviewer=ui.input("Researcher completing review")
+                        outcome=ui.select(["not_an_individual_abstract","reviewed_in_source"],label="Outcome")
+                        note=ui.input("Source observation")
+                        ui.button("Record block review",on_click=lambda tid=task["task_id"], who=reviewer,
+                                  result=outcome, notes=note:send("conference_finish_task",retrieval_id=source_id,
+                                  task_id=tid,actor=who.value,disposition=result.value,note=notes.value))
+                    else:
+                        ui.label("The original source has changed since this task was saved.")
+            if task_page["next_after"] is not None:
+                ui.button("Next saved reviews",on_click=lambda:send("conference_tasks",retrieval_id=source_id,
+                          after=task_page["next_after"]))
         words=ui.textarea("Match terms (one per line)")
         landing=ui.input("Supplement landing URL")
         pdf=ui.input("Supplement PDF URL")
@@ -131,8 +166,12 @@ def publication_panel(ui,state,detail,act,native):
         preview=specialist.get("conference")
         if preview and preview["original_retrieval_id"] in eligible:
             ui.label(f'Extracted blocks: {preview["total"]}. Unresolved blocks: {preview["unresolved_total"]}.')
+            actor=ui.input("Researcher reviewing extraction")
             for unresolved in preview["unresolved"]:
                 ui.label(unresolved["locator"]+" · "+unresolved["reason"])
+                ui.button("Save block for follow-up",on_click=lambda loc=unresolved["locator"]:
+                          send("conference_queue_block",retrieval_id=preview["original_retrieval_id"],
+                               revision=preview["revision"],locator=loc,actor=actor.value))
             entries={r["locator"]:(r["title"] or "Untitled")+" · "+r["locator"] for r in preview["abstracts"]}
             for r in preview["abstracts"]:
                 ui.button("Inspect "+(r["title"] or r["locator"]),on_click=lambda loc=r["locator"]:
@@ -150,7 +189,6 @@ def publication_panel(ui,state,detail,act,native):
             if preview["has_more"]:
                 ui.button("Next abstracts",on_click=lambda:send("conference_page",offset=preview["offset"]+20,revision=preview["revision"]))
             chosen=ui.select(entries,multiple=True,label="Abstracts to retain")
-            actor=ui.input("Researcher confirming extraction")
             rights=ui.checkbox("I may retain the selected abstract text locally")
             ui.button("Confirm selected abstracts",on_click=lambda:send("conference_admit",revision=preview["revision"],
                       locators=chosen.value or [],actor=actor.value,retention_authorized=rights.value))

@@ -470,6 +470,25 @@ def _snapshot(db, project, run_id, *, primary=False):
         warnings.add('recorded_decisions_need_review')
     if reviews['decisions_conflicting_with_current_links']:
         warnings.add('recorded_decisions_conflict_with_links')
+    extracted = {rid for rid, source in sources.items() if source['source_name'] == 'conference_jats'}
+    if extracted:
+        from research_y.conference_project import EVENT
+        retained = set()
+        for raw, in db.execute(
+            "SELECT a.details_json FROM audit_events a JOIN source_retrievals r "
+            "ON r.retrieval_id=json_extract(a.details_json,'$.retrieval_id') "
+            "WHERE a.event_type=? AND r.run_id=?", (EVENT, run_id)
+        ):
+            event = identity._object(raw)
+            rid = event['retrieval_id']
+            if (rid not in extracted or rid in retained or rid not in links or
+                    sources[rid]['source_sha256'] != event['source_sha256']):
+                raise CountIntegrityError('Inconsistent retained conference abstract')
+            retained.add(rid)
+        if retained != extracted:
+            raise CountIntegrityError('Missing conference admission evidence')
+        warnings.remove('extracted_abstract_count_not_implemented')
+        warnings.add('extracted_abstract_count_covers_retained_blocks_only')
     totals = dict(
         source_record_sum=sum(s['source_unique_records'] for s in per_source),
         metadata_source_records=len(sources),
@@ -479,7 +498,8 @@ def _snapshot(db, project, run_id, *, primary=False):
         group_publication_identity_sum=sum(g['publication_identities'] for g in groups),
         identities_with_review_required_links_in_run=len({link[0] for link in links.values()
                                                          if link.status == 'review_required'}),
-        extracted_individual_abstracts=None, extracted_abstract_count_status='not_implemented',
+        extracted_individual_abstracts=len(extracted) if extracted else None,
+        extracted_abstract_count_status='retained_individual_blocks' if extracted else 'not_implemented',
         inactive_identities_included=False,
     )
     revision = identity._hash([

@@ -9,6 +9,7 @@ from pathlib import Path
 import secrets
 import socket
 import sys
+import webbrowser
 
 from research_y.desktop.actions import perform_action
 from research_y.desktop.flow import ProjectFlowError, RealProjectFlow
@@ -37,7 +38,11 @@ def build_page(app, ui, flow, settings_warnings=()):
                 return
             async with lock:
                 try:
-                    if action == "native_conference":
+                    if action == "native_society_site":
+                        url = flow.official_society_url(**value)
+                        if not await asyncio.to_thread(webbrowser.open_new_tab, url):
+                            raise ProjectFlowError("external_browser_unavailable")
+                    elif action == "native_conference":
                         chosen = await select_conference_document(app.native.main_window)
                         if chosen is None:
                             return

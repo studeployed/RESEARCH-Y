@@ -10,7 +10,7 @@ from __future__ import annotations
 from contextlib import ExitStack, contextmanager
 from hashlib import sha256
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import stat
 from typing import Iterator
@@ -123,6 +123,9 @@ class Directory:
 
     def _stat(self, name: str) -> os.stat_result:
         filename(name)
+        return self._stat_component(name)
+
+    def _stat_component(self, name: str) -> os.stat_result:
         return (os.stat(name, dir_fd=self.fd, follow_symlinks=False) if self.fd is not None
                 else (self.path / name).lstat())
 
@@ -179,13 +182,16 @@ class Directory:
 
     def read_selected(self, name: str, *, limit: int) -> bytes:
         """Read one host-selected regular file under an explicit byte limit."""
-        return self._read_regular(name, size=None, limit=limit)
+        if (not isinstance(name, str) or not name or name.endswith((" ", ".")) or
+                any(ord(c) < 32 or c in '<>:"/\\|?*' for c in name) or PureWindowsPath(name).is_reserved()):
+            raise ExportFileError("Expected a single ordinary source filename")
+        return self._read_regular(name, size=None, limit=limit, selected=True)
 
-    def _read_regular(self, name: str, *, size: int | None, limit: int) -> bytes:
-        filename(name)
+    def _read_regular(self, name: str, *, size: int | None, limit: int, selected: bool = False) -> bytes:
+        stat_file = self._stat_component if selected else self._stat
         if type(limit) is not int or not 0 < limit <= MAX_ARTIFACT_BYTES:
             raise ExportFileError('Invalid artifact size')
-        before = self._stat(name)
+        before = stat_file(name)
         _ordinary(before, directory=False)
         if size is None:
             size = before.st_size
@@ -210,7 +216,7 @@ class Directory:
         finally:
             os.close(fd)
         data = b''.join(blocks)
-        current = self._stat(name)
+        current = stat_file(name)
         _ordinary(current, directory=False)
         if (identity(current) != identity(opened) or after.st_size != opened.st_size
                 or after.st_mtime_ns != opened.st_mtime_ns or len(data) != size):

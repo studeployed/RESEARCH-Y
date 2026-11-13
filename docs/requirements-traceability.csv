@@ -66,7 +66,7 @@ CONF-02,2,AT-11,tests/test_conference_jats.py; tests/test_conference_project.py 
 CONF-03,2,AT-12,tests/test_conference_jats.py (printed pages and explicit PDF file page mappings in JATS preview),partial
 CONF-04,2,AT-12,tests/test_conference_jats.py (original supplement bibliographic fields and supplied landing and PDF links),partial
 CONF-05,2,"AT-11,AT-12",tests/test_conference_jats.py (container DOI scope and uncertain identity or locator flags),partial
-CONF-06,2,AT-12,tests/test_conference_jats.py (source digest and XML locator plus unresolved reasons; durable review pending),partial
+CONF-06,2,AT-12,tests/test_conference_jats.py; tests/test_desktop_specialist_workbench.py (document and block evidence with durable follow-up outcomes on reopen),partial
 GUIDE-01,2,AT-13,tests/test_society_sources.py (capture without DOI or journal and explicit guidance type),partial
 GUIDE-02,2,"AT-13,AT-15",tests/test_society_sources.py (explicit guidance document types),partial
 GUIDE-03,2,AT-13,tests/test_society_sources.py (source-captured society roles and original directory revisions),partial

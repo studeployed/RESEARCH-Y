@@ -1,6 +1,7 @@
 """Desktop session for specialist sources. Project and run come from the trusted project selection."""
 from uuid import uuid4
 
+from research_y import conference_review
 from research_y.conference_jats import MAX_BYTES
 from research_y.conference_project import preview_extraction, admit_extraction
 from research_y.crossref_client import enrich_publication
@@ -30,6 +31,7 @@ class SpecialistWorkbench:
     def directory(self, project, terms):
         self.state["directory"] = list_societies(project)
         self.state["suggestions"] = suggest_societies(terms)
+        self.state["society_terms"] = list(terms)
 
     def save_directory_entry(self, project, *, name, official_url, actor, society_id=None):
         known = {r["society_id"]:r for r in self.state.get("directory",[])}
@@ -115,6 +117,25 @@ class SpecialistWorkbench:
         self.state["conference_receipt"] = receipt
         self.state.pop("conference",None)
         self.conference = None
+
+    def queue_block(self, project, retrieval_id, revision, locator, actor):
+        page = self.state.get("conference")
+        if (not page or page["original_retrieval_id"] != retrieval_id or page["revision"] != revision
+                or locator not in {r["locator"] for r in page["unresolved"]}):
+            raise ValueError("Select a visible unresolved block")
+        conference_review.queue_block(project,retrieval_id,self.conference[3]["extraction"],locator,actor)
+        self.review_tasks(project,retrieval_id)
+
+    def review_tasks(self, project, retrieval_id, after=0):
+        self.state["conference_tasks"] = conference_review.read_tasks(project,retrieval_id,after=after)
+
+    def finish_task(self, project, retrieval_id, **decision):
+        page = self.state.get("conference_tasks")
+        if (not page or page["retrieval_id"] != retrieval_id or
+                decision.get("task_id") not in {r["task_id"] for r in page["tasks"]}):
+            raise ValueError("Select a visible source task")
+        conference_review.finish_task(project,retrieval_id,**decision)
+        self.review_tasks(project,retrieval_id,page["after"])
 
     def offer_lookup(self, project, publication_id):
         view = inspect_enrichment(project,publication_id)

@@ -944,6 +944,24 @@ class RealProjectFlow:
             raise ProjectFlowError("publication_view_stale")
         return detail["publication"]["publication_id"]
 
+    def official_society_url(self, kind, key):
+        from research_y.society_sources import web_url
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._specialist.select(self.project,self.selected_run_id)
+            panel = self._specialist.state
+            if kind == "suggestion":
+                rows = [r for r in panel.get("suggestions",[]) if r["name"] == key]
+            elif kind == "selected":
+                current = panel.get("society")
+                rows = [current] if current and current["society_id"] == key else []
+            else:
+                rows = []
+            if not self.selected_run_id or len(rows) != 1:
+                raise ProjectFlowError("society_selection_changed")
+            return web_url(rows[0]["official_url"])
+
     def specialist_action(self, name, data):
         with self._guard:
             self._require_open()
@@ -969,6 +987,14 @@ class RealProjectFlow:
                     panel.conference_page(**data)
                 elif name == "conference_detail":
                     panel.conference_detail(**data)
+                elif name in ("conference_queue_block", "conference_tasks", "conference_finish_task"):
+                    self._visible_candidate_source(data["retrieval_id"])
+                    if name == "conference_queue_block":
+                        panel.queue_block(self.project,**data)
+                    elif name == "conference_tasks":
+                        panel.review_tasks(self.project,**data)
+                    else:
+                        panel.finish_task(self.project,**data)
                 elif name == "enrichment_offer":
                     panel.offer_lookup(self.project,self._detail_publication_id())
                 elif name == "enrichment_lookup":

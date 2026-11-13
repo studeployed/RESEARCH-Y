@@ -282,7 +282,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
         else:
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
-            society_panel(ui,state,act)
+            society_panel(ui,state,act,native=native)
             data = state['report']
             if data is None:
                 ui.label('Report not available.')
