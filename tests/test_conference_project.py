@@ -1,5 +1,6 @@
 from contextlib import closing
 import sqlite3
+from uuid import uuid4
 
 import pytest
 
@@ -55,3 +56,25 @@ def test_second_abstract_failure_rolls_back_whole_selected_batch(store):
         admit_extraction(project,ids[0],XML,locators=locators,expected_revision=view["revision"],
                          actor="Reviewer", confirmed=True, retention_authorized=True)
     assert [db_rows(project,t) for t in tables] == before
+
+
+def test_supplementary_abstracts_preserve_reconciled_primary_counts_and_reviewed_workbook(tmp_path):
+    from research_y.run_execution_board import read_run_execution_board
+    from research_y.workbook_exports import prepare_workbook_export
+    from test_reviewed_master import populated, decide
+    project, run, _, ids = populated(tmp_path)
+    decide(project,ids["111"],ids["WOS:000000001"],"confirmed_match")
+    decide(project,ids["111"],ids["222"],"rejected_match")
+    before = read_run_execution_board(project,run)
+    assert before["reconciled_primary_run_unique_publications"] == 2
+    view = preview_extraction(project,ids["111"],XML)
+    admit_extraction(project,ids["111"],XML,locators=[a["locator"] for a in view["extraction"]["abstracts"]],
+                     expected_revision=view["revision"],actor="Reviewer",confirmed=True,retention_authorized=True)
+    after = read_run_execution_board(open_project(project.root),run)
+    assert after["source_count_revision"] == before["source_count_revision"]
+    assert after["reconciled_primary_run_unique_publications"] == 2
+    assert after["supplementary_source_records"] == {"conference_jats":2}
+    assert after["reviewed_retained_master"] == before["reviewed_retained_master"]
+    report = prepare_workbook_export(project,run,"Reviewed.xlsx",export_id=str(uuid4()),
+                                     reviewed_revision=after["source_count_revision"])
+    assert report.export_id

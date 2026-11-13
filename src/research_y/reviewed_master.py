@@ -44,7 +44,7 @@ def _supported_partition(owners, evidence):
     return by_publication
 
 
-def retained_union(db, counts, *, include_rows=False):
+def retained_union(db, counts, *, include_rows=False, primary=False):
     """Return a supported union or None. No new pairs are generated or decided.
 
     Each retained original must have current evidence. Sources grouped into a
@@ -64,7 +64,8 @@ def retained_union(db, counts, *, include_rows=False):
         return None
     owners = dict(db.execute(
         'SELECT r.retrieval_id,p.publication_id FROM source_retrievals r JOIN publication_retrievals p '
-        'ON p.retrieval_id=r.retrieval_id WHERE r.run_id=?', (counts.run_id,)))
+        'ON p.retrieval_id=r.retrieval_id WHERE r.run_id=? ' +
+        ("AND r.source_name NOT IN ('conference_jats','society')" if primary else ""), (counts.run_id,)))
     if len(owners) != n or len(set(owners.values())) != k:
         raise identity.PublicationIntegrityError('Master identity coverage is inconsistent')
 

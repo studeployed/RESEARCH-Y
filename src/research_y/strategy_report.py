@@ -161,7 +161,11 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
     # This deliberately reuses the count implementation on the SAME handle.
     # Calling read_run_counts then opening another handle would mix snapshots.
     from research_y import result_counts
-    projection = result_counts._snapshot(db, project, run_id)
+    specialist = reviewed_revision is not None and db.execute(
+        "SELECT 1 FROM source_retrievals WHERE run_id=? AND source_name IN ('conference_jats','society') LIMIT 1",
+        (run_id,)).fetchone() is not None
+    projection = (result_counts._snapshot(db, project, run_id, primary=True) if specialist else
+                  result_counts._snapshot(db, project, run_id))
     counts = projection.as_dict()
     run = db.execute("SELECT run_id,strategy_version_id,created_at_utc,status,completed_at_utc "
                      "FROM search_runs WHERE run_id=?", (run_id,)).fetchone()
@@ -221,7 +225,7 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
         from research_y.reviewed_master import retained_union
         if reviewed_revision != projection.revision:
             raise ReportIntegrityError("Retained results changed after review")
-        reviewed = retained_union(db, projection, include_rows=True)
+        reviewed = retained_union(db, projection, include_rows=True, primary=specialist)
         if reviewed is None:
             raise ReportIntegrityError("The retained publication union is unresolved")
         data.update(format_version=2, method=REVIEWED_REPORT_METHOD, reviewed_master=reviewed)

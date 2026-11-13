@@ -155,7 +155,10 @@ def read_run_execution_board(project, run_id: str) -> dict:
         raise ExecutionBoardError("run_board_invalid") from None
     try:
         with _read(project) as db:
-            projection = result_counts._snapshot(db, project, run_id)
+            supplements = dict(db.execute("SELECT source_name,COUNT(*) FROM source_retrievals WHERE run_id=? "
+                    "AND source_name IN ('conference_jats','society') GROUP BY source_name", (run_id,)))
+            projection = (result_counts._snapshot(db, project, run_id, primary=True) if supplements else
+                          result_counts._snapshot(db, project, run_id))
             snapshot = db.execute("SELECT snapshot_json FROM strategy_versions WHERE strategy_version_id=?",
                                   (projection.strategy_version_id,)).fetchone()
             if snapshot is None:
@@ -239,7 +242,7 @@ def read_run_execution_board(project, run_id: str) -> dict:
             all_metadata = all_enumerated and all(q["source_stage"] in (
                 "pubmed_no_identifiers", "pubmed_metadata_acquired",
                 "wos_enumeration_reconciled_with_warnings") for q in output)
-            reviewed = retained_union(db, projection)
+            reviewed = retained_union(db, projection, primary=bool(supplements))
             reviewed_run_total = None
             reconciled = all_metadata and projection.stored_run_status not in ("cancelled", "failed")
             if reconciled and reviewed is not None:
@@ -248,6 +251,8 @@ def read_run_execution_board(project, run_id: str) -> dict:
                 reviewed_run_total = 0
             pubmed_deadline = retry_not_before(db)
             inputs = [METHOD, projection.revision, plan_sha, output, group_rows, totals]
+            if supplements:
+                inputs.append(supplements)
             if pubmed_deadline is not None:
                 inputs.append(pubmed_deadline)
             revision = _hash(inputs)
@@ -255,7 +260,7 @@ def read_run_execution_board(project, run_id: str) -> dict:
                 method=METHOD, project_id=str(project.identifier), run_id=run_id,
                 strategy_version_id=projection.strategy_version_id,
                 stored_run_status=projection.stored_run_status,
-                revision=revision, source_count_revision=projection.revision,
+                revision=revision, source_count_revision=projection.revision, supplementary_source_records=supplements,
                 groups=group_rows, queries=output,
                 query_count=len(output), group_count=len(group_rows),
                 source_totals=source_rows, totals=totals,
