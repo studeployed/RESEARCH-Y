@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import threading
+from copy import deepcopy
 import time
 from uuid import uuid4, uuid5
 
@@ -22,6 +23,10 @@ from research_y.desktop.recent_projects import RecentProjects, RecentProjectsErr
 from research_y.desktop.pubmed_profile import PubMedHostProfile
 from research_y.desktop.wos_profile import WoSHostProfile
 from research_y.desktop.strategy_setup import StrategyDraft, DraftError
+from research_y.local_assistant import LocalAssistantError
+from research_y import local_study_review, study_classification
+from research_y.projects import _utc_now, _validated_project_connection
+from research_y.publication_identity import _audit as append_audit
 from research_y.preflight_review import (
     PreflightError, _review_payload, PRESS_ITEMS, read_preflight,
 )
@@ -37,7 +42,7 @@ class RealProjectFlow:
     def __init__(self, *, selected_root: Path | None = None, selected_parent: Path | None = None,
                  recent_parent: Path | None = None,
                  pubmed_profile: PubMedHostProfile | None = None,
-                  wos_profile: WoSHostProfile | None = None):
+                 wos_profile: WoSHostProfile | None = None, local_assistant=None):
         self._root = Path(selected_root) if selected_root is not None else None
         self._parent = Path(selected_parent) if selected_parent is not None else None
         if any(path is not None and not path.is_absolute() for path in (self._root, self._parent)):
@@ -48,6 +53,10 @@ class RealProjectFlow:
             raise ProjectFlowError('wos_profile_invalid')
         self._pubmed_profile = pubmed_profile
         self._wos_profile = wos_profile
+        self._local_assistant = local_assistant
+        self._local_enabled = local_assistant is not None and local_assistant.installed
+        self._study_view = None
+        self._study_proposal = None
         self._guard = threading.RLock()
         self._worker = ApplicationWorker()
         # Separate supervised process: verification may run longer than
@@ -820,11 +829,111 @@ class RealProjectFlow:
                     or type(data) is not dict):
                 raise ProjectFlowError('invalid_setup_action')
             try:
+                suggestion = self._setup.suggestions.get(data.get("suggestion_id")) if action == "review_variant" else None
+                if suggestion and suggestion["origin"] == "ai":
+                    updated = deepcopy(self._setup)
+                    updated.review_variant(**data)
+                    with _validated_project_connection(self.project) as db:
+                        db.execute("BEGIN IMMEDIATE")
+                        append_audit(db, "local_term_review_v1", dict(version=1, at_utc=_utc_now(),
+                            generation_event_id=suggestion["event_id"], suggestion_id=suggestion["suggestion_id"],
+                            proposed=suggestion["text"], decision=data["decision"],
+                            wording=data.get("text", suggestion["text"]) if data["decision"] == "accept" else None,
+                            actor=self._setup.approved_by or None))
+                    self._setup = updated
+                    self._last_strategy_admission = None
+                    return self._publish()
                 method = getattr(self._setup, self._SETUP_ACTIONS[action])
                 method(**data)
             except (DraftError, ValueError, TypeError):
                 raise ProjectFlowError('invalid_setup_input') from None
             self._last_strategy_admission = None
+            return self._publish()
+
+    def set_local_mode(self, enabled):
+        with self._guard:
+            if type(enabled) is not bool or (enabled and not (self._local_assistant and self._local_assistant.installed)):
+                raise ProjectFlowError("local_assistant_unavailable")
+            self._local_enabled = enabled
+            return self._publish()
+
+    def _visible_study(self):
+        self._require_open()
+        self._require_no_unresolved_selection()
+        detail = self._publication_detail
+        if (not detail or detail.get("project_id") != str(self.project.identifier)
+                or not self.selected_run_id or detail.get("run_id") != self.selected_run_id):
+            raise ProjectFlowError("publication_view_stale")
+        return detail["publication"]["publication_id"]
+
+    def inspect_study(self):
+        with self._guard:
+            pub_id = self._visible_study()
+            self._study_view = study_classification.read_classification(self.project, pub_id)
+            self._study_proposal = None
+            return self._publish()
+
+    def propose_local_study(self, retrieval_id):
+        with self._guard:
+            pub_id = self._visible_study()
+            view = self._study_view
+            if (not self._local_enabled or not self._local_assistant or not view or view["publication_id"] != pub_id
+                    or retrieval_id not in {r["retrieval_id"] for r in self._publication_detail["source_retrievals"]}):
+                raise ProjectFlowError("local_assistant_study_unavailable")
+            project = self.project
+        try:
+            result = local_study_review.propose(project, pub_id, retrieval_id, assistant=self._local_assistant,
+                                                expected_revision=view["revision"])
+        except (KeyError, ValueError):
+            raise ProjectFlowError("local_assistant_study_unavailable") from None
+        with self._guard:
+            if (not self._local_enabled or self._closed or project is not self.project
+                    or self._visible_study() != pub_id or self._study_view is not view):
+                raise ProjectFlowError("publication_view_stale")
+            self._study_proposal = result
+            return self._publish()
+
+    def decide_study(self, dimension, labels, actor, rationale, revision, event_id=None):
+        with self._guard:
+            pub_id = self._visible_study()
+            if not self._study_view or (self._study_view["publication_id"], self._study_view["revision"]) != (pub_id, revision):
+                raise ProjectFlowError("publication_view_stale")
+            args = dict(dimension=dimension, labels=labels, actor=actor, rationale=rationale,
+                        expected_revision=revision, confirmed=True)
+            if event_id is None:
+                result = study_classification.review_classification(self.project, pub_id, **args)
+            else:
+                if not self._study_proposal or self._study_proposal["event_id"] != event_id:
+                    raise ProjectFlowError("local_assistant_study_unavailable")
+                result = local_study_review.review(self.project, pub_id, event_id=event_id, **args)
+            self._study_view = result
+            return self._publish()
+
+    def propose_local_terms(self, group_id, term_id):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if not self._local_enabled or self._local_assistant is None:
+                raise ProjectFlowError("local_assistant_unavailable")
+            draft = self._setup
+            seed = dict(draft._term(draft._group(group_id), term_id))
+            if not seed["enabled"] or draft.preview_data is not None:
+                raise ProjectFlowError("local_assistant_seed_unavailable")
+            project = self.project
+        try:
+            generated = self._local_assistant.propose_terms(seed["text"])
+        except LocalAssistantError as exc:
+            raise ProjectFlowError(str(exc)) from None
+        with self._guard:
+            if (self._closed or not self._local_enabled or self.project is not project or self._setup is not draft
+                    or draft.preview_data is not None or draft._term(draft._group(group_id),term_id) != seed):
+                raise ProjectFlowError("local_assistant_seed_changed")
+            self._require_no_unresolved_selection()
+            with _validated_project_connection(project) as db:
+                db.execute("BEGIN IMMEDIATE")
+                event_id = append_audit(db, "local_term_proposal_v1", dict(version=1, at_utc=_utc_now(),
+                        group_id=group_id, term_id=term_id, actor=draft.approved_by or None, **generated))
+            draft.local_offers(group_id, term_id, generated, event_id)
             return self._publish()
 
     def preview_setup(self):
@@ -4186,6 +4295,8 @@ class RealProjectFlow:
                 'recent_projects': list(self._recent_items),
                 'recent_history_error': self._recent_error,
                 'strategy_draft': self._setup.state(),
+                'local_assistant_installed': bool(self._local_assistant and self._local_assistant.installed),
+                'local_assistant_enabled': self._local_enabled,
                 'strategy_reconciliation_required': self._pending_admission_id is not None,
                 'last_strategy_admission': self._last_strategy_admission,
                 'preflight_report': self._preflight,
@@ -4224,6 +4335,10 @@ class RealProjectFlow:
                 'run_execution_board': self._run_execution_board,
                 'publication_page': self._publication_page,
                 'publication_detail': self._publication_detail,
+                'study_view': self._study_view if self._publication_detail and self._study_view and
+                    self._study_view["publication_id"] == self._publication_detail["publication"]["publication_id"] else None,
+                'study_proposal': self._study_proposal if self._publication_detail and self._study_proposal and
+                    self._study_proposal["publication_id"] == self._publication_detail["publication"]["publication_id"] else None,
                 'publication_error': self._publication_error,
                 'publication_materialisation_offer': self._publication_materialisation_offer,
                 'publication_materialisation_last_outcome': self._publication_materialisation_last_outcome,

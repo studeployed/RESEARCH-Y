@@ -16,6 +16,7 @@ from research_y.desktop.folders import NativeFolderError, select_from_native_win
 from research_y.desktop.native import open_desktop_window
 from research_y.desktop.project_panel import render_project_panel
 from research_y.desktop.session import DesktopGuard, LaunchSession
+from research_y.local_assistant import LocalAssistant, PACKAGE
 
 
 def build_page(app, ui, flow, settings_warnings=()):
@@ -24,10 +25,11 @@ def build_page(app, ui, flow, settings_warnings=()):
     @ui.page('/')
     def project_page():
         error = None
+        study_edits = {}
 
         @ui.refreshable
         def panel():
-            render_project_panel(ui, flow, act, native=True, error=error)
+            render_project_panel(ui, flow, act, native=True, error=error, study_edits=study_edits)
 
         async def act(action, value=None):
             nonlocal error
@@ -123,7 +125,9 @@ def main():
         local = Path(os.environ['LOCALAPPDATA'])
         if not local.is_absolute():
             raise ValueError
-        flow = RealProjectFlow(recent_parent=local / 'RESEARCH-Y', pubmed_profile=pubmed, wos_profile=starter)
+        assistant = LocalAssistant(local / 'RESEARCH-Y' / 'models' / PACKAGE)
+        flow = RealProjectFlow(recent_parent=local / 'RESEARCH-Y', pubmed_profile=pubmed, wos_profile=starter,
+                               local_assistant=assistant)
         run_desktop(flow, settings_warnings=warnings)
     except Exception:
         import ctypes

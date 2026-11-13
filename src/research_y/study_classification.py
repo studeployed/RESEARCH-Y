@@ -155,7 +155,7 @@ def read_classification(project, publication_id):
 
 
 def review_classification(project, publication_id, *, dimension, labels, actor, rationale, expected_revision,
-                          confirmed):
+                          confirmed, proposal_event_id=None):
     if (confirmed is not True or dimension not in LABELS or not isinstance(labels, list) or not labels
             or any(not isinstance(v, str) or v not in LABELS[dimension] for v in labels)
             or len(labels) != len(set(labels)) or len(labels) > 1 and (dimension != "design" or "unclear" in labels)):
@@ -167,7 +167,14 @@ def review_classification(project, publication_id, *, dimension, labels, actor, 
         db.execute("BEGIN IMMEDIATE")
         view = _view(db, publication_id)
         prior = view["decisions"].get(dimension)
-        request = identity._hash([publication_id, dimension, labels, actor, rationale, expected_revision])
+        fields = [publication_id, dimension, labels, actor, rationale, expected_revision]
+        if proposal_event_id is not None:
+            proposal = identity._event(db, proposal_event_id, "local_study_proposal_v1")
+            if (proposal["publication_id"] != publication_id or proposal["evidence_revision"] != view["evidence_revision"]
+                    or dimension not in proposal["generated"]["proposals"]):
+                raise identity.StalePublicationError("Model proposal no longer matches the source")
+            fields.append(proposal_event_id)
+        request = identity._hash(fields)
         if prior and prior["request_sha256"] == request:
             return view
         if view["revision"] != expected_revision:
@@ -178,6 +185,8 @@ def review_classification(project, publication_id, *, dimension, labels, actor, 
                      dimension=dimension, labels=labels, actor=actor, rationale=rationale, rule=RULE,
                      status=status, request_sha256=request, evidence_revision=view["evidence_revision"],
                      prior_event_id=prior["event_id"] if prior else None)
+        if proposal_event_id is not None:
+            event["proposal_event_id"] = proposal_event_id
         receipt = identity._audit(db, EVENT, event)
         db.execute("INSERT INTO classifications VALUES(?,?,?,?,?,?,?)",
                    (cid, publication_id, dimension, identity._json(labels), status,
