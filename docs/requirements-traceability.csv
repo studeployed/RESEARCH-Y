@@ -92,8 +92,8 @@ UI-03,3,AT-04,planned,planned
 UI-04,3,AT-05,planned,planned
 UI-05,3,"AT-08,AT-09",tests/test_run_execution_board.py (source stages and coverage in the installed interface),partial
 UI-06,3,AT-19,tests/test_reviewed_master.py and tests/test_run_execution_board.py (named source/group and reviewed retained denominators),partial
-UI-07,3,"AT-18,AT-22",tests/test_publication_results.py and tests/test_reviewed_master.py (paged master and supported reviewed union),partial
-UI-08,3,"AT-10,AT-15",planned,planned
+UI-07,3,"AT-18,AT-22",tests/test_master_results.py; tools/desktop_lifecycle.py (combined text and facets plus sort and saved views and bulk selections); tests/test_reviewed_master.py,partial
+UI-08,3,"AT-10,AT-15",tests/test_master_results.py (locally retained abstract and full source-specific evidence on displayed run),partial
 UI-09,3,"AT-10,AT-15",planned,planned
 UI-10,3,"AT-03,AT-18",planned,planned
 COUNT-01,1,"AT-10,AT-19",tests/test_wos_checkpoints.py (query memberships preserve per-query counts; global master pending); tests/test_publication_identity.py; tests/test_publication_fields.py (source denominators preserved; final publication counts pending); tests/test_publication_candidates.py (candidate decisions preserve original source denominators); tests/test_result_counts.py; tests/test_result_count_ledger.py (separate identifier/metadata/source and provisional identity denominators; final deduplication pending); tests/test_reviewed_master.py (retained reviewed union and separate reconciled primary-run denominator),partial

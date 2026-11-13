@@ -2,6 +2,7 @@
 from datetime import date
 
 from research_y.desktop.manifest_consent import render_manifest_consent
+from research_y.desktop.master_panel import render_master
 from research_y.desktop.study_panel import render_study_panel, render_study_queue
 from research_y.desktop.specialist_panel import society_panel, publication_panel
 
@@ -282,6 +283,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
         else:
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
+            render_master(ui,state,act)
             society_panel(ui,state,act,native=native)
             data = state['report']
             if data is None:

@@ -113,6 +113,18 @@ automatic matching rule or new review requirement.
 
 ## Specialist sources
 
+The selected run's **Master results** panel captures a local snapshot of its
+publication identities. Use **Search, filters and columns** to search original
+titles, citation fields, identifiers or available abstract text. Combine
+source, group and classification filters, sort by title, year or ID and
+choose the displayed columns. Save an applied view by name to reuse it
+after reopening the project. Results distinguish the number matched, the
+entire snapshot and a separate bulk selection.
+
+**Open source evidence** displays locally retained abstract text, original
+citations, source hashes, group memberships and specialist evidence for the
+chosen record. Refresh the snapshot after editing the project.
+
 Select a run and open **Professional society sources** to suggest a library
 from topic terms or add an official site. Record the pages and dates examined,
 the outcome, and any limitations. A visit with a guidance discovery can be
