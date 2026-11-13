@@ -137,6 +137,23 @@ def test_matching_budget_is_cumulative_and_fails_before_returning_truncated_matc
     assert len(inspect_conference_jats(XML)["abstracts"]) == 2
 
 
+def test_identifier_resolver_and_prefix_forms_do_not_establish_individual_scope():
+    xml = XML.replace(b"10.1234/supp", b"https://doi.org/10.1234/SUPP", 1)
+    xml = xml.replace(b"10.1234/report",b"doi:10.1234/supp")
+    a,b = inspect_conference_jats(xml)["abstracts"]
+    for row in (a,b):
+        assert row["individual_dois"] == []
+        assert {"doi_shared_with_container","doi_shared_across_sub_articles"} <= set(row["warnings"])
+    assert b["source_identifiers"][0]["value"] == "doi:10.1234/supp"
+
+
+def test_document_attribute_budget_is_enforced_before_tree_creation(monkeypatch):
+    from research_y import conference_jats
+    monkeypatch.setattr(conference_jats.ET, "fromstring", lambda *a,**kw:pytest.fail("Unexpected tree parse"))
+    with pytest.raises(ConferenceInputError,match="attribute budget"):
+        inspect_conference_jats(b"<article><p>"+b"="*80001+b"</p></article>")
+
+
 @pytest.mark.parametrize("url", ["file:///c:/a.pdf", "javascript:alert(1)", "https://x@y.test/",
                                  "https://example.test/\r\nx", "https://example.test:broken/"])
 def test_untrusted_locator_schemes_credentials_and_controls_are_refused(url):
