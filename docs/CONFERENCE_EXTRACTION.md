@@ -25,5 +25,13 @@ are exposed for review. An XML ID identifies a location within that file.
 A DOI shared with the parent stays in the original identifiers. The extracted
 list carries no final publication count.
 
-Durable project import, confirmation in the application, additional document
-formats and specialist review are tracked in [P2-02](https://github.com/studeployed/RESEARCH-Y/issues/124).
+Add `--project PROJECT --original-retrieval UUID` to tie the preview to an
+existing retained collection source. Confirm permissions and each selected
+block by repeating the command with its original options, `--admit-locator`
+for each locator, `--actor`, `--revision`, `--confirm` and
+`--allow-local-retention`. All selected individual source records, tentative
+publication identities, the shared container and audit receipts are written
+in one transaction. Exact retries return the same identities. The original
+provider source and its query memberships remain available. The import
+reports selected, extracted and unclassified counts separately. Desktop
+review and additional document formats are tracked in [P2-02](https://github.com/studeployed/RESEARCH-Y/issues/124).
