@@ -37,9 +37,9 @@ SRC-05,1,AT-08,tests/test_wos_starter.py; docs/evidence/wos-starter-41254004073.
 SRC-06,1,"AT-08,AT-09",tests/test_wos_checkpoints.py; tests/test_wos_cross_day_validation.py (reopen after midnight honours saved cooldown and bounds requests); docs/evidence/wos-recovery-41306953908-summary.json (19584 records and 392 pages reconcile after live restart; live multi-day/quota-reset pending),partial
 SRC-07,1,"AT-08,AT-16",tests/test_wos_checkpoints.py (persistent original source fields and memberships; abstract enrichment pending),partial
 SRC-08,1,"AT-08,AT-19",tests/test_wos_checkpoints.py; docs/evidence/wos-recovery-41306953908-summary.json (scoped enumeration only; no frozen-snapshot claim; broader provider limits pending),partial
-SRC-09,2,AT-13,planned,planned
-SRC-10,2,AT-13,planned,planned
-SRC-11,2,"AT-13,AT-19",planned,planned
+SRC-09,2,AT-13,tests/test_society_sources.py (confirmed directory with revision-fenced edits),partial
+SRC-10,2,AT-13,tests/test_society_sources.py (guided manual capture from an observed official page),partial
+SRC-11,2,"AT-13,AT-19",tests/test_society_sources.py (dated site observations and explicit limitations),partial
 SRC-12,2,AT-16,planned,planned
 SRC-13,2,AT-16,planned,planned
 SRC-14,2,AT-16,planned,planned
@@ -67,11 +67,11 @@ CONF-03,2,AT-12,planned,planned
 CONF-04,2,AT-12,planned,planned
 CONF-05,2,"AT-11,AT-12",planned,planned
 CONF-06,2,AT-12,planned,planned
-GUIDE-01,2,AT-13,planned,planned
-GUIDE-02,2,"AT-13,AT-15",planned,planned
-GUIDE-03,2,AT-13,planned,planned
-GUIDE-04,2,"AT-13,AT-15",planned,planned
-GUIDE-05,2,"AT-10,AT-13",planned,planned
+GUIDE-01,2,AT-13,tests/test_society_sources.py (capture without DOI or journal and explicit guidance type),partial
+GUIDE-02,2,"AT-13,AT-15",tests/test_society_sources.py (explicit guidance document types),partial
+GUIDE-03,2,AT-13,tests/test_society_sources.py (source-captured society roles and original directory revisions),partial
+GUIDE-04,2,"AT-13,AT-15",tests/test_society_sources.py (original version and official document links),partial
+GUIDE-05,2,"AT-10,AT-13",tests/test_society_sources.py (revisions retain separate original identities; manifestation review pending),partial
 CLASS-01,2,"AT-14,AT-15",planned,planned
 CLASS-02,2,AT-15,planned,planned
 CLASS-03,2,AT-15,planned,planned
@@ -128,7 +128,7 @@ AT-09,1,AT-09,tests/test_pubmed_checkpoints.py; tests/test_wos_checkpoints.py; t
 AT-10,1,AT-10,tests/test_publication_identity.py; tests/test_publication_fields.py (explicit two-source/group association; automatic matching pending); tests/test_publication_candidates.py (explicit candidate confirmation retains two-source/group memberships; global discovery pending); tests/test_result_counts.py; tests/test_result_count_ledger.py (two-source/two-group explicit identity gives global union one and group sum two; exhaustive deduplication pending); tests/test_reviewed_master.py (reviewed master rows retain every original membership),partial
 AT-11,2,AT-11,tests/test_publication_identity.py; tests/test_publication_fields.py (shared-container and abstract/full-paper separation; extraction pending); tests/test_publication_candidates.py (shared-container and abstract/full-paper comparison warnings; extraction pending); tests/test_phase1_acceptance.py (distinct retained abstract records sharing a supplement DOI),partial
 AT-12,2,AT-12,planned,planned
-AT-13,2,AT-13,planned,planned
+AT-13,2,AT-13,tests/test_society_sources.py (transactional manual society-only guideline fixture and reopen),partial
 AT-14,2,AT-14,planned,planned
 AT-15,2,AT-15,planned,planned
 AT-16,2,AT-16,tests/test_result_counts.py; tests/test_result_count_ledger.py (metadata absence/abstract statuses preserved in counts; enrichment acceptance pending),partial
