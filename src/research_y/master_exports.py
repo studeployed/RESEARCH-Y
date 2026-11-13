@@ -31,9 +31,13 @@ def _press(db,run):
     try:
         _,_,_,plan=preflight_review._matched_query_plan(db,run,version,raw,allow_started=True)
     except preflight_review.PreflightError:
-        return "awaiting verification",None
-    review,_=preflight_review._previous(db,run,plan)
-    return "verified",review
+        return "awaiting verification",[]
+    preflight_review._previous(db,run,plan)
+    receipts=[]
+    for raw,stamp in db.execute("SELECT details_json,occurred_at_utc FROM audit_events WHERE event_type=? "
+                 "AND json_extract(details_json,'$.run_id')=? ORDER BY event_id",(preflight_review.EVENT,run)):
+        receipts.append(dict(identity._object(raw),occurred_at_utc=stamp))
+    return "verified",receipts
 
 
 def _method_rows(data,context):
@@ -134,7 +138,7 @@ class _Sheets:
         self.written += 1
 
 
-def _workbook(path, results, rows, report, context, include_abstracts, row_limit, comparisons=(),press=("awaiting verification",None)):
+def _workbook(path, results, rows, report, context, include_abstracts, row_limit, comparisons=(),press=("awaiting verification",())):
     from openpyxl import Workbook
     book = Workbook(write_only=True)
     sheets = []
@@ -171,7 +175,10 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
         for value in values:
             append(tab,value)
     checklist=sheet("Reporting Checklist",("Framework","Item","Evidence status","Observation"))
-    append(checklist,("PRISMA-S","Information sources","recorded",sorted({q["source_name"] for q in data["queries"]})))
+    query_sources={q["source_name"] for q in data["queries"]}
+    retained_sources={r["source_name"] for r in data["counts"]["sources"] if r["metadata_source_records"]}
+    append(checklist,("PRISMA-S","Information sources","recorded",dict(database_queries=sorted(query_sources),
+                     additional_retained_sources=sorted(retained_sources-query_sources))))
     for q in data["queries"]:
         append(checklist,("PRISMA-S","Query "+q["query_id"],"recorded" if q["executed_at_utc"] else "awaiting verification",
                           dict(source=q["source_name"],strategy=q["exact_query"],timestamp=q["executed_at_utc"],
@@ -179,15 +186,13 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     append(checklist,("PRISMA-S","Deduplication method","recorded","Current source associations and applicable comparison receipts in Deduplication Audit."))
     append(checklist,("PRISMA-S","Citation chasing","not undertaken in this workflow","No citation-chasing stage is recorded."))
     append(checklist,("PRISMA-S","Registry search","not applicable to these source connectors","Coverage is described for the selected databases."))
-    status,review=press
+    status,reviews=press
     append(checklist,("PRESS","Programmatic plan validation",status,"Match to the approved stored source query inventory."))
-    if review:
+    for review in reviews:
         for key,value in review["press_items"].items():
             append(checklist,("PRESS",key,value,dict(reviewer=review["reviewer_name"],role=review["reviewer_role"],
                                                     recorded_utc=review["occurred_at_utc"],notes=review["review_note"])))
-        peer="reported by researcher" if review["reviewer_role"]=="independent_peer_reported" else "not undertaken"
-    else:
-        peer="awaiting verification"
+    peer="reported by researcher" if any(r["reviewer_role"]=="independent_peer_reported" for r in reviews) else "awaiting verification"
     append(checklist,("PRESS","Independent peer review",peer,"The project records the researcher's account of peer review."))
     master = sheet("Master Results",("Publication ID","Title","Year","Journal","DOI","DOI link","Sources","Groups",
                       "Original research","Design","Format","Language","Population","Review status","Warnings"))

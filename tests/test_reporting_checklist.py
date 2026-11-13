@@ -15,6 +15,8 @@ def test_named_press_outcomes_in_real_workbook(tmp_path):
                      press_items={k:("needs_revision" if k=="spelling" else "not_reviewed")
                                   for k in PRESS_ITEMS})
     record_preflight_review(project,**args)
+    from uuid import uuid4
+    record_preflight_review(project,**dict(args,review_id=str(uuid4()),reviewer_role="researcher_self_check"))
     path=tmp_path/"Methods.xlsx"
     with closing(MasterResults.capture(project,run)) as master:
         export_results(project,master,path,DEFAULT,scope="entire")

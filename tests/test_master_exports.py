@@ -40,6 +40,8 @@ def test_real_workbook_preserves_sources_scope_raw_counts_and_abstract_permissio
                     "Reporting Checklist"} <= set(workbook.sheetnames)
             evidence={row[1]:row[2] for row in list(workbook["Reporting Checklist"].values)[1:]}
             assert evidence["Independent peer review"]=="awaiting verification"
+            source_item=next(r for r in workbook["Reporting Checklist"].values if r[1]=="Information sources")
+            assert "society" in source_item[3] and "conference_jats" in source_item[3]
             assert "strategy/count report only" not in str(list(workbook["Methods"].values))
             assert workbook["Master Results"].max_row==6 and workbook["Master Results"].freeze_panes=="B2"
             assert workbook["Master Results"].auto_filter.ref=="A1:O6"
