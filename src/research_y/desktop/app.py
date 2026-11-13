@@ -25,10 +25,11 @@ def build_page(app, ui, flow, settings_warnings=()):
     @ui.page('/')
     def project_page():
         error = None
+        study_edits = {}
 
         @ui.refreshable
         def panel():
-            render_project_panel(ui, flow, act, native=True, error=error)
+            render_project_panel(ui, flow, act, native=True, error=error, study_edits=study_edits)
 
         async def act(action, value=None):
             nonlocal error

@@ -5,7 +5,7 @@ from research_y.desktop.manifest_consent import render_manifest_consent
 from research_y.desktop.study_panel import render_study_panel
 
 
-def render_project_panel(ui, flow, act, *, native, error):
+def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
     state = flow.state()
     project = state['project']
     if project is not None:
@@ -885,7 +885,7 @@ def render_project_panel(ui, flow, act, *, native, error):
                              '. A displayed value is not validation of '
                              'bibliographic identity or export rights.').props(
                                  'data-testid=publication-detail-heading')
-                    render_study_panel(ui, state, detail, act)
+                    render_study_panel(ui, state, detail, act, study_edits)
                     for omitted in detail['suppressed_chosen_fields']:
                         ui.label('Saved field ' + omitted['field'] +
                                  ' deliberately WITHHELD: its source path '

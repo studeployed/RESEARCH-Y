@@ -11,6 +11,7 @@ from research_y.local_study_review import propose, review
 from research_y.projects import open_project
 from research_y.publication_identity import materialise_retrieval, StalePublicationError
 from research_y.study_classification import read_classification
+from research_y.desktop.study_panel import review_edits
 from test_publication_identity import store, protected_rows
 
 
@@ -49,6 +50,20 @@ def test_wrong_model_label_can_only_become_a_reviewed_researcher_decision(store)
             assert "randomly allocated" in text
             return {"model":"synthetic", "proposals":{"original_research":["no"], "design":["RCT"]}}
     exercise(*original(store),Stub())
+
+
+def test_dirty_dimensions_survive_other_confirmation_and_saved_labels_take_precedence():
+    memory = {}
+    view = {"publication_id":"p","evidence_revision":"e","decisions":{}}
+    proposal = {"event_id":4}
+    edits = review_edits(memory,view,proposal)
+    edits.update(design=["case series"], original_research=["yes"])
+    view["decisions"]["original_research"] = {"labels":["no"],"event_id":5}
+    assert review_edits(memory,view,proposal) == {"design":["case series"], "original_research":["no"]}
+    edits["original_research"] = ["yes"]
+    assert review_edits(memory,view,proposal)["original_research"] == ["yes"]
+    view["evidence_revision"] = "changed"
+    assert review_edits(memory,view,proposal) == {"original_research":["no"]}
 
 
 @pytest.mark.skipif(os.environ.get("RESEARCHY_TEST_INSTALLED_MODEL") != "1",reason="Explicit installed model evaluation")
