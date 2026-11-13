@@ -10,7 +10,8 @@ from research_y import publication_identity as identity
 from research_y import strategy_report, strategy_workbook
 from research_y.application_inspection import _read
 from research_y.export_files import Directory, filename
-from research_y.master_results import specification
+from research_y.master_results import evidence_head, specification
+from research_y import publication_candidates
 
 
 def _value(value):
@@ -107,7 +108,7 @@ class _Sheets:
         self.written += 1
 
 
-def _workbook(path, results, rows, report, context, include_abstracts, row_limit):
+def _workbook(path, results, rows, report, context, include_abstracts, row_limit, comparisons=()):
     from openpyxl import Workbook
     book = Workbook(write_only=True)
     sheets = []
@@ -146,7 +147,9 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     conf = sheet("Conference Abstracts",("Publication ID","Retrieval ID","Locator","Printed page","PDF page",
                                          "PDF page link","Individual fields","Containing supplement"))
     society = sheet("Society Guidelines",("Publication ID","Retrieval ID","Official landing URL","Society roles","Guidance fields"))
-    audit = sheet("Deduplication Audit",("Publication ID","Retrieval ID","Decision event","Decision status"))
+    audit = sheet("Deduplication Audit",("Evidence type","Publication ID","First retrieval","Second retrieval","Audit event",
+                                         "Status","Researcher","Rationale","UTC","Acknowledged warnings"))
+    included_sources = set()
     log = sheet("Search Log",("Query","Source","Recorded status","Time","Execution evidence","Warnings"))
     warnings = {r["query_id"]:r["warnings"] for r in data["counts"]["queries"]}
     for q in data["queries"]:
@@ -161,7 +164,8 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
             rid = s["retrieval_id"]
             append(sources,(pid,rid,s["source"],s["source_record_id"],s["fields"],s["sha256"],s["groups"],
                            s["abstract_text"] if include_abstracts else "Omitted by export choice"))
-            append(audit,(pid,rid,s["decision_event"],s["decision_status"]))
+            included_sources.add(rid)
+            append(audit,("Source association",pid,rid,None,s["decision_event"],s["decision_status"],None,None,None,None))
             special = s.get("specialist",{})
             if s["source"] in ("conference_pdf","conference_jats"):
                 append(conf,(pid,rid,special.get("locator"),special.get("printed_first_page"),special.get("pdf_page"),
@@ -169,6 +173,10 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
             if s["source"]=="society":
                 append(society,(pid,rid,special.get("landing_url"),s["society_roles"],special))
         count+=1
+    for event in comparisons:
+        if included_sources.intersection(event["pair"]):
+            append(audit,("Comparison decision",None,*event["pair"],event["event_id"],event["status"],event["actor"],
+                          event["evidence"],event["at_utc"],event["warnings_acknowledged"]))
     append(scope,("Exported publication rows",count))
     for tab in sheets:
         tab.finish()
@@ -184,9 +192,10 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
         raise ValueError("Invalid master export settings")
     spec = specification(**spec)
     with _read(project) as db:
-        if db.execute("SELECT coalesce(max(event_id),0) FROM audit_events").fetchone()[0]!=results.audit_head:
+        if evidence_head(db)!=results.audit_head:
             raise ValueError("Project changed. Refresh master results before exporting.")
         report = strategy_report._capture(db,project,results.run,results.captured_at)
+        comparisons = publication_candidates._receipts(db,None) if path.suffix.lower()==".xlsx" else ()
     context = dict(project=results.project_id,run=results.run,strategy=results.strategy_id,
                    status="Incomplete",stored_run_status=results.run_status,scope=scope,
                    snapshot_time=results.captured_at,snapshot_revision=results.revision,
@@ -201,7 +210,7 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
             with stage.open("x",encoding="utf-8",newline="") as out:
                 count = _ris(out,rows,identity._json(context),include_abstracts)
         else:
-            count = _workbook(stage,results,rows,report,context,include_abstracts,row_limit)
+            count = _workbook(stage,results,rows,report,context,include_abstracts,row_limit,comparisons)
         digest = sha256()
         with stage.open("r+b") as out:
             for chunk in iter(lambda:out.read(1024*1024),b""):

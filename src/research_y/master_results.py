@@ -18,6 +18,10 @@ DEFAULT = dict(text="",facets={},sort="title",descending=False,columns=["title",
 SAVED = "master_results_view_saved_v1"
 
 
+def evidence_head(db):
+    return db.execute("SELECT coalesce(max(event_id),0) FROM audit_events WHERE event_type<>?",(SAVED,)).fetchone()[0]
+
+
 def specification(text="", facets=None, sort="title", descending=False, columns=None):
     if facets is None:
         facets = {}
@@ -156,7 +160,7 @@ class MasterResults:
                     raise ValueError("Unknown run")
                 results.project_id,results.run,results.strategy_id,results.run_status = str(project.identifier),run,*info
                 results.captured_at = _utc_now()
-                results.audit_head = original.execute("SELECT coalesce(max(event_id),0) FROM audit_events").fetchone()[0]
+                results.audit_head = evidence_head(original)
                 digest = sha256(identity._json([results.project_id,run,info]).encode())
                 results.total = 0
                 for row,search_text in _rows(original,run):

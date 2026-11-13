@@ -16,6 +16,7 @@ from test_society_sources import register,visit_args
 def test_real_workbook_preserves_sources_scope_raw_counts_and_abstract_permissions(tmp_path):
     project,run,_,ids=populated(tmp_path)
     decide(project,ids["111"],ids["WOS:000000001"],"confirmed_match")
+    decide(project,ids["111"],ids["222"],"rejected_match")
     original=ids["111"]
     preview=preview_extraction(project,original,XML,pdf_url="https://example.test/supp.pdf",pdf_pages={"a":8})
     admit_extraction(project,original,XML,locators=[r["locator"] for r in preview["extraction"]["abstracts"]],
@@ -29,6 +30,7 @@ def test_real_workbook_preserves_sources_scope_raw_counts_and_abstract_permissio
                     roles={"issuing":[org["society_id"]]},actor="Reviewer",confirmed=True)
     spec=master_results.specification(facets={"source":["society"]})
     with closing(master_results.MasterResults.capture(project,run)) as results:
+        master_results.save_view(project,"Societies",spec)
         file=tmp_path/"Combined.xlsx"
         receipt=master_exports.export_results(project,results,file,spec,scope="entire")
         assert receipt["rows"]==5 and sha256(file.read_bytes()).hexdigest()==receipt["sha256"]
@@ -40,6 +42,8 @@ def test_real_workbook_preserves_sources_scope_raw_counts_and_abstract_permissio
             chosen=next(c for c in workbook["Master Results"]["B"] if c.value=="=Example guidance")
             assert chosen.data_type=="s"
             assert workbook["Society Guidelines"]["D2"].value and workbook["Conference Abstracts"].max_row==3
+            decisions=[r for r in list(workbook["Deduplication Audit"].values) if r[0]=="Comparison decision"]
+            assert {r[5] for r in decisions}=={"confirmed_match","rejected_match"} and all(r[6] and r[7] for r in decisions)
             assert set(r[-1] for r in list(workbook["Source Records"].values)[1:])=={"Omitted by export choice"}
         ris=tmp_path/"filtered.ris"
         assert master_exports.export_results(project,results,ris,spec,scope="filtered")["rows"]==1
