@@ -21,7 +21,7 @@ def propose(project, publication_id, retrieval_id, *, assistant, expected_revisi
         permitted_source = (
             (source["source_name"] == "pubmed" and original.get("source") == "NCBI PubMed EFetch XML") or
             (source["source_name"] == "wos" and original.get("provider") == "wos_starter") or
-            (source["source_name"] == "conference_jats" and original.get("provider") == "conference_jats")
+            (source["source_name"] in {"conference_jats","conference_pdf"} and original.get("provider") == source["source_name"])
         )
         if not permitted_source or not isinstance(record, dict):
             raise ValueError("Missing source text")
@@ -39,7 +39,7 @@ def propose(project, publication_id, retrieval_id, *, assistant, expected_revisi
             for i, section in enumerate(sections):
                 if isinstance(section, dict):
                     add(section.get("text"), ["record","abstract_sections",i,"text"])
-        if original.get("provider") == "conference_jats":
+        if original.get("provider") in {"conference_jats","conference_pdf"}:
             add(record.get("text"), ["record","text"])
         text = " ".join(parts)
         if not text or len(text) > 5000:

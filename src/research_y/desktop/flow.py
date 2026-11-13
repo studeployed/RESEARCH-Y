@@ -987,6 +987,13 @@ class RealProjectFlow:
                     panel.conference_page(**data)
                 elif name == "conference_detail":
                     panel.conference_detail(**data)
+                elif name in ("pdf_select","pdf_admit"):
+                    self._visible_candidate_source(data["retrieval_id"])
+                    if name == "pdf_select":
+                        panel.select_pdf(self.project,**data)
+                    else:
+                        panel.admit_pdf(self.project,**data)
+                        self._refresh_after_pdf_admission()
                 elif name in ("conference_queue_block", "conference_tasks", "conference_finish_task"):
                     self._visible_candidate_source(data["retrieval_id"])
                     if name == "conference_queue_block":
@@ -1006,6 +1013,23 @@ class RealProjectFlow:
                 raise ProjectFlowError("specialist_input_or_evidence_changed") from None
             return self._publish()
 
+    def _refresh_after_pdf_admission(self):
+        publication_id = self._detail_publication_id()
+        cursor = self._publication_page["after_publication_id"]
+        self.inspect_publications()
+        revision = self._publication_page["revision"]
+        if cursor is not None:
+            # The cursor comes from the previous trusted page. Re-read the same
+            # window against the new revision without accepting a client cursor.
+            self._publication_page = self._operation("publication_page",run_id=self.selected_run_id,
+                    publication_view_cursor=cursor,publication_view_revision=revision)
+        page = self._publication_page
+        if not any(r["publication_id"] == publication_id for r in page["rows"]) and page["has_more"]:
+            # One inserted abstract may push the last publication onto the next page.
+            self.inspect_publications(after_publication_id=page["next_after_publication_id"],revision=revision)
+        if any(r["publication_id"] == publication_id for r in self._publication_page["rows"]):
+            self.inspect_publication_detail(publication_id=publication_id,revision=revision)
+
     def preview_native_conference(self, path, *, source_id, terms, landing_url, pdf_url, pdf_pages):
         with self._guard:
             self._require_open()
@@ -1017,6 +1041,15 @@ class RealProjectFlow:
             self._specialist.select(self.project,self.selected_run_id)
             self._specialist.conference_preview(self.project,self.selected_run_id,source_id,path,
                       dict(terms=terms,landing_url=landing_url,pdf_url=pdf_url,pdf_pages=pdf_pages))
+            return self._publish()
+
+    def open_native_pdf(self, path, *, source_id, page):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._visible_candidate_source(source_id)
+            self._specialist.select(self.project,self.selected_run_id)
+            self._specialist.open_pdf(source_id,path,page)
             return self._publish()
 
     def inspect_study_queue(self, only_review, hide_non_english, hide_non_human_only, after=None):

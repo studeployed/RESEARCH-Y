@@ -2,8 +2,9 @@
 from uuid import uuid4
 
 from research_y import conference_review
+from research_y import conference_pdf
 from research_y.conference_jats import MAX_BYTES
-from research_y.conference_project import preview_extraction, admit_extraction
+from research_y.conference_project import preview_extraction, admit_extraction, _preview_pdf_block, admit_pdf_block
 from research_y.crossref_client import enrich_publication
 from research_y.crossref_metadata import inspect_enrichment
 from research_y.export_files import Directory
@@ -19,6 +20,8 @@ class SpecialistWorkbench:
         self.state = {}
         self.conference = None
         self.lookup = None
+        self.pdf = None
+        self.pdf_selection = None
         self.visit_request = None
         self.guidance_request = None
 
@@ -84,6 +87,35 @@ class SpecialistWorkbench:
         self.conference = (source_id,payload,options,result)
         self.conference_page(0,result["revision"])
         self.state.pop("conference_receipt",None)
+
+    def open_pdf(self, source_id, path, page):
+        self.pdf = self.pdf_selection = None
+        for key in ("pdf_page","pdf_block","pdf_receipt"):
+            self.state.pop(key,None)
+        with Directory(path.parent) as directory:
+            payload = directory.read_selected(path.name,limit=conference_pdf.MAX_PDF_BYTES)
+        page_view = conference_pdf.read_page(payload,page)
+        revision = _hash([source_id,page_view["document_sha256"],page])
+        self.pdf = (source_id,page_view,payload,revision)
+        self.state["pdf_page"] = dict(retrieval_id=source_id,revision=revision,**page_view)
+
+    def select_pdf(self, project, retrieval_id, page_revision, **selection):
+        self.pdf_selection = None
+        self.state.pop("pdf_block",None)
+        if not self.pdf or self.pdf[0] != retrieval_id or self.pdf[3] != page_revision:
+            raise ValueError("Reopen the selected PDF")
+        view = _preview_pdf_block(project,retrieval_id,self.pdf[1],**selection)
+        self.pdf_selection = (selection,view["revision"])
+        self.state["pdf_block"] = dict(retrieval_id=retrieval_id,revision=view["revision"],
+                                       **view["extraction"]["abstracts"][0])
+
+    def admit_pdf(self, project, retrieval_id, revision, actor, retention_authorized):
+        if not self.pdf or self.pdf[0] != retrieval_id or not self.pdf_selection or self.pdf_selection[1] != revision:
+            raise ValueError("Review the PDF passage again")
+        self.state["pdf_receipt"] = admit_pdf_block(project,retrieval_id,self.pdf[2],page=self.pdf[1]["page"],selection=self.pdf_selection[0],
+                   expected_revision=revision,actor=actor,confirmed=True,retention_authorized=retention_authorized)
+        self.pdf_selection = None
+        self.state.pop("pdf_block",None)
 
     def conference_page(self, offset, revision):
         if not self.conference or self.conference[3]["revision"] != revision:

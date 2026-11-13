@@ -2,6 +2,9 @@
 
 ## Phase 2 delivery
 
+The [Phase 2 acceptance record](docs/PHASE2_ACCEPTANCE.md) links the eight
+roadmap scenarios to the researcher workflows, tests and review records.
+
 The combined specialist acceptance case is in `tests/test_phase2_acceptance.py`.
 It begins with a reviewed two-publication primary master, then admits two
 separately located conference abstracts and an official society-only guideline.

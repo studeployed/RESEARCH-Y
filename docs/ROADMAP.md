@@ -95,6 +95,9 @@ contract and test mapping for exact retry and stale-revision behaviour.
 
 ## Milestone M2 — Specialist processing (Phase 2)
 
+The [specialist acceptance record](PHASE2_ACCEPTANCE.md) maps the four
+units to the Windows benchmark, project reopen tests and source-specific evidence.
+
 - **P2-01:** AI terminology/classification and reproducible biomedical benchmarks. Pass: AT-04/15/20.
 - **P2-02:** Conference abstracts, supplements and distinct locators. Pass: AT-11/12.
 - **P2-03:** Society guidance workflows, official provenance and manual tasks. Pass: AT-13.

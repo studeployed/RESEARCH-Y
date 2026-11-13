@@ -42,6 +42,11 @@ def build_page(app, ui, flow, settings_warnings=()):
                         url = flow.official_society_url(**value)
                         if not await asyncio.to_thread(webbrowser.open_new_tab, url):
                             raise ProjectFlowError("external_browser_unavailable")
+                    elif action == "native_pdf":
+                        chosen = await select_conference_document(app.native.main_window,pdf=True)
+                        if chosen is None:
+                            return
+                        await asyncio.to_thread(flow.open_native_pdf,chosen,**value)
                     elif action == "native_conference":
                         chosen = await select_conference_document(app.native.main_window)
                         if chosen is None:
