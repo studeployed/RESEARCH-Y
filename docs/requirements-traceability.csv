@@ -71,7 +71,7 @@ GUIDE-01,2,AT-13,tests/test_society_sources.py (capture without DOI or journal a
 GUIDE-02,2,"AT-13,AT-15",tests/test_society_sources.py (explicit guidance document types),partial
 GUIDE-03,2,AT-13,tests/test_society_sources.py (source-captured society roles and original directory revisions),partial
 GUIDE-04,2,"AT-13,AT-15",tests/test_society_sources.py (original version and official document links),partial
-GUIDE-05,2,"AT-10,AT-13",tests/test_society_sources.py (revisions retain separate original identities; manifestation review pending),partial
+GUIDE-05,2,"AT-10,AT-13",tests/test_society_sources.py; tests/test_society_guidance_review.py (distinct editions and audited supersession or companion relationships; confirmed journal manifestation),partial
 CLASS-01,2,"AT-14,AT-15",planned,planned
 CLASS-02,2,AT-15,planned,planned
 CLASS-03,2,AT-15,planned,planned
