@@ -64,9 +64,6 @@ def test_native_pdf_two_blocks_reopen_with_distinct_printed_and_file_pages(tmp_p
         state = flow.open_native_pdf(local,source_id=source,page=2)["specialist"]
         assert state["pdf_page"]["page"] == 2
         for title,author,body in (("Oxygen Study","Lee","First findings."),("Mobility Study","Roy","Separate findings.")):
-            # Adding a publication changes the run revision; reopen the original detail for the next selection.
-            page = flow.inspect_publications()["publication_page"]
-            flow.inspect_publication_detail(publication_id=row["publication_id"],revision=page["revision"])
             chosen = flow.specialist_action("pdf_select",dict(retrieval_id=source,title=title,
                       page_revision=state["pdf_page"]["revision"],
                       excerpt=f"{title}. {author}. {body}",authors=[author],printed_page="S3",
