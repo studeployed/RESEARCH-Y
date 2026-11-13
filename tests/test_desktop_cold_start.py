@@ -10,6 +10,8 @@ def test_retry_only_reopens_authenticated_home_before_user_activity():
     state=SimpleNamespace(project=None)
     observed=[]
     class Window:
+        async def evaluate_js(self,_expression):
+            return flags["socket_allowed"]
         async def load_url(self,url):
             observed.append(url)
             flags["socket_allowed"]=True

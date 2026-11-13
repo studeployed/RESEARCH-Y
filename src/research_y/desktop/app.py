@@ -27,11 +27,15 @@ async def recover_cold_page(window,session,flow,*,delay=12,attempts=2):
     for _ in range(attempts):
         await asyncio.sleep(delay)
         stages=session.startup_stages()
-        if flow.project is not None or stages["socket_allowed"]:
+        if flow.project is not None:
             return
-        if not (stages["session_redeemed"] and stages["page_accepted"]):
+        if not stages["session_redeemed"]:
             continue
         try:
+            usable = await asyncio.wait_for(window.evaluate_js(
+                "Boolean(document.querySelector('[data-testid=desktop-title]')?.getClientRects().length)"),timeout=3)
+            if usable:
+                return
             await asyncio.wait_for(window.load_url(session.origin+"/"),timeout=5)
         except (RuntimeError,TimeoutError):
             return
@@ -161,6 +165,7 @@ def run_desktop(flow, *, settings_warnings=()):
         port = listener.getsockname()[1]
     launch = secrets.token_hex(32)
     session = LaunchSession(port, launch)
+    flow.desktop_startup_stages = session.startup_stages
     original_window = native_mode._open_window
     try:
         app.add_middleware(DesktopGuard, session=session)
