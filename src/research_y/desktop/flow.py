@@ -82,6 +82,7 @@ class RealProjectFlow:
         self._coord_worker = ApplicationWorker()
         self._closed = False
         self.project = None
+        self._master = self._master_page = None
         self._archive_receipt = None
         self.snapshot = None
         self.selected_run_id = None
@@ -362,6 +363,7 @@ class RealProjectFlow:
         snapshot = inspected.get('snapshot')
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get('runs'), list) or not isinstance(snapshot.get('exports'), list):
             raise ProjectFlowError('invalid_worker_result')
+        self._clear_master()
         self.project = project
         self._archive_receipt = None
         self._specialist = SpecialistWorkbench()
@@ -576,6 +578,7 @@ class RealProjectFlow:
             report = self._operation('inspect', run_id=run_id)['snapshot']
             if report.get('selected_run_id') != run_id or report.get('report') is None:
                 raise ProjectFlowError('invalid_worker_result')
+            self._clear_master()
             self.selected_run_id = run_id
             self._specialist.select(self.project,run_id)
             self._clear_manifest_selection()
@@ -957,6 +960,79 @@ class RealProjectFlow:
                     or draft.preview_data is not None or seed != draft._term(draft._group(gid),tid)):
                 raise ProjectFlowError("cloud_preview_changed")
             draft.local_offers(gid,tid,generated,eid)
+            return self._publish()
+
+    def export_master_to(self,parent,*,name,revision,scope,include_abstracts):
+        from research_y.export_files import filename
+        from research_y.master_exports import export_results
+        with self._guard:
+            self._require_open()
+            if not self._master or self._master.revision != revision or self._master.run != self.selected_run_id:
+                raise ProjectFlowError("Refresh the master results before export.")
+            filename(name)
+            try:
+                self._master_page["export"] = export_results(self.project,self._master,parent/name,self._master_page["spec"],
+                        scope=scope,include_abstracts=include_abstracts)
+            except FileExistsError:
+                raise ProjectFlowError("A file with this name already exists.") from None
+            return self._publish()
+
+    def _clear_master(self):
+        if self._master is not None:
+            self._master.close()
+        self._master = self._master_page = None
+
+    def master_action(self,operation,data):
+        from research_y import master_results
+        if operation == "capture":
+            with self._guard:
+                self._require_open()
+                project,run = self.project,self.selected_run_id
+                if not run:
+                    raise ProjectFlowError("Select a run first.")
+            captured = master_results.MasterResults.capture(project,run)
+            with self._guard:
+                if self._closed or self.project is not project or self.selected_run_id != run:
+                    captured.close()
+                    raise ProjectFlowError("Run selection changed.")
+                self._clear_master()
+                self._master = captured
+                self._master_page = captured.page(master_results.DEFAULT)
+                self._master_page.update(options=captured.options(),saved=master_results.saved_views(project))
+                return self._publish()
+        with self._guard:
+            self._require_open()
+            current = self._master_page
+            if (not self._master or not current or current["revision"]!=data.get("revision") or
+                    self._master.run!=self.selected_run_id):
+                raise ProjectFlowError("Refresh the master results.")
+            spec,offset = current["spec"],current["offset"]
+            if operation == "apply":
+                spec,offset = master_results.specification(**data["spec"]),0
+            elif operation == "page":
+                offset += current["page_size"] * data["direction"]
+                if data["direction"] not in (-1,1) or not 0<=offset<current["matching"]:
+                    raise ProjectFlowError("Invalid result page.")
+            elif operation == "select":
+                ids = data.get("ids",[])
+                if not set(ids) <= {r["publication_id"] for r in current["rows"]}:
+                    raise ProjectFlowError("Select visible publications.")
+                self._master.select(spec,ids=ids,all_matching=data.get("all_matching") is True,
+                                    remove=data.get("remove") is True)
+            elif operation == "save":
+                previous = current["saved"].get(data["name"],{}).get("event")
+                master_results.save_view(self.project,data["name"],spec,previous)
+            elif operation == "load":
+                spec,offset = current["saved"][data["name"]]["spec"],0
+            elif operation == "detail":
+                if data["id"] not in {r["publication_id"] for r in current["rows"]}:
+                    raise ProjectFlowError("Select a visible publication.")
+                current["detail"] = self._master.detail(self.project,data["id"])
+                return self._publish()
+            else:
+                raise ProjectFlowError("Unknown master results operation.")
+            self._master_page = self._master.page(spec,offset=offset)
+            self._master_page.update(options=current["options"],saved=master_results.saved_views(self.project))
             return self._publish()
 
     def _visible_study(self):
@@ -4516,6 +4592,7 @@ class RealProjectFlow:
     def _build_state(self):
         data = self.snapshot
         return {
+                'master_results': self._master_page,
                 'archive_receipt': self._archive_receipt,
                 'project': None if self.project is None else {
                     'project_id': str(self.project.identifier), 'name': self.project.name,
@@ -4657,6 +4734,7 @@ class RealProjectFlow:
         with self._guard:
             if not self._closed:
                 self._closed = True
+                self._clear_master()
                 # Shutdown cannot fabricate completion or automatically clear
                 # a durable provider reservation; recovery requires inspection.
                 try:
