@@ -17,8 +17,8 @@ PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py; tests/test_wos_migratio
 PROJ-07,1,"AT-01,AT-09",planned,planned
 SEARCH-01,1,AT-04,planned,planned
 SEARCH-02,1,"AT-04,AT-05",planned,planned
-SEARCH-03,1,AT-04,planned,planned
-SEARCH-04,1,AT-04,tests/test_strategy_storage.py (explicit approval gate only),partial
+SEARCH-03,1,AT-04,tests/test_desktop_term_proposals.py (curated multi-component lexical variants in Research Setup),partial
+SEARCH-04,1,AT-04,tests/test_strategy_storage.py; tests/test_desktop_term_proposals.py (explicit acceptance and saved deterministic origin; model-origin provenance pending),partial
 SEARCH-05,1,"AT-04,AT-18",tests/test_strategy_storage.py (term provenance snapshot only),partial
 SEARCH-06,1,AT-05,tests/test_query_compiler.py (offline union only); tests/test_query_compiler.py and tests/test_run_execution_board.py (frozen OR inventory and group memberships),partial
 SEARCH-07,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_date_translation.py; tests/test_pubmed_date_translation_integration.py (live run 41235232458 accepted internal CRDT alias; broader phrases pending); docs/evidence/pubmed-metadata-43300410950-summary.json (live synonym and phrase OR translation),partial
