@@ -38,7 +38,20 @@ def build_page(app, ui, flow, settings_warnings=()):
                 return
             async with lock:
                 try:
-                    if action == "native_society_site":
+                    if action == "native_install_local_model":
+                        from research_y.install_local_assistant import download_local_package
+                        if value is not True:
+                            raise ProjectFlowError("Confirm the optional local model download.")
+                        local = Path(os.environ["LOCALAPPDATA"])
+                        if not local.is_absolute():
+                            raise ProjectFlowError("Local installation folder is unavailable.")
+                        ui.notify("Downloading and verifying the optional local assistant.")
+                        try:
+                            await asyncio.to_thread(download_local_package,local/"RESEARCH-Y"/"models")
+                        except (OSError,ValueError):
+                            raise ProjectFlowError("The download or verification failed. You can retry setup.") from None
+                        await asyncio.to_thread(flow.set_local_mode,True)
+                    elif action == "native_society_site":
                         url = flow.official_society_url(**value)
                         if not await asyncio.to_thread(webbrowser.open_new_tab, url):
                             raise ProjectFlowError("external_browser_unavailable")

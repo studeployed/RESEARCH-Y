@@ -1,0 +1,39 @@
+name: Windows standalone installer
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/windows_distribution/**'
+      - '.github/workflows/windows-installer.yml'
+      - 'pyproject.toml'
+      - 'src/research_y/desktop/**'
+      - 'src/research_y/install_local_assistant.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: '3.13'
+      - name: Build bundled per-user installer
+        run: python tools/windows_distribution/build.py build/RESEARCH-Y-Setup.exe
+      - name: Verify installation, reinstallation and bundled native lifecycle
+        shell: python
+        run: |
+          import os, pathlib, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ry-installed'
+          exe = pathlib.Path('build/RESEARCH-Y-Setup.exe').resolve()
+          install = [str(exe), '--test-install-root', str(root)]
+          subprocess.run(install, check=True)
+          version = (root/'current.txt').read_text()
+          python = root/'versions'/version/'python.exe'
+          subprocess.run([str(python), '-I', '-B', 'tools/desktop_lifecycle.py'], check=True, timeout=480)
+          subprocess.run(install, check=True)
+          assert (root/'current.txt').read_text() == version
