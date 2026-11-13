@@ -9,10 +9,11 @@ from pathlib import Path
 import secrets
 import socket
 import sys
+import webbrowser
 
 from research_y.desktop.actions import perform_action
 from research_y.desktop.flow import ProjectFlowError, RealProjectFlow
-from research_y.desktop.folders import NativeFolderError, select_from_native_window
+from research_y.desktop.folders import NativeFolderError, select_from_native_window, select_conference_document
 from research_y.desktop.native import open_desktop_window
 from research_y.desktop.project_panel import render_project_panel
 from research_y.desktop.session import DesktopGuard, LaunchSession
@@ -37,7 +38,16 @@ def build_page(app, ui, flow, settings_warnings=()):
                 return
             async with lock:
                 try:
-                    if action in ('native_open', 'native_create', 'native_export'):
+                    if action == "native_society_site":
+                        url = flow.official_society_url(**value)
+                        if not await asyncio.to_thread(webbrowser.open_new_tab, url):
+                            raise ProjectFlowError("external_browser_unavailable")
+                    elif action == "native_conference":
+                        chosen = await select_conference_document(app.native.main_window)
+                        if chosen is None:
+                            return
+                        await asyncio.to_thread(flow.preview_native_conference, chosen, **value)
+                    elif action in ('native_open', 'native_create', 'native_export'):
                         folder = await select_from_native_window(app.native.main_window)
                         if folder is None:
                             return

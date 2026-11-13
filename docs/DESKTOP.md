@@ -111,6 +111,25 @@ Candidate discovery, unresolved pairs and abstract extraction keep their
 own denominators. The calculation examines existing decisions and adds no
 automatic matching rule or new review requirement.
 
+## Specialist sources
+
+Select a run and open **Professional society sources** to suggest a library
+from topic terms or add an official site. Record the pages and dates examined,
+the outcome, and any limitations. A visit with a guidance discovery can be
+used to save the document, its version and its explicitly stated society roles.
+
+In a publication's detail view, **Conference abstract review** opens the
+Windows file picker for a local JATS document. Select its original collection
+source first. The preview lists twenty blocks per page, shows unresolved
+blocks, and displays an individual abstract's text on request. Enter any
+verified PDF page mapping independently of the printed page. Confirm the
+selected blocks and local text retention before saving.
+
+**Crossref metadata** first inspects the DOI and cached evidence. A work
+lookup requires a contact email and an explicit click. Missing or ambiguous
+DOIs remain visible. Source records and primary counts keep their original
+values when a lookup succeeds or fails.
+
 ## Source settings
 
 Offline project inspection and workbook operations work with empty source

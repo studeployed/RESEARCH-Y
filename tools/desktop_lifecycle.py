@@ -73,6 +73,19 @@ def run_window(stage, workspace, folder, run_id):
                 await wait_for(lambda: visible('[data-testid=open-recent]'), 'native_create')
             await click('[data-testid=desktop-open]')
             await click('[data-testid=select-run]')
+            await click('[data-testid=society-panel] .q-item')
+            await fill('[data-testid=society-terms] textarea, textarea[data-testid=society-terms]', 'ECMO')
+            await click('[data-testid=society-search]')
+            await wait_for(lambda: visible('[data-testid=society-library]'), 'official_library')
+            if stage == 'save':
+                await fill('[data-testid=society-actor] input, input[data-testid=society-actor]', 'Fixture researcher')
+                await fill('[data-testid=society-name] input, input[data-testid=society-name]', 'Fixture Society')
+                await fill('[data-testid=society-url] input, input[data-testid=society-url]', 'https://society.example')
+                await click('[data-testid=society-save]')
+                await wait_for(lambda: visible('[data-testid=current-society]'), 'society_saved')
+            directory = flow.state()['specialist']['directory']
+            if [entry['name'] for entry in directory] != ['Fixture Society']:
+                raise RuntimeError('project_society_directory_mismatch')
             await click('[data-testid=manifest-panel] .q-item')
             if flow.state()['selected_run_id'] != run_id:
                 raise RuntimeError('wrong_selected_run')

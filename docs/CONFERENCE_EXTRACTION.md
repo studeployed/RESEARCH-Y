@@ -33,5 +33,17 @@ for each locator, `--actor`, `--revision`, `--confirm` and
 publication identities, the shared container and audit receipts are written
 in one transaction. Exact retries return the same identities. The original
 provider source and its query memberships remain available. The import
-reports selected, extracted and unclassified counts separately. Desktop
-review and additional document formats are tracked in [P2-02](https://github.com/studeployed/RESEARCH-Y/issues/124).
+reports selected, extracted and unclassified counts separately.
+
+In the Windows app, open the collection publication and expand **Conference
+abstract review**. Choose the original source and the local XML file. Inspect
+each abstract, confirm text retention permissions and select the blocks to
+retain. The whole-run count covers distinct retained blocks with admission
+receipts. The primary reviewed workbook continues to use the original
+query records.
+
+Use **Save block for follow-up** for an unclassified block. The project saves
+its document checksum, original retrieval, exact locator and reason.
+**Open saved block reviews** lists tasks after relaunch. Record the outcome
+and source observation there. Recording an observation creates an audit
+entry and leaves the publication count unchanged.

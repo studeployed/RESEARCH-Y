@@ -3,6 +3,10 @@ from research_y.desktop.flow import ProjectFlowError
 
 
 def perform_action(flow, name, value=None):
+    if name == 'specialist':
+        if type(value) is not dict or set(value) != {'action','data'}:
+            raise ProjectFlowError('invalid_specialist_action')
+        return flow.specialist_action(value['action'],value['data'])
     if name == 'cloud_mode':
         return flow.select_cloud_mode()
     if name == 'cloud_offer':

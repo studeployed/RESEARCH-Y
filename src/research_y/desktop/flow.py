@@ -26,6 +26,7 @@ from research_y.desktop.strategy_setup import StrategyDraft, DraftError
 from research_y.local_assistant import LocalAssistantError
 from research_y import local_study_review, study_classification
 from research_y.study_review_queue import read_study_page
+from research_y.desktop.specialist_workbench import SpecialistWorkbench
 from research_y.projects import _utc_now, _validated_project_connection
 from research_y.publication_identity import _audit as append_audit
 from research_y.preflight_review import (
@@ -62,6 +63,7 @@ class RealProjectFlow:
         self._study_view = None
         self._study_proposal = None
         self._study_queue = None
+        self._specialist = SpecialistWorkbench()
         self._queue_study_id = None
         self._guard = threading.RLock()
         self._worker = ApplicationWorker()
@@ -360,6 +362,7 @@ class RealProjectFlow:
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get('runs'), list) or not isinstance(snapshot.get('exports'), list):
             raise ProjectFlowError('invalid_worker_result')
         self.project = project
+        self._specialist = SpecialistWorkbench()
         self._cloud_offer = None
         self._cloud_enabled = False
         self._local_enabled = bool(self._local_assistant and self._local_assistant.installed)
@@ -545,6 +548,7 @@ class RealProjectFlow:
             if report.get('selected_run_id') != run_id or report.get('report') is None:
                 raise ProjectFlowError('invalid_worker_result')
             self.selected_run_id = run_id
+            self._specialist.select(self.project,run_id)
             self._clear_manifest_selection()
             self.selected_export_id = None
             self.observation = None
@@ -931,11 +935,89 @@ class RealProjectFlow:
         self._require_no_unresolved_selection()
         if self._queue_study_id and self._study_queue and self._study_queue["run_id"] == self.selected_run_id:
             return self._queue_study_id
+        return self._detail_publication_id()
+
+    def _detail_publication_id(self):
         detail = self._publication_detail
         if (not detail or detail.get("project_id") != str(self.project.identifier)
                 or not self.selected_run_id or detail.get("run_id") != self.selected_run_id):
             raise ProjectFlowError("publication_view_stale")
         return detail["publication"]["publication_id"]
+
+    def official_society_url(self, kind, key):
+        from research_y.society_sources import web_url
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            self._specialist.select(self.project,self.selected_run_id)
+            panel = self._specialist.state
+            if kind == "suggestion":
+                rows = [r for r in panel.get("suggestions",[]) if r["name"] == key]
+            elif kind == "selected":
+                current = panel.get("society")
+                rows = [current] if current and current["society_id"] == key else []
+            else:
+                rows = []
+            if not self.selected_run_id or len(rows) != 1:
+                raise ProjectFlowError("society_selection_changed")
+            return web_url(rows[0]["official_url"])
+
+    def specialist_action(self, name, data):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if not self.selected_run_id or type(data) is not dict:
+                raise ProjectFlowError("specialist_selection_required")
+            panel = self._specialist
+            panel.select(self.project,self.selected_run_id)
+            try:
+                if name == "directory":
+                    panel.directory(self.project,**data)
+                elif name == "society_save":
+                    panel.save_directory_entry(self.project,**data)
+                elif name == "society_select":
+                    panel.choose_society(self.project,**data)
+                elif name == "society_visit":
+                    panel.visit(self.project,**data)
+                elif name == "society_guidance":
+                    panel.guidance(self.project,self.selected_run_id,**data)
+                elif name == "conference_admit":
+                    panel.conference_admit(self.project,**data)
+                elif name == "conference_page":
+                    panel.conference_page(**data)
+                elif name == "conference_detail":
+                    panel.conference_detail(**data)
+                elif name in ("conference_queue_block", "conference_tasks", "conference_finish_task"):
+                    self._visible_candidate_source(data["retrieval_id"])
+                    if name == "conference_queue_block":
+                        panel.queue_block(self.project,**data)
+                    elif name == "conference_tasks":
+                        panel.review_tasks(self.project,**data)
+                    else:
+                        panel.finish_task(self.project,**data)
+                elif name == "enrichment_offer":
+                    panel.offer_lookup(self.project,self._detail_publication_id())
+                elif name == "enrichment_lookup":
+                    panel.lookup_work(self.project,self._detail_publication_id(),**data)
+                else:
+                    raise ValueError("Unknown operation")
+            except (KeyError, ValueError, TypeError):
+                self._publish()
+                raise ProjectFlowError("specialist_input_or_evidence_changed") from None
+            return self._publish()
+
+    def preview_native_conference(self, path, *, source_id, terms, landing_url, pdf_url, pdf_pages):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            detail = self._publication_detail
+            if (not detail or detail["run_id"] != self.selected_run_id or source_id not in
+                    {s["retrieval_id"] for s in detail["source_retrievals"] if s["run_id"] == self.selected_run_id}):
+                raise ProjectFlowError("publication_view_stale")
+            self._specialist.select(self.project,self.selected_run_id)
+            self._specialist.conference_preview(self.project,self.selected_run_id,source_id,path,
+                      dict(terms=terms,landing_url=landing_url,pdf_url=pdf_url,pdf_pages=pdf_pages))
+            return self._publish()
 
     def inspect_study_queue(self, only_review, hide_non_english, hide_non_human_only, after=None):
         with self._guard:
@@ -4446,6 +4528,7 @@ class RealProjectFlow:
                 'publication_page': self._publication_page,
                 'publication_detail': self._publication_detail,
                 'study_queue': self._study_queue if self._study_queue and self._study_queue["run_id"] == self.selected_run_id else None,
+                'specialist': dict(self._specialist.state),
                 'queued_study': self._study_view if self._queue_study_id and self._study_queue and
                     self._study_queue["run_id"] == self.selected_run_id else None,
                 'study_view': self._study_view if not self._queue_study_id and self._publication_detail and self._study_view and
