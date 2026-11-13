@@ -120,15 +120,16 @@ def main():
     if sys.platform != 'win32':
         raise SystemExit('The RESEARCH-Y desktop application requires Windows.')
     try:
-        from research_y.desktop.settings import source_profiles
+        from research_y.desktop.settings import source_profiles, cloud_profile
         pubmed, starter, warnings = source_profiles()
+        cloud, cloud_warnings = cloud_profile()
         local = Path(os.environ['LOCALAPPDATA'])
         if not local.is_absolute():
             raise ValueError
         assistant = LocalAssistant(local / 'RESEARCH-Y' / 'models' / PACKAGE)
         flow = RealProjectFlow(recent_parent=local / 'RESEARCH-Y', pubmed_profile=pubmed, wos_profile=starter,
-                               local_assistant=assistant)
-        run_desktop(flow, settings_warnings=warnings)
+                               local_assistant=assistant, cloud_assistant=cloud)
+        run_desktop(flow, settings_warnings=warnings + cloud_warnings)
     except Exception:
         import ctypes
         ctypes.windll.user32.MessageBoxW(

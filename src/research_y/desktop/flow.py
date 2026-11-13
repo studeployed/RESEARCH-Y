@@ -42,7 +42,7 @@ class RealProjectFlow:
     def __init__(self, *, selected_root: Path | None = None, selected_parent: Path | None = None,
                  recent_parent: Path | None = None,
                  pubmed_profile: PubMedHostProfile | None = None,
-                 wos_profile: WoSHostProfile | None = None, local_assistant=None):
+                 wos_profile: WoSHostProfile | None = None, local_assistant=None, cloud_assistant=None):
         self._root = Path(selected_root) if selected_root is not None else None
         self._parent = Path(selected_parent) if selected_parent is not None else None
         if any(path is not None and not path.is_absolute() for path in (self._root, self._parent)):
@@ -54,6 +54,9 @@ class RealProjectFlow:
         self._pubmed_profile = pubmed_profile
         self._wos_profile = wos_profile
         self._local_assistant = local_assistant
+        self._cloud_assistant = cloud_assistant
+        self._cloud_enabled = False
+        self._cloud_offer = None
         self._local_enabled = local_assistant is not None and local_assistant.installed
         self._study_view = None
         self._study_proposal = None
@@ -354,6 +357,9 @@ class RealProjectFlow:
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get('runs'), list) or not isinstance(snapshot.get('exports'), list):
             raise ProjectFlowError('invalid_worker_result')
         self.project = project
+        self._cloud_offer = None
+        self._cloud_enabled = False
+        self._local_enabled = bool(self._local_assistant and self._local_assistant.installed)
         self.selected_run_id = None
         self._clear_manifest_selection()
         self.selected_export_id = None
@@ -855,6 +861,65 @@ class RealProjectFlow:
             if type(enabled) is not bool or (enabled and not (self._local_assistant and self._local_assistant.installed)):
                 raise ProjectFlowError("local_assistant_unavailable")
             self._local_enabled = enabled
+            self._cloud_enabled = False
+            self._cloud_offer = None
+            return self._publish()
+
+    def select_cloud_mode(self):
+        with self._guard:
+            self._require_open()
+            if self._cloud_assistant is None:
+                raise ProjectFlowError("cloud_settings_required")
+            self._local_enabled = False
+            self._cloud_enabled = True
+            self._cloud_offer = None
+            return self._publish()
+
+    def offer_cloud_terms(self, group_id, term_id):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            draft = self._setup
+            seed = dict(draft._term(draft._group(group_id),term_id))
+            if not self._cloud_enabled or not seed["enabled"] or draft.preview_data is not None:
+                raise ProjectFlowError("cloud_preview_unavailable")
+            preview = self._cloud_assistant.preview(seed["text"])
+            self._cloud_offer = (self.project,draft,group_id,term_id,seed,preview)
+            return self._publish()
+
+    def confirm_cloud_terms(self, revision):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            offer, self._cloud_offer = self._cloud_offer, None
+            self._publish()  # Consume the one-shot preview even when validation or the provider fails.
+            if not self._cloud_enabled or not offer:
+                raise ProjectFlowError("cloud_transfer_confirmation_required")
+            project,draft,gid,tid,seed,preview = offer
+            if (project is not self.project or draft is not self._setup or draft.preview_data is not None
+                    or seed != draft._term(draft._group(gid),tid) or revision != preview["revision"]):
+                raise ProjectFlowError("cloud_preview_changed")
+            with _validated_project_connection(project) as db:
+                db.execute("BEGIN IMMEDIATE")
+                authorization = append_audit(db,"cloud_terms_authorized_v1",dict(version=1,at_utc=_utc_now(),
+                     provider=preview["provider"],model=preview["model"],request_sha256=revision,
+                     actor=draft.approved_by or None,group_id=gid,term_id=tid))
+        try:
+            generated = self._cloud_assistant.generate(seed["text"],expected_revision=revision,confirmed=True)
+        except LocalAssistantError:
+            with _validated_project_connection(project) as db:
+                db.execute("BEGIN IMMEDIATE")
+                append_audit(db,"cloud_terms_unknown_outcome_v1",dict(version=1,at_utc=_utc_now(),authorization=authorization))
+            raise ProjectFlowError("cloud_response_unavailable") from None
+        with self._guard:
+            with _validated_project_connection(project) as db:
+                db.execute("BEGIN IMMEDIATE")
+                eid = append_audit(db,"cloud_term_proposal_v1",dict(version=1,at_utc=_utc_now(),
+                     authorization=authorization,group_id=gid,term_id=tid,**generated))
+            if (not self._cloud_enabled or project is not self.project or draft is not self._setup
+                    or draft.preview_data is not None or seed != draft._term(draft._group(gid),tid)):
+                raise ProjectFlowError("cloud_preview_changed")
+            draft.local_offers(gid,tid,generated,eid)
             return self._publish()
 
     def _visible_study(self):
@@ -4297,6 +4362,10 @@ class RealProjectFlow:
                 'strategy_draft': self._setup.state(),
                 'local_assistant_installed': bool(self._local_assistant and self._local_assistant.installed),
                 'local_assistant_enabled': self._local_enabled,
+                'cloud_configured': self._cloud_assistant is not None,
+                'cloud_enabled': self._cloud_enabled,
+                'cloud_offer': self._cloud_offer[-1].copy() if self._cloud_offer and
+                    self._cloud_offer[0] is self.project and self._cloud_offer[1] is self._setup else None,
                 'strategy_reconciliation_required': self._pending_admission_id is not None,
                 'last_strategy_admission': self._last_strategy_admission,
                 'preflight_report': self._preflight,
