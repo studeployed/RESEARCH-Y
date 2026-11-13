@@ -17,8 +17,8 @@ PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py; tests/test_wos_migratio
 PROJ-07,1,"AT-01,AT-09",planned,planned
 SEARCH-01,1,AT-04,planned,planned
 SEARCH-02,1,"AT-04,AT-05",planned,planned
-SEARCH-03,1,AT-04,planned,planned
-SEARCH-04,1,AT-04,tests/test_strategy_storage.py (explicit approval gate only),partial
+SEARCH-03,1,AT-04,tests/test_desktop_term_proposals.py (curated multi-component lexical variants in Research Setup),partial
+SEARCH-04,1,AT-04,tests/test_strategy_storage.py; tests/test_desktop_term_proposals.py (explicit acceptance and saved deterministic origin; model-origin provenance pending),partial
 SEARCH-05,1,"AT-04,AT-18",tests/test_strategy_storage.py (term provenance snapshot only),partial
 SEARCH-06,1,AT-05,tests/test_query_compiler.py (offline union only); tests/test_query_compiler.py and tests/test_run_execution_board.py (frozen OR inventory and group memberships),partial
 SEARCH-07,1,AT-06,tests/test_pubmed_probe.py; tests/test_pubmed_date_translation.py; tests/test_pubmed_date_translation_integration.py (live run 41235232458 accepted internal CRDT alias; broader phrases pending); docs/evidence/pubmed-metadata-43300410950-summary.json (live synonym and phrase OR translation),partial
@@ -72,20 +72,20 @@ GUIDE-02,2,"AT-13,AT-15",tests/test_society_sources.py (explicit guidance docume
 GUIDE-03,2,AT-13,tests/test_society_sources.py (source-captured society roles and original directory revisions),partial
 GUIDE-04,2,"AT-13,AT-15",tests/test_society_sources.py (original version and official document links),partial
 GUIDE-05,2,"AT-10,AT-13",tests/test_society_sources.py (revisions retain separate original identities; manifestation review pending),partial
-CLASS-01,2,"AT-14,AT-15",planned,planned
-CLASS-02,2,AT-15,planned,planned
-CLASS-03,2,AT-15,planned,planned
-CLASS-04,2,AT-14,planned,planned
-CLASS-05,2,"AT-15,AT-20",planned,planned
-CLASS-06,2,AT-15,planned,planned
-CLASS-07,2,"AT-15,AT-17",planned,planned
-AI-01,2,AT-20,planned,planned
-AI-02,2,"AT-20,AT-21",planned,planned
-AI-03,2,"AT-20,AT-21",planned,planned
+CLASS-01,2,"AT-14,AT-15",tests/test_study_classification.py (independent dimensions and scoped source fields),partial
+CLASS-02,2,AT-15,tests/test_study_classification.py (source-tagged trial protocol and evidence synthesis),partial
+CLASS-03,2,AT-15,tests/test_study_classification.py (RCT abstract and multiple synthesis tags),partial
+CLASS-04,2,AT-14,tests/test_study_classification.py (read-only language and explicit non-human filters),partial
+CLASS-05,2,"AT-15,AT-20",tests/test_study_classification.py; tests/test_local_study_review.py (source-backed rules and provisional local-model suggestions),partial
+CLASS-06,2,AT-15,tests/test_study_classification.py (uncertainty and transactional researcher decisions; desktop queue pending),partial
+CLASS-07,2,"AT-15,AT-17",tests/test_study_classification.py (override survives new source links and stale requests are declined),partial
+AI-01,2,AT-20,tests/test_optional_local_assistant.py (local and no-AI modes; explicit cloud path pending),partial
+AI-02,2,"AT-20,AT-21",tests/test_optional_local_assistant.py (Windows managed offline inference from pinned engine and weights),partial
+AI-03,2,"AT-20,AT-21",tests/test_optional_local_assistant.py; docs/DESKTOP.md (verified local installation and CPU inference; further setup and acceleration pending),partial
 AI-04,2,"AT-15,AT-20",tests/test_biomedical_benchmark.py; tests/test_biomedical_candidate_run.py; docs/evidence/biomedical-windows-20261113.json (two real Windows Q8_0 candidates; broader calibration and app integration pending),partial
 AI-05,2,"AT-20,AT-21",planned,planned
-AI-06,2,"AT-04,AT-15",planned,planned
-AI-07,2,"AT-04,AT-19",planned,planned
+AI-06,2,"AT-04,AT-15",tests/test_optional_local_assistant.py (original generation parameters and linked review receipts),partial
+AI-07,2,"AT-04,AT-19",tests/test_optional_local_assistant.py (only approved draft terms reach pending source queries),partial
 UI-01,3,AT-01,tools/desktop_lifecycle.py (installed Windows launcher and host-selected folders),partial
 UI-02,3,AT-04,planned,planned
 UI-03,3,AT-04,planned,planned

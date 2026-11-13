@@ -2,9 +2,10 @@
 from datetime import date
 
 from research_y.desktop.manifest_consent import render_manifest_consent
+from research_y.desktop.study_panel import render_study_panel
 
 
-def render_project_panel(ui, flow, act, *, native, error):
+def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
     state = flow.state()
     project = state['project']
     if project is not None:
@@ -105,6 +106,11 @@ def render_project_panel(ui, flow, act, *, native, error):
         # All draft edits are host-memory mutations. A new preview is
         # mandatory after any edit, before the separate approval click.
         draft = state['strategy_draft']
+        if state.get('local_assistant_installed'):
+            enabled = state['local_assistant_enabled']
+            ui.label('Assistant mode: ' + ('Local Qwen3-1.7B' if enabled else 'No AI'))
+            ui.button('Use no AI' if enabled else 'Use local AI',
+                      on_click=lambda: act('local_mode', not enabled))
         ui.separator()
         ui.label('Research Setup — draft only until explicitly approved').props(
             'data-testid=setup-heading')
@@ -161,6 +167,25 @@ def render_project_panel(ui, flow, act, *, native, error):
                             tid = term['term_id']
                             with ui.card():
                                 term_input = ui.input('Atomic term', value=term['text'])
+                                if term['enabled']:
+                                    if state.get('local_assistant_enabled'):
+                                        ui.button('Ask local AI for terms', on_click=lambda gid=gid, tid=tid:
+                                                  act('local_suggest', dict(group_id=gid, term_id=tid)))
+                                    ui.button('Suggest term variants', on_click=lambda gid=gid, tid=tid:
+                                              act('setup_edit', dict(action='suggest_variants',
+                                                  data=dict(group_id=gid, term_id=tid))))
+                                for offer in draft['suggestions']:
+                                    if offer['source_term_id'] != tid or offer['status'] != 'pending':
+                                        continue
+                                    sid = offer['suggestion_id']
+                                    ui.label(offer['reason'])
+                                    wording = ui.input('Proposed variant', value=offer['text'])
+                                    ui.button('Accept wording', on_click=lambda sid=sid, box=wording:
+                                              act('setup_edit', dict(action='review_variant',
+                                                  data=dict(suggestion_id=sid, decision='accept', text=box.value))))
+                                    ui.button('Reject variant', on_click=lambda sid=sid:
+                                              act('setup_edit', dict(action='review_variant',
+                                                  data=dict(suggestion_id=sid, decision='reject'))))
                                 origin_input = ui.select(
                                     {'researcher': 'Researcher', 'deterministic': 'Deterministic',
                                      'ai': 'AI-assisted (requires rationale)'},
@@ -860,6 +885,7 @@ def render_project_panel(ui, flow, act, *, native, error):
                              '. A displayed value is not validation of '
                              'bibliographic identity or export rights.').props(
                                  'data-testid=publication-detail-heading')
+                    render_study_panel(ui, state, detail, act, study_edits)
                     for omitted in detail['suppressed_chosen_fields']:
                         ui.label('Saved field ' + omitted['field'] +
                                  ' deliberately WITHHELD: its source path '
