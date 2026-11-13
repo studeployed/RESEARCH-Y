@@ -285,6 +285,39 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                      ' stored; pending run ' + done['run_id'] +
                      '. Queries planned but NOT EXECUTED.').props(
                          'data-testid=setup-approval-result')
+        if len(state['runs'])>=2:
+            comparison=state.get("run_comparison")
+            with ui.expansion("Compare search runs",value=bool(comparison)):
+                runs={r["run_id"]:f'Version {r["version_number"]} · {r["run_id"]}' for r in state["runs"]}
+                earlier=ui.select(runs,label="Earlier run",value=comparison["earlier"]["run_id"] if comparison else None)
+                later=ui.select(runs,label="Later run",value=comparison["later"]["run_id"] if comparison else None)
+                kind=ui.select(["all","new","retained","absent","metadata_changed"],label="Source records",
+                               value=comparison["category"] if comparison else "all")
+                ui.button("Compare retained evidence",on_click=lambda:act("compare_run_history",
+                          dict(earlier=earlier.value,later=later.value,category=kind.value,offset=0)))
+                if comparison:
+                    ui.label("Source records · "+str(comparison["source_counts"]))
+                    ui.label("Current publication identities · "+str(comparison["publication_identities"]))
+                    ui.label("Absence means the source record was not retained in the later run.")
+                    for record in comparison["rows"]:
+                        ui.label(record["source"]+" "+record["source_record_id"]+" · "+record["status"]+
+                                 (" · changed "+", ".join(record["changed_fields"]) if record["changed_fields"] else ""))
+                        with ui.expansion("Notes for "+record["source_record_id"]):
+                            for note in record["notes"]:
+                                ui.label(note["at_utc"]+" · "+note["actor"]+" · "+note["text"])
+                            who=ui.input("Researcher")
+                            body=ui.input("Source-scoped research note")
+                            ui.button("Save note",on_click=lambda r=record,w=who,b=body:act("note_comparison_source",
+                                      dict(retrieval_id=r["current_retrieval"] or r["previous_retrieval"],
+                                      actor=w.value,text=b.value,expected_event=r["notes"][-1]["event_id"] if r["notes"] else None)))
+                    def turn(delta):
+                        return act("compare_run_history",dict(earlier=comparison["earlier"]["run_id"],
+                                   later=comparison["later"]["run_id"],category=comparison["category"],
+                                   offset=comparison["offset"]+delta))
+                    if comparison["offset"]:
+                        ui.button("Previous comparison records",on_click=lambda:turn(-comparison["page_size"]))
+                    if comparison["offset"]+comparison["page_size"]<comparison["matching"]:
+                        ui.button("Next comparison records",on_click=lambda:turn(comparison["page_size"]))
         for item in state['runs']:
             rid = item['run_id']
             ui.button(f"Select run/version {item['version_number']} ({rid})",

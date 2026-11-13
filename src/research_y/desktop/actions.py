@@ -3,6 +3,10 @@ from research_y.desktop.flow import ProjectFlowError
 
 
 def perform_action(flow, name, value=None):
+    if name == "compare_run_history":
+        return flow.compare_run_history(**value)
+    if name == "note_comparison_source":
+        return flow.note_comparison_source(**value)
     if name == 'specialist':
         if type(value) is not dict or set(value) != {'action','data'}:
             raise ProjectFlowError('invalid_specialist_action')

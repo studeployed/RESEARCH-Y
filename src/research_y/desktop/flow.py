@@ -82,6 +82,7 @@ class RealProjectFlow:
         self._coord_worker = ApplicationWorker()
         self._closed = False
         self.project = None
+        self._run_comparison = None
         self._archive_receipt = None
         self.snapshot = None
         self.selected_run_id = None
@@ -363,6 +364,7 @@ class RealProjectFlow:
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get('runs'), list) or not isinstance(snapshot.get('exports'), list):
             raise ProjectFlowError('invalid_worker_result')
         self.project = project
+        self._run_comparison = None
         self._archive_receipt = None
         self._specialist = SpecialistWorkbench()
         self._cloud_offer = None
@@ -550,6 +552,23 @@ class RealProjectFlow:
             except FileExistsError:
                 raise ProjectFlowError("A project folder with this name already exists. Choose a new folder name.") from None
             return self.open_native_folder(restored.root)
+
+    def compare_run_history(self, earlier, later, category="all",offset=0):
+        from research_y.run_comparison import compare_runs
+        with self._guard:
+            self._require_open()
+            self._run_comparison = compare_runs(self.project,earlier,later,category=category,offset=offset)
+            return self._publish()
+
+    def note_comparison_source(self,retrieval_id,actor,text,expected_event):
+        from research_y.run_comparison import append_note
+        with self._guard:
+            self._require_open()
+            view=self._run_comparison
+            if not view or retrieval_id not in {(r["current_retrieval"] or r["previous_retrieval"]) for r in view["rows"]}:
+                raise ProjectFlowError("Choose a source on the visible comparison page.")
+            append_note(self.project,retrieval_id,actor=actor,text=text,expected_event=expected_event)
+            return self.compare_run_history(view["earlier"]["run_id"],view["later"]["run_id"],view["category"],view["offset"])
 
     def create_native_parent(self, selected: Path, name: str):
         """Create exclusively in a host-selected parent, never a browser path."""
@@ -4517,6 +4536,7 @@ class RealProjectFlow:
         data = self.snapshot
         return {
                 'archive_receipt': self._archive_receipt,
+                'run_comparison': self._run_comparison,
                 'project': None if self.project is None else {
                     'project_id': str(self.project.identifier), 'name': self.project.name,
                     'location': str(self.project.root)},
