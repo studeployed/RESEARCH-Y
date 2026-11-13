@@ -38,7 +38,10 @@ def specification(text="", facets=None, sort="title", descending=False, columns=
 
 def _abstract(record):
     if isinstance(record.get("abstract_sections"),list):
-        return "\n".join(v["text"] for v in record["abstract_sections"]
+        groups = [record["abstract_sections"]]
+        groups.extend(item["sections"] for item in record.get("other_abstracts",[]) if isinstance(item,dict)
+                      and isinstance(item.get("sections"),list))
+        return "\n".join(v["text"] for group in groups for v in group
                          if isinstance(v,dict) and isinstance(v.get("text"),str))
     return record["text"] if isinstance(record.get("text"),str) else ""
 
@@ -46,6 +49,8 @@ def _abstract(record):
 def _citation(snapshot, mappings, name):
     chosen = _citation_chosen_source(snapshot,name)
     if chosen is not None:
+        if name in ("year","doi"):
+            return project_source(chosen)["fields"][name]["normalised"]
         return snapshot.chosen_fields[name]["value"]
     values = [m["fields"][name] for m in mappings if m["fields"][name]["status"]=="present"]
     if len({f["normalised"] for f in values}) != 1:
