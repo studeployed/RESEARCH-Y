@@ -1,0 +1,17 @@
+{
+  "platform": "Windows-11-10.0.26300-SP0",
+  "python": "3.12.10",
+  "records": 100000,
+  "memberships": 100000,
+  "publications": 100000,
+  "matching": 49936,
+  "selected": 49936,
+  "fixture_prepare_seconds": 13.065,
+  "capture_seconds": 14.285,
+  "filter_page_select_seconds": 3.079,
+  "observations": 142,
+  "longest_observed_interval_seconds": 0.102,
+  "original_counts_preserved": true,
+  "display_page_size": 25,
+  "scope": "Production snapshot and search services on synthetic original source records"
+}
