@@ -153,10 +153,24 @@ def project_source(source: dict) -> dict:
               for name, (path, normalise, many) in paths.items()}
     warnings = []
     society = kind == "society" and payload.get("provider") == "manual_society_guidance"
+    manual = kind == "manual_bibliographic" and payload.get("provider") == kind
     conference = kind in {"conference_jats","conference_pdf"} and payload.get("provider") == kind
-    if (society or conference) and isinstance(payload.get("record"), dict):
+    if (society or conference or manual) and isinstance(payload.get("record"), dict):
         fields["title"] = _field(payload, ("record", "title"), _string)
-        if society:
+        if manual:
+            for key,fn in (("doi",_doi),("year",_year),("journal",_string),("pages",_string)):
+                fields[key]=_field(payload,("record",key),fn)
+            fields["document_types"]=_field(payload,("record","types"),_tags)
+            def imported_authors(names):
+                if not isinstance(names,list) or not names:
+                    return None
+                ordered=[_string(name) for name in names]
+                if any(name is None for name in ordered):
+                    return None
+                from research_y.publication_identity import _json
+                return _json(ordered)
+            fields["authors"]=_field(payload,("record","authors"),imported_authors)
+        elif society:
             fields["doi"] = _field(payload, ("record", "doi"), _doi)
             fields["document_types"] = _field(payload, ("record", "document_types"), _tags)
         else:

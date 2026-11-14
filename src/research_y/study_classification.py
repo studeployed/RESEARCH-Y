@@ -27,6 +27,7 @@ LABELS = {"original_research": {"yes", "no", "unclear"}, "design": DESIGNS, "for
           "language": {"English", "non-English", "multilingual", "unknown"},
           "population": {"human", "non-human", "mixed human/non-human", "not applicable", "unclear"}}
 FORMAT_TAGS = {"conference abstract": "conference abstract", "meeting abstract": "conference abstract",
+               "conference paper":"conference paper","book":"book/chapter","chapter":"book/chapter",
                "proceedings paper": "conference paper", "preprint": "preprint",
                "journal article": "full journal article"}
 # Undetermined, collective, multiple or malformed codes cannot establish a
@@ -49,8 +50,9 @@ def _proposals(snapshot):
         pubmed = source["source_name"] == "pubmed" and payload.get("source") == "NCBI PubMed EFetch XML"
         wos = source["source_name"] == "wos" and payload.get("provider") == "wos_starter"
         society = source["source_name"] == "society" and payload.get("provider") == "manual_society_guidance"
+        manual = source["source_name"] == "manual_bibliographic" and payload.get("provider") == source["source_name"]
         conference = source["source_name"] in {"conference_jats","conference_pdf"} and payload.get("provider") == source["source_name"]
-        if not isinstance(record, dict) or not (pubmed or wos or society or conference):
+        if not isinstance(record, dict) or not (pubmed or wos or society or conference or manual):
             warnings.add("unsupported_source_metadata")
             continue
         def add(dimension, label, path, value):

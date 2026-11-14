@@ -10,6 +10,18 @@ from research_y.desktop.specialist_panel import society_panel, publication_panel
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
     state = flow.state()
     project = state['project']
+    if project is not None:
+        audit=state.get("project_audit")
+        with ui.expansion("Project audit and diagnostics",value=bool(audit)):
+            ui.button("Inspect audit history",on_click=lambda:act("project_audit",0))
+            if audit:
+                for event in audit["rows"]:
+                    ui.label(f'{event["event_id"]} · {event["utc"]} · {event["event_type"]} · {event["fields"]}')
+                if audit["next_after"]:
+                    ui.button("Next audit events",on_click=lambda:act("project_audit",audit["next_after"]))
+            if native:
+                diagnostic=ui.input("Diagnostic filename",value="Project diagnostic.json")
+                ui.button("Choose folder and save diagnostic",on_click=lambda:act("native_diagnostics",diagnostic.value))
     if native and project is not None:
         with ui.expansion("Export project archive",value=bool(state.get("archive_receipt"))):
             archive_name = ui.input("Archive filename",value="Project.researchy")
@@ -23,7 +35,11 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             if receipt:
                 ui.label(f'Saved {receipt["filename"]} with {receipt["files"]} files.')
     if project is not None:
-        ui.label('INCOMPLETE — no source retrieval is verified.').props('data-testid=incomplete')
+        if state.get("run_acceptance",None) and state["run_acceptance"]["receipt"]:
+            ui.label("Selected run verification at "+state["run_acceptance"]["receipt"]["at_utc"]+
+                     " · Verified Complete").props("data-testid=run-accepted")
+        else:
+            ui.label('INCOMPLETE — current source-scope verification required.').props('data-testid=incomplete')
     ui.label('Recent Projects (explicit selection; locations verified on open).').props(
         'data-testid=recent-heading')
     if state['recent_history_error']:
@@ -127,6 +143,12 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.button('Use no AI', on_click=lambda: act('local_mode', False))
         if state.get('local_assistant_installed') and not local_on:
             ui.button('Use local AI', on_click=lambda: act('local_mode', True))
+        if native and not state.get('local_assistant_installed'):
+            with ui.expansion("Set up optional local AI"):
+                ui.label("Qwen3-1.7B Q8_0 from Qwen (Apache 2.0) and llama.cpp from GitHub (MIT). "
+                         "Download about 1.86 GB. Allow 4 GB free during setup. The model runs on your CPU.")
+                consent = ui.checkbox("Download and verify these components on this computer")
+                ui.button("Install optional local assistant",on_click=lambda:act("native_install_local_model",consent.value))
         if state.get('cloud_configured') and not cloud_on:
             ui.button('Choose optional cloud AI', on_click=lambda: act('cloud_mode'))
         if state.get('cloud_offer'):
@@ -286,6 +308,39 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                      ' stored; pending run ' + done['run_id'] +
                      '. Queries planned but NOT EXECUTED.').props(
                          'data-testid=setup-approval-result')
+        if len(state['runs'])>=2:
+            comparison=state.get("run_comparison")
+            with ui.expansion("Compare search runs",value=bool(comparison)):
+                runs={r["run_id"]:f'Version {r["version_number"]} · {r["run_id"]}' for r in state["runs"]}
+                earlier=ui.select(runs,label="Earlier run",value=comparison["earlier"]["run_id"] if comparison else None)
+                later=ui.select(runs,label="Later run",value=comparison["later"]["run_id"] if comparison else None)
+                kind=ui.select(["all","new","retained","absent","metadata_changed"],label="Source records",
+                               value=comparison["category"] if comparison else "all")
+                ui.button("Compare retained evidence",on_click=lambda:act("compare_run_history",
+                          dict(earlier=earlier.value,later=later.value,category=kind.value,offset=0)))
+                if comparison:
+                    ui.label("Source records · "+str(comparison["source_counts"]))
+                    ui.label("Current publication identities · "+str(comparison["publication_identities"]))
+                    ui.label("Absence means the source record was not retained in the later run.")
+                    for record in comparison["rows"]:
+                        ui.label(record["source"]+" "+record["source_record_id"]+" · "+record["status"]+
+                                 (" · changed "+", ".join(record["changed_fields"]) if record["changed_fields"] else ""))
+                        with ui.expansion("Notes for "+record["source_record_id"]):
+                            for note in record["notes"]:
+                                ui.label(note["at_utc"]+" · "+note["actor"]+" · "+note["text"])
+                            who=ui.input("Researcher")
+                            body=ui.input("Source-scoped research note")
+                            ui.button("Save note",on_click=lambda r=record,w=who,b=body:act("note_comparison_source",
+                                      dict(retrieval_id=r["current_retrieval"] or r["previous_retrieval"],
+                                      actor=w.value,text=b.value,expected_event=r["notes"][-1]["event_id"] if r["notes"] else None)))
+                    def turn(delta):
+                        return act("compare_run_history",dict(earlier=comparison["earlier"]["run_id"],
+                                   later=comparison["later"]["run_id"],category=comparison["category"],
+                                   offset=comparison["offset"]+delta))
+                    if comparison["offset"]:
+                        ui.button("Previous comparison records",on_click=lambda:turn(-comparison["page_size"]))
+                    if comparison["offset"]+comparison["page_size"]<comparison["matching"]:
+                        ui.button("Next comparison records",on_click=lambda:turn(comparison["page_size"]))
         for item in state['runs']:
             rid = item['run_id']
             ui.button(f"Select run/version {item['version_number']} ({rid})",
@@ -296,6 +351,51 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
             render_master(ui,state,act,native=native)
+            with ui.expansion("Verify final run scope",value=bool(state.get("run_acceptance"))):
+                ui.button("Check all source and identity evidence",on_click=lambda:act("run_acceptance"))
+                scope=state.get("run_acceptance")
+                if scope:
+                    ui.label("Verification result · "+scope["status"])
+                    for reason in scope["reasons"]:
+                        ui.label(reason)
+                    ui.label("Source warnings · "+str(scope["source_warnings"]))
+                    if scope["receipt"]:
+                        ui.label("Recorded limitations · "+scope["receipt"]["limitations"])
+                    if scope["eligible"]:
+                        ui.label("Reviewed retained publications · "+str(scope["global_unique_publications"]))
+                        verifier=ui.input("Researcher confirming source coverage")
+                        limitation=ui.input("Material source limitations and coverage reviewed")
+                        confirmed=ui.checkbox("I verified the reported scope and the disclosed limitations")
+                        ui.button("Record final run verification",on_click=lambda:act("run_acceptance",dict(
+                                  expected_revision=scope["revision"],actor=verifier.value,
+                                  limitations=limitation.value,confirmed=confirmed.value)))
+            if native:
+                with ui.expansion("Import or enter additional citations",value=bool(state.get("bibliography_preview") or state.get("import_receipt"))):
+                    origin=ui.input("Source or collection name")
+                    import_actor=ui.input("Researcher importing records")
+                    rights=ui.checkbox("I reviewed these records and may retain their contents")
+                    ui.button("Choose local RIS file",on_click=lambda:act("native_ris"))
+                    bibliographic=state.get("bibliography_preview")
+                    if bibliographic:
+                        ui.label(f'{bibliographic["total"]} records in file · first {len(bibliographic["titles"])} titles')
+                        for title in bibliographic["titles"]:
+                            ui.label(title)
+                        ui.button("Import all records in this file",on_click=lambda:act("import_bibliography",
+                            dict(label=origin.value,actor=import_actor.value,confirmed=rights.value,
+                            indices=list(range(bibliographic["total"])),revision=bibliographic["revision"])))
+                    with ui.expansion("Enter one citation"):
+                        title_input=ui.input("Publication title")
+                        authors_input=ui.textarea("Authors (one per line)")
+                        year_input=ui.input("Publication year")
+                        doi_input=ui.input("Individual DOI")
+                        url_input=ui.input("Source URL")
+                        abstract_input=ui.textarea("Abstract, if permitted")
+                        ui.button("Save manually entered citation",on_click=lambda:act("import_bibliography",
+                            dict(label=origin.value,actor=import_actor.value,confirmed=rights.value,indices=[0],revision=None,
+                                 manual=dict(title=title_input.value,authors=(authors_input.value or "").splitlines(),
+                                     year=year_input.value,doi=doi_input.value,url=url_input.value,abstract=abstract_input.value))))
+                    if state.get("import_receipt"):
+                        ui.label(f'Saved {state["import_receipt"]["count"]} records from {state["import_receipt"]["source"]}.')
             society_panel(ui,state,act,native=native)
             data = state['report']
             if data is None:

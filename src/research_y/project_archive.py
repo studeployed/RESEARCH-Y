@@ -128,6 +128,7 @@ def _expected_schema():
 
 
 def _check_database(root):
+    from research_y.project_documents import expected_archived_files
     uri = (root / DATABASE).as_uri()+"?mode=ro&immutable=1"
     with closing(sqlite3.connect(uri,uri=True)) as db:
         db.execute("PRAGMA trusted_schema=OFF")
@@ -138,7 +139,7 @@ def _check_database(root):
         if db.execute("PRAGMA integrity_check").fetchone() != ("ok",) or db.execute("PRAGMA foreign_key_check").fetchone():
             raise ArchiveError("Inconsistent project database")
         links = db.execute("SELECT DISTINCT relative_path FROM documents WHERE relative_path IS NOT NULL")
-        return {_support(row[0]) for row in links}
+        return {_support(row[0]) for row in links},expected_archived_files(db)
 
 
 def _archive_name(path):
@@ -167,7 +168,8 @@ def export_archive(project, destination, *, supporting_files=(), transfer_confir
                 source.backup(snapshot,pages=1024)
                 # Compact the snapshot so removed/free-page content is excluded.
                 snapshot.execute("VACUUM")
-            missing = _check_database(stage) - set(selected)
+            linked,expected = _check_database(stage)
+            missing = linked - set(selected)
             if missing:
                 raise ArchiveError("Select all linked project documents before transferring the project")
             archive_path = stage/"transfer.partial"
@@ -183,6 +185,8 @@ def export_archive(project, destination, *, supporting_files=(), transfer_confir
                     limit = min(MAX_TOTAL-total,MAX_FILE,65536 if name==MANIFEST_FILENAME else MAX_FILE)
                     with _regular(path,limit) as (source,size), archive.open(name,"w",force_zip64=True) as dest:
                         rows[name] = dict(size=size,sha256=_copy(source,dest,size))
+                        if name in expected and rows[name]!=expected[name]:
+                            raise ArchiveError("Document bytes differ from the recorded attachment")
                         total += size
                 index = json.dumps(dict(format="researchy",version=1,project_id=str(project.identifier),files=rows),
                                    ensure_ascii=True,sort_keys=True).encode()
@@ -303,8 +307,11 @@ def import_archive(archive_path, parent, *, directory_name=None):
                                 raise ArchiveError("Archive checksum mismatch")
                             dest.flush()
                             os.fsync(dest.fileno())
-                if _check_database(stage) - set(index["files"]):
+                linked,expected = _check_database(stage)
+                if linked - set(index["files"]):
                     raise ArchiveError("Missing linked document")
+                if any(index["files"].get(name)!=receipt for name,receipt in expected.items()):
+                    raise ArchiveError("Archived document differs from the recorded attachment")
                 restored = open_project(stage)
                 if str(restored.identifier)!=index["project_id"]:
                     raise ArchiveError("Archive project identity mismatch")

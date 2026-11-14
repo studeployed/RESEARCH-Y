@@ -82,6 +82,10 @@ class RealProjectFlow:
         self._coord_worker = ApplicationWorker()
         self._closed = False
         self.project = None
+        self._audit_page = None
+        self._run_acceptance = None
+        self._run_comparison = None
+        self._ris_preview = self._import_receipt = None
         self._master = self._master_page = None
         self._archive_receipt = None
         self.snapshot = None
@@ -365,6 +369,10 @@ class RealProjectFlow:
             raise ProjectFlowError('invalid_worker_result')
         self._clear_master()
         self.project = project
+        self._run_acceptance = None
+        self._audit_page = None
+        self._run_comparison = None
+        self._ris_preview = self._import_receipt = None
         self._archive_receipt = None
         self._specialist = SpecialistWorkbench()
         self._cloud_offer = None
@@ -552,6 +560,54 @@ class RealProjectFlow:
             except FileExistsError:
                 raise ProjectFlowError("A project folder with this name already exists. Choose a new folder name.") from None
             return self.open_native_folder(restored.root)
+
+    def run_acceptance(self,decision=None):
+        from research_y.run_acceptance import accept_run,read_acceptance
+        with self._guard:
+            self._require_open()
+            if not self.selected_run_id:
+                raise ProjectFlowError("Select a run first")
+            if decision is None:
+                self._run_acceptance=read_acceptance(self.project,self.selected_run_id)
+            else:
+                if not self._run_acceptance or self._run_acceptance["run_id"]!=self.selected_run_id:
+                    raise ProjectFlowError("Inspect current source verification first")
+                self._run_acceptance=accept_run(self.project,self.selected_run_id,**decision)
+            return self._publish(verified_scope=True)
+
+    def read_project_audit(self,after=0):
+        from research_y.release_evidence import audit_page
+        with self._guard:
+            self._require_open()
+            if after and (not self._audit_page or self._audit_page["next_after"]!=after):
+                raise ProjectFlowError("Refresh the project audit.")
+            self._audit_page=audit_page(self.project,after)
+            return self._publish()
+
+    def save_project_diagnostic(self,parent,name):
+        from research_y.release_evidence import export_diagnostic
+        from research_y.export_files import filename
+        with self._guard:
+            self._require_open()
+            filename(name)
+            return export_diagnostic(self.project,parent/name)
+
+    def compare_run_history(self, earlier, later, category="all",offset=0):
+        from research_y.run_comparison import compare_runs
+        with self._guard:
+            self._require_open()
+            self._run_comparison = compare_runs(self.project,earlier,later,category=category,offset=offset)
+            return self._publish()
+
+    def note_comparison_source(self,retrieval_id,actor,text,expected_event):
+        from research_y.run_comparison import append_note
+        with self._guard:
+            self._require_open()
+            view=self._run_comparison
+            if not view or retrieval_id not in {(r["current_retrieval"] or r["previous_retrieval"]) for r in view["rows"]}:
+                raise ProjectFlowError("Choose a source on the visible comparison page.")
+            append_note(self.project,retrieval_id,actor=actor,text=text,expected_event=expected_event)
+            return self.compare_run_history(view["earlier"]["run_id"],view["later"]["run_id"],view["category"],view["offset"])
 
     def create_native_parent(self, selected: Path, name: str):
         """Create exclusively in a host-selected parent, never a browser path."""
@@ -960,6 +1016,44 @@ class RealProjectFlow:
                     or draft.preview_data is not None or seed != draft._term(draft._group(gid),tid)):
                 raise ProjectFlowError("cloud_preview_changed")
             draft.local_offers(gid,tid,generated,eid)
+            return self._publish()
+
+    def open_native_ris(self,path):
+        from research_y import bibliographic_import as bib
+        with self._guard:
+            self._require_open()
+            if not self.selected_run_id:
+                raise ProjectFlowError("Select a run before importing records.")
+            self._ris_preview = self._import_receipt = None
+            with Directory(path.parent) as directory:
+                payload=directory.read_selected(path.name,limit=bib.MAX_BYTES)
+            view=bib.preview_ris(payload)
+            self._ris_preview=(self.selected_run_id,payload,view)
+            return self._publish()
+
+    def import_bibliography(self,data):
+        from research_y import bibliographic_import as bib
+        with self._guard:
+            self._require_open()
+            if data.get("manual") is None:
+                if not self._ris_preview or self._ris_preview[0]!=self.selected_run_id:
+                    raise ProjectFlowError("Reopen the RIS file for this run.")
+                data=dict(data,payload=self._ris_preview[1])
+            receipt=bib.admit_records(self.project,self.selected_run_id,**data)
+            self._ris_preview=None
+            self._import_receipt=dict(run_id=self.selected_run_id,source=receipt["source"],count=len(receipt["admitted"]))
+            return self._publish()
+
+    def attach_master_pdf(self,path,*,publication_id,actor,source_url,permission_confirmed):
+        from research_y.project_documents import attach_pdf
+        with self._guard:
+            self._require_open()
+            if (not self._master_page or self._master is None or
+                    self._master_page.get("detail",{}).get("publication_id")!=publication_id):
+                raise ProjectFlowError("Open the publication before attaching a PDF.")
+            self._master.detail(self.project,publication_id)
+            attach_pdf(self.project,publication_id,path,actor=actor,source_url=source_url,permission_confirmed=permission_confirmed)
+            self._master_page["detail"] = self._master.detail(self.project,publication_id)
             return self._publish()
 
     def export_master_to(self,parent,*,name,revision,scope,include_abstracts):
@@ -4592,8 +4686,16 @@ class RealProjectFlow:
     def _build_state(self):
         data = self.snapshot
         return {
+                'bibliography_preview': dict(total=self._ris_preview[2]["total"],revision=self._ris_preview[2]["sha256"],
+                    titles=[r.get("TI",r.get("T1",["Untitled"]))[0] for r in self._ris_preview[2]["records"][:25]])
+                    if self._ris_preview and self._ris_preview[0]==self.selected_run_id else None,
+                'import_receipt': self._import_receipt if self._import_receipt and self._import_receipt["run_id"]==self.selected_run_id else None,
                 'master_results': self._master_page,
                 'archive_receipt': self._archive_receipt,
+                'run_comparison': self._run_comparison,
+                'project_audit': self._audit_page,
+                'run_acceptance': self._run_acceptance if self._run_acceptance and
+                    self._run_acceptance["run_id"]==self.selected_run_id else None,
                 'project': None if self.project is None else {
                     'project_id': str(self.project.identifier), 'name': self.project.name,
                     'location': str(self.project.root)},
@@ -4719,9 +4821,11 @@ class RealProjectFlow:
                 'production_adoption_approved': False,
             }
 
-    def _publish(self):
+    def _publish(self,*,verified_scope=False):
         # Publish a complete immutable-by-convention read-model reference only
         # after each bounded operation. Never hold the work lock on a GUI read.
+        if not verified_scope:
+            self._run_acceptance = None
         self._public_state = self._build_state()
         return self.state()
 

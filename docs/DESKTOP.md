@@ -113,6 +113,22 @@ automatic matching rule or new review requirement.
 
 ## Specialist sources
 
+Use **Compare search runs** when a project has at least two runs. Select
+their order to inspect new, retained and absent original source identifiers
+and the bibliographic fields that changed. Current publication-identity
+counts appear separately. A source-scoped researcher note follows the same
+provider, database and record ID across runs and keeps the original retrieval,
+timestamp and actor. An absent record may reflect incomplete retrieval or
+changed coverage.
+
+**Import or enter additional citations** accepts a locally selected UTF-8
+RIS file or one manually entered citation. Give the source a name and
+confirm permission to retain its contents. The app keeps each original
+record and its position and records the researcher and time. Repeating
+the same import with the same source name reuses the records. Imported
+citations have their own provisional identities, independent of primary
+database hit counts. They appear in master results and classification.
+
 The selected run's **Master results** panel captures a local snapshot of its
 publication identities. Use **Search, filters and columns** to search original
 titles, citation fields, identifiers or available abstract text. Combine
@@ -124,6 +140,10 @@ entire snapshot and a separate bulk selection.
 **Open source evidence** displays locally retained abstract text, original
 citations, source hashes, group memberships and specialist evidence for the
 chosen record. Refresh the snapshot after editing the project.
+Under **Project documents**, choose a PDF and record its source and permission
+to retain it. The project stores a verified content-addressed copy and keeps
+its original name and link. Include the displayed project-relative path when
+exporting a portable archive.
 
 In **Export master results**, choose the entire snapshot, all filtered matches,
 or the publications in your selection. Use an `.xlsx` filename for the
@@ -134,6 +154,10 @@ continue in **Continued Text** and full worksheets continue on numbered tabs.
 RIS preserves bibliographic fields and a scope note. Source variants, review
 history, groups and specialist provenance remain available in the project
 and workbook. The standalone search-strategy workbook remains available.
+The **Reporting Checklist** sheet records the exact stored queries, applicable
+sources, activities outside the workflow and unresolved verification.
+Programmatic PRESS validation and named researcher or peer observations have
+distinct entries with their actual recorded outcomes.
 
 Select a run and open **Professional society sources** to suggest a library
 from topic terms or add an official site. Record the pages and dates examined,
