@@ -20,10 +20,27 @@ from scripts.wos_checkpoint_validation import PROJECT, _save, create_diagnostic_
 STATE = "cross-day-state.json"
 EVIDENCE = "cross-day-evidence.json"
 MAX_RESUME_WAIT_SECONDS = 60 * 60
+_SAMPLE_REASONS = frozenset({
+    "session_budget_reached", "source_count_changed", "source_identity_changed",
+    "cross_page_duplicate", "source_record_conflict", "network_error", "transport_error",
+    "http_error", "quota_or_rate_limited", "authentication_or_entitlement_denied",
+    "quota_revalidation_required", "server_retry_after", "entitlement_unverified",
+})
 
 
 def _utcnow():
     return datetime.now(timezone.utc)
+
+
+def _run_stage(project, query_id, client, *, stage, now):
+    state = run_wos_checkpoint(project, query_id, client, max_requests=2,
+                               revalidate_quota=stage == "resume", now=now)
+    # The disposable runner is lost on failure. Only log fixed labels and counts.
+    reason = state.reason_code if state.reason_code in _SAMPLE_REASONS else "other_checkpoint_state"
+    print(json.dumps({"stage_finished": stage, "stage_requests": client.requests_made,
+                      "checkpoint_reason": reason, "pages_committed": state.pages_committed,
+                      "confirmed_requests_total": state.requests_confirmed_attempted,
+                      "unknown_requests_total": state.requests_unknown}), flush=True)
 
 
 def _evidence(project, query_id):
@@ -69,7 +86,7 @@ def _first_day(state, pages, attempts):
 
 def start(workspace, client, *, now=_utcnow):
     project, query = create_diagnostic_checkpoint(workspace)
-    run_wos_checkpoint(project, query.query_id, client, max_requests=2, now=now)
+    _run_stage(project, query.query_id, client, stage="start", now=now)
     state, pages, attempts = _evidence(project, query.query_id)
     _first_day(state, pages, attempts)
     _save(workspace / STATE, {"project": str(project.identifier), "query": query.query_id})
@@ -94,7 +111,7 @@ def resume(workspace, client, *, now=_utcnow, sleep=time.sleep):
             raise ValueError("provider_hold_exceeds_sample_window")
         if delay > 0:
             sleep(delay)
-    run_wos_checkpoint(project, query_id, client, max_requests=2, revalidate_quota=True, now=now)
+    _run_stage(project, query_id, client, stage="resume", now=now)
     after, final_pages, all_attempts = _evidence(project, query_id)
     next_attempts = all_attempts[len(attempts):]
     if (all_attempts[:len(attempts)] != attempts or
@@ -110,7 +127,8 @@ def resume(workspace, client, *, now=_utcnow, sleep=time.sleep):
                   daily_limit=first_limit, quota_increase_observed=next_attempts[0][4] > first_remaining,
                   actual_exhaustion_observed=first_remaining == 0, requests=len(all_attempts),
                   pages_before=len(pages), pages_after=len(final_pages), original_pages_unchanged=True,
-                  records_retained=after.records_committed, cross_day_resume_verified=True,
+                  records_retained=after.records_committed, stable_reported_matches=before.reported_matches,
+                  cross_day_resume_verified=True,
                   source_retrieval_verified=False)
     for field, variable, pattern in (("commit_sha", "GITHUB_SHA", r"[a-f0-9]{40}"),
                                      ("github_run_id", "GITHUB_RUN_ID", r"[0-9]{1,20}")):
@@ -129,11 +147,14 @@ def main(argv=None):
     if os.environ.get("RESEARCHY_WOS_RETENTION_AUTHORIZED") != "true" or not key:
         print("Manual retention consent and private Starter configuration are required.", file=sys.stderr)
         return 2
+    client = None
     try:
         client = WoSStarterClient(api_key=key, request_budget=2)
         result = (start if args.stage == "start" else resume)(args.workspace, client)
     except Exception:
-        print("Cross-day sample incomplete. No source acceptance recorded.", file=sys.stderr)
+        print(json.dumps({"failed_stage": args.stage, "cross_day_resume_verified": False,
+                          "stage_requests": client.requests_made if client is not None else 0}),
+              file=sys.stderr)
         return 3
     print(json.dumps(result, sort_keys=True))
     return 0

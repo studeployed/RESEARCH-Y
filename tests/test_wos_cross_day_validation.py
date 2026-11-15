@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 import json
 
@@ -30,6 +31,7 @@ def test_cross_day_budget_distinguishes_resume_from_header_increase(tmp_path, ne
     assert result["quota_increase_observed"] is (new_remaining == 5000)
     assert not result["actual_exhaustion_observed"] and not result["source_retrieval_verified"]
     assert result["records_retained"] == 150 and result["requests"] == 4
+    assert result["stable_reported_matches"] == 300
     assert len(source.calls) == 4
     with pytest.raises(ValueError, match="first_day_evidence_invalid"):
         driver.resume(workspace, client(clock, source), now=clock.now)
@@ -49,6 +51,34 @@ def test_cross_day_drift_fails_without_acquiring_next_page(tmp_path):
     with pytest.raises(ValueError):
         driver.resume(workspace, client(clock, source), now=clock.now)
     assert len(source.calls) == 3 and not (workspace / driver.EVIDENCE).exists()
+
+
+def test_resume_transport_failure_logs_request_counts_without_source_text(tmp_path, monkeypatch, capsys):
+    clock = Clock()
+    source = Provider(clock, total=300)
+    workspace = tmp_path / "sample"
+    driver.start(workspace, client(clock, source), now=clock.now)
+    clock.sleep(86400)
+    capsys.readouterr()
+
+    def timeout(request, seconds):
+        raise TimeoutError("private diagnostic " + KEY)
+
+    resumed = client(clock, timeout)
+    monkeypatch.setattr(driver, "WoSStarterClient", lambda **kwargs: resumed)
+    monkeypatch.setattr(driver, "resume", partial(driver.resume, now=clock.now, sleep=clock.sleep))
+    monkeypatch.setenv("RESEARCHY_WOS_STARTER_API_KEY", KEY)
+    monkeypatch.setenv("RESEARCHY_WOS_RETENTION_AUTHORIZED", "true")
+    assert driver.main(["resume", "--workspace", str(workspace)]) == 3
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {
+        "stage_finished": "resume", "stage_requests": 1, "checkpoint_reason": "network_error",
+        "pages_committed": 2, "confirmed_requests_total": 3, "unknown_requests_total": 0,
+    }
+    assert json.loads(captured.err) == {
+        "failed_stage": "resume", "stage_requests": 1, "cross_day_resume_verified": False,
+    }
+    assert not (workspace / driver.EVIDENCE).exists()
 
 
 @pytest.mark.parametrize("first_allowance", [1, 2])

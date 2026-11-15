@@ -65,6 +65,17 @@ Only that aggregate JSON is uploaded. Fixture coverage for SRC-05/06 and partial
 AT-08/09 is in `tests/test_wos_cross_day_validation.py`. A live result requires
 its own completed, authorized dispatch.
 
+The job log records the number of requests attempted in each stage. After a
+worker returns it also records the checkpoint reason, committed page count,
+and confirmed and indeterminate request counts. An unsuccessful sample still
+exits with a failure. A successful artifact includes the stable reported match
+count for the query.
+
+On 14–15 November 2026 the first live cross-day attempt to reach the provider
+saved two pages with 4,998 daily requests remaining. Its resume step failed
+before producing an artifact. That version logged no second-day request count,
+quota reading or cause. [Attempt 2](https://github.com/studeployed/RESEARCH-Y/actions/runs/43389377308/attempts/2)
+
 | Requirement / scenario | Evidence now available | Still open |
 |---|---|---|
 | SRC-05, SRC-06; AT-08 | Institutional allowance, full 50-record pagination and observed count reconciliation for this query | Real quota-exhaustion/reset and multi-day recovery; broader provider-limit behaviour |
