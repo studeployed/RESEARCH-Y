@@ -143,12 +143,32 @@ def test_empty_ris_has_scope_and_status_without_fabricating_a_publication(tmp_pa
             patch.setattr(master_exports.os,"link",interrupt)
             with pytest.raises(OSError,match="interrupted"):
                 export()
-        result=export()
+    with closing(master_results.MasterResults.capture(project,run)) as reopened:
+        result=master_exports.export_results(project,reopened,path,empty,scope="filtered")
         assert result["scope_filename"]==receipt.name and path.read_bytes()==b""
         saved=json.loads(receipt.read_bytes())
         assert saved["rows"]==0 and saved["sha256"]==sha256(b"").hexdigest()
         assert saved["context"]["status"]=="Incomplete" and saved["context"]["view"]==empty
         assert saved["context"]["run"]==run
+        assert saved["context"]["snapshot_time"]!=reopened.captured_at
+
+
+def test_reopened_nonempty_ris_recovers_original_bytes_and_rejects_changed_selection(tmp_path):
+    project,run,_,_=populated(tmp_path)
+    path=tmp_path/"Recovered.ris"
+    with closing(master_results.MasterResults.capture(project,run)) as master:
+        spec=master_results.specification(text="PRIVATE")
+        master.select(spec,all_matching=True)
+        original=master_exports.export_results(project,master,path,spec,scope="selected")
+        body=path.read_bytes()
+    path.unlink()
+    with closing(master_results.MasterResults.capture(project,run)) as master:
+        with pytest.raises(FileExistsError):
+            master_exports.export_results(project,master,path,spec,scope="selected")
+        assert not path.exists()
+        master.select(spec,all_matching=True)
+        assert master_exports.export_results(project,master,path,spec,scope="selected")==original
+    assert path.read_bytes()==body
 
 
 def test_sheet_overflow(tmp_path):

@@ -1,5 +1,6 @@
 """Publish researcher-selected XLSX or RIS snapshots without overwriting an existing file."""
 from hashlib import sha256
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -24,6 +25,22 @@ def _value(value):
 
 def _one_line(value):
     return " ".join(str(value).split())
+
+
+def _ris_scope(target, path, context):
+    name = path.name+".json" if len(path.name)<=135 else "RIS-"+sha256(path.name.encode()).hexdigest()+".json"
+    if target.exists(name):
+        try:
+            previous = json.loads(target.read_selected(name,limit=16*1024*1024))["context"]
+            stamp = previous["snapshot_time"]
+            parsed = datetime.fromisoformat(stamp)
+            if (parsed.tzinfo!=timezone.utc or parsed.isoformat(timespec="microseconds")!=stamp or
+                    previous!=dict(context,snapshot_time=stamp)):
+                raise ValueError("Scope differs")
+        except (TypeError,KeyError,ValueError,OSError,RecursionError):
+            raise FileExistsError(path.parent/name) from None
+        context["snapshot_time"] = stamp
+    return name
 
 
 def _press(db,run):
@@ -342,6 +359,7 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
         stage = Path(temp)/path.name
         rows = results.records(spec,scope)
         if path.suffix.lower()==".ris":
+            scope_name = _ris_scope(target,path,context)
             with stage.open("x",encoding="utf-8",newline="") as out:
                 count = _ris(out,rows,identity._json(context),include_abstracts,abstract_sources)
         else:
@@ -354,7 +372,7 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
         receipt = dict(filename=path.name,sha256=digest.hexdigest(),rows=count,scope=scope,revision=results.revision)
         if path.suffix.lower()==".ris":
             # RIS has no file-level header. A companion receipt describes even a zero-record selection.
-            name = path.name+".json" if len(path.name)<=135 else "RIS-"+sha256(path.name.encode()).hexdigest()+".json"
+            name = scope_name
             receipt["scope_filename"] = name
             payload = (json.dumps(dict(**receipt,context=context),ensure_ascii=False,indent=2)+"\n").encode()
             companion = Path(temp)/name
