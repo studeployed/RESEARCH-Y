@@ -3,6 +3,7 @@ from hashlib import sha256
 from datetime import datetime, timezone
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 from urllib.parse import quote
@@ -85,24 +86,25 @@ def _ris(out, rows, context, include_abstracts, abstract_sources=None):
                        "RPRT" if "society web document" in row["format"] else "JOUR" if row["journal"] else "GEN"),
                 ("ID",row["publication_id"]),("TI",row["title"]),("PY",row["year"]),("JO",row["journal"]),("DO",row["doi"])]
         author_sets = []
+        choices=row.get("reviewed_citation",{})
         for source in row["source_evidence"]:
             metadata = source["fields"]
-            names = []
-            for author in metadata.get("authors") or source.get("specialist",{}).get("authors",[]):
-                if isinstance(author,dict):
-                    name = author.get("displayName") or author.get("collective_name") or ", ".join(
-                        x for x in (author.get("last_name"),author.get("fore_name") or author.get("initials")) if x)
-                else:
-                    name = author
-                if isinstance(name,str) and name.strip():
-                    names.append(name)
+            names = _author_names(metadata.get("authors") or source.get("specialist",{}).get("authors",[]))
             if names and names not in author_sets:
                 author_sets.append(names)
             tags.append(("AN",source["source_record_id"]))
             for url in dict.fromkeys(source.get("source_links",{}).values()):
                 tags.append(("UR",url))
-        if len(author_sets)==1:
+        if "authors" in choices:
+            tags.extend(("AU",author) for author in _author_names(choices["authors"]["value"]))
+        elif len(author_sets)==1:
             tags.extend(("AU",author) for author in author_sets[0])
+        if "pages" in choices:
+            pages=choices["pages"]["value"]
+            interval=re.fullmatch(r"([A-Za-z]*[0-9]+)\s*[-–]\s*([A-Za-z]*[0-9]+)",str(pages))
+            tags.append(("SP",interval[1] if interval else pages))
+            if interval:
+                tags.append(("EP",interval[2]))
         texts = {s["abstract_text"] for s in row["source_evidence"] if s["abstract_text"] and
                  (abstract_sources is None or s["source"] in abstract_sources)}
         if include_abstracts and len(texts)==1:
@@ -117,6 +119,19 @@ def _ris(out, rows, context, include_abstracts, abstract_sources=None):
         out.write("ER  - \r\n\r\n")
         count += 1
     return count
+
+
+def _author_names(authors):
+    names=[]
+    for author in authors:
+        if isinstance(author,dict):
+            name=author.get("displayName") or author.get("collective_name") or ", ".join(
+                x for x in (author.get("last_name"),author.get("fore_name") or author.get("initials")) if x)
+        else:
+            name=author
+        if isinstance(name,str) and name.strip():
+            names.append(name)
+    return names
 
 
 def _citation_values(originals, extract):
@@ -291,10 +306,11 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
         append(master,(pid,row["title"],row["year"],row["journal"],doi,
             "https://doi.org/"+quote(doi,safe="/") if isinstance(doi,str) else None,row["sources"],row["groups"],
             row["original_research"],row["design"],row["format"],row["language"],row["population"],row["review_status"],row["warnings"],
-            _citation_values(originals,lambda s:s["fields"].get("authors") or s.get("specialist",{}).get("authors")),
+            row.get("reviewed_citation",{}).get("authors") or
+                _citation_values(originals,lambda s:s["fields"].get("authors") or s.get("specialist",{}).get("authors")),
             _citation_values(originals,lambda s:s["citation_details"].get("volume")),
             _citation_values(originals,lambda s:s["citation_details"].get("issue")),
-            _citation_values(originals,lambda s:s["fields"].get("pages")),
+            row.get("reviewed_citation",{}).get("pages") or _citation_values(originals,lambda s:s["fields"].get("pages")),
             _citation_values(originals,lambda s:dict(provider=s["source"],record=s["source_record_id"],identifiers=s["identifiers"])),
             _citation_values(originals,lambda s:s["source_links"]),_citation_values(originals,export_text)))
         for s in row["source_evidence"]:

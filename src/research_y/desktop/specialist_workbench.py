@@ -5,7 +5,6 @@ from research_y import conference_review
 from research_y import conference_pdf
 from research_y.conference_jats import MAX_BYTES
 from research_y.conference_project import preview_extraction, admit_extraction, _preview_pdf_block, admit_pdf_block
-from research_y.crossref_client import enrich_publication
 from research_y.crossref_metadata import inspect_enrichment
 from research_y.export_files import Directory
 from research_y.publication_identity import _hash
@@ -175,12 +174,3 @@ class SpecialistWorkbench:
         self.lookup = (publication_id,view["target"]["revision"])
         self.state["enrichment"] = view
         self.state.pop("lookup_result",None)
-
-    def lookup_work(self, project, publication_id, *, contact, actor, revision, refresh):
-        if self.lookup != (publication_id,revision):
-            raise ValueError("Reopen the DOI preview for the current publication")
-        self.lookup = None
-        result = enrich_publication(project,publication_id,contact=contact,actor=actor,
-                                    expected_revision=revision,refresh=refresh,confirmed=True)
-        self.state["lookup_result"] = result["status"]
-        self.state["enrichment"] = inspect_enrichment(project,publication_id)

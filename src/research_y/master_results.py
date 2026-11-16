@@ -189,6 +189,12 @@ def _rows(db,run):
         row = dict(publication_id=pid,**{k:_citation(snapshot,mappings,k) for k in ("title","year","journal","doi")},
                    sources=sorted({s["source_name"] for s in sources}), groups=groups,**dimensions,
                    review_status=statuses,warnings=conflict,source_evidence=originals)
+        for field in ("authors","pages"):
+            selected = _citation_chosen_source(snapshot,field)
+            if selected:
+                choice=snapshot.chosen_fields[field]
+                row.setdefault("reviewed_citation",{})[field]=dict(retrieval_id=selected["retrieval_id"],
+                                                                   value=choice["value"])
         yield row," ".join(searchable).casefold(),non_human_only
 
 

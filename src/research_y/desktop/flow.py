@@ -6,6 +6,7 @@ host-only selection boundary. The research and publication services own their da
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import contextmanager
 import json
 import threading
 from copy import copy, deepcopy
@@ -67,10 +68,13 @@ class RealProjectFlow:
         self._study_view = None
         self._study_proposal = None
         self._study_queue = None
+        self._review_tasks = None
         self._specialist = SpecialistWorkbench()
         self._queue_study_id = None
         self._guard = threading.RLock()
         self._worker = ApplicationWorker()
+        self._provider_worker = ApplicationWorker()
+        self._provider_call_active = False
         # Separate supervised process: verification may run longer than
         # ordinary 35-second inspection operations. Durable checkpoint
         # progress remains readable via the independent ordinary worker.
@@ -346,7 +350,50 @@ class RealProjectFlow:
 
     def _operation(self, name, **kwargs):
         self._require_open()
+        if name in ("pubmed_pilot_count","wos_pilot_sample","wos_acquisition_tick"):
+            command = ApplicationCommand.for_project(self.project,name,**kwargs)
+            try:
+                state = self._wait_for_worker(self._provider_worker, command, timeout=None)
+                return self._worker_result(state)
+            except ApplicationWorkerError:
+                raise ProjectFlowError("worker_unavailable") from None
         return self._operation_for_project(self.project, name, **kwargs)
+
+    @contextmanager
+    def _provider_reply(self, name, request):
+        # The pending receipt protects the project/run selection. Its writer
+        # has a separate worker so local navigation can still use the main one.
+        try:
+            reply = self._operation(name,**request)
+        except BaseException:
+            with self._guard:
+                self._provider_call_active = False
+            raise
+        with self._guard:
+            self._provider_call_active = False
+            self._require_open()
+            yield reply
+
+    @staticmethod
+    def _wait_for_worker(worker, command, *, timeout=35):
+        operation_id = worker.submit(command)
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            state = worker.poll(operation_id)
+            if state.state != "running":
+                return state
+            if deadline is not None and time.monotonic() >= deadline:
+                raise ProjectFlowError("worker_timeout")
+            time.sleep(.025)
+
+    @staticmethod
+    def _worker_result(state):
+        if state.state != "returned":
+            raise ProjectFlowError(state.error or "worker_" + state.state)
+        result = state.result()
+        if not isinstance(result, dict):
+            raise ProjectFlowError("invalid_worker_result")
+        return result
 
     def _operation_for_project(self, project, name, **kwargs):
         """Run a worker against an explicit candidate without switching state."""
@@ -358,24 +405,10 @@ class RealProjectFlow:
                 raise ProjectFlowError('manifest_save_running')
         command = ApplicationCommand.for_project(project, name, **kwargs)
         try:
-            operation_id = self._worker.submit(command)
-            deadline = time.monotonic() + 35
-            while True:
-                state = self._worker.poll(operation_id)
-                if state.state != 'running':
-                    break
-                if time.monotonic() >= deadline:
-                    raise ProjectFlowError('worker_timeout')
-                time.sleep(.025)
+            state = self._wait_for_worker(self._worker,command)
             self.operation_state = state.state
             self.operation_error = state.error
-            if state.state != 'returned':
-                # The spawned worker authenticates these fixed service/worker codes.
-                # Keep real recovery reasons without exposing raw file errors.
-                raise ProjectFlowError(state.error or 'worker_' + state.state)
-            result = state.result()
-            if not isinstance(result, dict):
-                raise ProjectFlowError('invalid_worker_result')
+            result = self._worker_result(state)
             self.last_result = result
             return result
         except ProjectFlowError:
@@ -409,6 +442,7 @@ class RealProjectFlow:
         self._cloud_enabled = False
         self._local_enabled = bool(self._local_assistant and self._local_assistant.installed)
         self._study_queue = self._queue_study_id = self._study_view = self._study_proposal = None
+        self._review_tasks = None
         self.selected_run_id = None
         self._clear_manifest_selection()
         self.selected_export_id = None
@@ -706,6 +740,7 @@ class RealProjectFlow:
                 raise ProjectFlowError('invalid_worker_result')
             self._clear_master()
             self.selected_run_id = run_id
+            self._review_tasks = None
             self._specialist.select(self.project,run_id)
             self._clear_manifest_selection()
             self.selected_export_id = None
@@ -1097,8 +1132,8 @@ class RealProjectFlow:
                 db.execute("BEGIN IMMEDIATE")
                 eid = append_audit(db,"cloud_term_proposal_v1",dict(version=1,at_utc=_utc_now(),
                      authorization=authorization,group_id=gid,term_id=tid,**generated))
-            if (not self._cloud_enabled or project is not self.project or draft is not self._setup
-                    or draft.preview_data is not None or seed != draft._term(draft._group(gid),tid)):
+            if (self._closed or not self._cloud_enabled or project is not self.project or draft is not self._setup
+                    or draft.preview_data is not None or not draft.seed_is_current(gid,tid,seed)):
                 raise ProjectFlowError("cloud_preview_changed")
             draft.local_offers(gid,tid,generated,eid)
             return self._publish()
@@ -1293,7 +1328,36 @@ class RealProjectFlow:
                 raise ProjectFlowError("society_selection_changed")
             return web_url(rows[0]["official_url"])
 
+    def _lookup_specialist_doi(self, *, contact, actor, revision, refresh):
+        from research_y.crossref_client import enrich_publication
+        from research_y.crossref_metadata import inspect_enrichment
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            project, detail, panel = self.project, self._publication_detail, self._specialist
+            publication_id = self._detail_publication_id()
+            panel.select(project, self.selected_run_id)
+            if panel.lookup != (publication_id, revision):
+                raise ProjectFlowError("specialist_input_or_evidence_changed")
+            preview = panel.state["enrichment"]
+            panel.lookup = None
+        result = enrich_publication(project, publication_id, contact=contact, actor=actor,
+                                    expected_revision=revision, refresh=refresh, confirmed=True)
+        updated = inspect_enrichment(project, publication_id)
+        with self._guard:
+            if (not self._closed and self.project is project and self._publication_detail is detail
+                    and self._specialist is panel and panel.state.get("enrichment") is preview):
+                panel.state["lookup_result"] = result["status"]
+                panel.state["enrichment"] = updated
+                return self._publish()
+            return self.state()
+
     def specialist_action(self, name, data):
+        if name == "enrichment_lookup":
+            try:
+                return self._lookup_specialist_doi(**data)
+            except (KeyError, ValueError, TypeError):
+                raise ProjectFlowError("specialist_input_or_evidence_changed") from None
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
@@ -1335,8 +1399,6 @@ class RealProjectFlow:
                         panel.finish_task(self.project,**data)
                 elif name == "enrichment_offer":
                     panel.offer_lookup(self.project,self._detail_publication_id())
-                elif name == "enrichment_lookup":
-                    panel.lookup_work(self.project,self._detail_publication_id(),**data)
                 else:
                     raise ValueError("Unknown operation")
             except (KeyError, ValueError, TypeError):
@@ -1381,6 +1443,68 @@ class RealProjectFlow:
             self._visible_candidate_source(source_id)
             self._specialist.select(self.project,self.selected_run_id)
             self._specialist.open_pdf(source_id,path,page,last_page)
+            return self._publish()
+
+    def review_task_action(self, operation, data):
+        from research_y import conference_review, review_tasks
+        from research_y.publication_fields import select_source_field
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            run, project, page = self.selected_run_id, self.project, self._review_tasks
+            if not run or type(data) is not dict:
+                raise ProjectFlowError("Select a run to review.")
+            if operation == "page":
+                after, category = data.get("after"), data["category"]
+                if after is not None and (not page or (page["category"],page["next_after"]) != (category,after)):
+                    raise ProjectFlowError("Refresh the review queue.")
+                self._review_tasks = review_tasks.read_page(project,run,category,after)
+                return self._publish()
+            if not page or page["run"] != run:
+                raise ProjectFlowError("Refresh the review queue.")
+            category = page["category"]
+            row = next((r for r in page["rows"] if r["id"] == data["id"]),None)
+            if not row:
+                raise ProjectFlowError("Choose a visible review task.")
+            pid = row["id"]
+            if category == "society" and operation == "open":
+                self._specialist.directory(project,self._specialist.state.get("society_terms",[]))
+                self._specialist.choose_society(project,pid)
+                return self._publish()
+            if category == "conference" and operation == "finish":
+                conference_review.finish_task(project,row["retrieval_id"],task_id=pid,actor=data["actor"],
+                                               disposition=data["disposition"],note=data["note"])
+            elif category in review_tasks.PUBLICATION_CATEGORIES:
+                if row["revision"] != data.get("revision"):
+                    raise ProjectFlowError("Refresh the changed review evidence.")
+                case = review_tasks.open_case(project,run,pid,category,row["revision"])
+                if operation == "open":
+                    case["classification"] = study_classification.read_classification(project,pid)
+                    page["detail"] = case
+                    return self._publish()
+                if not page.get("detail") or page["detail"]["revision"] != case["revision"]:
+                    raise ProjectFlowError("Open the review evidence first.")
+                if operation == "confirm":
+                    review_tasks.confirm(project,run,pid,category,case["revision"],data["actor"],data["note"])
+                elif operation == "field" and category == "metadata_conflict" and data["field"] in case["conflicts"]:
+                    source = next((s for s in case["sources"] if s["id"]==data["source"]),None)
+                    field = source and source["fields"][data["field"]]
+                    if not field or field["status"] != "present":
+                        raise ProjectFlowError("Select a displayed citation value.")
+                    select_source_field(project,pid,data["field"],retrieval_id=source["id"],path=tuple(field["path"]),
+                                        expected_revision=case["publication_revision"],actor=data["actor"],reason=data["note"])
+                elif operation == "classify":
+                    v=data["decision"]
+                    study_classification.review_classification(project,pid,dimension=v["dimension"],labels=v["labels"],
+                            actor=v["actor"],rationale=v["rationale"],expected_revision=v["revision"],confirmed=True)
+                    page["detail"]["classification"] = study_classification.read_classification(project,pid)
+                    self._refresh_study_queue()
+                    return self._publish()
+                else:
+                    raise ProjectFlowError("Choose a displayed review action.")
+            else:
+                raise ProjectFlowError("Choose a displayed review action.")
+            self._review_tasks = review_tasks.read_page(project,run,category,page["after"])
             return self._publish()
 
     def inspect_study_queue(self, only_review, hide_non_english, hide_non_human_only, after=None):
@@ -1481,7 +1605,7 @@ class RealProjectFlow:
             raise ProjectFlowError(str(exc)) from None
         with self._guard:
             if (self._closed or not self._local_enabled or self.project is not project or self._setup is not draft
-                    or draft.preview_data is not None or draft._term(draft._group(group_id),term_id) != seed):
+                    or draft.preview_data is not None or not draft.seed_is_current(group_id,term_id,seed)):
                 raise ProjectFlowError("local_assistant_seed_changed")
             self._require_no_unresolved_selection()
             with _validated_project_connection(project) as db:
@@ -1766,33 +1890,31 @@ class RealProjectFlow:
                     candidate.get('run_id') != self.selected_run_id):
                 raise ProjectFlowError('pilot_confirmation_required')
             self._pending_pilot = dict(candidate)
-            self._publish()
-            try:
-                reply = self._operation('pubmed_pilot_count',
+            request = dict(
                     run_id=candidate['run_id'], pilot_id=candidate['pilot_id'],
                     pilot_query_id=candidate['query_id'],
                     pilot_plan_sha256=candidate['plan_sha256'],
                     pilot_contact_email=self._pubmed_profile.contact_email,
                     pilot_api_key=self._pubmed_profile.api_key,
                     pilot_confirmed=True)
-                if (reply.get('pilot_id') != candidate['pilot_id'] or
-                        reply.get('run_id') != candidate['run_id'] or
-                        reply.get('query_id') != candidate['query_id'] or
-                        reply.get('plan_sha256') != candidate['plan_sha256'] or
-                        reply.get('source_retrieval_verified') is not False or
-                        reply.get('execution_authorized') is not False):
-                    raise ProjectFlowError('pilot_receipt_invalid')
-            except ProjectFlowError:
-                # A request receipt may have committed before a worker error.
-                # Do not call the count operation again on this attempt.
-                self._publish()
-                raise
+            self._provider_call_active = True
+            self._publish()
+        with self._provider_reply('pubmed_pilot_count', request) as reply:
+            if (reply.get('pilot_id') != candidate['pilot_id'] or
+                    reply.get('run_id') != candidate['run_id'] or
+                    reply.get('query_id') != candidate['query_id'] or
+                    reply.get('plan_sha256') != candidate['plan_sha256'] or
+                    reply.get('source_retrieval_verified') is not False or
+                    reply.get('execution_authorized') is not False):
+                raise ProjectFlowError('pilot_receipt_invalid')
             return self.reconcile_pubmed_pilot()
 
     def reconcile_pubmed_pilot(self):
         """Read original attempt by UUID; NEVER submit a second provider call."""
         with self._guard:
             self._require_open()
+            if self._provider_call_active:
+                raise ProjectFlowError('source_request_still_running')
             candidate = self._pending_pilot
             if candidate is None:
                 raise ProjectFlowError('pilot_reconciliation_not_required')
@@ -1916,34 +2038,34 @@ class RealProjectFlow:
                     candidate.get('run_id') != self.selected_run_id):
                 raise ProjectFlowError('pilot_confirmation_required')
             self._pending_wos_pilot = dict(candidate)
-            self._publish()
-            try:
-                reply = self._operation('wos_pilot_sample',
+            request = dict(
                     run_id=candidate['run_id'], pilot_id=candidate['pilot_id'],
                     pilot_query_id=candidate['query_id'],
                     pilot_plan_sha256=candidate['plan_sha256'],
                     pilot_api_key=self._wos_profile.api_key,
                     pilot_confirmed=True,
                     pilot_wos_revalidate_quota=candidate['revalidate_quota'])
-                if (any(reply.get(key) != candidate[key] for key in
-                        ('pilot_id','run_id','query_id','plan_sha256',
-                         'exact_query','revalidate_quota')) or
-                        reply.get('source') != 'wos' or
-                        reply.get('sample_only') is not True or
-                        reply.get('count_only') is not False or
-                        reply.get('bibliographic_records_persisted') != 0 or
-                        reply.get('source_retrieval_verified') is not False or
-                        reply.get('execution_authorized') is not False):
-                    raise ProjectFlowError('pilot_receipt_invalid')
-            except ProjectFlowError:
-                self._publish()
-                raise
+            self._provider_call_active = True
+            self._publish()
+        with self._provider_reply('wos_pilot_sample', request) as reply:
+            if (any(reply.get(key) != candidate[key] for key in
+                    ('pilot_id','run_id','query_id','plan_sha256',
+                     'exact_query','revalidate_quota')) or
+                    reply.get('source') != 'wos' or
+                    reply.get('sample_only') is not True or
+                    reply.get('count_only') is not False or
+                    reply.get('bibliographic_records_persisted') != 0 or
+                    reply.get('source_retrieval_verified') is not False or
+                    reply.get('execution_authorized') is not False):
+                raise ProjectFlowError('pilot_receipt_invalid')
             return self.reconcile_wos_pilot()
 
     def reconcile_wos_pilot(self):
         """Read-only original attempt inspection; never repeat a Starter GET."""
         with self._guard:
             self._require_open()
+            if self._provider_call_active:
+                raise ProjectFlowError('source_request_still_running')
             candidate = self._pending_wos_pilot
             if candidate is None:
                 raise ProjectFlowError('pilot_reconciliation_not_required')
@@ -2204,29 +2326,29 @@ class RealProjectFlow:
                 raise ProjectFlowError('session_confirmation_required')
             self._wos_acquisition_tick_pending = dict(candidate)
             self._wos_acquisition_tick_offer = None  # Double click cannot re-authorise.
-            self._publish()
-            try:
-                reply = self._operation('wos_acquisition_tick',
+            request = dict(
                     run_id=candidate['run_id'],
                     acquisition_query_id=candidate['query_id'],
                     acquisition_confirmed=True,
                     acquisition_revalidate_quota=candidate['revalidate_quota'],
                     acquisition_api_key=self._wos_profile.api_key)
-                if (reply.get('run_id') != candidate['run_id'] or
-                        reply.get('query_id') != candidate['query_id'] or
-                        reply.get('preflight_sha256') != candidate['preflight_sha256'] or
-                        reply.get('source_retrieval_verified') is not False or
-                        reply.get('max_next_session_requests') != 3):
-                    raise ProjectFlowError('acquisition_receipt_invalid')
-            except ProjectFlowError:
-                self._publish()
-                raise
+            self._provider_call_active = True
+            self._publish()
+        with self._provider_reply('wos_acquisition_tick', request) as reply:
+            if (reply.get('run_id') != candidate['run_id'] or
+                    reply.get('query_id') != candidate['query_id'] or
+                    reply.get('preflight_sha256') != candidate['preflight_sha256'] or
+                    reply.get('source_retrieval_verified') is not False or
+                    reply.get('max_next_session_requests') != 3):
+                raise ProjectFlowError('acquisition_receipt_invalid')
             return self.reconcile_wos_acquisition_tick()
 
     def reconcile_wos_acquisition_tick(self):
         """Inspect original durable progress; never resend an unknown request."""
         with self._guard:
             self._require_open()
+            if self._provider_call_active:
+                raise ProjectFlowError('source_request_still_running')
             candidate = self._wos_acquisition_tick_pending
             if candidate is None:
                 raise ProjectFlowError('acquisition_reconciliation_not_required')
@@ -4925,6 +5047,7 @@ class RealProjectFlow:
                 'publication_detail': self._publication_detail,
                 'study_queue': self._study_queue if self._study_queue and self._study_queue["run_id"] == self.selected_run_id else None,
                 'specialist': dict(self._specialist.state),
+                'review_tasks': deepcopy(self._review_tasks),
                 'queued_study': self._study_view if self._queue_study_id and self._study_queue and
                     self._study_queue["run_id"] == self.selected_run_id else None,
                 'study_view': self._study_view if not self._queue_study_id and self._publication_detail and self._study_view and
@@ -5007,4 +5130,7 @@ class RealProjectFlow:
                     finally:
                         self._verify_worker.close(grace_seconds=0, kill_seconds=2)
                 finally:
-                    self._worker.close(grace_seconds=0, kill_seconds=2)
+                    try:
+                        self._provider_worker.close(grace_seconds=0, kill_seconds=2)
+                    finally:
+                        self._worker.close(grace_seconds=0, kill_seconds=2)

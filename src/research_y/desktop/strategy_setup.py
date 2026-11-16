@@ -57,6 +57,12 @@ class StrategyDraft:
                 return term
         raise DraftError('unknown_draft_term')
 
+    def seed_is_current(self, group_id, term_id, seed):
+        try:
+            return self._term(self._group(group_id),term_id) == seed
+        except DraftError:
+            return False
+
     def update_heading(self, theme, approved_by, objectives=None):
         heading, reviewer = _text(theme), _text(approved_by)
         if objectives is not None:
