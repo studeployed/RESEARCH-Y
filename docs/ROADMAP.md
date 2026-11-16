@@ -122,6 +122,17 @@ restart check and recovered two records in the separate metadata sample.
 Starter verified institutional access and reconciled the observed fixed-query
 enumeration after a controlled restart. The retained audit checks aggregate
 evidence. A separate four-request sample resumed across midnight with the
-first two pages intact and an increased daily allowance. Live quota exhaustion,
-broader metadata coverage and product-wide acceptance retain
-their later roadmap gates.
+first two pages intact and an increased daily allowance. Controlled fixtures
+exercise exhausted quotas. The live samples establish coverage for their
+observed queries and dates.
+
+## Initial release verification
+
+[Issue #163](https://github.com/studeployed/RESEARCH-Y/issues/163) tracks the
+product-wide review of the 115 clauses marked partial after Phase 3. Each row
+in the [requirement register](requirements-traceability.csv) identifies its
+evidence or the behaviour that still needs verification. The completed
+[Phase 3 acceptance scenarios](PHASE3_ACCEPTANCE.md) remain the regression
+baseline. Complete the outstanding mandatory clauses, document any departures
+from preferred behaviour, and exercise the installer built from the final
+integrated commit.

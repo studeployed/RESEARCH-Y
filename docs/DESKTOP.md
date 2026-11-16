@@ -34,6 +34,11 @@ describe the purpose of the search and do not add terms to source queries.
 
 ### Optional Windows local assistant
 
+The initial Windows package uses the CPU on every supported machine. Hardware
+acceleration is a preferred capability in AI-03. The benchmark and approved
+integration cover the CPU engine; the project has no validated GPU build or
+measured accelerator parity for this release.
+
 The approved local package contains Qwen3-1.7B Q8_0 (1,834,426,016 bytes)
 and the Windows x64 CPU build of llama.cpp b12360. Inference uses six CPU
 threads. Allow about 1.9 GB for the installed package, plus space for the
