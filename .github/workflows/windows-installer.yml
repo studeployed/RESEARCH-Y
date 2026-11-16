@@ -14,7 +14,7 @@ permissions:
 jobs:
   verify:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4.2.2
         with:
@@ -22,18 +22,31 @@ jobs:
       - uses: actions/setup-python@v5.6.0
         with:
           python-version: '3.13'
+      - name: Check out the integrated Phase 3 installer baseline
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: 030a2f8c385d2fcfe466f391f4dc0eb60507f6d5
+          path: _installer_baseline
+          persist-credentials: false
+      - name: Build baseline installer for the upgrade check
+        run: python _installer_baseline/tools/windows_distribution/build.py build/Baseline-Setup.exe
       - name: Build bundled per-user installer
         run: python tools/windows_distribution/build.py build/RESEARCH-Y-Setup.exe
-      - name: Verify installation, reinstallation and bundled native lifecycle
-        shell: python
-        run: |
-          import os, pathlib, subprocess
-          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ry-installed'
-          exe = pathlib.Path('build/RESEARCH-Y-Setup.exe').resolve()
-          install = [str(exe), '--test-install-root', str(root)]
-          subprocess.run(install, check=True)
-          version = (root/'current.txt').read_text()
-          python = root/'versions'/version/'python.exe'
-          subprocess.run([str(python), '-I', '-B', 'tools/desktop_lifecycle.py'], check=True, timeout=480)
-          subprocess.run(install, check=True)
-          assert (root/'current.txt').read_text() == version
+      - name: Verify clean install, reinstallation, real upgrade and project preservation
+        run: python tools/windows_distribution/verify_install.py build/RESEARCH-Y-Setup.exe build/Baseline-Setup.exe build/verification.json
+      - name: Retain the tested installer and its checksum
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: RESEARCH-Y-Windows-${{ github.sha }}
+          path: |
+            build/RESEARCH-Y-Setup.exe
+            build/verification.json
+          if-no-files-found: error
+      - name: Retain pull request verification evidence
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: installer-verification-${{ github.sha }}
+          path: build/verification.json
+          if-no-files-found: error
