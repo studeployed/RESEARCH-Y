@@ -292,12 +292,14 @@ def _expect(snapshot: PublicationSnapshot, revision: str) -> None:
 def _record_link(db: sqlite3.Connection, source: dict[str, Any], *, before: str | None,
                  after: str, previous_event_id: int | None, status: str, action: str,
                  actor: str, evidence: str, request_sha256: str | None = None,
-                 reverses_event_id: int | None = None) -> int:
+                 reverses_event_id: int | None = None, retained_annotations: dict | None = None) -> int:
     event = dict(version=1, at_utc=_utc_now(), method=METHOD, action=action,
                  retrieval_id=source["retrieval_id"], source_sha256=source["source_sha256"],
                  before=before, after=after, previous_event_id=previous_event_id,
                  status=status, actor=actor, evidence=evidence, request_sha256=request_sha256,
                  reverses_event_id=reverses_event_id)
+    if retained_annotations:
+        event["retained_annotations"] = retained_annotations
     event_id = _audit(db, IDENTITY_EVENT, event)
     pointer = _json({"version": 1, "event_id": event_id})
     if before is None:
@@ -332,13 +334,31 @@ def materialise_retrieval(project: Project, retrieval_id: str, *, actor: str) ->
         return _snapshot(db, publication_id)
 
 
+def annotation_retention(db, snapshot, retrieval_id):
+    """Describe publication-owned reviews and documents that can stay with surviving originals."""
+    if not any(s["retrieval_id"] != retrieval_id for s in snapshot.retrievals):
+        return None
+    reviews = db.execute("SELECT classification_id,dimension,label,review_status,provenance_json,classified_at_utc "
+                         "FROM classifications WHERE publication_id=? ORDER BY classification_id",
+                         (snapshot.publication_id,)).fetchall()
+    documents = db.execute("SELECT document_id,container_id,relative_path,external_url,provenance_json "
+                           "FROM documents WHERE publication_id=? ORDER BY document_id",
+                           (snapshot.publication_id,)).fetchall()
+    if not (reviews or documents):
+        return None
+    return dict(publication_id=snapshot.publication_id, classification_records=len(reviews), documents=len(documents),
+                sha256=_hash([snapshot.revision, retrieval_id, reviews, documents]))
+
+
 def _movable(db: sqlite3.Connection, snapshot: PublicationSnapshot, retrieval_id: str, *,
-             retain_society_roles=False) -> None:
+             retain_society_roles=False, retain_reviewed_annotations=False) -> None:
     if any(v["provenance"]["retrieval_id"] == retrieval_id for v in snapshot.chosen_fields.values()):
         raise ValueError("Clear source-backed field choices before moving their retrieval")
     # Do not silently move or strand future specialist annotations. A later
     # publication-level merge/split workflow must explicitly disposition them.
     for table in ("classifications", "documents", "publication_containers", "publication_organisations"):
+        if retain_reviewed_annotations and table in ("classifications", "documents"):
+            continue
         if table == "publication_organisations" and retain_society_roles:
             continue
         if db.execute(f"SELECT 1 FROM {table} WHERE publication_id=? LIMIT 1",
@@ -405,14 +425,17 @@ def _associate_in_transaction(db: sqlite3.Connection, retrieval_id: str,
 
 def reverse_association(project: Project, retrieval_id: str, decision_event_id: int, *,
                         expected_current_revision: str, expected_restored_revision: str,
-                        actor: str, evidence: str) -> PublicationSnapshot:
+                        actor: str, evidence: str, retained_annotation_sha256: str | None = None) -> PublicationSnapshot:
     """Append an inverse decision; never erase history or revive a stale review."""
     _identifier(retrieval_id)
     _positive(decision_event_id)
     _text(actor, 200)
     _text(evidence)
-    request = _hash(["reverse", retrieval_id, decision_event_id, expected_current_revision,
-                     expected_restored_revision, actor, evidence])
+    fields = ["reverse", retrieval_id, decision_event_id, expected_current_revision,
+              expected_restored_revision, actor, evidence]
+    if retained_annotation_sha256 is not None:
+        fields.append(retained_annotation_sha256)
+    request = _hash(fields)
     with _validated_project_connection(project) as db:
         db.execute("BEGIN IMMEDIATE")
         link = _link(db, retrieval_id)
@@ -442,11 +465,17 @@ def reverse_association(project: Project, retrieval_id: str, decision_event_id: 
                         retained_roles.update((o["society_id"],role) for o in orgs)
         actual_roles = set(db.execute("SELECT organisation_id,role FROM publication_organisations WHERE publication_id=?",
                                       (current.publication_id,)))
-        _movable(db, current, retrieval_id, retain_society_roles=bool(actual_roles) and actual_roles <= retained_roles)
+        retained = None
+        if retained_annotation_sha256 is not None:
+            retained = annotation_retention(db, current, retrieval_id)
+            if retained is None or retained["sha256"] != retained_annotation_sha256:
+                raise StalePublicationError("Publication annotations changed; review their disposition again")
+        _movable(db, current, retrieval_id, retain_society_roles=bool(actual_roles) and actual_roles <= retained_roles,
+                 retain_reviewed_annotations=retained is not None)
         _record_link(db, _source(db, retrieval_id), before=current.publication_id,
                      after=restored.publication_id, previous_event_id=link[1], status=previous["status"],
                      action="reverse", actor=actor, evidence=evidence, request_sha256=request,
-                     reverses_event_id=decision_event_id)
+                     reverses_event_id=decision_event_id, retained_annotations=retained)
         return _snapshot(db, restored.publication_id)
 
 

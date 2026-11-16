@@ -1193,13 +1193,19 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.label('Original association evidence: ' +
                              undo['original_decision_evidence']).props(
                                  'data-testid=candidate-reversal-evidence')
+                    retained = undo.get("retained_annotations")
+                    if retained:
+                        ui.label(f'Reversing this link keeps {retained["classification_records"]} classification '
+                                 f'records and {retained["documents"]} documents with publication '
+                                 f'{retained["publication_id"]} and its remaining sources.')
                     reverser = ui.input(
                         'Researcher recording reversal', value='')
                     reason = ui.input(
                         'Reason for reversing current association', value='')
                     ui.button('CONFIRM reverse CURRENT association',
-                              on_click=lambda a=reverser, e=reason:
+                              on_click=lambda a=reverser, e=reason, rev=undo['revision']:
                               act('candidate_reversal_confirm', {
+                                  'offer_revision':rev,
                                   'actor':a.value,
                                   'evidence':e.value})).props(
                                       'data-testid=candidate-reversal-confirm')

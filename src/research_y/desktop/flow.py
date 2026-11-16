@@ -3899,12 +3899,15 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
-    def confirm_candidate_reversal(self, *, actor, evidence):
+    def confirm_candidate_reversal(self, *, actor, evidence, offer_revision=None):
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
             offer = self._reversal_offer
             page = self._publication_page
+            if offer and (offer.get("retained_annotations") or offer_revision is not None):
+                if offer_revision != offer["revision"]:
+                    raise ProjectFlowError('publication_review_stale')
             if (offer is None or self.selected_run_id is None or page is None
                     or page['revision'] != offer['run_revision']):
                 raise ProjectFlowError('publication_review_confirmation_required')

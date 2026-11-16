@@ -27,3 +27,12 @@ Offline SQLite fixtures cover shared DOI abstract non-merging, citation-only rea
 **Next:** project-wide candidate discovery with an indexed, auditable, bounded review queue and status filtering, then full master list/structured exports and search completeness gates. The selection/review interface does not satisfy those later acceptance tests.
 
 **Merge protocol:** independently verify exact current HEAD, all required continuous-integration jobs, definitively completed Codex code review **first** followed by exact-HEAD security review, individual receipts, dispositions and owner approval. Never merge automatically.
+
+## Reversing a reviewed source link
+
+When a publication has other original sources, the reversal preview identifies
+the publication that will retain its classification history and attached
+documents. Confirming the displayed disposition records its evidence digest
+with the reversal. A new or changed annotation requires a fresh preview.
+Source-backed field choices and source-specific society or container
+relationships remain subject to their own guards.
