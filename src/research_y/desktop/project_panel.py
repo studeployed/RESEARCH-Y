@@ -1104,7 +1104,12 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                  ' (' + field['right']['status'] + ')').props(
                                      'data-testid=candidate-comparison')
                     for warning in pair['warnings']:
-                        ui.label('WARNING — ' + warning).props(
+                        descriptions = {
+                            'prior_run_metadata_unchanged': 'Both provider records match the latest reviewed pair exactly. Review its decision below before recording this run.',
+                            'prior_run_metadata_changed': 'Provider metadata has changed since the latest review. Reassess this pair before deciding.',
+                            'prior_run_decision_outdated': 'The earlier identity or review evidence has changed. Reassess this pair before deciding.',
+                        }
+                        ui.label(descriptions.get(warning, 'WARNING — ' + warning)).props(
                             'data-testid=candidate-warning')
                     ui.label('Pair status: ' + pair['status'] +
                              '; previous decision receipts: ' +
