@@ -1,4 +1,5 @@
 from contextlib import closing
+from types import SimpleNamespace
 
 import pytest
 
@@ -6,6 +7,23 @@ from research_y.desktop.strategy_setup import StrategyDraft, DraftError
 from research_y.storage import get_strategy_snapshot, list_run_queries
 from research_y.terminology import lexical_variants
 from test_gui_strategy_setup import _flow
+
+
+def test_pending_offers_display_origin_method_seed_and_reason_before_review():
+    from research_y.desktop.project_panel import render_term_provenance
+
+    draft = StrategyDraft()
+    group = draft.add_group("Support")
+    term = draft.add_term(group, "veno-venous")
+    draft.suggest_variants(group, term)
+    draft.local_offers(group, term, {"model": "Test model", "terms": ["alternative"]}, 7)
+    labels = []
+    for offer in draft.state()["suggestions"]:
+        render_term_provenance(SimpleNamespace(label=labels.append), offer)
+        assert offer["method"] in labels[-2] and "Initial term: veno-venous" in labels[-2]
+        assert labels[-1] == offer["reason"]
+    assert any(label.startswith("AI suggestion · Test model") for label in labels)
+    assert any(label.startswith("Deterministic lexical variant") for label in labels)
 
 
 def test_operational_approval_excludes_pending_and_rejected_variants(tmp_path):

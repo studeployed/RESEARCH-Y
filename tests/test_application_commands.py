@@ -740,6 +740,7 @@ def test_strategy_admission_mandatory_explicit_approval_worker_routing(services)
     project, calls, *_ = services
     groups = (StrategyGroup('rv', 'RV', (ApprovedTerm('right ventricle', 'researcher', True),)),)
     payload = dict(admission_request_id=str(uuid4()), admission_theme='RV',
+                   admission_objectives='Compare reported study designs',
                    admission_approved_by='Reviewer', admission_groups=groups,
                    approval_confirmed=True)
     cmd = commands.ApplicationCommand.for_project(project, 'admit_strategy', **payload)
@@ -747,7 +748,7 @@ def test_strategy_admission_mandatory_explicit_approval_worker_routing(services)
     commands.execute_command(cmd)
     assert len(calls) == 1 and calls[0][0] == 'admit_strategy'
     assert calls[0][2] == dict(request_id=payload['admission_request_id'],
-                               theme='RV', approved_by='Reviewer',
+                               theme='RV', objectives='Compare reported study designs', approved_by='Reviewer',
                                groups=groups, approval_confirmed=True)
     assert calls[0][1][0] == project
 

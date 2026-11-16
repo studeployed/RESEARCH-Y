@@ -7,6 +7,12 @@ from research_y.desktop.study_panel import render_study_panel, render_study_queu
 from research_y.desktop.specialist_panel import society_panel, publication_panel
 
 
+def render_term_provenance(ui, offer):
+    origin = "AI suggestion" if offer["origin"] == "ai" else "Deterministic lexical variant"
+    ui.label(f'{origin} · {offer["method"]} · Initial term: {offer["seed"]}')
+    ui.label(offer["reason"])
+
+
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
     state = flow.state()
     project = state['project']
@@ -190,12 +196,15 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             if draft['preview'] is None:
                 theme_input = ui.input('Research theme', value=draft['theme']).props(
                     'data-testid=setup-theme')
+                objectives_input = ui.textarea('Research objectives (optional)', value=draft['objectives']).props(
+                    'data-testid=setup-objectives')
                 approver_input = ui.input('Researcher approving', value=draft['approved_by']).props(
                     'data-testid=setup-approver')
                 ui.button('Save research heading',
                           on_click=lambda: act('setup_edit', dict(
                               action='heading', data=dict(
                                   theme=theme_input.value,
+                                  objectives=objectives_input.value or '',
                                   approved_by=approver_input.value)))).props(
                                       'data-testid=setup-save-heading')
                 new_group = ui.input('New concept group name').props('data-testid=setup-group-input')
@@ -243,7 +252,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                     if offer['source_term_id'] != tid or offer['status'] != 'pending':
                                         continue
                                     sid = offer['suggestion_id']
-                                    ui.label(offer['reason'])
+                                    render_term_provenance(ui, offer)
                                     wording = ui.input('Proposed variant', value=offer['text'])
                                     ui.button('Accept wording', on_click=lambda sid=sid, box=wording:
                                               act('setup_edit', dict(action='review_variant',
@@ -299,6 +308,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.label('Concept groups: ' + str(preview['group_count']) +
                              '; enabled terms: ' + str(preview['active_term_count']))
                     ui.label('Filters/limits: ' + preview['limitations'])
+                    if preview['objectives']:
+                        ui.label('Research objectives: ' + preview['objectives'])
                     for source in preview['sources']:
                         ui.label('Source: ' + source['name'] + ' — ' +
                                  source['coverage']).props('data-testid=setup-source-coverage')
@@ -1369,6 +1380,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                 ui.label('Recorded limits: ' + preview['limitations'])
                 ui.label('Provider counts: UNKNOWN; workload estimate: UNKNOWN '
                          '(no pilot counts obtained).').props('data-testid=preflight-unknown')
+                if preview.get('objectives'):
+                    ui.label('Approved research objectives: ' + preview['objectives'])
                 ui.label('Automated compiler checks are not independent PRESS peer review. '
                          'Known-relevant records and PubMed translation have NOT been checked.')
                 for group in preview['groups']:

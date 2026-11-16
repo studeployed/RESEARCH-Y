@@ -75,7 +75,9 @@ def _stamp(value):
 
 def _strategy(snapshot, rows):
     """Accept the approved storage contract, not an arbitrary legacy dictionary."""
-    if (set(snapshot) != {"format_version", "theme", "logic", "approved_by", "groups"}
+    required = {"format_version", "theme", "logic", "approved_by", "groups"}
+    if (set(snapshot) not in (required, required | {"objectives"})
+            or ("objectives" in snapshot and not isinstance(snapshot["objectives"], str))
             or type(snapshot.get("format_version")) is not int or snapshot["format_version"] != 1
             or snapshot.get("logic") != "OR" or not isinstance(snapshot.get("theme"), str)
             or not isinstance(snapshot.get("approved_by"), str)

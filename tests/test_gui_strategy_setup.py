@@ -46,6 +46,44 @@ def _counts(project):
                                   'source_queries','audit_events'))
 
 
+def test_saved_objectives_reopen_freeze_and_survive_later_edits(tmp_path):
+    from research_y.projects import read_research_setup, update_research_setup
+    from research_y.preflight_review import read_preflight
+
+    project, flow = _flow(tmp_path)
+    heading = dict(theme="Research topic", objectives="First objective\nSecond objective", approved_by="Reviewer")
+    try:
+        flow.edit_setup("heading", heading)
+        assert read_research_setup(project).objectives == heading["objectives"]
+        flow.open_native_folder(project.root)
+        assert flow.state()["strategy_draft"]["objectives"] == heading["objectives"]
+        _seed(flow)
+        assert flow.preview_setup()["strategy_draft"]["preview"]["objectives"] == heading["objectives"]
+        admitted = flow.approve_setup()["last_strategy_admission"]
+        saved = get_strategy_snapshot(project, admitted["strategy_version_id"])
+        assert saved["objectives"] == heading["objectives"]
+        assert read_preflight(project, admitted["run_id"])["objectives"] == heading["objectives"]
+        assert all("objective" not in q.exact_query for q in list_run_queries(project, admitted["run_id"]))
+        update_research_setup(project,theme="Another editor",objectives="New purpose")
+        with pytest.raises(ProjectFlowError, match="Research heading changed"):
+            flow.edit_setup("heading", dict(heading, objectives=""))
+        assert read_research_setup(project).objectives == "New purpose"
+        flow.open_native_folder(project.root)
+        flow.edit_setup("heading", dict(heading, objectives=""))
+        flow.open_native_folder(project.root)
+        assert flow.state()["strategy_draft"]["objectives"] == ""
+        assert get_strategy_snapshot(project, admitted["strategy_version_id"]) == saved
+        from openpyxl import load_workbook
+        from research_y import master_exports, master_results
+        export_path = tmp_path / "Earlier strategy.xlsx"
+        with closing(master_results.MasterResults.capture(project, admitted["run_id"])) as results:
+            master_exports.export_results(project, results, export_path, master_results.DEFAULT, scope="entire")
+        with closing(load_workbook(export_path, read_only=True)) as workbook:
+            assert dict(workbook["Methods"].values)["Research objectives"] == heading["objectives"]
+    finally:
+        flow.close()
+
+
 def test_real_worker_strategy_approval_to_explicit_run_selection_and_workbook(tmp_path):
     project, flow = _flow(tmp_path)
     try:

@@ -73,6 +73,10 @@ class ResearchSetup:
     objectives: str
 
 
+class ResearchSetupChangedError(ValueError):
+    """A second editor has changed the saved research heading."""
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
@@ -525,7 +529,8 @@ def read_research_setup(project: Project) -> ResearchSetup:
     return ResearchSetup(theme=theme, objectives=objectives)
 
 
-def update_research_setup(project: Project, *, theme: str, objectives: str = "") -> None:
+def update_research_setup(project: Project, *, theme: str, objectives: str = "",
+                          expected: ResearchSetup | None = None) -> None:
     """Transactionally save theme/objectives and one corresponding audit event."""
     if not isinstance(theme, str) or not isinstance(objectives, str):
         raise TypeError("Theme and objectives must be text")
@@ -534,6 +539,11 @@ def update_research_setup(project: Project, *, theme: str, objectives: str = "")
         old_theme, old_objectives = connection.execute(
             "SELECT theme, objectives FROM project_metadata WHERE singleton_id=1"
         ).fetchone()
+        if expected is not None:
+            if (theme, objectives) == (old_theme, old_objectives):
+                return
+            if expected != ResearchSetup(old_theme, old_objectives):
+                raise ResearchSetupChangedError("The research heading changed. Reopen the project before editing.")
         connection.execute(
             "UPDATE project_metadata SET theme=?, objectives=? WHERE singleton_id=1",
             (theme, objectives),

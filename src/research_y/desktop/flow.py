@@ -8,13 +8,14 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import threading
-from copy import deepcopy
+from copy import copy, deepcopy
 import time
 from uuid import uuid4, uuid5
 
 from research_y.application_commands import ApplicationCommand
 from research_y.application_worker import ApplicationWorker, ApplicationWorkerError
-from research_y.projects import (MANIFEST_FILENAME, ProjectFormatError, ProjectVersionError,
+from research_y.projects import (MANIFEST_FILENAME, ProjectFormatError, ProjectVersionError, ResearchSetup,
+                                  ResearchSetupChangedError, update_research_setup,
                                   _parse_manifest, create_project, open_project)
 from research_y.export_files import Directory, ExportFileError
 from research_y.desktop.folders import (
@@ -365,6 +366,8 @@ class RealProjectFlow:
         snapshot = inspected.get('snapshot')
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get('runs'), list) or not isinstance(snapshot.get('exports'), list):
             raise ProjectFlowError('invalid_worker_result')
+        heading = snapshot['project']
+        saved_setup = ResearchSetup(heading['theme'], heading['objectives'])
         self._clear_master()
         self.project = project
         self._run_acceptance = None
@@ -384,7 +387,8 @@ class RealProjectFlow:
         self._pending_export_revision = None
         self.observation = None
         self.retained_export_report = None
-        self._setup = StrategyDraft()
+        self._saved_setup = saved_setup
+        self._setup = StrategyDraft(saved_setup.theme, saved_setup.objectives)
         self._pending_admission_id = None
         self._pending_admission_payload = None
         self._last_strategy_admission = None
@@ -929,6 +933,19 @@ class RealProjectFlow:
                     or type(data) is not dict):
                 raise ProjectFlowError('invalid_setup_action')
             try:
+                if action == 'heading' and 'objectives' in data:
+                    updated = copy(self._setup)
+                    updated.update_heading(**data)
+                    heading = ResearchSetup(updated.theme, updated.objectives)
+                    try:
+                        update_research_setup(self.project, theme=heading.theme, objectives=heading.objectives,
+                                              expected=self._saved_setup)
+                    except ResearchSetupChangedError:
+                        raise ProjectFlowError('Research heading changed. Reopen the project to review it.') from None
+                    self._saved_setup = heading
+                    self._setup = updated
+                    self._last_strategy_admission = None
+                    return self._publish()
                 suggestion = self._setup.suggestions.get(data.get("suggestion_id")) if action == "review_variant" else None
                 if suggestion and suggestion["origin"] == "ai":
                     updated = deepcopy(self._setup)
@@ -945,6 +962,8 @@ class RealProjectFlow:
                     return self._publish()
                 method = getattr(self._setup, self._SETUP_ACTIONS[action])
                 method(**data)
+            except ProjectFlowError:
+                raise
             except (DraftError, ValueError, TypeError):
                 raise ProjectFlowError('invalid_setup_input') from None
             self._last_strategy_admission = None
@@ -1395,6 +1414,7 @@ class RealProjectFlow:
                 self._pending_admission_id = str(uuid4())
                 self._pending_admission_payload = dict(
                     admission_theme=self._setup.theme,
+                    admission_objectives=self._setup.objectives,
                     admission_approved_by=self._setup.approved_by,
                     admission_groups=self._setup.approved_groups(),
                     approval_confirmed=True,
@@ -1433,7 +1453,7 @@ class RealProjectFlow:
                 }
                 self._pending_admission_id = None
                 self._pending_admission_payload = None
-                self._setup = StrategyDraft()
+                self._setup = StrategyDraft(self._saved_setup.theme, self._saved_setup.objectives)
                 # No implicit run selection or source execution.
                 return self._publish()
             except ProjectFlowError:
