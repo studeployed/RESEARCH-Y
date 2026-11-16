@@ -55,6 +55,9 @@ class RealProjectFlow:
         if wos_profile is not None and type(wos_profile) is not WoSHostProfile:
             raise ProjectFlowError('wos_profile_invalid')
         self._pubmed_profile = pubmed_profile
+        from research_y.desktop.settings import PubMedConnectionTest
+        self._pubmed_connection_test = PubMedConnectionTest(pubmed_profile) if pubmed_profile else None
+        self._pubmed_test_active = False
         self._wos_profile = wos_profile
         self._local_assistant = local_assistant
         self._cloud_assistant = cloud_assistant
@@ -308,6 +311,32 @@ class RealProjectFlow:
             self._root = folder
             self._remember_project(project)
             return self._publish()
+
+    def test_pubmed_connection(self):
+        from research_y.pubmed_probe import MIN_SECONDS_BETWEEN_REQUESTS
+        with self._guard:
+            if self._closed or self._pubmed_connection_test is None:
+                raise ProjectFlowError("PubMed settings are unavailable.")
+            if self._pubmed_test_active:
+                return "A PubMed connection test is already running."
+            if (self._pending_pilot is not None or self._pubmed_source_pending is not None or
+                    self._pubmed_metadata_pending is not None or self._coord_pending and any(
+                    task["source_name"]=="pubmed" for task in self._coord_pending["tasks"])):
+                return "Finish or reconcile the active PubMed session before testing the connection."
+            project = self.project
+            self._pubmed_test_active = True
+        try:
+            # Workers own independent pacing clocks. Leave a request interval on both sides of the test.
+            time.sleep(MIN_SECONDS_BETWEEN_REQUESTS)
+            return self._pubmed_connection_test.check(project)
+        finally:
+            time.sleep(MIN_SECONDS_BETWEEN_REQUESTS)
+            with self._guard:
+                self._pubmed_test_active = False
+
+    def _require_pubmed_test_idle(self):
+        if self._pubmed_test_active:
+            raise ProjectFlowError("Wait for the PubMed connection test to finish before starting a source request.")
 
     def _require_open(self):
         if self._closed:
@@ -1711,6 +1740,7 @@ class RealProjectFlow:
         read-only and never resubmits a count request or invents a zero count.
         """
         with self._guard:
+            self._require_pubmed_test_idle()
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
@@ -2525,6 +2555,7 @@ class RealProjectFlow:
     def confirm_pubmed_source(self):
         """One explicit bounded ESearch session; return without blocking UI."""
         with self._guard:
+            self._require_pubmed_test_idle()
             self._require_open()
             self._require_no_unresolved_selection()
             candidate = self._pubmed_source_offer
@@ -2770,6 +2801,7 @@ class RealProjectFlow:
     def confirm_pubmed_metadata(self):
         """Spawn one capped EFetch session after a separate deliberate click."""
         with self._guard:
+            self._require_pubmed_test_idle()
             self._require_open()
             self._require_no_unresolved_selection()
             candidate=self._pubmed_metadata_offer
@@ -4217,6 +4249,8 @@ class RealProjectFlow:
             if (candidate is None or not candidate['tasks'] or
                     candidate['preview']['run_id'] != self.selected_run_id):
                 raise ProjectFlowError('run_coordination_confirmation_required')
+            if any(task["source_name"]=="pubmed" for task in candidate["tasks"]):
+                self._require_pubmed_test_idle()
             latest = self._operation('run_coord_preview',
                 run_id=self.selected_run_id)
             if latest != candidate['preview']:

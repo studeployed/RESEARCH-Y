@@ -19,14 +19,19 @@ The Windows workflow rehearses both a clean install and an upgrade of a project
 written by the Phase 3 build. Issue #163 remains open for the outstanding product
 requirements and verification of the installer built from the final merged commit.
 
-## Phase 3 delivery
-
 The run comparison shows classifications attached to recurring source records,
 including the earlier researcher, decision and rationale. When the later run
 has a separate publication identity, a researcher can verify the evidence and
 record a new decision linked to the earlier one. Changed evidence or an edited
 decision requires reopening the comparison. The summary separates shared
 publication identities, recurring sources and unresolved splits or associations.
+
+The native launcher provides access to Windows Credential Manager and an
+explicit PubMed connection check. The test uses a public fixed query and the
+existing paced client. A project-level provider pause also applies to the test.
+The launch screen explains saved credential errors, quota holds and recovery.
+
+## Phase 3 delivery
 
 See the [release matrix](docs/PHASE3_ACCEPTANCE.md) for all 22 scenarios,
 the [installation guide](docs/WINDOWS_INSTALLER.md) for the Windows build
