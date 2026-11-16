@@ -4116,7 +4116,7 @@ class RealProjectFlow:
             offer = self._candidate_offer
             page = self._publication_page
             cross_run = offer is not None and offer.get('cross_run') is True
-            if (cross_run or offer_revision is not None) and (
+            if (cross_run or (offer and offer.get("move_dispositions")) or offer_revision is not None) and (
                     not offer or offer_revision != offer['revision']):
                 raise ProjectFlowError('publication_review_stale')
             if cross_run and decision == 'confirmed_match' and not any(
@@ -4188,7 +4188,7 @@ class RealProjectFlow:
             self._require_no_unresolved_selection()
             offer = self._reversal_offer
             page = self._publication_page
-            if offer and (offer.get("retained_annotations") or offer_revision is not None):
+            if offer and (offer.get("retained_annotations") or offer.get("disposition") or offer_revision is not None):
                 if offer_revision != offer["revision"]:
                     raise ProjectFlowError('publication_review_stale')
             if (offer is None or self.selected_run_id is None or page is None

@@ -9,6 +9,7 @@ from __future__ import annotations
 from research_y.application_inspection import _read
 from research_y import publication_identity as identity, publication_candidates as candidates
 from research_y import result_counts
+from research_y import identity_disposition
 from research_y.publication_results import DETAIL_FIELDS, _value
 
 METHOD = "local-publication-review/1"
@@ -46,6 +47,18 @@ def _pair(db, run_id, left, right, *, cross_run=False):
     if type(cross_run) is not bool or selected != (1 if cross_run else 2):
         raise PublicationReviewError("publication_review_wrong_run")
     return snapshot
+
+
+def _move_previews(db,snapshot):
+    if snapshot.publication_ids[0]==snapshot.publication_ids[1]:
+        return {},snapshot.revision
+    pubs=[identity._snapshot(db,pid) for pid in snapshot.publication_ids]
+    plans={}
+    for i,rid in enumerate(snapshot.retrieval_ids):
+        plan=identity_disposition.describe(db,pubs[i],pubs[1-i],rid)
+        if plan:
+            plans[rid]=identity_disposition.summary(plan)
+    return plans,identity._hash([snapshot.revision,plans]) if plans else snapshot.revision
 
 
 def _safe_pair(snapshot, project, run_id, run_revision):
@@ -96,7 +109,9 @@ def preview_candidate_review(project, run_id, left, right, *, run_revision, cros
         with _read(project) as db:
             _context(db, project, run_id, run_revision)
             snapshot = _pair(db, run_id, left, right, cross_run=cross_run)
-            return dict(_safe_pair(snapshot, project, run_id, run_revision), cross_run=cross_run)
+            plans,revision=_move_previews(db,snapshot)
+            return dict(_safe_pair(snapshot, project, run_id, run_revision),cross_run=cross_run,
+                        move_dispositions=plans,revision=revision)
     except PublicationReviewError:
         raise
     except Exception:
@@ -132,14 +147,16 @@ def record_candidate_review(project, run_id, left, right, *, run_revision,
                     source["run_id"] == run_id and source["retrieval_id"] == move_retrieval_id
                     for source in snapshot.sources):
                 raise PublicationReviewError("publication_review_wrong_run")
-            if snapshot.revision != expected_revision:
+            plans,revision=_move_previews(db,snapshot)
+            if revision != expected_revision:
                 raise PublicationReviewError("publication_review_stale")
             warnings = tuple(snapshot.warnings)
         decided = candidates.decide_candidate(
-            project, left, right, expected_revision=expected_revision,
+            project, left, right, expected_revision=snapshot.revision,
             decision=decision, actor=actor, evidence=evidence,
             acknowledged_warnings=warnings, decision_confirmed=True,
             move_retrieval_id=move_retrieval_id,
+            disposition_sha256=plans.get(move_retrieval_id,{}).get("sha256"),
             **({"cross_run_context": (run_id, run_revision)} if cross_run else {}),
         )
         if decided.status != decision:
@@ -176,15 +193,16 @@ def _reversal(db, project, run_id, retrieval_id, run_revision):
     current = identity._snapshot(db, link[0])
     restored = identity._snapshot(db, record["before"])
     retained = identity.annotation_retention(db, current, retrieval_id)
+    disposition=identity_disposition.summary(identity_disposition.describe(db,current,restored,retrieval_id,reverse=record))
     evidence_revision = identity._hash([
         METHOD, str(project.identifier), run_id, run_revision, retrieval_id,
-        link[1], current.revision, restored.revision, retained,
+        link[1], current.revision, restored.revision, retained, disposition,
     ])
     return dict(
         method=METHOD, project_id=str(project.identifier), run_id=run_id,
         run_revision=run_revision, revision=evidence_revision,
         retrieval_id=retrieval_id, association_event_id=link[1],
-        current_publication_id=current.publication_id, retained_annotations=retained,
+        current_publication_id=current.publication_id, retained_annotations=retained,disposition=disposition,
         restored_publication_id=restored.publication_id,
         current_publication_revision=current.revision,
         restored_publication_revision=restored.revision,
@@ -226,6 +244,7 @@ def confirm_candidate_reversal(project, run_id, retrieval_id, *, run_revision,
             expected_current_revision=plan["current_publication_revision"],
             expected_restored_revision=plan["restored_publication_revision"],
             retained_annotation_sha256=(plan["retained_annotations"] or {}).get("sha256"),
+            disposition_sha256=(plan["disposition"] or {}).get("sha256"),
             actor=actor, evidence=evidence,
         )
         if result.publication_id != plan["restored_publication_id"]:

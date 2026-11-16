@@ -39,6 +39,14 @@ the check and any subsequent correction. The publication-year limit uses
 the sources' publication date fields. [PubMed date searching](https://pubmed.ncbi.nlm.nih.gov/help/#searching-by-date)
 and [Web of Science Starter field tags](https://github.com/clarivate/wosstarter_python_client/blob/master/docs/DocumentsApi.md).
 
+In duplicate review, each possible move shows which citation choices and
+specialist links would follow the original. A previously selected destination
+value takes precedence. Classifications and documents remain attributed to
+the publication where the researcher recorded them. When its last original
+moves, the receiving publication's source detail links to that earlier
+evidence. Reversing the move restores the source and its eligible field
+choices and specialist links in one project transaction.
+
 The run comparison shows classifications attached to recurring source records,
 including the earlier researcher, decision and rationale. When the later run
 has a separate publication identity, a researcher can verify the evidence and

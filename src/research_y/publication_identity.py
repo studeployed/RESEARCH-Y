@@ -292,7 +292,8 @@ def _expect(snapshot: PublicationSnapshot, revision: str) -> None:
 def _record_link(db: sqlite3.Connection, source: dict[str, Any], *, before: str | None,
                  after: str, previous_event_id: int | None, status: str, action: str,
                  actor: str, evidence: str, request_sha256: str | None = None,
-                 reverses_event_id: int | None = None, retained_annotations: dict | None = None) -> int:
+                 reverses_event_id: int | None = None, retained_annotations: dict | None = None,
+                 disposition: dict | None = None) -> int:
     event = dict(version=1, at_utc=_utc_now(), method=METHOD, action=action,
                  retrieval_id=source["retrieval_id"], source_sha256=source["source_sha256"],
                  before=before, after=after, previous_event_id=previous_event_id,
@@ -300,6 +301,8 @@ def _record_link(db: sqlite3.Connection, source: dict[str, Any], *, before: str 
                  reverses_event_id=reverses_event_id)
     if retained_annotations:
         event["retained_annotations"] = retained_annotations
+    if disposition:
+        event["disposition"] = disposition
     event_id = _audit(db, IDENTITY_EVENT, event)
     pointer = _json({"version": 1, "event_id": event_id})
     if before is None:
@@ -388,7 +391,7 @@ def associate_retrieval(project: Project, retrieval_id: str, target_publication_
 def _associate_in_transaction(db: sqlite3.Connection, retrieval_id: str,
                               target_publication_id: str, *, expected_source_revision: str,
                               expected_target_revision: str, actor: str, evidence: str,
-                              same_publication_confirmed: bool) -> PublicationSnapshot:
+                              same_publication_confirmed: bool, disposition_sha256=None) -> PublicationSnapshot:
     """Use the existing association guards in a caller-owned write transaction.
 
     Candidate receipts and the identity change must commit or roll back together.
@@ -404,6 +407,8 @@ def _associate_in_transaction(db: sqlite3.Connection, retrieval_id: str,
         raise ValueError("Explicit same-publication confirmation is required")
     request = _hash(["associate", retrieval_id, target_publication_id, expected_source_revision,
                      expected_target_revision, actor, evidence])
+    if disposition_sha256 is not None:
+        request = _hash([request,disposition_sha256])
     link = _link(db, retrieval_id)
     if link is None:
         raise ValueError("Materialise the retrieval before reviewing an association")
@@ -416,16 +421,22 @@ def _associate_in_transaction(db: sqlite3.Connection, retrieval_id: str,
         return target
     if not target.active:
         raise ValueError("Choose an active target publication, not a retained empty identity")
-    _movable(db, origin, retrieval_id)
+    disposition = None
+    if disposition_sha256 is None:
+        _movable(db, origin, retrieval_id)
+    else:
+        from research_y.identity_disposition import apply
+        disposition=apply(db,origin,target,retrieval_id,disposition_sha256,actor,evidence)
     _record_link(db, _source(db, retrieval_id), before=origin.publication_id,
                  after=target.publication_id, previous_event_id=link[1], status="confirmed_match",
-                 action="associate", actor=actor, evidence=evidence, request_sha256=request)
+                 action="associate", actor=actor, evidence=evidence, request_sha256=request,disposition=disposition)
     return _snapshot(db, target.publication_id)
 
 
 def reverse_association(project: Project, retrieval_id: str, decision_event_id: int, *,
                         expected_current_revision: str, expected_restored_revision: str,
-                        actor: str, evidence: str, retained_annotation_sha256: str | None = None) -> PublicationSnapshot:
+                        actor: str, evidence: str, retained_annotation_sha256: str | None = None,
+                        disposition_sha256: str | None = None) -> PublicationSnapshot:
     """Append an inverse decision; never erase history or revive a stale review."""
     _identifier(retrieval_id)
     _positive(decision_event_id)
@@ -435,6 +446,8 @@ def reverse_association(project: Project, retrieval_id: str, decision_event_id: 
               expected_restored_revision, actor, evidence]
     if retained_annotation_sha256 is not None:
         fields.append(retained_annotation_sha256)
+    if disposition_sha256 is not None:
+        fields.append(disposition_sha256)
     request = _hash(fields)
     with _validated_project_connection(project) as db:
         db.execute("BEGIN IMMEDIATE")
@@ -454,6 +467,7 @@ def reverse_association(project: Project, retrieval_id: str, decision_event_id: 
         _expect(current, expected_current_revision)
         _expect(restored, expected_restored_revision)
         retained_roles = set()
+        association = original
         journal = next(s for s in current.retrievals if s["retrieval_id"] == retrieval_id)
         if journal["source_name"] in ("pubmed","wos"):
             # Only roles still independently attributable to retained society
@@ -470,12 +484,17 @@ def reverse_association(project: Project, retrieval_id: str, decision_event_id: 
             retained = annotation_retention(db, current, retrieval_id)
             if retained is None or retained["sha256"] != retained_annotation_sha256:
                 raise StalePublicationError("Publication annotations changed; review their disposition again")
-        _movable(db, current, retrieval_id, retain_society_roles=bool(actual_roles) and actual_roles <= retained_roles,
-                 retain_reviewed_annotations=retained is not None)
+        disposition=None
+        if disposition_sha256 is None:
+            _movable(db, current, retrieval_id, retain_society_roles=bool(actual_roles) and actual_roles <= retained_roles,
+                     retain_reviewed_annotations=retained is not None)
+        else:
+            from research_y.identity_disposition import apply
+            disposition=apply(db,current,restored,retrieval_id,disposition_sha256,actor,evidence,reverse=association)
         _record_link(db, _source(db, retrieval_id), before=current.publication_id,
                      after=restored.publication_id, previous_event_id=link[1], status=previous["status"],
                      action="reverse", actor=actor, evidence=evidence, request_sha256=request,
-                     reverses_event_id=decision_event_id, retained_annotations=retained)
+                     reverses_event_id=decision_event_id, retained_annotations=retained,disposition=disposition)
         return _snapshot(db, restored.publication_id)
 
 

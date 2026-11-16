@@ -14,6 +14,19 @@ def render_term_provenance(ui, offer):
     ui.label(offer["reason"])
 
 
+def render_identity_disposition(ui,plan):
+    ui.label(f'Moving this original from {plan["origin"]} to {plan["target"]} keeps '
+             f'{plan["classifications"]} classification records and {plan["documents"]} documents on their original identity.')
+    if plan["sole_source"]:
+        ui.label("The resulting record links to the earlier identity and its historical decisions and documents.")
+    ui.label(f'Source-attributed links following the original · {plan["roles"]} society roles and {plan["containers"]} containers. '
+             f'Remaining on the original identity · {plan["retained_roles"]} roles and {plan["retained_containers"]} containers.')
+    if plan["apply_fields"]:
+        ui.label("Source-backed choices applied at destination · "+", ".join(plan["apply_fields"]))
+    if plan["keep_target_fields"]:
+        ui.label("Existing destination choices retained · "+", ".join(plan["keep_target_fields"]))
+
+
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
     state = flow.state()
     project = state['project']
@@ -1244,6 +1257,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                  ' • source B ' + str(field['right']['value']) +
                                  ' (' + field['right']['status'] + ')').props(
                                      'data-testid=candidate-comparison')
+                    for rid,plan in pair.get("move_dispositions",{}).items():
+                        ui.label("If moving source "+rid)
+                        render_identity_disposition(ui,plan)
                     for warning in pair['warnings']:
                         descriptions = {
                             'prior_run_metadata_unchanged': 'Both provider records match the latest reviewed pair exactly. Review its decision below before recording this run.',
@@ -1335,7 +1351,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                              undo['original_decision_evidence']).props(
                                  'data-testid=candidate-reversal-evidence')
                     retained = undo.get("retained_annotations")
-                    if retained:
+                    if undo.get("disposition"):
+                        render_identity_disposition(ui,undo["disposition"])
+                    elif retained:
                         ui.label(f'Reversing this link keeps {retained["classification_records"]} classification '
                                  f'records and {retained["documents"]} documents with publication '
                                  f'{retained["publication_id"]} and its remaining sources.')
