@@ -21,7 +21,8 @@ def test_index_picker_reopens_relocated_project_and_preserves_selection_on_cance
     monkeypatch.setitem(sys.modules, "webview", SimpleNamespace(FileDialog=SimpleNamespace(OPEN=1)))
 
     class Window:
-        async def create_file_dialog(self, *, dialog_type, allow_multiple, file_types):
+        async def create_file_dialog(self, *, dialog_type, directory, allow_multiple, file_types):
+            assert directory
             assert dialog_type == 1 and not allow_multiple and "*.ryproj" in file_types[0]
             return next(choices)
 

@@ -79,7 +79,31 @@ def test_native_dialog_is_async_os_only_and_provides_single_checked_folder(tmp_p
             return (str(tmp_path),)
 
     assert asyncio.run(select_from_native_window(FakeWindow())) == tmp_path
-    assert seen == {'dialog_type': 42, 'allow_multiple': False}
+    assert seen == {'dialog_type': 42, 'directory': str(Path.home()), 'allow_multiple': False}
+
+
+def test_native_error_replies_then_next_picker_can_open(tmp_path, monkeypatch):
+    from research_y.desktop.folders import install_dialog_reply
+
+    outcomes = iter([OSError("Private path"), None, (str(tmp_path),)])
+    def dialog(**options):
+        outcome = next(outcomes)
+        if isinstance(outcome, OSError):
+            raise outcome
+        return outcome
+
+    native = SimpleNamespace(create_file_dialog=dialog)
+    install_dialog_reply(native)
+    assert "dialog" in native.create_file_dialog.__name__
+    class Proxy:
+        async def create_file_dialog(self, **options):
+            return native.create_file_dialog(**options)
+
+    monkeypatch.setitem(sys.modules, 'webview', SimpleNamespace(FileDialog=SimpleNamespace(FOLDER=42)))
+    with pytest.raises(NativeFolderError, match="^native_dialog_unavailable$"):
+        asyncio.run(select_from_native_window(Proxy()))
+    assert asyncio.run(select_from_native_window(Proxy())) is None
+    assert asyncio.run(select_from_native_window(Proxy())) == tmp_path
 
 
 def test_native_dialog_cancel_and_error_do_not_disclose_exception(tmp_path, monkeypatch):

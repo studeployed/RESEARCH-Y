@@ -11,6 +11,7 @@ import time
 from urllib.parse import urlsplit
 
 from research_y.desktop.session import BOOTSTRAP_HTML, server_proof
+from research_y.desktop.folders import install_dialog_reply
 
 
 def _record_stage(directory, name, value):
@@ -148,7 +149,9 @@ def open_desktop_window(protocol, host, port, *args, **kwargs):
         if not valid_initial_bootstrap(url, origin):
             raise RuntimeError('unexpected_native_bootstrap')
         wait_for_native_http_ready(origin, expected_proof=server_proof(urlsplit(url).fragment))
-        return create_guarded_window(original, origin, None, *window_args, **window_kwargs)
+        window = create_guarded_window(original, origin, None, *window_args, **window_kwargs)
+        install_dialog_reply(window)
+        return window
 
     def parent_watch():
         parent = multiprocessing.parent_process()

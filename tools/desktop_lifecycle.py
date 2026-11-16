@@ -45,7 +45,8 @@ def run_window(stage, workspace, folder, run_id):
             return next(choices)
         class FixtureWindow:
             async def create_file_dialog(self, **options):
-                return await window.create_file_dialog(directory=str(folder.parent), **options)
+                options["directory"] = str(folder.parent)
+                return await window.create_file_dialog(**options)
 
         selected = await real_dialog(FixtureWindow())
         selections.put_nowait(selected)

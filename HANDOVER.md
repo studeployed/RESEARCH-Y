@@ -1,5 +1,16 @@
 # RESEARCH-Y handover
 
+## Windows project picker
+
+In 0.1.0, starting the packaged launcher without `HOMEPATH` reproduced a
+folder picker that never appeared. The Windows backend accessed that variable
+when no starting directory was supplied. An exception in the native process
+left the app waiting for a reply and holding its action lock. Version 0.1.1
+supplies an existing starting directory and returns a failure to the launcher
+if the native call raises. The installer test drives the packaged launcher
+with `HOMEPATH` absent, cancels the first picker, creates a project and opens
+a different project by selecting its folder.
+
 ## Initial release verification
 
 [Issue #163](https://github.com/studeployed/RESEARCH-Y/issues/163) tracks the

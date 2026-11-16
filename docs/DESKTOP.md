@@ -15,7 +15,10 @@ research-y
 
 The launcher opens an integrated window. Choose **Open project folder** or
 select `project.ryproj` using **Open project index file**. To start a project,
-enter a name and choose **Create project in folder**. Recent projects appear on each launch.
+enter a name and choose **Create project in folder**. In the Windows picker,
+select the parent folder where you want the new project. The launcher confirms
+the project name after creating or opening it. Cancelling returns you to the
+launcher, where you can choose again. Recent projects appear on each launch.
 Select the project and run explicitly. After moving a project, open its new
 folder to update the local history. The usual research setup, preflight,
 supervised source stages, results review and workbook controls use the same

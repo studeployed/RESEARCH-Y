@@ -58,6 +58,8 @@ def verify(candidate, baseline, output):
                 "print(research_y.__version__,version('research-y'))"],text=True,timeout=30).split()
         if installed != [expected_version,expected_version]:
             raise ValueError("Bundled application version differs from package metadata")
+        subprocess.run(["pwsh", "-NoProfile", "-File", str(Path(__file__).with_name("check_project_picker.ps1")),
+                        "-Launcher", str(python.with_name("RESEARCH-Y.exe"))], check=True, timeout=210)
         subprocess.run([python,"-I","-B",lifecycle],check=True,timeout=480)
         if install(candidate,clean)[0] != current:
             raise ValueError("Reinstallation changed the selected image")
@@ -78,7 +80,7 @@ def verify(candidate, baseline, output):
         output.write_text(json.dumps(dict(commit=commit,baseline_commit=baseline_commit,version=expected_version,
             installer_sha256=digest,bytes=candidate.stat().st_size,candidate_image=current,previous_image=previous,
             clean_install=True,reinstallation=True,upgrade=True,retained_project_and_queries=True,
-            native_lifecycle_after_clean_install_and_upgrade=True),indent=2)+"\n",encoding="utf-8")
+            native_lifecycle_after_clean_install_and_upgrade=True,launcher_folder_create_open=True),indent=2)+"\n",encoding="utf-8")
 
 
 if __name__ == "__main__":
