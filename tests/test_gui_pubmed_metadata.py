@@ -322,6 +322,10 @@ def test_partial_failure_preserves_original_rows_and_requires_new_consent(
         assert partial['metadata_records_committed']==20
         assert partial['metadata_records_pending']==7
         assert partial['unknown_inflight_request_possible'] is True
+        from research_y.run_execution_board import read_run_execution_board
+        failed=read_run_execution_board(open_project(project.root),rid)["source_progress"][qid]
+        assert failed["metadata_batches"]==1 and failed["retries"]==0
+        assert "previously committed records retained" in failed["latest_reason"]
         assert len(provider.calls)==2
         supervisor.state='returned'
         supervisor.receipt=partial
@@ -353,6 +357,8 @@ def test_partial_failure_preserves_original_rows_and_requires_new_consent(
             expected_plan_sha256=supervisor2.command.pubmed_source_plan_sha256,
             confirmed=True,client=_client(provider2))
         assert receipt['metadata_records_committed']==27
+        resumed=read_run_execution_board(open_project(project.root),rid)["source_progress"][qid]
+        assert resumed["retries"]==1 and resumed["metadata_batches"]==2 and resumed["latest_reason"] is None
         assert provider2.calls==[IDS[20:]]
         supervisor2.state='returned';supervisor2.receipt=receipt
         newflow.reconcile_pubmed_metadata()

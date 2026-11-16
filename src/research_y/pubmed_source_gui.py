@@ -249,13 +249,16 @@ def run_pubmed_source_session(
         raise PubMedSourceError("pubmed_query_not_ready")
     budgeted = _BudgetedESearch(client, request_limit)
     try:
-        result = start_checkpointed_pubmed_retrieval(
-            project, query_id, budgeted, date_window=window,
-            page_size=PUBMED_PAGE_SIZE,
-            max_count_probes=probe_limit,
-            expected_run_id=run_id,
-            expected_plan_sha256=expected_plan_sha256,
-        )
+        from research_y.processing_progress import pubmed_session
+        with pubmed_session(project,query_id,"identifiers") as session:
+            result = start_checkpointed_pubmed_retrieval(
+                project, query_id, budgeted, date_window=window,
+                page_size=PUBMED_PAGE_SIZE,
+                max_count_probes=probe_limit,
+                expected_run_id=run_id,
+                expected_plan_sha256=expected_plan_sha256,
+            )
+            session.update(status="failed" if result.error and result.status=="incomplete" else result.status,reason=result.error)
         saved = inspect_pubmed_source(project, run_id=run_id, query_id=query_id)
     except (CheckpointIntegrityError, KeyError, ValueError, TypeError):
         raise PubMedSourceError("pubmed_checkpoint_invalid") from None

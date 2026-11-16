@@ -158,6 +158,8 @@ def test_combined_board_lists_every_approved_or_group_without_inventing_zero(tmp
     p,rid,queries=_project(tmp_path)
     before=_digest(p)
     board=read_run_execution_board(p,rid)
+    assert [s["stage"] for s in board["processing_stages"]]==["Query validation","Count retrieval","Record pagination",
+        "Metadata fetching","Enrichment","Source reconciliation","Deduplication","Classification","Export preparation"]
     assert _digest(p)==before
     assert board["method"]=="whole-run-execution-board/1"
     assert board["group_count"]==2 and board["query_count"]==4
@@ -177,6 +179,29 @@ def test_combined_board_lists_every_approved_or_group_without_inventing_zero(tmp
     assert not board["primary_source_enumerations_reconciled"]
     assert not board["available_primary_metadata_acquired"]
     assert board["no_network_requests"] is True
+
+
+def test_execution_stages_follow_saved_reviews_and_export_receipts(tmp_path):
+    from research_y import study_classification as service
+    from research_y.workbook_exports import prepare_workbook_export
+    from test_reviewed_master import populated
+    from uuid import uuid4
+    project,run,_,_=populated(tmp_path)
+    with closing(sqlite3.connect(project.database_path)) as db:
+        pid,=db.execute("SELECT publication_id FROM publication_retrievals LIMIT 1").fetchone()
+    def stages():
+        return {s["stage"]:s for s in read_run_execution_board(open_project(project.root),run)["processing_stages"]}
+    original=stages()
+    assert original["Count retrieval"]["observed"]==4 and original["Metadata fetching"]["observed"]==3
+    assert original["Classification"]["observed"]==original["Export preparation"]["observed"]==0
+    for language in ("English","multilingual"):
+        view=service.read_classification(project,pid)
+        service.review_classification(project,pid,dimension="language",labels=[language],actor="Reviewer",
+            rationale="Checked the original",expected_revision=view["revision"],confirmed=True)
+    prepare_workbook_export(project,run,"Prepared.xlsx",export_id=str(uuid4()))
+    later=stages()
+    assert later["Classification"]["observed"]==later["Export preparation"]["observed"]==1
+    assert later["Enrichment"]["observed"]==0 and later["Deduplication"]["observed"] is None
 
 
 def test_pubmed_identifiers_metadata_and_wos_stages_keep_run_incomplete(tmp_path):

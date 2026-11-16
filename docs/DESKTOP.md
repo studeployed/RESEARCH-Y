@@ -212,6 +212,15 @@ individual preview and confirmation controls.
 
 ## Acceptance evidence
 
+In the selected run, refresh the execution monitor to see the nine stages from
+query validation through export preparation. Each stage names its unit. A
+Crossref lookup, for example, counts as an enrichment outcome even when the
+provider supplies no abstract. Each query shows available pages, saved metadata
+batches, the latest recorded reason and any observed daily quota. PubMed counts
+confirmed sessions restarted after recorded failures. Starter counts repeated
+page attempts following a failed or abandoned attempt. Older PubMed sessions
+without retry evidence show an unavailable count.
+
 `tests/test_desktop_launcher.py` checks the empty startup, explicit project
 selection, scoped source settings and authenticated HTTP boundary. The
 **Installed Windows desktop application** workflow installs the package and

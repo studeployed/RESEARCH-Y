@@ -500,6 +500,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.label('Stored queries could not be matched to the approved strategy. '
                              'Run-wide retrieval coverage is unknown.').props(
                                  'data-testid=run-board-plan-mismatch')
+                for stage in board.get("processing_stages",[]):
+                    value=stage["observed"] if stage["observed"] is not None else "unverified"
+                    total="" if stage["total"] is None else f" of {stage['total']}"
+                    ui.label(f"{stage['stage']} · {value}{total} · {stage['unit']}")
                 ui.label('Provisional publication identity hypotheses: ' +
                          str(board['totals']['publication_identity_hypotheses']) +
                          ' (NOT a final deduplicated result).')
@@ -529,6 +533,15 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                         if item['warnings']:
                             ui.label('Pending source issues: ' +
                                      ', '.join(item['warnings']))
+                        progress=board.get("source_progress",{}).get(item["query_id"])
+                        if progress:
+                            for label,number in (("Saved pages",item["pages_committed"]),("Metadata batches",progress["metadata_batches"]),
+                                    (progress["retry_unit"],progress["retries"]),
+                                    ("Unfinished sessions" if item["source_name"]=="pubmed" else "Indeterminate attempts",progress["unknown_outcomes"]),
+                                    ("Observed daily quota remaining",progress["daily_remaining"])):
+                                ui.label(f"{label} · {number if number is not None else 'unavailable'}")
+                            if progress["latest_reason"]:
+                                ui.label("Last recorded status reason · "+progress["latest_reason"])
                         step = item['next_step']
                         allowed = True
                         if step == 'preview_wos':
