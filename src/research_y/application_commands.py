@@ -1255,8 +1255,8 @@ def execute_command(command: ApplicationCommand) -> dict:
                     objectives=command.admission_objectives or "",
                     approved_by=command.admission_approved_by,
                     groups=command.admission_groups,
-                    scope=command.admission_scope,
-                    approval_confirmed=command.approval_confirmed)
+                    approval_confirmed=command.approval_confirmed,
+                    **({"scope": command.admission_scope} if command.admission_scope is not None else {}))
             except admission.StrategyAdmissionError as exc:
                 raise ApplicationCommandError(str(exc)) from None
             except (ValueError, TypeError):
