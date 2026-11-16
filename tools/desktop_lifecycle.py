@@ -5,7 +5,9 @@ import asyncio
 from contextlib import closing
 from hashlib import sha256
 import json
+import multiprocessing
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -27,24 +29,47 @@ async def wait_for(predicate, label, timeout=35):
 
 
 def run_window(stage, workspace, folder, run_id):
-    from nicegui import app
+    from nicegui import app, Client, ui
     from research_y.desktop import app as desktop
     from research_y.desktop.flow import RealProjectFlow
 
     flow = RealProjectFlow(recent_parent=workspace / 'recents')
-    choices = iter([workspace, workspace / 'Redirected', folder] if stage == 'save' else [folder])
+    choices = iter([workspace, workspace / 'Redirected', folder])
+    selections = asyncio.Queue()
+    real_dialog = desktop.select_from_native_window
     passed = []
     tasks = []
 
     async def choose(window):
-        return next(choices)
+        if stage == 'save':
+            return next(choices)
+        class FixtureWindow:
+            async def create_file_dialog(self, **options):
+                return await window.create_file_dialog(directory=str(folder.parent), **options)
 
-    # Replace only the OS dialog result in this test process. All rendered
-    # controls, worker commands, files and project selection remain real.
+        selected = await real_dialog(FixtureWindow())
+        selections.put_nowait(selected)
+        return selected
+
+    # Supply the failure fixture on the first launch. Observe the real native
+    # picker result on reopening before issuing another native request.
     desktop.select_from_native_window = choose
+    if stage == 'reopen':
+        # Reproduce the observed title-only first document before the user acts.
+        ui.add_head_html("""<script>
+            if (!sessionStorage.getItem('fixture-partial-start')) {
+                sessionStorage.setItem('fixture-partial-start', '1');
+                const style = document.createElement('style');
+                style.textContent = '[data-testid=desktop-open] {display:none !important}';
+                document.head.appendChild(style);
+            }
+        </script>""", shared=True)
 
     async def js(expression):
-        return await asyncio.wait_for(app.native.main_window.evaluate_js(expression), timeout=8)
+        clients = [client for client in Client.instances.values() if client.has_socket_connection]
+        if len(clients) != 1:
+            raise RuntimeError('desktop_client_not_connected')
+        return await asyncio.wait_for(clients[0].run_javascript(expression, timeout=8), timeout=9)
 
     async def visible(selector):
         key = json.dumps(selector)
@@ -64,7 +89,13 @@ def run_window(stage, workspace, folder, run_id):
 
     async def observe():
         try:
-            await wait_for(lambda: visible('[data-testid=desktop-title]'), 'desktop_start', timeout=55)
+            async def ready():
+                try:
+                    return await js("Boolean(window.did_handshake && window.socket?.connected && "
+                                    "document.querySelector('[data-testid=desktop-open]')?.getClientRects().length)")
+                except (TimeoutError, RuntimeError):
+                    return False
+            await wait_for(ready, 'desktop_start', timeout=55)
             if flow.state()['project'] is not None or flow.state()['selected_run_id'] is not None:
                 raise RuntimeError('implicit_project_selection')
             if stage == 'save':
@@ -77,7 +108,25 @@ def run_window(stage, workspace, folder, run_id):
                 message = await js("document.querySelector('[data-testid=operation-error]').textContent")
                 if 'invalid_project' not in message or flow.state()['project']['project_id'] != active:
                     raise RuntimeError('redirected_project_selection')
-            await click('[data-testid=desktop-open]')
+            if stage == 'reopen':
+                if await js("sessionStorage.getItem('research-y-startup-retries')") != "1":
+                    raise RuntimeError('partial_start_not_recovered')
+                chooser = runpy.run_path(str(Path(__file__).with_name("windows_folder_dialog.py")))
+                children = {child.pid for child in multiprocessing.active_children() if child.daemon}
+                for choice in (None, folder):
+                    print('Opening native picker for ' + ('cancel' if choice is None else 'selection'), flush=True)
+                    await click('[data-testid=desktop-open]')
+                    await asyncio.to_thread(chooser["choose_fixture_folder"], children, choice)
+                    selected = await asyncio.wait_for(selections.get(), timeout=10)
+                    if ((choice is None and selected is not None) or
+                            (choice is not None and (selected is None or not selected.samefile(choice)))):
+                        raise RuntimeError('native_folder_choice_mismatch')
+                    if choice is None:
+                        if flow.state()['project'] is not None:
+                            raise RuntimeError('cancel_selected_project')
+                print('Cancelled and selected the relocated project in the native folder dialog.', flush=True)
+            else:
+                await click('[data-testid=desktop-open]')
             await click('[data-testid=select-run]')
             await click('[data-testid=society-panel] .q-item')
             await fill('[data-testid=society-terms] textarea, textarea[data-testid=society-terms]', 'ECMO')
@@ -124,8 +173,8 @@ def run_window(stage, workspace, folder, run_id):
                 print("Local startup stages:",flow.desktop_startup_stages(),flush=True)
         finally:
             try:
-                await asyncio.wait_for(app.native.main_window.destroy(), timeout=10)
-            except (TimeoutError, RuntimeError):
+                app.native.main_window.destroy()
+            except RuntimeError:
                 app.shutdown()
 
     def start():
@@ -164,7 +213,8 @@ def main():
         checksums = []
         observations = []
         for stage in ('save', 'reopen'):
-            subprocess.run([sys.executable, str(Path(__file__).resolve()), stage, str(workspace), str(folder),
+            flags = ["-I", "-B"] if sys.flags.isolated else []
+            subprocess.run([sys.executable, *flags, str(Path(__file__).resolve()), stage, str(workspace), str(folder),
                             run.run_id], timeout=210, check=True)
             observation = json.loads((workspace / f'{stage}-verified.json').read_text(encoding='utf-8'))
             if observation['run_id'] != run.run_id or not observation['publication_receipt_id']:
