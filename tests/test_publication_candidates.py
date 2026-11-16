@@ -409,6 +409,11 @@ def test_desktop_preview_names_rule_and_prior_audit_without_changing_counts(tmp_
     assert preview["recent_decisions"][-1]["event_id"] == reviewed.prior_decisions[-1]["event_id"]
     assert preview["status"] == "review_required" and not preview["pair_already_associated"]
     assert read_run_counts(project, run) == counts
+    rejected = decide(project, a2, b2, **args(read_candidate(project, a2, b2)))
+    saved = read_candidate(open_project(project.root), a2, b2)
+    assert saved == rejected and saved.status == "rejected_match"
+    assert saved.prior_decisions[-1]["comparison"]["confidence_suggestion"] == {
+        "rule": preview["confidence_rule"], "prior_event_id": reviewed.prior_decisions[-1]["event_id"]}
 
 
 def test_reopen_and_relocation_preserve_receipts(tmp_path):

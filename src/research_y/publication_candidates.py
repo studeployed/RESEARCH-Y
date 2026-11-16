@@ -128,6 +128,15 @@ def _receipts(db: sqlite3.Connection, keys: list[list[str]] | None) -> list[dict
             identity._text(event["evidence"])
             if not valid:
                 raise ValueError("Invalid receipt")
+            if "confidence_suggestion" in event["comparison"]:
+                suggestion = event["comparison"]["confidence_suggestion"]
+                reference = identity._positive(suggestion["prior_event_id"])
+                if reference >= event_id or suggestion["rule"] != REPEAT_CONFIRMATION_RULE:
+                    raise ValueError("Invalid confidence suggestion")
+                prior_review = identity._event(db, reference, DECISION_EVENT)
+                if (prior_review["status"] != "confirmed_match" or prior_review["source_keys"] != event["source_keys"]
+                        or not set(pair).isdisjoint(prior_review["pair"])):
+                    raise ValueError("Unrelated confidence suggestion")
             if event["status"] == "rejected_match":
                 if event["association_event_id"] is not None or event["moved_retrieval_id"] is not None:
                     raise ValueError("Invalid rejection")
@@ -333,11 +342,14 @@ def decide_candidate(project: Project, left_retrieval_id: str, right_retrieval_i
         elif current.publication_ids[0] == current.publication_ids[1]:
             raise ValueError("Reverse the existing association before rejecting this pair")
         _, sources, comparison, keys, after_state = _state(db, pair)
+        compared = _comparison_receipt(comparison)
+        if current.confidence_rule:
+            compared["confidence_suggestion"] = {"rule": current.confidence_rule,
+                                                "prior_event_id": current.prior_decisions[-1]["event_id"]}
         receipt = dict(
             version=1, at_utc=_utc_now(), method=RULE_VERSION, pair=list(pair), source_keys=keys,
             source_hashes=[s["source_sha256"] for s in sources],
-            comparison=_comparison_receipt(comparison),
-            comparison_sha256=identity._hash(_comparison_receipt(comparison)),
+            comparison=compared, comparison_sha256=identity._hash(compared),
             reviewed_context={"publication_ids": list(current.publication_ids),
                               "publication_revisions": list(current.publication_revisions),
                               "sources": list(current.sources)}, input_revision=expected_revision,

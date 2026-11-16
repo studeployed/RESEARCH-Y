@@ -1123,6 +1123,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                  previous['actor'] + ' • ' +
                                  previous['evidence']).props(
                                      'data-testid=candidate-audit')
+                        suggestion = previous.get('confidence_suggestion')
+                        if suggestion:
+                            ui.label('Suggestion shown at review: ' + suggestion['rule']
+                                     + ' using prior audit ' + str(suggestion['prior_event_id']))
                     if pair.get('confidence') == 'automatic_high_confidence':
                         ui.label('High-confidence suggestion based on previously confirmed audit '
                                  + str(pair['recent_decisions'][-1]['event_id']) + '. Both journal records '
