@@ -109,9 +109,17 @@ def test_run_records_source_versions_and_original_local_offset_in_both_workbooks
     prior_folder=tmp_path/"older"
     prior_folder.mkdir()
     with monkeypatch.context() as patch:
-        patch.setattr(source_versions,"OPERATIONS",{})
+        patch.setattr(source_versions,"OPERATIONS",{"pubmed_efetch_metadata_committed":source_versions.EFETCH})
         older,old_run,_,_=populated(prior_folder)
-    assert all(not q["source_methods"] for q in capture_strategy_report(older,old_run).as_dict()["queries"])
+    mixed=capture_strategy_report(older,old_run)
+    methods=[m for q in mixed.as_dict()["queries"] for m in q["source_methods"]]
+    assert any(m["version_status"]=="recorded" and m["api"]==source_versions.EFETCH for m in methods)
+    unknown=[m for m in methods if m["version_status"]=="unrecorded"]
+    assert unknown and all(m["first_utc"] and m["last_utc"] and m["receipts"]>=1 for m in unknown)
+    assert all(m["client"] is m["application"] is m["first_local"] is None for m in unknown)
+    with closing(load_workbook(BytesIO(render_strategy_workbook(mixed)),read_only=True)) as book:
+        values=str(list(book["Executed Queries"].values))
+        assert "unrecorded" in values and source_versions.EFETCH in values
 
 
 def test_two_sources_two_groups_preserve_denominators_and_omit_licensed_text(prepared):

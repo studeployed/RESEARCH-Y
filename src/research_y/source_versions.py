@@ -36,17 +36,17 @@ def recorded_methods(db,run):
         f"WHERE a.event_type IN ({markers}) AND q.run_id=? ORDER BY a.event_id",(*OPERATIONS,run))
     inventory={}
     for qid,kind,eid,utc,api,application,client,local in rows:
-        if api is None and application is None and client is None and local is None:
-            continue
+        historical = all(value is None for value in (api,application,client,local))
         # Only export recognised source labels, version strings and timestamps. Do not export arbitrary JSON.
-        if (api!=OPERATIONS[kind] or not isinstance(application,str) or not re.fullmatch(r"[0-9][0-9A-Za-z.+-]{0,39}",application)
+        if not historical and (api!=OPERATIONS[kind] or not isinstance(application,str) or not re.fullmatch(r"[0-9][0-9A-Za-z.+-]{0,39}",application)
                 or not isinstance(client,str) or not re.fullmatch(r"RESEARCHY/[0-9][0-9A-Za-z.+-]{0,39}",client)):
             raise ValueError("Invalid recorded source version")
-        instant=datetime.fromisoformat(local)
+        instant=datetime.fromisoformat(utc if historical else local)
         if instant.utcoffset() is None or instant!=datetime.fromisoformat(utc):
             raise ValueError("Source receipt local and UTC timestamps disagree")
         by_method=inventory.setdefault(qid,{})
         item=by_method.setdefault((kind,api,application,client),dict(event=kind,api=api,application=application,
-            client=client,first_event=eid,first_local=local,first_utc=utc,receipts=0))
+            client=client,first_event=eid,first_local=local,first_utc=utc,receipts=0,
+            version_status="unrecorded" if historical else "recorded"))
         item.update(last_event=eid,last_local=local,last_utc=utc,receipts=item["receipts"]+1)
     return {qid:list(values.values()) for qid,values in inventory.items()}

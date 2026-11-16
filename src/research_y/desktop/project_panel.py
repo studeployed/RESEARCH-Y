@@ -396,6 +396,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.label(query["source_name"]+" · "+query["group_id"]+" · "+query["query_id"])
                     ui.label("Stored query time (UTC) · "+(query["executed_at_utc"] or "Unavailable"))
                     for item in query.get("source_methods",[]):
+                        if item.get("version_status")=="unrecorded":
+                            ui.label(f"{item['event']} · {item['receipts']} earlier receipts · UTC {item['first_utc']} to "
+                                     f"{item['last_utc']} · source version and original local time unavailable")
+                            continue
                         ui.label(f"{item['event']} · {item['api']} · {item['client']} · RESEARCH-Y {item['application']} · "
                                  f"{item['receipts']} receipts · local {item['first_local']} to {item['last_local']}")
                     if not query.get("source_methods"):
