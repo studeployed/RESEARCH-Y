@@ -27,7 +27,8 @@ HOME_STARTUP = """(() => {
     let interacted = false;
     for (const event of ['pointerdown', 'keydown', 'input', 'click']) {
         document.addEventListener(event, e => {
-            if (e.target.closest?.('button,input,textarea,select,a,[role=button]')) interacted = true;
+            const control = e.target.closest?.('button,input,textarea,select,a,[role=button]');
+            if (control && !control.disabled) interacted = true;
         }, true);
     }
     setTimeout(() => {
@@ -218,8 +219,8 @@ def build_page(app, ui, flow, settings_warnings=()):
         render_settings(ui,flow)
         for warning in settings_warnings:
             ui.label(warning)
-        ui.button('Open project folder', on_click=lambda: act('native_open')).props('data-testid=desktop-open')
-        ui.button('Open project index file', on_click=lambda: act('native_open_index')).props(
+        open_folder = ui.button('Open project folder', on_click=lambda: act('native_open')).props('data-testid=desktop-open')
+        open_index = ui.button('Open project index file', on_click=lambda: act('native_open_index')).props(
             'data-testid=desktop-open-index')
         with ui.expansion("Import project archive").props("data-testid=import-archive-panel"):
             restored_name = ui.input("New folder name (optional)")
@@ -227,9 +228,20 @@ def build_page(app, ui, flow, settings_warnings=()):
                       act("native_import_archive",restored_name.value)).props("data-testid=import-archive")
         with ui.row().classes('items-center'):
             name = ui.input('New project name').props('data-testid=desktop-name')
-            ui.button('Create project in folder', on_click=lambda: act('native_create', name.value)).props(
+            create = ui.button('Create project in folder', on_click=lambda: act('native_create', name.value)).props(
                 'data-testid=desktop-create')
-        picker_status = ui.label().props('role=status aria-live=polite data-testid=project-picker-status')
+        picker_status = ui.label('Connecting to the desktop…').props('role=status aria-live=polite data-testid=project-picker-status')
+        project_buttons = (open_folder, open_index, create)
+        for button in project_buttons:
+            button.disable()
+
+        def ready():
+            for button in project_buttons:
+                button.enable()
+            if picker_status.text == 'Connecting to the desktop…':
+                picker_status.set_text('')
+
+        ui.context.client.on_connect(ready)
         panel()
         ui.timer(2, refresh_workers)
 

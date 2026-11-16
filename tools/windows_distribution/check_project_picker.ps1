@@ -28,7 +28,7 @@ function Find-Button([string]$text) {
     $condition = [Windows.Automation.PropertyCondition]::new(
         [Windows.Automation.AutomationElement]::ControlTypeProperty,[Windows.Automation.ControlType]::Button)
     $window.FindAll([Windows.Automation.TreeScope]::Descendants,$condition) |
-        Where-Object { $_.Current.Name -eq $text } | Select-Object -First 1
+        Where-Object { $_.Current.Name -eq $text -and $_.Current.IsEnabled } | Select-Object -First 1
 }
 function Click-Button([string]$text) {
     $button = Wait-For { Find-Button $text } $text
@@ -78,6 +78,15 @@ try {
     Wait-For { Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) 'Project: Existing' } 'opened existing project' | Out-Null
     Write-Output 'Packaged launcher created a project and opened a different existing project.'
 } catch {
+    if ($window) {
+        foreach ($status in 'Connecting to the desktop…', 'Choose the project folder containing project.ryproj.',
+            'Choose where to create the new project folder.', 'Windows could not open the picker. Try again.',
+            'Selection cancelled.', 'Created and opened Picker test.', 'Opened Existing.') {
+            if (Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) $status) {
+                Write-Output "Launcher status: $status"
+            }
+        }
+    }
     Write-Output $_.ScriptStackTrace
     throw
 } finally {
