@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from threading import Event
@@ -9,6 +10,25 @@ import pytest
 from research_y.desktop import app
 from research_y.desktop.flow import ProjectFlowError, RealProjectFlow
 from test_reviewed_master import populated
+
+
+def test_provider_supervision_waits_for_late_success_beyond_local_inspection_timeout(tmp_path,monkeypatch):
+    from test_gui_pubmed_pilot import _flow
+    from research_y.desktop import flow as host
+    _,flow,_,query=_flow(tmp_path)
+    with closing(flow):
+        offered=flow.offer_pubmed_pilot(query["query_id"])["pubmed_pilot_candidate"]
+        clock=[0]
+        states=iter([SimpleNamespace(state="running"),SimpleNamespace(state="running"),
+                     SimpleNamespace(state="returned",result=lambda:{"finished":True})])
+        monkeypatch.setattr(flow._provider_worker,"submit",lambda cmd:"operation")
+        monkeypatch.setattr(flow._provider_worker,"poll",lambda op:next(states))
+        monkeypatch.setattr(host,"time",SimpleNamespace(monotonic=lambda:clock[0],
+                            sleep=lambda _:clock.__setitem__(0,clock[0]+30)))
+        result=flow._operation("pubmed_pilot_count",run_id=offered["run_id"],pilot_id=offered["pilot_id"],
+                 pilot_query_id=offered["query_id"],pilot_plan_sha256=offered["plan_sha256"],
+                 pilot_contact_email=flow._pubmed_profile.contact_email,pilot_confirmed=True)
+        assert clock==[60] and result=={"finished":True}
 
 
 @pytest.mark.parametrize(("action", "value"), [

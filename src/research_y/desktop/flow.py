@@ -353,16 +353,8 @@ class RealProjectFlow:
         if name in ("pubmed_pilot_count","wos_pilot_sample","wos_acquisition_tick"):
             command = ApplicationCommand.for_project(self.project,name,**kwargs)
             try:
-                worker = self._provider_worker
-                state = self._wait_for_worker(worker, command)
+                state = self._wait_for_worker(self._provider_worker, command, timeout=None)
                 return self._worker_result(state)
-            except ProjectFlowError as exc:
-                if str(exc) == "worker_timeout":
-                    worker.close(grace_seconds=0, kill_seconds=2)
-                    with self._guard:
-                        if not self._closed:
-                            self._provider_worker = ApplicationWorker()
-                raise
             except ApplicationWorkerError:
                 raise ProjectFlowError("worker_unavailable") from None
         return self._operation_for_project(self.project, name, **kwargs)
@@ -383,14 +375,14 @@ class RealProjectFlow:
             yield reply
 
     @staticmethod
-    def _wait_for_worker(worker, command):
+    def _wait_for_worker(worker, command, *, timeout=35):
         operation_id = worker.submit(command)
-        deadline = time.monotonic() + 35
+        deadline = None if timeout is None else time.monotonic() + timeout
         while True:
             state = worker.poll(operation_id)
             if state.state != "running":
                 return state
-            if time.monotonic() >= deadline:
+            if deadline is not None and time.monotonic() >= deadline:
                 raise ProjectFlowError("worker_timeout")
             time.sleep(.025)
 

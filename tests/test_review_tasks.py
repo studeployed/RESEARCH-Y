@@ -91,3 +91,36 @@ def test_follow_up_reopens_precise_society_and_conference_tasks(tmp_path):
     reopened=open_project(project.root)
     assert row["id"] not in [r["id"] for r in review_tasks.read_page(reopened,run,"missing_abstract")["rows"]]
     assert conference_review.read_tasks(reopened,ids["111"])["tasks"][0]["decision"]["note"]=="Checked collection heading"
+
+
+def test_export_uses_reviewed_authors_and_pages_and_keeps_original_alternatives(tmp_path):
+    import json
+    from openpyxl import load_workbook
+    from research_y import bibliographic_import, master_results, master_exports
+    project,run,_,ids=populated(tmp_path)
+    originals=[]
+    for name,start,end in [("River, Alex",12,16),("Hill, Lee",22,26)]:
+        payload=f"TY  - JOUR\nTI  - Citation\nAU  - {name}\nSP  - {start}\nEP  - {end}\nER  - \n".encode()
+        source=bibliographic_import.admit_records(project,run,"Local",payload=payload,indices=[0],
+               revision=bibliographic_import.preview_ris(payload)["sha256"],actor="Reader",confirmed=True)["admitted"][0]
+        decide(project,ids["111"],source["retrieval_id"],"confirmed_match")
+        originals.append(source["retrieval_id"])
+    with closing(RealProjectFlow()) as flow:
+        flow.open_native_folder(project.root)
+        flow.select_run(run)
+        for field in ("authors","pages"):
+            row,=flow.review_task_action("page",dict(category="metadata_conflict"))["review_tasks"]["rows"]
+            selected=dict(id=row["id"],revision=row["revision"])
+            flow.review_task_action("open",selected)
+            flow.review_task_action("field",dict(**selected,field=field,source=originals[1],actor="Reader",note="Compared originals"))
+    with closing(master_results.MasterResults.capture(project,run)) as master:
+        for suffix in ("ris","xlsx"):
+            master_exports.export_results(project,master,tmp_path/("Verified."+suffix),master_results.DEFAULT,scope="entire")
+    ris=(tmp_path/"Verified.ris").read_text(encoding="utf-8")
+    assert "AU  - Hill, Lee" in ris and "AU  - River, Alex" not in ris and "SP  - 22\nEP  - 26" in ris
+    with closing(load_workbook(tmp_path/"Verified.xlsx",read_only=True)) as book:
+        values=[v for values in book["Master Results"].values for v in values if isinstance(v,str)]
+        choices=[json.loads(v) for v in values if v.startswith("{") and '"retrieval_id"' in v]
+        assert {"retrieval_id":originals[1],"value":["Hill, Lee"]} in choices
+        assert {"retrieval_id":originals[1],"value":"22-26"} in choices
+        assert "River, Alex" in str(list(book["Source Records"].values))
