@@ -90,15 +90,18 @@ def _admit(project, retrieval_id, inspection, locators, expected_revision, actor
             row = db.execute("SELECT original_metadata_json FROM source_retrievals WHERE retrieval_id=?", (child,)).fetchone()
             if row is None:
                 if provider == "conference_pdf":
-                    # A second selection of overlapping page text requires reconciliation.
-                    start, end = block["text_start"], block["text_end"]
+                    # Compare half-open intervals in document order. Historic
+                    # single-page records have no explicit last file page.
                     prior = db.execute(
-                        "SELECT 1 FROM source_retrievals WHERE run_id=? AND source_name=? AND "
-                        "json_extract(original_metadata_json,'$.container_id')=? AND "
-                        "json_extract(original_metadata_json,'$.record.pdf_page')=? AND "
-                        "json_extract(original_metadata_json,'$.record.text_start')<? AND "
-                        "json_extract(original_metadata_json,'$.record.text_end')>? LIMIT 1",
-                        (view["run_id"],provider,container_key,block["pdf_page"],end,start)).fetchone()
+                        "SELECT 1 FROM (SELECT json_extract(original_metadata_json,'$.record.pdf_page') AS first_page,"
+                        "json_extract(original_metadata_json,'$.record.pdf_last_page') AS last_page,"
+                        "json_extract(original_metadata_json,'$.record.text_start') AS first_offset,"
+                        "json_extract(original_metadata_json,'$.record.text_end') AS last_offset "
+                        "FROM source_retrievals WHERE run_id=? AND source_name=? AND "
+                        "json_extract(original_metadata_json,'$.container_id')=?) "
+                        "WHERE (first_page,first_offset)<(?,?) AND (coalesce(last_page,first_page),last_offset)>(?,?) LIMIT 1",
+                        (view["run_id"],provider,container_key,block.get("pdf_last_page",block["pdf_page"]),
+                         block["text_end"],block["pdf_page"],block["text_start"])).fetchone()
                     if prior:
                         raise ValueError("This passage overlaps an already retained abstract on this page")
                 stamp = _utc_now()

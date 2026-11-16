@@ -81,6 +81,16 @@ def test_native_pdf_two_blocks_reopen_with_distinct_printed_and_file_pages(tmp_p
                 flow.specialist_action("pdf_admit",dict(**args,retention_authorized=False))
             receipt = flow.specialist_action("pdf_admit",dict(**args,retention_authorized=True))["specialist"]["pdf_receipt"]
             admitted.append(receipt["admitted"][0]["publication_id"])
+        for first, last, title, passage in (
+            (3,3,"Follow-up results.","Follow-up results."),
+            (2,3,"Lee.","Lee. First findings. A02 Mobility Study. Roy. Separate findings. Follow-up results."),
+        ):
+            page_view = flow.open_native_pdf(local,source_id=source,page=first,last_page=last)["specialist"]["pdf_page"]
+            overlap = flow.specialist_action("pdf_select",dict(retrieval_id=source,page_revision=page_view["revision"],
+                title=title,excerpt=passage))["specialist"]["pdf_block"]
+            with pytest.raises((ValueError,ProjectFlowError)):
+                flow.specialist_action("pdf_admit",dict(retrieval_id=source,actor="Reviewer",
+                    revision=overlap["revision"],retention_authorized=True))
     project = open_project(project.root)
     assert len(set(admitted)) == 2
     for pub_id in admitted:

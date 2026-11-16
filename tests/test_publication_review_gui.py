@@ -128,6 +128,43 @@ def test_preview_is_read_only_citation_only_and_never_merges_shared_doi(study):
     assert before == sha256(project.database_path.read_bytes()).hexdigest()
 
 
+def test_reviewed_reversal_retains_classification_and_document_on_surviving_publication(study, tmp_path):
+    from research_y import project_documents, study_classification
+
+    project, run, _, _ = study
+    a, b = add(study, number=12), add(study, source="wos", number=13)
+    source_rows = db_rows(project,"source_retrievals")
+    memberships = db_rows(project,"query_retrievals")
+    do_decision(study,a,b,move=a)
+
+    def preview():
+        return preview_candidate_reversal(project,run,a,run_revision=page(study)["revision"])
+
+    target = preview()["current_publication_id"]
+    current = study_classification.read_classification(project,target)
+    study_classification.review_classification(project,target,dimension="design",labels=["case series"],
+        actor="Researcher",rationale="Reviewed methods",confirmed=True,expected_revision=current["revision"])
+    stale = preview()
+    pdf = tmp_path / "Paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4\nTest document\n%%EOF\n")
+    project_documents.attach_pdf(project,target,pdf,actor="Researcher",source_url=None,permission_confirmed=True)
+    with pytest.raises(identity.StalePublicationError):
+        identity.reverse_association(project,a,stale["association_event_id"],
+            expected_current_revision=stale["current_publication_revision"],
+            expected_restored_revision=stale["restored_publication_revision"],
+            retained_annotation_sha256=stale["retained_annotations"]["sha256"],actor="Researcher",evidence="Split")
+    plan = preview()
+    assert plan["retained_annotations"]["classification_records"] == plan["retained_annotations"]["documents"] == 1
+    confirm_candidate_reversal(project,run,a,run_revision=plan["run_revision"],expected_revision=plan["revision"],
+                               actor="Researcher",evidence="Reviewed both source records and annotations",confirmed=True)
+    reopened = open_project(project.root)
+    assert study_classification.read_classification(reopened,target)["current"]["design"] == ["case series"]
+    assert len(project_documents.list_attachments(reopened,target)) == 1
+    assert project_documents.list_attachments(reopened,plan["restored_publication_id"]) == []
+    assert identity.read_retrieval_history(reopened,a)[-1]["retained_annotations"] == plan["retained_annotations"]
+    assert db_rows(reopened,"source_retrievals")==source_rows and db_rows(reopened,"query_retrievals")==memberships
+
+
 def test_confirmed_match_and_audited_reversal_preserve_every_source(study):
     project,run,_,_ = study
     a=add(study,source="pubmed",number=12)

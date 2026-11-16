@@ -285,8 +285,8 @@ def perform_action(flow, name, value=None):
             raise ProjectFlowError('publication_review_invalid')
         return flow.confirm_candidate_decision(**value)
     if name == 'candidate_reversal_confirm':
-        if type(value) is not dict or set(value) != {
-                'actor', 'evidence'}:
+        if type(value) is not dict or set(value) not in (
+                {'actor', 'evidence'}, {'actor', 'evidence', 'offer_revision'}):
             raise ProjectFlowError('publication_review_invalid')
         return flow.confirm_candidate_reversal(**value)
     if name == 'run_coord_offer':
