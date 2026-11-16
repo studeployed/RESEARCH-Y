@@ -26,6 +26,7 @@ from research_y.pubmed_probe import PubMedCountProbe, PubMedProbeError
 # publication date because historical publication dates can be imprecise.
 DATE_FIELD = "crdt"
 DEFAULT_COUNT_PROBE_BUDGET = 255
+MAX_PARTITION_NODES = 10_000
 
 
 class _CountClient(Protocol):
@@ -129,7 +130,7 @@ def retrieve_date_partitioned_identifiers(
         raise ValueError("max_records must be within the bounded ESearch ceiling")
     if type(page_size) is not int or not 1 <= page_size <= 1000:
         raise ValueError("page_size must be between 1 and 1000")
-    if type(max_count_probes) is not int or not 1 <= max_count_probes <= 10000:
+    if type(max_count_probes) is not int or not 1 <= max_count_probes <= MAX_PARTITION_NODES:
         raise ValueError("max_count_probes must be an integer from 1 to 10000")
 
     if on_plan_ready is not None and not callable(on_plan_ready):

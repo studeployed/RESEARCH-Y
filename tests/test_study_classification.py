@@ -11,11 +11,13 @@ from test_publication_identity import store, protected_rows, db_rows
 from scripts.review_publication_classification import main
 
 
-def set_record(project, retrieval, *, types, languages=("eng",), subjects=("Humans",)):
+def set_record(project, retrieval, *, types, languages=("eng",), subjects=("Humans",), abstract=None):
     with closing(sqlite3.connect(project.database_path)) as db, db:
         original = {"source": "NCBI PubMed EFetch XML", "record": {
             "publication_types": list(types), "languages": list(languages), "abstract_status": "present",
             "mesh_headings": [{"descriptor": s} for s in subjects]}}
+        if abstract is not None:
+            original["record"]["abstract_sections"] = [{"label": "RESULTS", "text": abstract}]
         db.execute("UPDATE source_retrievals SET original_metadata_json=? WHERE retrieval_id=?",
                    (json.dumps(original), retrieval))
     return identity.materialise_retrieval(project, retrieval, actor="Test researcher")
@@ -46,6 +48,22 @@ def test_distinct_dimensions_and_source_paths(store, types, research, design, fo
     assert evidence["path"][:2] == ["record", "publication_types"]
     assert types[evidence["path"][2]] == evidence["value"]
     assert protected_rows(project) == before and not db_rows(project, "classifications")
+
+
+def test_reviewer_recognises_new_findings_from_existing_cohort(store):
+    project, ids = store
+    evidence = "We reanalysed the original cohort observations and report new subgroup estimates."
+    publication = set_record(project, ids[0], types=["Journal Article"], abstract=evidence)
+    view = read_classification(project, publication.publication_id)
+    assert view["current"]["original_research"] == ["unclear"]
+    updated = review_classification(project, publication.publication_id, dimension="original_research",
+                                    labels=["yes"], actor="Reviewer", rationale=evidence,
+                                    expected_revision=view["revision"], confirmed=True)
+    reopened = read_classification(open_project(project.root), publication.publication_id)
+    assert reopened == updated
+    assert reopened["current"]["original_research"] == ["yes"]
+    assert reopened["decisions"]["original_research"]["rationale"] == evidence
+    assert reopened["current"]["format"] == ["full journal article"]
 
 
 def test_filters_leave_sources_untouched_and_animal_indexing_alone_cannot_hide_record(store):

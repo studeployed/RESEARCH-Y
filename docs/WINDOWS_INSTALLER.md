@@ -16,7 +16,13 @@ back to its version. The same installer can be run again.
 The Windows build uses the supported CPython interpreter on the build
 machine and the .NET Framework compiler provided by Windows. Run
 `python tools/windows_distribution/build.py build/RESEARCH-Y-Setup.exe`.
-The Windows CI job installs the candidate in a disposable location, exercises
-the native project/workbook lifecycle using the bundled interpreter and repeats
-installation. This produces a local candidate, with signing and publication
-separate owner decisions.
+The Windows CI job tests clean installation and reinstallation. In a second
+location it installs the Phase 3 baseline, creates a project with two approved
+source queries, and upgrades that installation with the candidate. It compares
+the project identity, strategy, run and both queries after opening them with
+the upgraded application. The bundled native project/workbook lifecycle runs
+on both installation paths.
+
+Run **Windows standalone installer** on the final integrated revision. Its
+artifact contains the tested executable and `verification.json`, including
+the source commit, baseline commit, image identifiers, file size and SHA-256.

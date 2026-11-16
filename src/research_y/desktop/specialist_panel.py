@@ -77,6 +77,7 @@ def society_panel(ui,state,act,*,native):
                 ("document_url","Document link"),("journal_citation","Journal citation"),("doi","DOI"),
                 ("update_statement","Update or supersession statement"),("supplement","Supplement"))}
         authors=ui.textarea("Authors (one per line)")
+        identifiers=ui.textarea("Additional identifiers, one per line (scheme=value, e.g. PMID=12345)")
         roles={role:ui.select(directory,multiple=True,label=role.capitalize()+" societies")
                for role in ("issuing","collaborating","endorsing")}
         def admit():
@@ -84,6 +85,11 @@ def society_panel(ui,state,act,*,native):
             record.update({k:v.value for k,v in fields.items() if v.value})
             if authors.value:
                 record["authors"]=_lines(authors.value)
+            if identifiers.value:
+                record["identifiers"] = []
+                for line in _lines(identifiers.value):
+                    scheme, _, value = line.partition("=")
+                    record["identifiers"].append({"scheme": scheme.strip(), "value": value.strip()})
             return send("society_guidance",visit_id=selected.value,record=record,
                         roles={k:v.value for k,v in roles.items() if v.value},actor=actor.value)
         ui.button("Confirm guidance import",on_click=admit)
@@ -206,16 +212,19 @@ def pdf_review_panel(ui, specialist, source, eligible, act, send):
     page_view = specialist.get("pdf_page")
     with ui.expansion("Verify a text-based PDF page",value=bool(page_view)):
         field = ui.number("PDF file page (first page is 1)",value=1,min=1,max=4096,step=1)
+        final = ui.number("Last PDF file page (optional)",min=1,max=4096,step=1)
         def choose_page():
-            if field.value is None or not float(field.value).is_integer():
+            if (field.value is None or not float(field.value).is_integer() or
+                    (final.value is not None and not float(final.value).is_integer())):
                 ui.notify("Enter a whole page number.")
                 return
-            return act("native_pdf",dict(source_id=source.value,page=int(field.value)))
+            return act("native_pdf",dict(source_id=source.value,page=int(field.value),
+                                         last_page=int(final.value) if final.value is not None else None))
         ui.button("Choose local PDF",on_click=choose_page)
         if not page_view or page_view["retrieval_id"] not in eligible:
             return
         rid = page_view["retrieval_id"]
-        ui.label(f'PDF page {page_view["page"]} of {page_view["total_pages"]} · {eligible[rid]}')
+        ui.label(f'PDF file pages {page_view["page"]}–{page_view["last_page"]} of {page_view["total_pages"]} · {eligible[rid]}')
         if page_view["status"] == "no_extractable_text":
             ui.label("No extractable text on this page. Check the source visually.")
             return
@@ -223,18 +232,23 @@ def pdf_review_panel(ui, specialist, source, eligible, act, send):
         title = ui.input("Exact abstract title")
         excerpt = ui.textarea("Paste the complete individual abstract passage, including its title")
         authors = ui.textarea("Authors appearing in this passage (one per line)")
-        printed = ui.input("Printed page as observed")
+        printed = ui.input("First printed page as observed")
+        printed_last = ui.input("Last printed page for a passage spanning pages")
         number = ui.input("Abstract or poster number as observed")
         url = ui.input("Full supplement PDF URL, if available")
         ui.button("Verify selected passage",on_click=lambda:send("pdf_select",retrieval_id=rid,
                   page_revision=page_view["revision"],
                   title=title.value,excerpt=excerpt.value,authors=_lines(authors.value),
-                  printed_page=printed.value or None,number=number.value or None,pdf_url=url.value or None))
+                  printed_page=printed.value or None,printed_last_page=printed_last.value or None,
+                  number=number.value or None,pdf_url=url.value or None))
         block = specialist.get("pdf_block")
         if block and block["retrieval_id"] == rid:
             ui.label(block["title"]+" · "+block["locator"])
             ui.label(block["text"])
-            ui.label("Printed page "+(block["printed_first_page"] or "unknown"))
+            printed_span = block["printed_first_page"] or "unknown"
+            if block.get("printed_last_page"):
+                printed_span += "–" + block["printed_last_page"]
+            ui.label("Printed page " + printed_span)
             if block["pdf_page_url"]:
                 ui.label(block["pdf_page_url"])
             reviewer = ui.input("Researcher confirming PDF passage")

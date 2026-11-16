@@ -88,14 +88,14 @@ class SpecialistWorkbench:
         self.conference_page(0,result["revision"])
         self.state.pop("conference_receipt",None)
 
-    def open_pdf(self, source_id, path, page):
+    def open_pdf(self, source_id, path, page, last_page=None):
         self.pdf = self.pdf_selection = None
         for key in ("pdf_page","pdf_block","pdf_receipt"):
             self.state.pop(key,None)
         with Directory(path.parent) as directory:
             payload = directory.read_selected(path.name,limit=conference_pdf.MAX_PDF_BYTES)
-        page_view = conference_pdf.read_page(payload,page)
-        revision = _hash([source_id,page_view["document_sha256"],page])
+        page_view = conference_pdf.read_page(payload,page,last_page)
+        revision = _hash([source_id,page_view["document_sha256"],page,page_view["last_page"]])
         self.pdf = (source_id,page_view,payload,revision)
         self.state["pdf_page"] = dict(retrieval_id=source_id,revision=revision,**page_view)
 
@@ -113,7 +113,8 @@ class SpecialistWorkbench:
         if not self.pdf or self.pdf[0] != retrieval_id or not self.pdf_selection or self.pdf_selection[1] != revision:
             raise ValueError("Review the PDF passage again")
         self.state["pdf_receipt"] = admit_pdf_block(project,retrieval_id,self.pdf[2],page=self.pdf[1]["page"],selection=self.pdf_selection[0],
-                   expected_revision=revision,actor=actor,confirmed=True,retention_authorized=retention_authorized)
+                   last_page=self.pdf[1]["last_page"],expected_revision=revision,actor=actor,
+                   confirmed=True,retention_authorized=retention_authorized)
         self.pdf_selection = None
         self.state.pop("pdf_block",None)
 

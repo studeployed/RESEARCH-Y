@@ -174,7 +174,9 @@ class StrategyDraft:
                 rationale = f'{offer["method"]}: {offer["reason"]}; generation receipt {offer["event_id"]}'
             else:
                 rationale = f'{offer["method"]}: {offer["reason"]}; seed: {offer["seed"]}'
-            self.add_term(offer["group_id"], final, origin=offer["origin"], rationale=rationale)
+            seed = self._term(group, offer["source_term_id"])
+            added = self.add_term(offer["group_id"], final, origin=offer["origin"], rationale=rationale)
+            self._term(group, added)["expansion_path"] = (*seed.get("expansion_path", ()), offer["seed"])
             offer["status"] = "accepted" if final == offer["text"] else "edited"
         self._invalidate()
 
@@ -199,7 +201,7 @@ class StrategyDraft:
             StrategyGroup(
                 group['group_id'], group['label'],
                 tuple(ApprovedTerm(term['text'], term['origin'], True, term['rationale'],
-                                   term['enabled']) for term in group['terms'])
+                                   term['enabled'],term.get('expansion_path', ())) for term in group['terms'])
             )
             for group in self.groups
         )

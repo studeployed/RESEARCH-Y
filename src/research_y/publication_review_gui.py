@@ -175,15 +175,16 @@ def _reversal(db, project, run_id, retrieval_id, run_revision):
         raise PublicationReviewError("publication_review_no_reversal")
     current = identity._snapshot(db, link[0])
     restored = identity._snapshot(db, record["before"])
+    retained = identity.annotation_retention(db, current, retrieval_id)
     evidence_revision = identity._hash([
         METHOD, str(project.identifier), run_id, run_revision, retrieval_id,
-        link[1], current.revision, restored.revision,
+        link[1], current.revision, restored.revision, retained,
     ])
     return dict(
         method=METHOD, project_id=str(project.identifier), run_id=run_id,
         run_revision=run_revision, revision=evidence_revision,
         retrieval_id=retrieval_id, association_event_id=link[1],
-        current_publication_id=current.publication_id,
+        current_publication_id=current.publication_id, retained_annotations=retained,
         restored_publication_id=restored.publication_id,
         current_publication_revision=current.revision,
         restored_publication_revision=restored.revision,
@@ -224,6 +225,7 @@ def confirm_candidate_reversal(project, run_id, retrieval_id, *, run_revision,
             project, retrieval_id, plan["association_event_id"],
             expected_current_revision=plan["current_publication_revision"],
             expected_restored_revision=plan["restored_publication_revision"],
+            retained_annotation_sha256=(plan["retained_annotations"] or {}).get("sha256"),
             actor=actor, evidence=evidence,
         )
         if result.publication_id != plan["restored_publication_id"]:

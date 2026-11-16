@@ -35,6 +35,10 @@ def render_study_panel(ui, state, detail, act, memory=None):
                       on_change=lambda e: memory.update(reason=e.value))
     for dimension, allowed in LABELS.items():
         current = view["current"][dimension]
+        if dimension == "original_research":
+            ui.label("Choose yes for primary observations or a new analysis of existing data that reports "
+                     "its own findings. Choose no for evidence synthesis, including reviews and meta-analyses, "
+                     "and for a protocol without results. Choose unclear when the available evidence is insufficient.")
         ui.label(dimension.replace("_", " ").capitalize() + ": " + ", ".join(current)
                  + " (" + view["review_status"][dimension] + ")")
         for evidence in view["evidence"].get(dimension, []):

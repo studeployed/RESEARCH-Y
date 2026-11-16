@@ -5,9 +5,10 @@ SQLite checkpoints, original PubMed parser/partitioner and supervised host
 state machine are exercised. No external provider requests in normal CI.
 """
 from contextlib import closing
-from datetime import date
+from datetime import date, timedelta
 import inspect
 import json
+import re
 import sqlite3
 from urllib.parse import parse_qs
 from uuid import uuid4
@@ -235,6 +236,9 @@ def test_explicit_preview_no_transport_then_actual_bounded_identifier_reconcilia
         assert done['pubmed_source_pending'] is False
         assert done['pubmed_source_last_outcome']['requests_reserved']>0
         assert done['pubmed_source']['checkpoint']['identifiers_reconciled'] is True
+        checkpoint = done['last_source_checkpoint']
+        assert (checkpoint['query_id'], checkpoint['stage']) == (qid, 'identifiers reconciled')
+        assert any(job['run_id'] == rid and job['source'] == 'pubmed' for job in done['pending_source_jobs'])
         assert done['pubmed_source']['source_retrieval_verified'] is False
         assert done['report']['status']=='incomplete'
         assert KEY not in json.dumps(done)
@@ -556,7 +560,7 @@ def test_128_historical_leaf_counts_reconcile_with_extended_budget(tmp_path):
     assert _db(project)['ids']==128 and _db(project)['metadata']==0
 
 
-def test_511_leaf_legacy_checkpoint_fails_before_any_provider_requests(tmp_path):
+def test_511_leaf_checkpoint_requires_explicit_larger_allowance_then_advances(tmp_path):
     project,rid,qid,query=_project(tmp_path)
     window=_historical_daily_partition_checkpoint(project,qid,query,511)
     source_preview=source.preview_pubmed_source(project,run_id=rid,query_id=qid)
@@ -591,8 +595,62 @@ def test_511_leaf_legacy_checkpoint_fails_before_any_provider_requests(tmp_path)
                 coverage_end=window.end.isoformat())
         assert flow.state()['pubmed_source_pending'] is False
         assert _db(project)==before
+        supervisor = Supervisor()
+        flow._pubmed_source_worker.close()
+        flow._pubmed_source_worker = supervisor
+        choice = flow.offer_pubmed_source(qid, coverage_start=window.start.isoformat(),
+                                          coverage_end=window.end.isoformat(), extended=True)['pubmed_source_offer']
+        assert choice['max_session_requests'] == 10_512
+        assert provider.calls == []
+        flow.confirm_pubmed_source()
+        command = supervisor.cmd
+        assert command.pubmed_extended_session is True
+        # Stop on the second page. All 511 counts and the first page must
+        # survive the normal worker reconciliation and project reopen.
+        provider = Transport(query, ids=('111',), root_count=511, dated_count=1)
+        def stop_after_first():
+            if sum(size > 0 for _, _, size in provider.calls) > 1:
+                raise OSError('synthetic interruption')
+        provider.on_page = stop_after_first
+        supervisor.result = source.run_pubmed_source_session(
+            project, run_id=command.run_id, query_id=command.pubmed_source_query_id,
+            expected_plan_sha256=command.pubmed_source_plan_sha256,
+            coverage_start=command.pubmed_coverage_start, coverage_end=command.pubmed_coverage_end,
+            confirmed=command.pubmed_source_confirmed, extended=command.pubmed_extended_session,
+            client=_client(provider))
+        supervisor.state = 'returned'
+        done = flow.reconcile_pubmed_source()
+        assert done['pubmed_source_last_outcome']['requests_reserved'] == 514
+        assert done['pubmed_source']['checkpoint']['pages_committed'] == 1
+        assert inspect_pubmed_checkpoint(project, qid).pmids == ('111',)
     finally:
         flow.close()
+
+
+def test_extended_session_saves_initial_plan_larger_than_100_probes(tmp_path):
+    project, rid, qid, query = _project(tmp_path)
+    first = date(2020, 1, 1)
+    last = first + timedelta(days=63)
+    transport = Transport(query, root_count=64 * 9000)
+    def count_dates(req, timeout):
+        fields = parse_qs(req.data.decode())
+        dates = re.search(r'(\d{4}/\d{2}/\d{2}):(\d{4}/\d{2}/\d{2})', fields['term'][0])
+        if dates:
+            start, end = (date.fromisoformat(s.replace('/', '-')) for s in dates.groups())
+            transport.dated_count = ((end - start).days + 1) * 9000
+        return transport(req, timeout)
+    preview = source.preview_pubmed_source(project, run_id=rid, query_id=qid)
+    common = dict(run_id=rid, query_id=qid, expected_plan_sha256=preview['plan_sha256'],
+                  coverage_start=first.isoformat(), coverage_end=last.isoformat(), confirmed=True)
+    standard = source.run_pubmed_source_session(project, **common, client=_client(count_dates))
+    assert standard['checkpoint'] is None
+    # No synthetic page contains 200 matching identifiers. The valid plan
+    # commits independently; page and metadata success must remain unclaimed.
+    large = source.run_pubmed_source_session(project, **common, client=_client(count_dates), extended=True)
+    assert large['checkpoint']['partition_leaf_count'] == 64
+    assert large['checkpoint']['reported_matches'] == 576000
+    assert large['checkpoint']['pages_committed'] == 0
+    assert large['status'] == 'incomplete'
 
 
 def test_graphical_pubmed_controls_never_exposed_on_probe_automation_route():

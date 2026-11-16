@@ -31,6 +31,7 @@ def unit(tmp_path, monkeypatch):
             CREATE TABLE strategy_versions(strategy_version_id TEXT,version_number INTEGER,
                                            approved_at_utc TEXT,snapshot_json TEXT);
             CREATE TABLE strategy_groups(strategy_version_id TEXT,group_id TEXT,label TEXT,group_order INTEGER);
+            CREATE TABLE source_queries(query_id TEXT,run_id TEXT,source_name TEXT,status TEXT);
         ''')
     p = SimpleNamespace(root=tmp_path, database_path=path, identifier=UUID(P), name='Project')
     states, calls, connections = {}, [], []

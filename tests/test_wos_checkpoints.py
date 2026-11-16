@@ -151,6 +151,10 @@ def test_pause_reopen_fetches_only_missing_acquisition_pages(tmp_path):
     assert len([x for x in s.calls if x==('acquire',1,50)]) == 1
     assert s.calls[1] == ('probe',1,1)
     validate_wos_checkpoint(open_project(p.root),qs[0].query_id)
+    from research_y.application_inspection import _last_source_checkpoint
+    with closing(sqlite3.connect(p.database_path)) as db:
+        latest = _last_source_checkpoint(db)
+    assert latest["query_id"] == qs[0].query_id and latest["stage"] == "source enumeration reconciled"
 
 
 def test_quota_zero_requires_explicit_later_observation_not_midnight_assumption(tmp_path):

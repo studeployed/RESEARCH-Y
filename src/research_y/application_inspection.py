@@ -267,6 +267,41 @@ def _runs(db):
     return result
 
 
+_SOURCE_CHECKPOINTS = {
+    'pubmed_checkpoint_created': ('pubmed', 'partition plan saved'),
+    'pubmed_checkpoint_page_committed': ('pubmed', 'identifier page saved'),
+    'pubmed_checkpoint_status': ('pubmed', 'identifiers reconciled'),
+    'pubmed_efetch_metadata_committed': ('pubmed', 'metadata batch saved'),
+    'wos_checkpoint_created': ('wos', 'retrieval plan saved'),
+    'wos_page_committed': ('wos', 'source page saved'),
+    'wos_identity_verified': ('wos', 'page identities checked'),
+    'wos_count_revalidated': ('wos', 'source count rechecked'),
+    'wos_state': ('wos', 'source enumeration reconciled'),
+}
+
+
+def _last_source_checkpoint(db):
+    marks = ','.join('?' for _ in _SOURCE_CHECKPOINTS)
+    row = db.execute(
+        f'SELECT event_id,occurred_at_utc,event_type,details_json FROM audit_events WHERE event_type IN ({marks}) '
+        "AND (event_type <> 'pubmed_checkpoint_status' OR "
+        "json_extract(details_json,'$.status')='identifiers_reconciled_metadata_pending') "
+        "AND (event_type <> 'wos_state' OR (json_extract(details_json,'$.status')='completed_with_warnings' "
+        "AND json_extract(details_json,'$.reason_code')='enumeration_reconciled_snapshot_unavailable')) "
+        'ORDER BY event_id DESC LIMIT 1', tuple(_SOURCE_CHECKPOINTS)).fetchone()
+    if row is None:
+        return None
+    event_id, stamp, kind, raw = row
+    query_id = _uuid(decode(raw).get('query_id'))
+    source, stage = _SOURCE_CHECKPOINTS[kind]
+    query = db.execute('SELECT run_id FROM source_queries WHERE source_name=? AND query_id=?',
+                       (source,query_id)).fetchone()
+    if query is None:
+        raise ApplicationInspectionError('invalid_evidence')
+    return dict(event_id=event_id, occurred_at_utc=_stamp(stamp), run_id=_uuid(query[0]),
+                query_id=query_id, source=source, stage=stage)
+
+
 def read_application_snapshot(project: Project, *, selected_run_id: str | None = None) -> ApplicationSnapshot:
     """Project/run/export catalogue plus optional full-run report on ONE snapshot.
 
@@ -284,6 +319,12 @@ def read_application_snapshot(project: Project, *, selected_run_id: str | None =
         if setup is None or any(not isinstance(s, str) for s in setup):
             raise ApplicationInspectionError('invalid_evidence')
         inventory = _inventory(db, project)
+        checkpoint = _last_source_checkpoint(db)
+        pending = [dict(run_id=_uuid(rid),source=source,status=status,count=count)
+                   for rid,source,status,count in db.execute(
+                       "SELECT run_id,source_name,status,COUNT(*) FROM source_queries "
+                       "WHERE status IN ('pending','running','paused','incomplete','failed') "
+                       "GROUP BY run_id,source_name,status ORDER BY run_id,source_name,status")]
         captured = _now()
         report = _capture(db, project, selected_run_id, captured) if selected_run_id is not None else None
         audit = db.execute('SELECT event_id,occurred_at_utc FROM audit_events ORDER BY event_id DESC LIMIT 1').fetchone()
@@ -296,7 +337,8 @@ def read_application_snapshot(project: Project, *, selected_run_id: str | None =
             report=report.as_dict() if report is not None else None,
             exports=[asdict(entry) for entry in inventory],
             last_recorded_audit_event={'event_id': audit[0], 'occurred_at_utc': audit[1]} if audit else None,
-            last_successful_source_checkpoint=None, checkpoint_verification='not_performed',
+            last_successful_source_checkpoint=checkpoint, pending_source_jobs=pending,
+            checkpoint_verification='recorded_receipt' if checkpoint else 'not_performed',
             source_retrieval_verified=False, gui_implemented=False,
             warnings=['read_model_not_source_acceptance', 'export_inventory_not_file_verification',
                       'recorded_phase_not_live_worker_status', 'last_audit_event_is_not_a_source_checkpoint'])

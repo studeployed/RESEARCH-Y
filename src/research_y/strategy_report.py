@@ -95,7 +95,11 @@ def _strategy(snapshot, rows):
         expected.append((group["group_id"], group["label"], order))
         seen = set()
         for term in group["terms"]:
-            if (not isinstance(term, dict) or set(term) != {"text", "origin", "rationale", "enabled", "approved"}
+            fields = {"text", "origin", "rationale", "enabled", "approved"}
+            if (not isinstance(term, dict) or set(term) not in (fields, fields | {"expansion_path"})
+                    or ("expansion_path" in term and (not isinstance(term["expansion_path"],list)
+                        or not term["expansion_path"] or any(not isinstance(v,str) or not v.strip()
+                                                             for v in term["expansion_path"])))
                     or term.get("approved") is not True
                     or not isinstance(term.get("text"), str) or not term["text"].strip()
                     or term.get("origin") not in ("researcher", "deterministic", "ai")
@@ -213,6 +217,7 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
     if {q["query_id"] for q in queries} != query_count_ids:
         raise ReportIntegrityError("Report omitted a query")
     from research_y import __version__
+    from research_y.run_comparison import latest_update_method
     data = dict(format_version=1, method=REPORT_METHOD, software_version=__version__,
                 captured_at_utc=captured_at, scope="whole_run_strategy_and_counts", status="incomplete",
                 project={"project_id": str(project.identifier), "name": project.name},
@@ -223,6 +228,9 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
                 warnings=sorted(set(counts["warnings"]) | {"not_a_historical_run_reconstruction",
                     "licensed_record_text_not_exported", "methodology_review_not_established",
                     "source_query_translation_details_not_in_this_workbook"}))
+    update_method = latest_update_method(db,run_id)
+    if update_method:
+        data["run"]["update_method"] = update_method
     if reviewed_revision is not None:
         from research_y.reviewed_master import retained_union
         if reviewed_revision != projection.revision:

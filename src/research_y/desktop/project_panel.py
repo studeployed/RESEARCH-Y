@@ -67,6 +67,22 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
     else:
         ui.label('Project: ' + project['name']).props('data-testid=project-name')
         ui.label('Location: ' + project['location']).props('data-testid=project-location')
+        checkpoint = state.get('last_source_checkpoint')
+        if checkpoint:
+            ui.label(f"Last saved source checkpoint · {checkpoint['occurred_at_utc']} · "
+                     f"{checkpoint['source']} · {checkpoint['stage']} · run {checkpoint['run_id']}").props(
+                         'data-testid=project-checkpoint')
+        else:
+            ui.label('No successful source checkpoint recorded.').props('data-testid=project-checkpoint')
+        with ui.expansion('Pending and incomplete work',value=bool(state.get('pending_source_jobs'))):
+            for job in state.get('pending_source_jobs', []):
+                ui.label(f"Run {job['run_id']} · {job['source']} · {job['count']} {job['status']}")
+            for run in state['runs']:
+                if run['stored_status'] in ('pending','running','paused','incomplete','failed'):
+                    ui.label(f"Run {run['run_id']} · {run['stored_status']}")
+            for item in state['exports']:
+                if item['recorded_state'] not in ('published','cancelled'):
+                    ui.label(f"Export {item['filename']} · {item['recorded_state']}")
         ui.separator()
         ui.label('Saved source-pilot audit history — read-only, including '
                  'earlier sessions and runs. Not verified source retrieval.').props(
@@ -319,6 +335,19 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                      ' stored; pending run ' + done['run_id'] +
                      '. Queries planned but NOT EXECUTED.').props(
                          'data-testid=setup-approval-result')
+        if state.get('report'):
+            run = state['report']['run']
+            update = run.get('update_method') or {}
+            with ui.expansion("Search update method"):
+                earlier_runs = {r["run_id"]: f'Version {r["version_number"]} · {r["run_id"]}' for r in state["runs"]
+                                if r["run_id"] != run["run_id"] and r["created_at_utc"] <= run["created_at_utc"]}
+                earlier_run = ui.select(earlier_runs,label="Earlier project run (if applicable)",
+                                        value=update.get("earlier_run"),clearable=True)
+                method = ui.textarea("How this search was run or updated, for the methods report",value=update.get("method",""))
+                update_author = ui.input("Researcher recording the method",value=update.get("actor",""))
+                ui.button("Record search update method",on_click=lambda:act("save_update_method",dict(
+                    run_id=run["run_id"],earlier_run=earlier_run.value,method=method.value,actor=update_author.value,
+                    expected_event=update.get("event_id"))))
         if len(state['runs'])>=2:
             comparison=state.get("run_comparison")
             with ui.expansion("Compare search runs",value=bool(comparison)):
@@ -1204,13 +1233,19 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.label('Original association evidence: ' +
                              undo['original_decision_evidence']).props(
                                  'data-testid=candidate-reversal-evidence')
+                    retained = undo.get("retained_annotations")
+                    if retained:
+                        ui.label(f'Reversing this link keeps {retained["classification_records"]} classification '
+                                 f'records and {retained["documents"]} documents with publication '
+                                 f'{retained["publication_id"]} and its remaining sources.')
                     reverser = ui.input(
                         'Researcher recording reversal', value='')
                     reason = ui.input(
                         'Reason for reversing current association', value='')
                     ui.button('CONFIRM reverse CURRENT association',
-                              on_click=lambda a=reverser, e=reason:
+                              on_click=lambda a=reverser, e=reason, rev=undo['revision']:
                               act('candidate_reversal_confirm', {
+                                  'offer_revision':rev,
                                   'actor':a.value,
                                   'evidence':e.value})).props(
                                       'data-testid=candidate-reversal-confirm')
@@ -1939,7 +1974,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                      'source checkpoint, NOT treated as a finished '
                      'bibliographic search.').props(
                          'data-testid=pubmed-source-method')
-            ui.label('One explicitly confirmed session is limited to '
+            ui.label('A standard session is limited to '
                      '512 source requests, including count probes; '
                      'individual identifier pages are capped at 200. '
                      'A broader query may need Create Date partitioning, '
@@ -1987,6 +2022,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                       'data-testid=pubmed-source-reconcile')
             elif state['pubmed_source_offer'] is not None:
                 choice=state['pubmed_source_offer']
+                ui.label(f"This session allows up to {choice['max_session_requests']:,} PubMed requests, "
+                         f"including up to {choice['max_partition_count_probes']:,} date-partition count probes.").props(
+                             'data-testid=pubmed-source-limits')
                 ui.label('Frozen PubMed All Fields exact query: ' +
                          choice['exact_query']).props(
                              'data-testid=pubmed-source-exact-query')
@@ -2017,6 +2055,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     'Administrative Create Date coverage end (YYYY-MM-DD)',
                     value=date.today().isoformat()).props(
                         'data-testid=pubmed-source-end')
+                extended = ui.checkbox('Use a larger request allowance for a broad PubMed search',
+                                       value=False).props('data-testid=pubmed-source-extended')
                 for row in (state['report']['queries'] if state['report']
                             is not None else ()):
                     if row['source_name'] != 'pubmed':
@@ -2035,7 +2075,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                       'pubmed_identifier_offer',dict(
                                           query_id=qid,
                                           coverage_start=pubmed_start.value,
-                                          coverage_end=pubmed_end.value))).props(
+                                          coverage_end=pubmed_end.value,
+                                          extended=extended.value))).props(
                                               'data-testid=pubmed-source-offer')
                 if not state['pubmed_profile_configured']:
                     ui.label('NCBI ESearch requests require a trusted '
@@ -2048,11 +2089,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                         ui.label('This existing checkpoint requires at least ' +
                                  str(cp['minimum_resume_requests']) +
                                  ' count verification / forward-progress requests. '
-                                 'The GUI limit is 512, so another session '
-                                 'would make NO progress. Use the original '
-                                 'higher-budget PubMed checkpoint resume service '
-                                 'outside this experimental GUI, or obtain a '
-                                 'separate longer-worker implementation.').props(
+                                 'Select the larger request allowance and preview the session '
+                                 'to resume using the saved date coverage.').props(
                                      'data-testid=pubmed-source-budget-blocked')
                     ui.label('Last inspected PubMed checkpoint: ' +
                              cp['status'] + '; ' +

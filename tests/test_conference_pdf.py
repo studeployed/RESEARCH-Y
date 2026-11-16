@@ -14,7 +14,7 @@ from research_y.study_classification import read_classification
 from test_reviewed_master import populated, decide
 
 
-def fixture_pdf():
+def fixture_pdf(*, continuation=False):
     writer = PdfWriter()
     writer.add_blank_page(width=450,height=600)
     page = writer.add_blank_page(width=450,height=600)
@@ -26,6 +26,12 @@ def fixture_pdf():
     contents.set_data(b"BT /F1 12 Tf 20 400 Td (S3) Tj 0 -20 Td (A01 Oxygen Study. Lee. First findings.) Tj "
                       b"0 -20 Td (A02 Mobility Study. Roy. Separate findings.) Tj ET")
     page[NameObject("/Contents")] = writer._add_object(contents)
+    if continuation:
+        following = writer.add_blank_page(width=450, height=600)
+        following[NameObject("/Resources")] = page["/Resources"]
+        contents = DecodedStreamObject()
+        contents.set_data(b"BT /F1 12 Tf 20 400 Td (Follow-up results.) Tj ET")
+        following[NameObject("/Contents")] = writer._add_object(contents)
     stream = BytesIO()
     writer.write(stream)
     return stream.getvalue()
@@ -51,7 +57,7 @@ def test_native_pdf_two_blocks_reopen_with_distinct_printed_and_file_pages(tmp_p
     before = read_run_execution_board(project,run)
     source = ids["111"]
     local = tmp_path/"abstracts [été].pdf"
-    local.write_bytes(fixture_pdf())
+    local.write_bytes(fixture_pdf(continuation=True))
     admitted = []
     with closing(RealProjectFlow()) as flow:
         flow.open_native_folder(project.root)
@@ -61,18 +67,30 @@ def test_native_pdf_two_blocks_reopen_with_distinct_printed_and_file_pages(tmp_p
             detail = flow.inspect_publication_detail(publication_id=row["publication_id"],revision=page["revision"])
             if any(r["retrieval_id"]==source for r in detail["publication_detail"]["source_retrievals"]):
                 break
-        state = flow.open_native_pdf(local,source_id=source,page=2)["specialist"]
+        state = flow.open_native_pdf(local,source_id=source,page=2,last_page=3)["specialist"]
         assert state["pdf_page"]["page"] == 2
-        for title,author,body in (("Oxygen Study","Lee","First findings."),("Mobility Study","Roy","Separate findings.")):
+        for title,author,body in (("Oxygen Study","Lee","First findings."),
+                                  ("Mobility Study","Roy","Separate findings. Follow-up results.")):
             chosen = flow.specialist_action("pdf_select",dict(retrieval_id=source,title=title,
                       page_revision=state["pdf_page"]["revision"],
                       excerpt=f"{title}. {author}. {body}",authors=[author],printed_page="S3",
+                      printed_last_page="S4" if author=="Roy" else None,
                       pdf_url="https://example.test/proceedings.pdf"))["specialist"]["pdf_block"]
             args = dict(retrieval_id=source,actor="Reviewer",revision=chosen["revision"])
             with pytest.raises(ProjectFlowError):
                 flow.specialist_action("pdf_admit",dict(**args,retention_authorized=False))
             receipt = flow.specialist_action("pdf_admit",dict(**args,retention_authorized=True))["specialist"]["pdf_receipt"]
             admitted.append(receipt["admitted"][0]["publication_id"])
+        for first, last, title, passage in (
+            (3,3,"Follow-up results.","Follow-up results."),
+            (2,3,"Lee.","Lee. First findings. A02 Mobility Study. Roy. Separate findings. Follow-up results."),
+        ):
+            page_view = flow.open_native_pdf(local,source_id=source,page=first,last_page=last)["specialist"]["pdf_page"]
+            overlap = flow.specialist_action("pdf_select",dict(retrieval_id=source,page_revision=page_view["revision"],
+                title=title,excerpt=passage))["specialist"]["pdf_block"]
+            with pytest.raises((ValueError,ProjectFlowError)):
+                flow.specialist_action("pdf_admit",dict(retrieval_id=source,actor="Reviewer",
+                    revision=overlap["revision"],retention_authorized=True))
     project = open_project(project.root)
     assert len(set(admitted)) == 2
     for pub_id in admitted:
@@ -80,6 +98,16 @@ def test_native_pdf_two_blocks_reopen_with_distinct_printed_and_file_pages(tmp_p
         assert original["original_retrieval_id"] == source and original["provider"] == "conference_pdf"
         assert original["record"]["printed_first_page"] == "S3"
         assert original["record"]["pdf_page"] == 2 and original["record"]["pdf_page_url"].endswith("#page=2")
+        if original["record"]["title"] == "Mobility Study":
+            assert original["record"]["pdf_last_page"] == 3
+            assert original["record"]["printed_last_page"] == "S4"
+            assert original["record"]["text_end"] == len("Follow-up results.")
+        else:
+            # A single-page selection retains its original position and identity
+            # even when opened in a wider window.
+            view = conference_pdf.read_page(local.read_bytes(), 2)
+            block = conference_pdf.select_block(view, title="Oxygen Study", excerpt=original["record"]["text"])
+            assert block["abstracts"][0]["locator"] == original["record"]["locator"]
         assert read_classification(project,pub_id)["current"]["format"] == ["conference abstract"]
     after = read_run_execution_board(project,run)
     assert after["source_count_revision"] == before["source_count_revision"]

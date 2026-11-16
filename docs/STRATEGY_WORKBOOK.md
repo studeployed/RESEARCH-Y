@@ -132,3 +132,15 @@ Keep #37 open. Full master/bibliographic exports, historical report comparisons,
 exhaustive duplicate discovery (#33), source acceptance (#7/#8), count acceptance
 (#35), and the Windows junction release blocker (#11) remain open. The minimal
 application shell follows the usable, audited export increment, not a renderer alone.
+
+## Recording search updates and expansions
+
+In the desktop app, select the run and open **Search update method**. Record
+the method used, the researcher's name and the earlier project run if one
+applies. Both workbooks carry that account. Edits create a new audit entry.
+An older or undocumented run shows that its update method has not been recorded.
+
+**Search Terms** shows the initial term, the immediate seed and the accepted
+expansion beside the approved atomic term. An edited suggestion retains its
+original seed. Historical generated terms without recorded ancestry show
+“Seed not recorded”.

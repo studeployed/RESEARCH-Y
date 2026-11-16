@@ -601,6 +601,18 @@ class RealProjectFlow:
             self._run_comparison = compare_runs(self.project,earlier,later,category=category,offset=offset)
             return self._publish()
 
+    def save_update_method(self, run_id, earlier_run, method, actor, expected_event):
+        from research_y.run_comparison import record_update_method
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if run_id != self.selected_run_id or not run_id:
+                raise ProjectFlowError("Select the run whose update method you want to record.")
+            record_update_method(self.project,run_id,earlier_run=earlier_run,method=method,actor=actor,
+                                 expected_event=expected_event)
+            self.snapshot = self._operation('inspect',run_id=run_id)['snapshot']
+            return self._publish()
+
     def note_comparison_source(self,retrieval_id,actor,text,expected_event):
         from research_y.run_comparison import append_note
         with self._guard:
@@ -1259,13 +1271,13 @@ class RealProjectFlow:
                       dict(terms=terms,landing_url=landing_url,pdf_url=pdf_url,pdf_pages=pdf_pages))
             return self._publish()
 
-    def open_native_pdf(self, path, *, source_id, page):
+    def open_native_pdf(self, path, *, source_id, page, last_page=None):
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
             self._visible_candidate_source(source_id)
             self._specialist.select(self.project,self.selected_run_id)
-            self._specialist.open_pdf(source_id,path,page)
+            self._specialist.open_pdf(source_id,path,page,last_page)
             return self._publish()
 
     def inspect_study_queue(self, only_review, hide_non_english, hide_non_human_only, after=None):
@@ -2370,7 +2382,7 @@ class RealProjectFlow:
             return self._publish()
 
     def offer_pubmed_source(self, query_id: str, *,
-                            coverage_start: str, coverage_end: str):
+                            coverage_start: str, coverage_end: str, extended: bool = False):
         """Exact frozen OR source and explicitly selected partition coverage."""
         with self._guard:
             self._require_open()
@@ -2379,7 +2391,12 @@ class RealProjectFlow:
                 raise ProjectFlowError('pubmed_profile_unavailable')
             if self.selected_run_id is None or type(query_id) is not str:
                 raise ProjectFlowError('run_selection_required')
-            from research_y.pubmed_source_gui import _window
+            from research_y.pubmed_source_gui import _window, identifier_session_limits
+            default_requests, default_probes = identifier_session_limits(False)
+            try:
+                request_limit, probe_limit = identifier_session_limits(extended)
+            except ValueError:
+                raise ProjectFlowError('pubmed_identifier_budget_invalid') from None
             try:
                 _window(coverage_start,coverage_end)
             except ValueError:
@@ -2395,12 +2412,12 @@ class RealProjectFlow:
                     preview.get('source_retrieval_verified') is not False or
                     preview.get('no_network_requests') is not True or
                     preview.get('whole_search_verified') is not False or
-                    preview.get('max_session_requests') != 512 or
+                    preview.get('max_session_requests') != default_requests or
                     preview.get('page_size') != 200 or
-                    preview.get('max_partition_count_probes') != 100):
+                    preview.get('max_partition_count_probes') != default_probes):
                 raise ProjectFlowError('pubmed_plan_unverified')
             saved = preview['checkpoint']
-            if preview.get('resume_budget_sufficient') is not True:
+            if saved is not None and saved['minimum_resume_requests'] > request_limit:
                 raise ProjectFlowError('pubmed_verification_exceeds_budget')
             if (saved is not None and
                     saved['status']=='identifiers_reconciled_metadata_pending'):
@@ -2413,7 +2430,8 @@ class RealProjectFlow:
                 exact_query=preview['exact_query'],
                 group_id=preview['group_id'],plan_sha256=preview['plan_sha256'],
                 coverage_start=coverage_start,coverage_end=coverage_end,
-                checkpoint=saved,max_session_requests=512)
+                checkpoint=saved,extended=extended,max_session_requests=request_limit,
+                max_partition_count_probes=probe_limit)
             self._pilot_candidate = None
             self._wos_pilot_candidate = None
             self._wos_acquisition_offer = None
@@ -2454,6 +2472,7 @@ class RealProjectFlow:
                 pubmed_source_plan_sha256=candidate['plan_sha256'],
                 pubmed_coverage_start=candidate['coverage_start'],
                 pubmed_coverage_end=candidate['coverage_end'],
+                pubmed_extended_session=candidate['extended'],
                 pubmed_source_confirmed=True,
                 pubmed_source_contact_email=self._pubmed_profile.contact_email,
                 pubmed_source_api_key=self._pubmed_profile.api_key)
@@ -2580,7 +2599,8 @@ class RealProjectFlow:
                             not self._pubmed_checkpoint_receipt_consistent(
                                 receipt.get('checkpoint'),read['checkpoint']) or
                             type(receipt.get('session_requests_reserved')) is not int or
-                            not 0 <= receipt['session_requests_reserved'] <= 512):
+                            receipt.get('session_request_limit') != pending['max_session_requests'] or
+                            not 0 <= receipt['session_requests_reserved'] <= pending['max_session_requests']):
                         raise ProjectFlowError('pubmed_receipt_invalid')
                     attempts = receipt['session_requests_reserved']
                 elif status.state in ('interrupted','failed'):
@@ -3919,12 +3939,15 @@ class RealProjectFlow:
                 self._publish()
                 raise
 
-    def confirm_candidate_reversal(self, *, actor, evidence):
+    def confirm_candidate_reversal(self, *, actor, evidence, offer_revision=None):
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
             offer = self._reversal_offer
             page = self._publication_page
+            if offer and (offer.get("retained_annotations") or offer_revision is not None):
+                if offer_revision != offer["revision"]:
+                    raise ProjectFlowError('publication_review_stale')
             if (offer is None or self.selected_run_id is None or page is None
                     or page['revision'] != offer['run_revision']):
                 raise ProjectFlowError('publication_review_confirmation_required')
@@ -4718,6 +4741,8 @@ class RealProjectFlow:
                     'project_id': str(self.project.identifier), 'name': self.project.name,
                     'location': str(self.project.root)},
                 'runs': [] if data is None else data['runs'],
+                'last_source_checkpoint': data.get('last_successful_source_checkpoint') if data else None,
+                'pending_source_jobs': data.get('pending_source_jobs',[]) if data else [],
                 'selected_run_id': self.selected_run_id,
                 'manifest_offer': dict(self._manifest_offer) if self._manifest_offer else None,
                 'manifest_pending': self._manifest_pending,

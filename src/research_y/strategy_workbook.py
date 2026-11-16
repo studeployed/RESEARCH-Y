@@ -95,6 +95,8 @@ def _methods(data, report):
         ("Verified unique publications", "Unknown: exhaustive candidate discovery/deduplication acceptance is outstanding."),
         ("Extracted abstracts", "Unknown: no completed abstract-extraction count is asserted."),
         ("Timestamp scope", "Executed Queries contains stored query timestamps, not independent verification of every request."),
+        ("Search update method", canonical(data["run"]["update_method"]) if data["run"].get("update_method")
+         else "No update method recorded for this run."),
         ("Query Partitions", "Stored PubMed count-plan nodes; internal split nodes are not extra independent searches or additive totals."),
         ("PubMed fields", "Connector targets All Fields literals; exact stored queries are authoritative. Accepted translations are not verified by this renderer."),
         ("Web of Science fields", "Starter Topic (TS): indexed title/abstract/keywords; narrower than web All Fields, not full article text."),
@@ -168,10 +170,13 @@ def _tables(data, report):
     terms = []
     for g in data["strategy"]["snapshot"]["groups"]:
         for order, term in enumerate(g["terms"]):
+            parents = term.get("expansion_path", [])
+            initial = parents[0] if parents else term["text"] if term["origin"]=="researcher" else "Seed not recorded"
             terms.append((g["group_id"], g["label"], order + 1, term["text"], term["origin"],
-                          term["approved"], term["enabled"], term["rationale"]))
+                          term["approved"], term["enabled"], term["rationale"], initial,
+                          parents[-1] if parents else None, term["text"] if parents else None))
     yield "Search Terms", ("Group ID", "Group", "Term order", "Approved atomic term", "Origin", "Approved",
-                           "Enabled", "Rationale"), terms
+                           "Enabled", "Rationale", "Initial term", "Expanded from", "Approved expansion"), terms
     qcounts = {q["query_id"]: q for q in counts["queries"]}
     queries = []
     for q in data["queries"]:

@@ -24,7 +24,7 @@ from research_y.pubmed_ids import (
     PubMedIdentifierPage,
     parse_identifier_page,
 )
-from research_y.pubmed_partition import DateWindow, PubMedPartitionResult
+from research_y.pubmed_partition import DateWindow, MAX_PARTITION_NODES, PubMedPartitionResult
 from research_y.pubmed_probe import PubMedESearchProbeClient, _translation_matches_submitted
 from research_y.storage import _audit
 
@@ -135,7 +135,7 @@ def _validate_plan(plan: dict[str, Any], exact_source_query: str) -> list[dict[s
             raise CheckpointIntegrityError("Oversized root requires a complete date partition plan")
         return [{"index": -1, "exact_subquery": exact_source_query,
                  "reported_matches": root_count, "decision": "collect" if root_count else "empty"}]
-    if len(nodes) > 10_000:
+    if len(nodes) > MAX_PARTITION_NODES:
         raise CheckpointIntegrityError("Excessive number of checkpoint partitions")
     first = nodes[0]
     if (first["index"] != 0 or first["parent_index"] is not None

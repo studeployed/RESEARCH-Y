@@ -9,6 +9,8 @@ def perform_action(flow, name, value=None):
         return flow.read_project_audit(value or 0)
     if name == "compare_run_history":
         return flow.compare_run_history(**value)
+    if name == "save_update_method":
+        return flow.save_update_method(**value)
     if name == "note_comparison_source":
         return flow.note_comparison_source(**value)
     if name == "import_bibliography":
@@ -151,7 +153,7 @@ def perform_action(flow, name, value=None):
     if name == 'pubmed_identifier_read':
         return flow.inspect_stored_pubmed_source(value)
     if name == 'pubmed_identifier_offer':
-        if type(value) is not dict or set(value) != {
+        if type(value) is not dict or set(value) - {'extended'} != {
                 'query_id','coverage_start','coverage_end'}:
             raise ProjectFlowError('pubmed_coverage_invalid')
         return flow.offer_pubmed_source(**value)
@@ -283,8 +285,8 @@ def perform_action(flow, name, value=None):
             raise ProjectFlowError('publication_review_invalid')
         return flow.confirm_candidate_decision(**value)
     if name == 'candidate_reversal_confirm':
-        if type(value) is not dict or set(value) != {
-                'actor', 'evidence'}:
+        if type(value) is not dict or set(value) not in (
+                {'actor', 'evidence'}, {'actor', 'evidence', 'offer_revision'}):
             raise ProjectFlowError('publication_review_invalid')
         return flow.confirm_candidate_reversal(**value)
     if name == 'run_coord_offer':
