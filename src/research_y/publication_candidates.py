@@ -168,15 +168,22 @@ def _prior_run_evidence(db, receipt, sources):
     """Match full provider payloads to their source keys, independently of retrieval order."""
     _, previous, _, _, previous_state = _state(db, tuple(receipt["pair"]))
     if previous_state != receipt["post_state_sha256"] or receipt["method"] != RULE_VERSION:
-        return "prior_run_decision_outdated"
+        return "prior_run_decision_outdated", previous_state
 
     def evidence(records):
-        return sorted((_source_key(record), identity._hash(record["original_metadata"]))
-                      for record in records)
+        parts = []
+        for record in records:
+            payload = record["original_metadata"]
+            if record["source_name"] == "pubmed" and payload.get("source") == "NCBI PubMed EFetch XML":
+                # The batch receipt and fetch time belong to the acquisition.
+                # Keep them in the historical integrity check above.
+                payload = {k: v for k, v in payload.items() if k not in ("retrieved_at_utc", "response_sha256")}
+            parts.append((_source_key(record), identity._hash(payload)))
+        return sorted(parts)
 
     if evidence(previous) != evidence(sources):
-        return "prior_run_metadata_changed"
-    return "prior_run_metadata_unchanged"
+        return "prior_run_metadata_changed", previous_state
+    return "prior_run_metadata_unchanged", previous_state
 
 
 def _view(db: sqlite3.Connection, pair: tuple[str, str], *,
@@ -204,9 +211,9 @@ def _view(db: sqlite3.Connection, pair: tuple[str, str], *,
         warnings.add("prior_run_decision_available")
     revision = identity._hash([state, receipts])
     if receipts and receipts[-1]["pair"] != list(pair):
-        prior_evidence = _prior_run_evidence(db, receipts[-1], sources)
+        prior_evidence, prior_state = _prior_run_evidence(db, receipts[-1], sources)
         warnings.add(prior_evidence)
-        revision = identity._hash([revision, prior_evidence])
+        revision = identity._hash([revision, prior_evidence, prior_state])
     public_sources = tuple({k: source[k] for k in (
         "retrieval_id", "run_id", "source_name", "source_record_id", "source_sha256",
         "run_status", "memberships")} for source in sources)

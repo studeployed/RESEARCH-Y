@@ -314,12 +314,15 @@ def test_other_source_namespace_does_not_inherit_receipt(tmp_path):
 @pytest.mark.parametrize("decision", ["confirmed_match", "rejected_match"])
 @pytest.mark.parametrize("changed", [False, True])
 def test_rediscovered_pair_compares_entire_record_by_source_key(tmp_path, decision, changed):
-    project, a, b = setup(tmp_path)
+    first_payload = metadata("pubmed")
+    first_payload.update(retrieved_at_utc=STAMP, response_sha256="1" * 64)
+    project, a, b = setup(tmp_path, left=first_payload)
     first = read_candidate(project, a, b)
     recorded = decide(project, a, b, **args(first, decision=decision,
                                              moving=a if decision == "confirmed_match" else None))
     # Change a field outside the DOI/title/author comparison.
     left = metadata("pubmed")
+    left.update(retrieved_at_utc="2026-11-02T12:00:00+00:00", response_sha256="2" * 64)
     if changed:
         left["record"]["abstract_sections"][0]["text"] = "Updated abstract"
     b2 = seed(project, metadata("wos"), "wos")
@@ -333,17 +336,24 @@ def test_rediscovered_pair_compares_entire_record_by_source_key(tmp_path, decisi
     assert len(set(reopened.publication_ids)) == 2 and dump(project) == before
 
 
-def test_historical_reversal_invalidates_fresh_run_preview(tmp_path):
+@pytest.mark.parametrize("already_outdated", [False, True])
+def test_historical_reversal_invalidates_fresh_run_preview(tmp_path, already_outdated):
     project, a, b = setup(tmp_path)
     first = read_candidate(project, a, b)
     recorded = decide(project, a, b, **args(first, decision="confirmed_match", moving=a))
     a2 = seed(project, metadata("pubmed"), "pubmed")
     b2 = seed(project, metadata("wos"), "wos")
+    if already_outdated:
+        # Change only the earlier run's context before preview; its later
+        # reversal changes historical state a second time.
+        with closing(sqlite3.connect(project.database_path)) as db, db:
+            db.execute("UPDATE search_runs SET status='failed' WHERE run_id="
+                       "(SELECT run_id FROM source_retrievals WHERE retrieval_id=?)", (a,))
     preview = read_candidate(project, a2, b2)
     event = recorded.prior_decisions[-1]
     origin = first.publication_ids[first.retrieval_ids.index(a)]
     reverse_association(project, a, event["association_event_id"],
-                        expected_current_revision=recorded.publication_revisions[0],
+                        expected_current_revision=read_publication(project, recorded.publication_ids[0]).revision,
                         expected_restored_revision=read_publication(project, origin).revision,
                         actor="Researcher", evidence="Reassessed")
     refreshed = read_candidate(project, a2, b2)
