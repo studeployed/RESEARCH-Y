@@ -11,6 +11,7 @@ from research_y import strategy_report, strategy_workbook
 from research_y.application_inspection import _read
 from research_y.export_files import Directory, filename
 from research_y.master_results import evidence_head, specification
+from research_y.query_compiler import SOURCE_COVERAGE
 from research_y import publication_candidates
 from research_y import preflight_review
 
@@ -43,11 +44,14 @@ def _press(db,run):
 def _method_rows(data,context):
     return [
         ("Workbook","RESEARCH-Y publication workbook v1"),("Software",data["software_version"]),
+        ("Research theme",data["strategy"]["snapshot"]["theme"]),
         ("Project and run",context.get("run",data["run"]["run_id"])),("Scope",context.get("scope","entire")),
         ("Original query counts","Whole-run counts remain separate from the number of rows exported."),
         ("Publication ID","A retained identity can link multiple source records and query memberships."),
         ("Source evidence","Each retrieval retains its own source identifier, SHA-256 and original fields."),
         ("Comparison decision","Researcher decision for a particular pair, with timestamp, rationale and warnings."),
+        ("Confidence rule","A recorded suggestion based on a prior confirmed pair. The Status column records the researcher's decision. Blank when no suggestion was recorded."),
+        ("Prior confirmation event","Project audit event that supports the confidence suggestion, including when the researcher rejects it."),
         ("Abstract rights","Text inclusion follows the export's explicit permission choice."),
         ("Continued Text","Concatenate parts in numeric order for the listed worksheet, logical row and column."),
         ("Methods scope","Reporting evidence is limited to the selected run and the stored search activities."),
@@ -179,6 +183,14 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     retained_sources={r["source_name"] for r in data["counts"]["sources"] if r["metadata_source_records"]}
     append(checklist,("PRISMA-S","Information sources","recorded",dict(database_queries=sorted(query_sources),
                      additional_retained_sources=sorted(retained_sources-query_sources))))
+    status,reviews=press
+    for source in sorted(query_sources.intersection(SOURCE_COVERAGE)):
+        append(checklist,("PRISMA-S","Connector fields / "+source,"recorded",SOURCE_COVERAGE[source]))
+    limits_verified = status == "verified"
+    append(checklist,("PRISMA-S","Search limits",
+                      "recorded" if limits_verified else "awaiting verification",
+                      "The approved query plan has no language, species, study-type or date restrictions."
+                      if limits_verified else "Check each stored query and its parameters before reporting limits."))
     for q in data["queries"]:
         append(checklist,("PRISMA-S","Query "+q["query_id"],"recorded" if q["executed_at_utc"] else "awaiting verification",
                           dict(source=q["source_name"],strategy=q["exact_query"],timestamp=q["executed_at_utc"],
@@ -186,7 +198,6 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     append(checklist,("PRISMA-S","Deduplication method","recorded","Current source associations and applicable comparison receipts in Deduplication Audit."))
     append(checklist,("PRISMA-S","Citation chasing","not undertaken in this workflow","No citation-chasing stage is recorded."))
     append(checklist,("PRISMA-S","Registry search","not applicable to these source connectors","Coverage is described for the selected databases."))
-    status,reviews=press
     append(checklist,("PRESS","Programmatic plan validation",status,"Match to the approved stored source query inventory."))
     for review in reviews:
         for key,value in review["press_items"].items():
@@ -202,7 +213,8 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
                                          "PDF page link","Individual fields","Containing supplement"))
     society = sheet("Society Guidelines",("Publication ID","Retrieval ID","Official landing URL","Society roles","Guidance fields"))
     audit = sheet("Deduplication Audit",("Evidence type","Publication ID","First retrieval","Second retrieval","Audit event",
-                                         "Status","Researcher","Rationale","UTC","Acknowledged warnings"))
+                                         "Status","Researcher","Rationale","UTC","Acknowledged warnings",
+                                         "Confidence rule","Prior confirmation event"))
     included_sources = set()
     log = sheet("Search Log",("Query","Source","Recorded status","Time","Execution evidence","Warnings"))
     warnings = {r["query_id"]:r["warnings"] for r in data["counts"]["queries"]}
@@ -229,8 +241,10 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
         count+=1
     for event in comparisons:
         if included_sources.intersection(event["pair"]):
+            suggestion = event["comparison"].get("confidence_suggestion", {})
             append(audit,("Comparison decision",None,*event["pair"],event["event_id"],event["status"],event["actor"],
-                          event["evidence"],event["at_utc"],event["warnings_acknowledged"]))
+                          event["evidence"],event["at_utc"],event["warnings_acknowledged"],
+                          suggestion.get("rule"),suggestion.get("prior_event_id")))
     append(scope,("Exported publication rows",count))
     for tab in sheets:
         tab.finish()

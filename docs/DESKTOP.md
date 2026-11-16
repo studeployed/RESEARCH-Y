@@ -156,6 +156,11 @@ history, groups and specialist provenance remain available in the project
 and workbook. The standalone search-strategy workbook remains available.
 The **Reporting Checklist** sheet records the exact stored queries, applicable
 sources, activities outside the workflow and unresolved verification.
+It describes each database connector's field coverage. An unrestricted plan
+is reported when the stored queries and parameters match the approved compiler
+output. In **Deduplication Audit**, a recorded repeat-match suggestion identifies
+the confidence rule and the earlier confirmation's audit event alongside the
+researcher's final decision.
 Programmatic PRESS validation and named researcher or peer observations have
 distinct entries with their actual recorded outcomes.
 
