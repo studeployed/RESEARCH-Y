@@ -1,11 +1,39 @@
 from contextlib import closing
+import asyncio
+import sys
+from types import SimpleNamespace
 
 import pytest
 
 from research_y.desktop import settings
+from research_y.desktop.folders import NativeFolderError, select_project_index
 from research_y.desktop.flow import ProjectFlowError, RealProjectFlow
 from research_y.desktop.session import DesktopGuard, server_proof
+from research_y.projects import create_project
 from test_gui_prototype import call, owner, ORIGIN, TOKEN
+
+
+def test_index_picker_reopens_relocated_project_and_preserves_selection_on_cancel(tmp_path, monkeypatch):
+    project = create_project(tmp_path, "Relocated index")
+    moved = project.root.rename(tmp_path / "New location")
+    index = moved / project.manifest_path.name
+    choices = iter([(str(index),), None, (str(moved / "Other.ryproj"),)])
+    monkeypatch.setitem(sys.modules, "webview", SimpleNamespace(FileDialog=SimpleNamespace(OPEN=1)))
+
+    class Window:
+        async def create_file_dialog(self, *, dialog_type, allow_multiple, file_types):
+            assert dialog_type == 1 and not allow_multiple and "*.ryproj" in file_types[0]
+            return next(choices)
+
+    with closing(RealProjectFlow(recent_parent=tmp_path / "recent")) as flow:
+        selected = asyncio.run(select_project_index(Window()))
+        state = flow.open_native_folder(selected.parent)
+        assert state["project"]["project_id"] == str(project.identifier)
+        assert flow.project.root == moved
+        assert asyncio.run(select_project_index(Window())) is None
+        with pytest.raises(NativeFolderError, match="native_selection_invalid"):
+            asyncio.run(select_project_index(Window()))
+        assert flow.state()["project"] == state["project"]
 
 
 def test_desktop_starts_without_selected_paths_or_implicit_project(tmp_path):

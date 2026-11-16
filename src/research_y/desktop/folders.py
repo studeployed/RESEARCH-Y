@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from research_y.export_files import Directory, ExportFileError
+from research_y.projects import MANIFEST_FILENAME
 
 
 class NativeFolderError(ValueError):
@@ -67,6 +68,13 @@ async def select_conference_document(window, *, pdf=False):
 
 async def select_project_archive(window):
     return await _select_document(window,("RESEARCH-Y project archive (*.researchy)",),{".researchy"})
+
+
+async def select_project_index(window):
+    path = await _select_document(window, ("RESEARCH-Y project index (*.ryproj)",), {".ryproj"})
+    if path is not None and path.name != MANIFEST_FILENAME:
+        raise NativeFolderError("native_selection_invalid")
+    return path
 
 
 async def select_ris_document(window):

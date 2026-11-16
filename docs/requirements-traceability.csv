@@ -8,13 +8,13 @@ ARCH-01,0,"AT-20,AT-22",tests/test_application_commands.py and tests/test_deskto
 ARCH-02,0,"AT-09,AT-22",tests/test_gui_worker_death_recovery.py; tools/windows_master_benchmark.py,partial
 ARCH-03,0,AT-20,tests/test_run_execution_board.py and tools/desktop_lifecycle.py (offline core requires no model),partial
 ARCH-04,0,AT-22,docs/GUI_DEPENDENCY_PROPOSAL.md; docs/BIOMEDICAL_BENCHMARK.md; tools/desktop_lifecycle.py,partial
-PROJ-01,1,AT-01,tools/desktop_lifecycle.py (installed Windows create/open/recent shell; archive import remains later),partial
-PROJ-02,1,"AT-01,AT-02",tests/test_projects.py,partial
-PROJ-03,1,AT-02,tests/test_projects.py; tests/test_project_containment.py; tools/desktop_lifecycle.py (redirected data folder refused and relocated ordinary project reopened),partial
-PROJ-04,1,"AT-01,AT-09",tests/test_projects.py; tests/test_wos_checkpoints.py; tests/test_project_initialisation.py (atomic new schema/header/identity/audit creation and rollback); tests/test_publication_identity.py; tests/test_publication_fields.py (atomic identity/field/audit rollback); tests/test_publication_candidates.py (candidate receipt and association commit or roll back together); tests/test_result_counts.py; tests/test_result_count_ledger.py (consistent read-only transaction and explicit recovery before count retry),partial
-PROJ-05,1,"AT-03,AT-21",tests/test_project_archive.py (verified portable database and selected supporting files),partial
-PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py; tests/test_wos_migration.py; tests/test_project_containment.py (ordinary migration backup and journal paths); tests/test_project_archive.py (restoration),partial
-PROJ-07,1,"AT-01,AT-09",tests/test_run_execution_board.py; tests/test_project_archive.py,partial
+PROJ-01,1,AT-01,tests/test_desktop_launcher.py; tests/test_gui_native_folders.py; tests/test_project_archive.py; tools/desktop_lifecycle.py (create and open by folder or index; reopen recent or restore archive),verified
+PROJ-02,1,"AT-01,AT-02",tests/test_projects.py::test_create_project_has_portable_layout_and_immutable_identity; tests/test_project_documents.py (manifest layout and attached files),verified
+PROJ-03,1,AT-02,tests/test_projects.py; tests/test_project_documents.py; tests/test_project_archive.py; tools/desktop_lifecycle.py (immutable project identity and relative document and workbook paths after relocation),verified
+PROJ-04,1,"AT-01,AT-09",tests/test_project_initialisation.py; tests/test_projects.py; tests/test_schema_migrations.py; tests/test_publication_candidates.py (interrupted creation and migration and review rollback; committed edits persist),verified
+PROJ-05,1,"AT-03,AT-21",tests/test_project_archive.py (restore and compare every database table and selected files; consistent snapshot during WAL write; validate inventory before publishing),verified
+PROJ-06,1,"AT-03,AT-21",tests/test_project_archive.py; tests/test_schema_migrations.py; tests/test_preflight_review.py::test_simultaneous_same_review_id_creates_one_receipt (recoverable snapshots and serialized edits); docs/DESKTOP.md (local working folder and archive transfer),verified
+PROJ-07,1,"AT-01,AT-09",tests/test_run_execution_board.py; tests/test_application_inspection.py (project and source-specific pending work visible; project-wide most recent successful source checkpoint still outstanding),partial
 SEARCH-01,1,AT-04,tests/test_gui_strategy_setup.py; tests/test_strategy_admission.py,partial
 SEARCH-02,1,"AT-04,AT-05",tests/test_gui_strategy_setup.py; tests/test_query_compiler.py,partial
 SEARCH-03,1,AT-04,tests/test_desktop_term_proposals.py (curated multi-component lexical variants in Research Setup),partial

@@ -13,13 +13,17 @@ python -m pip install ".[desktop]"
 research-y
 ```
 
-The launcher opens an integrated window. Choose **Open project folder**, or
-enter a new project name and choose **Create project in folder**. The Windows
-folder picker supplies the location. Recent projects appear on each launch.
+The launcher opens an integrated window. Choose **Open project folder** or
+select `project.ryproj` using **Open project index file**. To start a project,
+enter a name and choose **Create project in folder**. Recent projects appear on each launch.
 Select the project and run explicitly. After moving a project, open its new
 folder to update the local history. The usual research setup, preflight,
 supervised source stages, results review and workbook controls use the same
 trusted worker and SQLite services as the isolated graphical tests.
+
+For work on another computer, export a project archive and import it at the
+destination. Keep each active working folder on local storage. File-sync
+services cannot coordinate SQLite writes between machines.
 
 ## Term variant review
 
