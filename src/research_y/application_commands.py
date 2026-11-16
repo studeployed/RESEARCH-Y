@@ -144,6 +144,7 @@ class ApplicationCommand:
     # fields. Neither IDs nor groups can serve as a browser filesystem path.
     admission_request_id: str | None = None
     admission_theme: str | None = None
+    admission_objectives: str | None = None
     admission_approved_by: str | None = None
     admission_groups: tuple | None = None
     approval_confirmed: bool | None = None
@@ -276,7 +277,7 @@ class ApplicationCommand:
                         or type(identity) is not tuple or len(identity) != 2
                         or any(type(part) is not int or part < 0 for part in identity)):
                     raise ValueError
-            admission_fields = (self.admission_request_id, self.admission_theme,
+            admission_fields = (self.admission_request_id, self.admission_theme, self.admission_objectives,
                                 self.admission_approved_by, self.admission_groups,
                                 self.approval_confirmed)
             review_fields = (self.review_id, self.review_plan_sha256,
@@ -751,8 +752,10 @@ class ApplicationCommand:
                     raise ValueError
                 # Reject malformed drafts before they cross the process
                 # boundary. Storage and the compiler verify again in child.
-                from research_y.storage import _groups_snapshot
+                from research_y.storage import _groups_snapshot, validated_objectives
                 from research_y.query_compiler import compile_both
+                if self.admission_objectives is not None:
+                    validated_objectives(self.admission_objectives)
                 frozen = dict(format_version=1, logic='OR',
                               theme=self.admission_theme,
                               approved_by=self.admission_approved_by,
@@ -1241,6 +1244,7 @@ def execute_command(command: ApplicationCommand) -> dict:
                 result = admission.commit_approved_strategy(
                     project, request_id=command.admission_request_id,
                     theme=command.admission_theme,
+                    objectives=command.admission_objectives or "",
                     approved_by=command.admission_approved_by,
                     groups=command.admission_groups,
                     approval_confirmed=command.approval_confirmed)

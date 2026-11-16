@@ -135,10 +135,17 @@ def _groups_snapshot(groups: Sequence[StrategyGroup]) -> list[dict[str, Any]]:
     return stored
 
 
+def validated_objectives(value: str) -> str:
+    if not isinstance(value, str) or any(ord(c) < 32 and c not in "\r\n\t" for c in value):
+        raise ValueError("Invalid research objectives")
+    return value.strip()
+
+
 def approve_strategy(
     project: Project,
     *,
     theme: str,
+    objectives: str = "",
     groups: Sequence[StrategyGroup],
     approved_by: str,
     approval_confirmed: bool,
@@ -158,6 +165,9 @@ def approve_strategy(
         "format_version": 1, "theme": theme, "logic": "OR",
         "approved_by": approved_by, "groups": frozen_groups,
     }
+    objectives = validated_objectives(objectives)
+    if objectives:
+        snapshot["objectives"] = objectives
     payload = _canonical_json(snapshot)
     identifier = str(uuid4())
     timestamp = _utc_now()

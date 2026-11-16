@@ -169,6 +169,8 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
             continue
         if name=="Methods":
             values=_method_rows(data,context)
+            if objectives := data["strategy"]["snapshot"].get("objectives"):
+                values.append(("Research objectives", objectives))
         if name=="Warnings":
             values=[r for r in values if r[1] not in {"licensed_record_text_not_exported","methodology_review_not_established"}]
         tab=sheet(name,headers)
