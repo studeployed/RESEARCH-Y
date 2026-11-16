@@ -5,8 +5,10 @@ from pathlib import Path
 import research_y
 
 
-def test_package_has_development_version() -> None:
-    assert research_y.__version__ == "0.1.0.dev0"
+def test_package_version_matches_distribution_metadata() -> None:
+    import tomllib
+    config = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    assert research_y.__version__ == tomllib.loads(config.read_text(encoding="utf-8"))["project"]["version"]
 
 
 def test_spec_has_approved_baseline_and_revision_entry() -> None:

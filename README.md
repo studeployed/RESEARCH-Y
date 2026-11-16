@@ -1,9 +1,11 @@
 # RESEARCH-Y
 
 RESEARCH-Y is a local Windows application for biomedical literature discovery.
-Phase 1 includes a native project launcher, approved strategies, supervised
-source retrieval, publication review and audited Excel workbooks.
-The phase acceptance record is [issue #105](https://github.com/studeployed/RESEARCH-Y/issues/105).
+Release 0.1.0 supports researcher-approved PubMed and Web of Science searches,
+society and conference sources, publication review, and audited Excel and RIS
+exports. Installation and project upgrade evidence are recorded in
+[the Windows installer guide](docs/WINDOWS_INSTALLER.md) and
+[the release verification issue](https://github.com/studeployed/RESEARCH-Y/issues/163).
 
 ## Scientific and technical baseline
 
@@ -11,12 +13,12 @@ The authoritative requirements are in [`RESEARCH-Y_SPEC.md`](RESEARCH-Y_SPEC.md)
 
 The development plan and tracked test coverage are in [`docs/ROADMAP.md`](docs/ROADMAP.md) and [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md). See [`HANDOVER.md`](HANDOVER.md) for current state and next action.
 
-## Developer setup (not the future end-user installation process)
+## Developer setup
 
 For Windows development or evaluation, installing the optional desktop
 components creates the `research-y` graphical launcher in the environment.
 See [the desktop guide](docs/DESKTOP.md) for startup, source configuration
-and test coverage. The bundled Windows installer is a Phase 3 deliverable.
+and test coverage.
 
 Python **3.12 or 3.13**:
 
@@ -28,7 +30,9 @@ python scripts/check_traceability.py
 python -m pytest -q
 ```
 
-Application runtime currently uses the Python standard library only. Development-test packages and the build backend are pinned. Database connectors, GUI, installation packaging and operational data-processing services remain future increments. The current schema is described in [`docs/SCHEMA.md`](docs/SCHEMA.md).
+The desktop distribution bundles its Python runtime and application dependencies.
+The following sections record individual development milestones. See the
+[schema documentation](docs/SCHEMA.md) for the project storage format.
 
 ## Currently implemented developer API (P1-01 and merged P1-02a)
 

@@ -25,8 +25,9 @@ and edit their draft during inference. A late response for a removed seed
 cannot add suggestions to the revised draft.
 
 The Windows workflow rehearses both a clean install and an upgrade of a project
-written by the Phase 3 build. Issue #163 remains open for the outstanding product
-requirements and verification of the installer built from the final merged commit.
+written by the Phase 3 build. The release register maps all 117 product requirements
+and 22 acceptance scenarios to verification evidence. Issue #163 records the
+Windows installer verification for the final merged commit.
 
 Research Setup defaults to PubMed and Web of Science with unrestricted
 publication dates. Researchers can select a database, an optional publication
