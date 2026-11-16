@@ -19,6 +19,7 @@ from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from research_y.query_compiler import CompiledSource
+from research_y.source_versions import USER_AGENT
 from research_y.pubmed_cooldown import PubMedCooldown
 from research_y.pubmed_date_translation import internal_create_date_equivalent
 
@@ -327,7 +328,7 @@ class PubMedESearchProbeClient:
         request = Request(
             ESEARCH_URL,
             data=urlencode(fields).encode("utf-8"),
-            headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "RESEARCHY/0.1"},
+            headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT},
             method="POST",
         )
         try:
