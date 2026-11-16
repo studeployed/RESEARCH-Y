@@ -9,6 +9,12 @@ master workbook can record a researcher-verified complete scope once all
 mandatory retrievals and the retained identity union have reconciled.
 The project diagnostic is a separate local JSON export with fixed fields.
 
+Issue [#11](https://github.com/studeployed/RESEARCH-Y/issues/11) covers
+Windows project containment. The desktop lifecycle check chooses a folder
+with a redirected data directory, verifies that the current project stays
+selected, then opens, saves and relocates an ordinary project. The storage
+tests compare the independent project's metadata and audit history.
+
 [Issue #142](https://github.com/studeployed/RESEARCH-Y/issues/142) tracks
 the three approved Phase 3 units. The [portable project workflow](docs/PROJECT_ARCHIVES.md)
 includes a Windows restore action, a consistent database snapshot and selected

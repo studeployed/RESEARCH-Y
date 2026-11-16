@@ -10,10 +10,10 @@ ARCH-03,0,AT-20,tests/test_run_execution_board.py and tools/desktop_lifecycle.py
 ARCH-04,0,AT-22,docs/GUI_DEPENDENCY_PROPOSAL.md; docs/BIOMEDICAL_BENCHMARK.md; tools/desktop_lifecycle.py,partial
 PROJ-01,1,AT-01,tools/desktop_lifecycle.py (installed Windows create/open/recent shell; archive import remains later),partial
 PROJ-02,1,"AT-01,AT-02",tests/test_projects.py,partial
-PROJ-03,1,AT-02,tests/test_projects.py; tools/desktop_lifecycle.py (relocated project and workbook reinspection),partial
+PROJ-03,1,AT-02,tests/test_projects.py; tests/test_project_containment.py; tools/desktop_lifecycle.py (redirected data folder refused and relocated ordinary project reopened),partial
 PROJ-04,1,"AT-01,AT-09",tests/test_projects.py; tests/test_wos_checkpoints.py; tests/test_project_initialisation.py (atomic new schema/header/identity/audit creation and rollback); tests/test_publication_identity.py; tests/test_publication_fields.py (atomic identity/field/audit rollback); tests/test_publication_candidates.py (candidate receipt and association commit or roll back together); tests/test_result_counts.py; tests/test_result_count_ledger.py (consistent read-only transaction and explicit recovery before count retry),partial
 PROJ-05,1,"AT-03,AT-21",tests/test_project_archive.py (verified portable database and selected supporting files),partial
-PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py; tests/test_wos_migration.py (recoverable v1/v2/v3 to v4; archives pending),partial
+PROJ-06,1,"AT-03,AT-21",tests/test_schema_migrations.py; tests/test_wos_migration.py; tests/test_project_containment.py (ordinary migration backup and journal paths); tests/test_project_archive.py (restoration),partial
 PROJ-07,1,"AT-01,AT-09",tests/test_run_execution_board.py; tests/test_project_archive.py,partial
 SEARCH-01,1,AT-04,tests/test_gui_strategy_setup.py; tests/test_strategy_admission.py,partial
 SEARCH-02,1,"AT-04,AT-05",tests/test_gui_strategy_setup.py; tests/test_query_compiler.py,partial
@@ -114,7 +114,7 @@ EXPORT-06,3,AT-18,tests/test_reporting_checklist.py; tests/test_preflight_review
 SEC-01,3,AT-21,tests/test_wos_checkpoints.py; tests/test_wos_checkpoint_validation.py (no key in stored provider evidence or public artifacts; credential manager pending); tests/test_desktop_launcher.py (named Windows credentials and redacted source profiles),partial
 SEC-02,3,"AT-20,AT-21",tests/test_cloud_terms.py,partial
 SEC-03,3,AT-21,tests/test_wos_checkpoint_validation.py (explicit local retention gate; licensed contents not exported),partial
-SEC-04,3,"AT-03,AT-21",tests/test_project_archive.py (verified portable database and selected supporting files),partial
+SEC-04,3,"AT-03,AT-21",tests/test_project_archive.py (verified portable database and selected supporting files); tests/test_project_containment.py and tools/desktop_lifecycle.py (Windows junction rejection before database access),partial
 SEC-05,3,"AT-09,AT-21",tests/test_pubmed_probe.py; tests/test_wos_starter.py; tests/test_wos_checkpoints.py (static error codes and durable recovery); tests/test_release_evidence.py,partial
 AT-01,3,AT-01,tests/test_project_archive.py; tests/test_run_comparison.py; tools/desktop_lifecycle.py,verified
 AT-02,3,AT-02,tests/test_project_documents.py; tools/desktop_lifecycle.py,verified

@@ -82,7 +82,7 @@ quota reading or cause. [Attempt 2](https://github.com/studeployed/RESEARCH-Y/ac
 | RUN-04, RUN-06; AT-09 | Controlled pause, separate-process reopen, unchanged committed first acquisition page | Live multi-day interruption/failure scenarios; product-wide recovery |
 | SRC-08, RUN-05; AT-19 | Explicit warning status and no snapshot/full-source claim | Other partial/failing source paths and end-to-end presentation |
 | DATA-03–06; SRC-07 | Supplied source metadata retained by the tested implementation | Independent field-level completeness, full abstracts and permitted enrichment |
-| AT-21 | Offline safeguards and aggregate-only evidence | Full security/release acceptance, including deferred issue #11 |
+| AT-21 | Offline safeguards and aggregate-only source evidence; project storage checks are covered in [the Phase 3 record](PHASE3_ACCEPTANCE.md) | Source checks alone cover only the provider workflow |
 
 The traceability matrix keeps these product-wide requirements **partial**.
 The Phase 1 source milestone specifies controlled cross-day recovery and a

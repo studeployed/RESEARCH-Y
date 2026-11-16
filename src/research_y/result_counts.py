@@ -7,14 +7,14 @@ No view filters, source requests, writes, migrations or status promotion.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from dataclasses import asdict, dataclass
 import sqlite3
 from typing import Any, Iterator, NamedTuple
 
 from research_y import publication_candidates as candidates
 from research_y import publication_identity as identity
-from research_y.projects import Project, SQLITE_APPLICATION_ID, _parse_manifest
+from research_y.projects import Project, ProjectFormatError, SQLITE_APPLICATION_ID, _parse_manifest, _project_storage_paths
 from research_y.result_count_ledger import CountIntegrityError, _ids, query_identifiers
 from research_y.schema import RUN_STATUSES, SCHEMA_VERSION
 
@@ -59,13 +59,15 @@ def _read_connection(project: Project) -> Iterator[sqlite3.Connection]:
     """
     if not isinstance(project, Project):
         raise TypeError('An opened project is required')
-    path = project.database_path
-    if (project.manifest_path.is_symlink() or (project.root / 'data').is_symlink()
-            or path.is_symlink() or not path.is_file()):
-        raise CountIntegrityError('Missing or linked count database')
-    if _parse_manifest(project.manifest_path) != (project.identifier, project.name, project.created_at_utc):
-        raise CountIntegrityError('Project manifest identity changed')
-    with closing(sqlite3.connect(f'{path.as_uri()}?mode=ro', uri=True, timeout=5)) as db:
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(_project_storage_paths(project.root))
+        except (ProjectFormatError, OSError) as exc:
+            raise CountIntegrityError('Missing or linked count database') from exc
+        if _parse_manifest(project.manifest_path) != (project.identifier, project.name, project.created_at_utc):
+            raise CountIntegrityError('Project manifest identity changed')
+        db = stack.enter_context(closing(sqlite3.connect(
+            f'{project.database_path.as_uri()}?mode=ro', uri=True, timeout=5)))
         db.execute('PRAGMA query_only=ON')
         db.execute('BEGIN')
         if db.execute('PRAGMA user_version').fetchone()[0] != SCHEMA_VERSION:
