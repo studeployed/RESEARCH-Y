@@ -1,10 +1,24 @@
 import json
+import asyncio
 import shutil
 import subprocess
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
-from research_y.desktop.app import HOME_STARTUP
+from research_y.desktop.app import HOME_STARTUP, recover_missing_home
+
+
+@pytest.mark.parametrize("redeemed, accepted, calls", [(True, False, 2), (True, True, 0), (False, False, 0)])
+def test_missing_home_only_retries_after_redemption(redeemed, accepted, calls):
+    window = Mock()
+    session = SimpleNamespace(origin="http://127.0.0.1:42001", startup_stages=lambda: {
+        "session_redeemed": redeemed, "page_accepted": accepted})
+    asyncio.run(recover_missing_home(window, session, delay=0))
+    assert window.load_url.call_count == calls
+    if calls:
+        window.load_url.assert_called_with(session.origin + "/")
 
 
 @pytest.mark.parametrize("button, connected, interacted, attempts, reloads", [

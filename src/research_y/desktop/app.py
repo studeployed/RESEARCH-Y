@@ -44,6 +44,18 @@ HOME_STARTUP = """(() => {
 })()"""
 
 
+async def recover_missing_home(window, session, *, delay=12):
+    """Retry the trusted home navigation if redemption never reached its HTTP route."""
+    for _ in range(2):
+        await asyncio.sleep(delay)
+        stages = session.startup_stages()
+        if stages["page_accepted"]:
+            return
+        if stages["session_redeemed"]:
+            # NiceGUI's native navigation is a one-way, synchronous command.
+            window.load_url(session.origin + "/")
+
+
 def build_page(app, ui, flow, settings_warnings=()):
     lock = asyncio.Lock()
 
@@ -193,6 +205,10 @@ def run_desktop(flow, *, settings_warnings=()):
     try:
         app.add_middleware(DesktopGuard, session=session)
         build_page(app, ui, flow, settings_warnings)
+        def start_recovery():
+            task = asyncio.create_task(recover_missing_home(app.native.main_window, session))
+            app.on_shutdown(task.cancel)
+        app.on_startup(start_recovery)
         app.on_shutdown(session.revoke)
         app.on_shutdown(flow.close)
         native_mode._open_window = open_desktop_window

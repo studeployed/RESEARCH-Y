@@ -7,6 +7,7 @@ from hashlib import sha256
 import json
 import multiprocessing
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -110,12 +111,12 @@ def run_window(stage, workspace, folder, run_id):
             if stage == 'reopen':
                 if await js("sessionStorage.getItem('research-y-startup-retries')") != "1":
                     raise RuntimeError('partial_start_not_recovered')
-                from windows_folder_dialog import choose_fixture_folder
+                chooser = runpy.run_path(str(Path(__file__).with_name("windows_folder_dialog.py")))
                 children = {child.pid for child in multiprocessing.active_children() if child.daemon}
                 for choice in (None, folder):
                     print('Opening native picker for ' + ('cancel' if choice is None else 'selection'), flush=True)
                     await click('[data-testid=desktop-open]')
-                    await asyncio.to_thread(choose_fixture_folder, children, choice)
+                    await asyncio.to_thread(chooser["choose_fixture_folder"], children, choice)
                     selected = await asyncio.wait_for(selections.get(), timeout=10)
                     if ((choice is None and selected is not None) or
                             (choice is not None and (selected is None or not selected.samefile(choice)))):
@@ -172,8 +173,8 @@ def run_window(stage, workspace, folder, run_id):
                 print("Local startup stages:",flow.desktop_startup_stages(),flush=True)
         finally:
             try:
-                await asyncio.wait_for(app.native.main_window.destroy(), timeout=10)
-            except (TimeoutError, RuntimeError):
+                app.native.main_window.destroy()
+            except RuntimeError:
                 app.shutdown()
 
     def start():
@@ -212,7 +213,8 @@ def main():
         checksums = []
         observations = []
         for stage in ('save', 'reopen'):
-            subprocess.run([sys.executable, str(Path(__file__).resolve()), stage, str(workspace), str(folder),
+            flags = ["-I", "-B"] if sys.flags.isolated else []
+            subprocess.run([sys.executable, *flags, str(Path(__file__).resolve()), stage, str(workspace), str(folder),
                             run.run_id], timeout=210, check=True)
             observation = json.loads((workspace / f'{stage}-verified.json').read_text(encoding='utf-8'))
             if observation['run_id'] != run.run_id or not observation['publication_receipt_id']:
