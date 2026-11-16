@@ -249,7 +249,6 @@ def read_preflight(project, run_id: str, *, review_id: str | None = None) -> dic
                 result["known_item_checks"] = known_checks(db,run_id,result["plan_sha256"])
                 if observations:
                     result["workload_status"] = "per_query_pilot_observations"
-                    result["provider_counts"] = {q:v["reported_matches"] for q,v in observations.items()}
                     result["estimated_workload"] = {q:dict(result_pages=v["estimated_result_pages"],
                         metadata_batches=v["estimated_metadata_batches"]) for q,v in observations.items()}
                     result["warnings"] = [w for w in result["warnings"] if not w.startswith("Wide search")]

@@ -87,6 +87,9 @@ def test_combined_source_pilots_and_known_item_corrections_are_bound_to_query(tm
         _call(project,rid,sha,pm,_client(expected_query=pm["exact_query"],count=201))
         submit(project,rid,sha,wo,wos_client(count=101))
         result=flow.inspect_preflight()["preflight_report"]
+        assert result["provider_counts"] is None
+        assert result["pilot_observations"][pm["query_id"]]["reported_matches"] == 201
+        assert result["pilot_observations"][wo["query_id"]]["reported_matches"] == 101
         assert result["estimated_workload"][pm["query_id"]]==dict(result_pages=2,metadata_batches=11)
         assert result["estimated_workload"][wo["query_id"]]==dict(result_pages=3,metadata_batches=None)
         details=dict(query_id=pm["query_id"],identifier="PMID 12345",outcome="found",
