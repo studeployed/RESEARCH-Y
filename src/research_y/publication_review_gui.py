@@ -62,7 +62,8 @@ def _safe_pair(snapshot, project, run_id, run_revision):
     decisions = snapshot.prior_decisions[-10:]
     prior = [dict(event_id=r["event_id"], status=r["status"],
                   recorded_at_utc=r["at_utc"], actor=r["actor"],
-                  evidence=r["evidence"], association_event_id=r["association_event_id"])
+                  evidence=r["evidence"], association_event_id=r["association_event_id"],
+                  confidence_suggestion=r["comparison"].get("confidence_suggestion"))
              for r in decisions]
     return dict(
         method=METHOD, project_id=str(project.identifier), run_id=run_id,
@@ -74,6 +75,8 @@ def _safe_pair(snapshot, project, run_id, run_revision):
                       source_record_id=s["source_record_id"]) for s in snapshot.sources],
         comparison=fields, warnings=list(snapshot.warnings),
         status=snapshot.status,
+        confidence="automatic_high_confidence" if snapshot.confidence_rule else None,
+        confidence_rule=snapshot.confidence_rule,
         pair_already_associated=snapshot.publication_ids[0] == snapshot.publication_ids[1],
         prior_decision_count=len(snapshot.prior_decisions),
         recent_decisions=prior,

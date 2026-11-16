@@ -23,23 +23,37 @@ from research_y.desktop.session import DesktopGuard, LaunchSession
 from research_y.local_assistant import LocalAssistant, PACKAGE
 
 
-async def recover_cold_page(window,session,flow,*,delay=12,attempts=2):
-    """Recover an authenticated, half-loaded WebView before the user opens a project."""
-    for _ in range(attempts):
+HOME_STARTUP = """(() => {
+    let interacted = false;
+    for (const event of ['pointerdown', 'keydown', 'input', 'click']) {
+        document.addEventListener(event, e => {
+            if (e.target.closest?.('button,input,textarea,select,a,[role=button]')) interacted = true;
+        }, true);
+    }
+    setTimeout(() => {
+        const open = document.querySelector('[data-testid=desktop-open]');
+        if (interacted || (open?.getClientRects().length && !open.disabled &&
+                           window.did_handshake && window.socket?.connected)) return;
+        const key = 'research-y-startup-retries';
+        const attempts = Number(sessionStorage.getItem(key) || 0);
+        if (attempts < 2) {
+            sessionStorage.setItem(key, String(attempts + 1));
+            location.reload();
+        }
+    }, 12000);
+})()"""
+
+
+async def recover_missing_home(window, session, *, delay=12):
+    """Retry the trusted home navigation if redemption never reached its HTTP route."""
+    for _ in range(2):
         await asyncio.sleep(delay)
-        stages=session.startup_stages()
-        if flow.project is not None:
+        stages = session.startup_stages()
+        if stages["page_accepted"]:
             return
-        if not stages["session_redeemed"]:
-            continue
-        try:
-            usable = await asyncio.wait_for(window.evaluate_js(
-                "Boolean(document.querySelector('[data-testid=desktop-title]')?.getClientRects().length)"),timeout=3)
-            if usable:
-                return
-            await asyncio.wait_for(window.load_url(session.origin+"/"),timeout=5)
-        except (RuntimeError,TimeoutError):
-            return
+        if stages["session_redeemed"]:
+            # NiceGUI's native navigation is a one-way, synchronous command.
+            window.load_url(session.origin + "/")
 
 
 def build_page(app, ui, flow, settings_warnings=()):
@@ -49,6 +63,10 @@ def build_page(app, ui, flow, settings_warnings=()):
     def project_page():
         error = None
         study_edits = {}
+        # Run in the authenticated document. Native window RPC shares a response
+        # queue with folder selection, so a background probe must never use it.
+        if flow.project is None:
+            ui.add_head_html('<script>' + HOME_STARTUP + '</script>')
 
         @ui.refreshable
         def panel():
@@ -187,14 +205,10 @@ def run_desktop(flow, *, settings_warnings=()):
     try:
         app.add_middleware(DesktopGuard, session=session)
         build_page(app, ui, flow, settings_warnings)
-        recovery_tasks = []
-        def on_start():
-            recovery_tasks.append(asyncio.create_task(recover_cold_page(app.native.main_window,session,flow)))
-        def cancel_recovery():
-            for task in recovery_tasks:
-                task.cancel()
-        app.on_startup(on_start)
-        app.on_shutdown(cancel_recovery)
+        def start_recovery():
+            task = asyncio.create_task(recover_missing_home(app.native.main_window, session))
+            app.on_shutdown(task.cancel)
+        app.on_startup(start_recovery)
         app.on_shutdown(session.revoke)
         app.on_shutdown(flow.close)
         native_mode._open_window = open_desktop_window

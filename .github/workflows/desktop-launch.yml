@@ -9,6 +9,7 @@ on:
       - 'src/research_y/application_commands.py'
       - 'src/research_y/application_worker.py'
       - 'tools/desktop_lifecycle.py'
+      - 'tools/windows_folder_dialog.py'
   workflow_dispatch:
 permissions:
   contents: read

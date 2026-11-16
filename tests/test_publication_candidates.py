@@ -331,6 +331,7 @@ def test_rediscovered_pair_compares_entire_record_by_source_key(tmp_path, decisi
     reopened = read_candidate(open_project(project.root), b2, a2)
     expected = "prior_run_metadata_changed" if changed else "prior_run_metadata_unchanged"
     assert expected in reopened.warnings
+    assert bool(reopened.confidence_rule) == (decision == "confirmed_match" and not changed)
     assert reopened.prior_decisions[-1]["event_id"] == recorded.prior_decisions[-1]["event_id"]
     assert reopened.status == "review_required" and not reopened.automatic_match_allowed
     assert len(set(reopened.publication_ids)) == 2 and dump(project) == before
@@ -358,9 +359,61 @@ def test_historical_reversal_invalidates_fresh_run_preview(tmp_path, already_out
                         actor="Researcher", evidence="Reassessed")
     refreshed = read_candidate(project, a2, b2)
     assert "prior_run_decision_outdated" in refreshed.warnings
+    assert refreshed.confidence_rule is None
     assert refreshed.revision != preview.revision
     with pytest.raises(StalePublicationError):
         decide(project, a2, b2, **args(preview))
+
+
+@pytest.mark.parametrize("case", ["shared_supplement", "meeting_abstract", "conflicting_pmid",
+                                  "missing_author", "unknown_pages", "no_prior", "shared_retrieval",
+                                  "review_source", "book_source"])
+def test_repeat_suggestion_abstains_on_ambiguous_or_unreviewed_pairs(tmp_path, case):
+    pubmed, wos = metadata("pubmed"), metadata("wos")
+    if case == "shared_supplement":
+        wos["record"]["source"]["supplement"] = "Conference supplement"
+    elif case == "meeting_abstract":
+        wos["record"]["types"] = ["Meeting Abstract"]
+    elif case in {"review_source", "book_source"}:
+        wos["record"]["sourceTypes"] = ["Journals", "Review" if case == "review_source" else "Book"]
+    elif case == "conflicting_pmid":
+        pubmed["record"]["identifiers"]["pmid"] = ["101"]
+    elif case == "missing_author":
+        wos["record"]["names"]["authors"] = []
+    elif case == "unknown_pages":
+        pubmed["record"]["journal"]["pages"] = wos["record"]["source"]["pages"]["range"] = "NA"
+    project, a, b = setup(tmp_path, pubmed, wos)
+    if case != "no_prior":
+        decide(project, a, b, **args(read_candidate(project, a, b), decision="confirmed_match", moving=a))
+    a2 = a if case == "shared_retrieval" else seed(project, pubmed, "pubmed")
+    b2 = seed(project, wos, "wos")
+    viewed = read_candidate(project, a2, b2)
+    assert viewed.confidence_rule is None and viewed.status == "review_required"
+    assert len(set(viewed.publication_ids)) == 2
+
+
+def test_desktop_preview_names_rule_and_prior_audit_without_changing_counts(tmp_path):
+    from research_y.publication_review_gui import preview_candidate_review
+    from research_y.result_counts import read_run_counts
+
+    wos = metadata("wos")
+    wos["record"]["sourceTypes"] = ["Journals"]
+    project, a, b = setup(tmp_path, right=wos)
+    reviewed = decide(project, a, b, **args(read_candidate(project, a, b), decision="confirmed_match", moving=a))
+    a2, b2 = seed(project, metadata("pubmed"), "pubmed"), seed(project, wos, "wos")
+    run = next(s["run_id"] for s in read_candidate(project, a2, b2).sources if s["retrieval_id"] == a2)
+    counts = read_run_counts(project, run)
+    preview = preview_candidate_review(project, run, a2, b2, run_revision=counts.revision, cross_run=True)
+    assert preview["confidence"] == "automatic_high_confidence"
+    assert preview["confidence_rule"] == "unchanged-reviewed-journal-pair/1"
+    assert preview["recent_decisions"][-1]["event_id"] == reviewed.prior_decisions[-1]["event_id"]
+    assert preview["status"] == "review_required" and not preview["pair_already_associated"]
+    assert read_run_counts(project, run) == counts
+    rejected = decide(project, a2, b2, **args(read_candidate(project, a2, b2)))
+    saved = read_candidate(open_project(project.root), a2, b2)
+    assert saved == rejected and saved.status == "rejected_match"
+    assert saved.prior_decisions[-1]["comparison"]["confidence_suggestion"] == {
+        "rule": preview["confidence_rule"], "prior_event_id": reviewed.prior_decisions[-1]["event_id"]}
 
 
 def test_reopen_and_relocation_preserve_receipts(tmp_path):
