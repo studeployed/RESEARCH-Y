@@ -35,8 +35,8 @@ function Click-Button([string]$text) {
     $button.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
 }
 function Choose-Folder([string]$path) {
-    $select = 'import runpy,sys; from pathlib import Path; runpy.run_path(sys.argv[1])["choose_fixture_folder"]({int(sys.argv[2])},Path(sys.argv[3]) if sys.argv[3] else None)'
-    & $python -I -B -c $select $dialogHelper $windowProcess.Id $path
+    $select = 'import runpy,sys; from pathlib import Path; runpy.run_path(sys.argv[1])["choose_fixture_folder"]({int(sys.argv[2])},Path(sys.argv[4]) if sys.argv[4] else None,owner_handle=int(sys.argv[3]))'
+    & $python -I -B -c $select $dialogHelper $windowProcess.Id $window.Current.NativeWindowHandle $path
     if ($LASTEXITCODE -ne 0) { throw 'Windows did not complete the requested picker action' }
 }
 try {

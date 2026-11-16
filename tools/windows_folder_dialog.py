@@ -7,7 +7,7 @@ import ctypes
 from ctypes import wintypes
 
 
-def choose_fixture_folder(process_ids, folder):
+def choose_fixture_folder(process_ids, folder, *, owner_handle=None):
     import clr
     from System.Runtime.InteropServices import RuntimeEnvironment
     from System import IntPtr
@@ -36,6 +36,7 @@ def choose_fixture_folder(process_ids, folder):
     user.IsWindow.argtypes = (wintypes.HWND,)
     user.EnumWindows.argtypes = (callback_type, wintypes.LPARAM)
     handles = []
+    owned_windows = set()
 
     @callback_type
     def collect(handle, _):
@@ -44,9 +45,12 @@ def choose_fixture_folder(process_ids, folder):
         if pid.value in process_ids:
             name = ctypes.create_unicode_buffer(256)
             user.GetClassNameW(handle, name, len(name))
+            owned_windows.add((name.value, bool(user.IsWindowVisible(handle))))
             if name.value == "#32770" and user.IsWindowVisible(handle) and user.IsWindowEnabled(handle):
                 owner = user.GetWindow(handle, 4)  # GW_OWNER
-                if owner and user.GetLastActivePopup(owner) == handle:
+                expected_owner = (owner == owner_handle if owner_handle is not None
+                                  else owner and user.GetLastActivePopup(owner) == handle)
+                if owner and expected_owner:
                     user.GetClassNameW(owner, name, len(name))
                     if name.value.startswith("WindowsForms10.Window"):
                         handles.append(handle)
@@ -80,4 +84,5 @@ def choose_fixture_folder(process_ids, folder):
                     time.sleep(.1)
                 raise RuntimeError("fixture_native_dialog_did_not_close")
         time.sleep(.1)
-    raise RuntimeError(f"fixture_native_folder_dialog_unavailable: {len(handles)} active owned dialogs")
+    raise RuntimeError(f"fixture_native_folder_dialog_unavailable: {len(handles)} active owned dialogs; "
+                       f"test process window classes and visibility: {sorted(owned_windows)}")

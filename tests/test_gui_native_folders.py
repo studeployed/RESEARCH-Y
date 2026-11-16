@@ -92,7 +92,13 @@ def test_native_error_replies_then_next_picker_can_open(tmp_path, monkeypatch):
             raise outcome
         return outcome
 
-    native = SimpleNamespace(create_file_dialog=dialog)
+    invocations = []
+    def invoke(callback):
+        invocations.append(True)
+        callback()
+
+    monkeypatch.setitem(sys.modules, 'System', SimpleNamespace(Action=lambda callback: callback))
+    native = SimpleNamespace(create_file_dialog=dialog, native=SimpleNamespace(InvokeRequired=True, Invoke=invoke))
     install_dialog_reply(native)
     assert "dialog" in native.create_file_dialog.__name__
     class Proxy:
@@ -104,6 +110,7 @@ def test_native_error_replies_then_next_picker_can_open(tmp_path, monkeypatch):
         asyncio.run(select_from_native_window(Proxy()))
     assert asyncio.run(select_from_native_window(Proxy())) is None
     assert asyncio.run(select_from_native_window(Proxy())) == tmp_path
+    assert len(invocations) == 3
 
 
 def test_native_dialog_cancel_and_error_do_not_disclose_exception(tmp_path, monkeypatch):

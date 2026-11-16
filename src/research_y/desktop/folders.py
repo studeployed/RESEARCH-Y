@@ -42,7 +42,21 @@ def install_dialog_reply(window):
         # NiceGUI's native executor logs an escaping exception without sending
         # a reply. Keep "dialog" in the name so cancellation (None) also replies.
         try:
-            return original(*args, **kwargs)
+            from System import Action
+
+            form = window.native
+            if not form.InvokeRequired:
+                return original(*args, **kwargs)
+
+            # NiceGUI invokes window methods on worker threads. Show the modal
+            # shell dialog on the same Windows UI thread as its owning form.
+            result = None
+            def show():
+                nonlocal result
+                result = original(*args, **kwargs)
+
+            form.Invoke(Action(show))
+            return result
         except Exception:
             return "native_dialog_unavailable"
 
