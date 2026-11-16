@@ -7,6 +7,12 @@ from research_y.desktop.study_panel import render_study_panel, render_study_queu
 from research_y.desktop.specialist_panel import society_panel, publication_panel
 
 
+def render_term_provenance(ui, offer):
+    origin = "AI suggestion" if offer["origin"] == "ai" else "Deterministic lexical variant"
+    ui.label(f'{origin} · {offer["method"]} · Initial term: {offer["seed"]}')
+    ui.label(offer["reason"])
+
+
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
     state = flow.state()
     project = state['project']
@@ -230,7 +236,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                     if offer['source_term_id'] != tid or offer['status'] != 'pending':
                                         continue
                                     sid = offer['suggestion_id']
-                                    ui.label(offer['reason'])
+                                    render_term_provenance(ui, offer)
                                     wording = ui.input('Proposed variant', value=offer['text'])
                                     ui.button('Accept wording', on_click=lambda sid=sid, box=wording:
                                               act('setup_edit', dict(action='review_variant',
