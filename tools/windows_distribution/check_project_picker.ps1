@@ -5,7 +5,9 @@ $launcherFile = Get-Item -LiteralPath $Launcher
 $python = Join-Path $launcherFile.Directory 'python.exe'
 $dialogHelper = Join-Path (Split-Path $PSScriptRoot) 'windows_folder_dialog.py'
 $testRoot = [IO.Directory]::CreateTempSubdirectory('ry-picker-').FullName
-$parent = [IO.Directory]::CreateDirectory((Join-Path $testRoot 'Work')).FullName
+$suffix = [IO.Path]::GetFileName($testRoot)
+$parent = [IO.Directory]::CreateDirectory((Join-Path $testRoot "Work-$suffix")).FullName
+$existingName = "Existing-$suffix"
 $project = Join-Path $parent 'Picker-test'
 $index = Join-Path $project 'project.ryproj'
 $appHost = $null
@@ -40,14 +42,13 @@ function Choose-Folder([string]$path) {
     if ($LASTEXITCODE -ne 0) { throw 'Windows did not complete the requested picker action' }
 }
 try {
-    $seed = 'import sys; from research_y.projects import create_project; create_project(sys.argv[1], "Existing")'
-    & $python -I -B -c $seed $testRoot
+    $seed = 'import sys; from research_y.projects import create_project; create_project(sys.argv[1], "Existing", directory_name=sys.argv[2])'
+    & $python -I -B -c $seed $testRoot $existingName
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the disposable open-project fixture' }
     $start = [Diagnostics.ProcessStartInfo]::new($launcherFile.FullName)
     $start.UseShellExecute = $false
     $start.WorkingDirectory = $launcherFile.Directory.FullName
     $start.EnvironmentVariables['LOCALAPPDATA'] = $testRoot
-    $start.EnvironmentVariables['USERPROFILE'] = $testRoot
     $start.EnvironmentVariables.Remove('HOMEPATH')
     $started = [Diagnostics.Process]::Start($start)
     $appHost = Wait-For {
@@ -74,7 +75,7 @@ try {
     Wait-For { Test-Path -LiteralPath $index -PathType Leaf } 'created project index' | Out-Null
     Wait-For { Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) 'Project: Picker test' } 'open created project' | Out-Null
     Click-Button $open
-    Choose-Folder (Join-Path $testRoot 'Existing')
+    Choose-Folder (Join-Path $testRoot $existingName)
     Wait-For { Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) 'Project: Existing' } 'opened existing project' | Out-Null
     Write-Output 'Packaged launcher created a project and opened a different existing project.'
 } catch {

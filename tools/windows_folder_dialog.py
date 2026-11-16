@@ -16,7 +16,7 @@ def choose_fixture_folder(process_ids, folder):
         clr.AddReference(str(wpf / (assembly + ".dll")))
     from System.Windows.Automation import (
         AutomationElement as Element, ControlType,
-        PropertyCondition, SelectionItemPattern, TreeScope,
+        PropertyCondition, SelectionItemPattern, TreeScope, ValuePattern,
     )
 
     def by_id(value):
@@ -35,6 +35,8 @@ def choose_fixture_folder(process_ids, folder):
     handles = []
     owned_windows = set()
     dialog_controls = set()
+    input_controls = set()
+    navigating = False
 
     @callback_type
     def collect_control(handle, _):
@@ -74,6 +76,16 @@ def choose_fixture_folder(process_ids, folder):
                     items = [e for e in entries if e.Current.ControlType in
                              (ControlType.ListItem, ControlType.DataItem)]
                     if len(items) != 1:
+                        if not navigating:
+                            edits = dialog.FindAll(TreeScope.Descendants, PropertyCondition(
+                                Element.ControlTypeProperty, ControlType.Edit))
+                            for edit in edits:
+                                input_controls.add(edit.Current.AutomationId)
+                                if edit.Current.AutomationId == "1152":  # Win32 edt1
+                                    edit.GetCurrentPattern(ValuePattern.Pattern).SetValue(str(folder.parent))
+                                    user.PostMessageW(handles[0], 0x0111, 1, button.Current.NativeWindowHandle)
+                                    navigating = True
+                                    break
                         time.sleep(.1)
                         continue
                     items[0].GetCurrentPattern(SelectionItemPattern.Pattern).Select()
@@ -90,4 +102,4 @@ def choose_fixture_folder(process_ids, folder):
         time.sleep(.1)
     raise RuntimeError(f"fixture_native_folder_dialog_unavailable: {len(handles)} active owned dialogs; "
                        f"test process window classes, visibility and enabled state: {sorted(owned_windows)}; "
-                       f"dialog control classes: {sorted(dialog_controls)}")
+                       f"dialog control classes: {sorted(dialog_controls)}; edit control IDs: {sorted(input_controls)}")
