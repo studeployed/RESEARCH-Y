@@ -14,7 +14,7 @@ import webbrowser
 from research_y.desktop.actions import perform_action
 from research_y.desktop.flow import ProjectFlowError, RealProjectFlow
 from research_y.desktop.folders import NativeFolderError, select_from_native_window, select_conference_document
-from research_y.desktop.folders import select_project_archive
+from research_y.desktop.folders import select_project_archive, select_project_index
 from research_y.desktop.folders import select_ris_document
 from research_y.project_archive import ArchiveError
 from research_y.desktop.native import open_desktop_window
@@ -139,6 +139,11 @@ def build_page(app, ui, flow, settings_warnings=()):
                         if chosen is None:
                             return
                         await asyncio.to_thread(flow.preview_native_conference, chosen, **value)
+                    elif action == 'native_open_index':
+                        index = await select_project_index(app.native.main_window)
+                        if index is None:
+                            return
+                        await asyncio.to_thread(flow.open_native_folder, index.parent)
                     elif action in ('native_open', 'native_create', 'native_export'):
                         folder = await select_from_native_window(app.native.main_window)
                         if folder is None:
@@ -176,6 +181,8 @@ def build_page(app, ui, flow, settings_warnings=()):
         for warning in settings_warnings:
             ui.label(warning)
         ui.button('Open project folder', on_click=lambda: act('native_open')).props('data-testid=desktop-open')
+        ui.button('Open project index file', on_click=lambda: act('native_open_index')).props(
+            'data-testid=desktop-open-index')
         with ui.expansion("Import project archive").props("data-testid=import-archive-panel"):
             restored_name = ui.input("New folder name (optional)")
             ui.button("Choose .researchy archive and destination folder",on_click=lambda:

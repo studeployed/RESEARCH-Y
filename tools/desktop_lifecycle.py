@@ -34,7 +34,7 @@ def run_window(stage, workspace, folder, run_id):
     from research_y.desktop.flow import RealProjectFlow
 
     flow = RealProjectFlow(recent_parent=workspace / 'recents')
-    choices = iter([workspace, workspace / 'Redirected', folder])
+    choices = iter([workspace, workspace / 'Redirected'])
     selections = asyncio.Queue()
     real_dialog = desktop.select_from_native_window
     passed = []
@@ -54,6 +54,10 @@ def run_window(stage, workspace, folder, run_id):
     # Supply the failure fixture on the first launch. Observe the real native
     # picker result on reopening before issuing another native request.
     desktop.select_from_native_window = choose
+    if stage == 'save':
+        async def choose_index(window):
+            return folder / 'project.ryproj'
+        desktop.select_project_index = choose_index
     if stage == 'reopen':
         # Reproduce the observed title-only first document before the user acts.
         ui.add_head_html("""<script>
@@ -126,7 +130,7 @@ def run_window(stage, workspace, folder, run_id):
                             raise RuntimeError('cancel_selected_project')
                 print('Cancelled and selected the relocated project in the native folder dialog.', flush=True)
             else:
-                await click('[data-testid=desktop-open]')
+                await click('[data-testid=desktop-open-index]')
             await click('[data-testid=select-run]')
             await click('[data-testid=society-panel] .q-item')
             await fill('[data-testid=society-terms] textarea, textarea[data-testid=society-terms]', 'ECMO')
