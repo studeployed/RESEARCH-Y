@@ -198,6 +198,15 @@ lookup requires a contact email and an explicit click. Missing or ambiguous
 DOIs remain visible. Source records and primary counts keep their original
 values when a lookup succeeds or fails.
 
+## Comparing search updates
+
+Under **Compare search runs**, select the earlier and later run. The comparison
+shows source-level changes and counts publication identities separately. Expand
+**Reviewed classifications** to inspect the earlier researcher's evidence.
+A rediscovered source can have a new publication identity. Check the changed
+fields and the later proposal, then enter your name and reason to carry a
+reviewed label forward. The new decision links to the earlier audit event.
+
 ## Source settings
 
 Offline project inspection and workbook operations work with empty source
