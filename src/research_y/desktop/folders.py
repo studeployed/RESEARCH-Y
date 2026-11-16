@@ -7,6 +7,7 @@ path is read exclusively from the native-window API in the trusted host.
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 from research_y.export_files import Directory, ExportFileError
 from research_y.projects import MANIFEST_FILENAME
@@ -20,6 +21,46 @@ class NativeFolderError(ValueError):
             'native_selection_invalid', 'native_selection_unsafe',
             'native_dialog_unavailable',
         } else 'native_selection_invalid')
+
+
+def initial_directory():
+    # The Windows backend looks up HOMEPATH if the directory is empty.
+    # Explorer-launched processes can have USERPROFILE only.
+    try:
+        home = Path.home()
+        if home.is_absolute() and home.is_dir():
+            return str(home)
+    except (OSError, RuntimeError):
+        pass
+    return str(Path(sys.executable).parent)
+
+
+def install_dialog_reply(window):
+    original = window.create_file_dialog
+
+    def create_file_dialog(*args, **kwargs):
+        # NiceGUI's native executor logs an escaping exception without sending
+        # a reply. Keep "dialog" in the name so cancellation (None) also replies.
+        try:
+            from System import Action
+
+            form = window.native
+            if not form.InvokeRequired:
+                return original(*args, **kwargs)
+
+            # NiceGUI invokes window methods on worker threads. Show the modal
+            # shell dialog on the same Windows UI thread as its owning form.
+            result = None
+            def show():
+                nonlocal result
+                result = original(*args, **kwargs)
+
+            form.Invoke(Action(show))
+            return result
+        except Exception:
+            return "native_dialog_unavailable"
+
+    window.create_file_dialog = create_file_dialog
 
 
 def checked_folder(selection) -> Path | None:
@@ -55,9 +96,11 @@ async def select_from_native_window(window) -> Path | None:
     try:
         import webview  # optional native-only feasibility dependency
         result = await window.create_file_dialog(
-            dialog_type=webview.FileDialog.FOLDER, allow_multiple=False)
+            dialog_type=webview.FileDialog.FOLDER, directory=initial_directory(), allow_multiple=False)
     except Exception:
         raise NativeFolderError('native_dialog_unavailable') from None
+    if result == "native_dialog_unavailable":
+        raise NativeFolderError("native_dialog_unavailable")
     return checked_folder(result)
 
 
@@ -84,10 +127,12 @@ async def select_ris_document(window):
 async def _select_document(window, filters, extensions):
     try:
         import webview
-        result = await window.create_file_dialog(dialog_type=webview.FileDialog.OPEN, allow_multiple=False,
+        result = await window.create_file_dialog(dialog_type=webview.FileDialog.OPEN, directory=initial_directory(), allow_multiple=False,
                                                  file_types=filters)
     except Exception:
         raise NativeFolderError("native_dialog_unavailable") from None
+    if result == "native_dialog_unavailable":
+        raise NativeFolderError("native_dialog_unavailable")
     if not result:
         return None
     if type(result) not in (tuple,list) or len(result)!=1 or type(result[0]) is not str:

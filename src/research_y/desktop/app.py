@@ -27,7 +27,8 @@ HOME_STARTUP = """(() => {
     let interacted = false;
     for (const event of ['pointerdown', 'keydown', 'input', 'click']) {
         document.addEventListener(event, e => {
-            if (e.target.closest?.('button,input,textarea,select,a,[role=button]')) interacted = true;
+            const control = e.target.closest?.('button,input,textarea,select,a,[role=button]');
+            if (control && !control.disabled) interacted = true;
         }, true);
     }
     setTimeout(() => {
@@ -77,6 +78,7 @@ def build_page(app, ui, flow, settings_warnings=()):
 
         async def act(action, value=None):
             nonlocal error
+            project_picker = action in ('native_open', 'native_create', 'native_open_index')
             action_lock = lock
             if action in ("cloud_confirm", "local_suggest", "study_suggest", "native_install_local_model"):
                 action_lock = inference
@@ -87,6 +89,8 @@ def build_page(app, ui, flow, settings_warnings=()):
                     or (action == "master_results" and value.get("operation") == "lookup")):
                 action_lock = crossref
             if lock.locked() or action_lock.locked():
+                if project_picker:
+                    ui.notify('Another action is in progress. If a Windows picker is open, finish or cancel it first.')
                 return
             async with action_lock:
                 try:
@@ -151,20 +155,34 @@ def build_page(app, ui, flow, settings_warnings=()):
                         if chosen is None:
                             return
                         await asyncio.to_thread(flow.preview_native_conference, chosen, **value)
-                    elif action == 'native_open_index':
-                        index = await select_project_index(app.native.main_window)
-                        if index is None:
-                            return
-                        await asyncio.to_thread(flow.open_native_folder, index.parent)
-                    elif action in ('native_open', 'native_create', 'native_export'):
-                        folder = await select_from_native_window(app.native.main_window)
-                        if folder is None:
-                            return
-                        if action == 'native_open':
-                            await asyncio.to_thread(flow.open_native_folder, folder)
-                        elif action == 'native_create':
-                            await asyncio.to_thread(flow.create_native_parent, folder, value)
+                    elif project_picker:
+                        if action == 'native_create' and not (value or '').strip():
+                            raise ProjectFlowError('Enter a new project name before choosing a folder.')
+                        prompt = {
+                            'native_create': 'Choose where to create the new project folder.',
+                            'native_open': 'Choose the project folder containing project.ryproj.',
+                            'native_open_index': 'Choose the project.ryproj file.',
+                        }
+                        picker_status.set_text(prompt[action])
+                        if action == 'native_open_index':
+                            index = await select_project_index(app.native.main_window)
+                            folder = index.parent if index is not None else None
                         else:
+                            folder = await select_from_native_window(app.native.main_window)
+                        if folder is None:
+                            error = None
+                            picker_status.set_text('Selection cancelled.')
+                            panel.refresh()
+                            return
+                        if action == 'native_create':
+                            saved = await asyncio.to_thread(flow.create_native_parent, folder, value)
+                            picker_status.set_text('Created and opened ' + saved['project']['name'] + '.')
+                        else:
+                            saved = await asyncio.to_thread(flow.open_native_folder, folder)
+                            picker_status.set_text('Opened ' + saved['project']['name'] + '.')
+                    elif action == 'native_export':
+                        folder = await select_from_native_window(app.native.main_window)
+                        if folder is not None:
                             await asyncio.to_thread(flow.offer_external_directory, folder)
                     else:
                         await asyncio.to_thread(perform_action, flow, action, value)
@@ -173,6 +191,13 @@ def build_page(app, ui, flow, settings_warnings=()):
                     error = str(exc)
                 except Exception:
                     error = 'operation_unavailable'
+                if project_picker and error:
+                    picker_status.set_text({
+                        'native_dialog_unavailable': 'Windows could not open the picker. Try again.',
+                        'invalid_project': 'Choose the project folder that contains project.ryproj.',
+                        'project_creation_failed': 'Could not create the project. Check that the parent folder is writable and the new folder name is available.',
+                        'native_selection_unsafe': 'Choose a local folder that the application can open directly.',
+                    }.get(error, error))
                 panel.refresh()
 
         async def refresh_workers():
@@ -194,8 +219,8 @@ def build_page(app, ui, flow, settings_warnings=()):
         render_settings(ui,flow)
         for warning in settings_warnings:
             ui.label(warning)
-        ui.button('Open project folder', on_click=lambda: act('native_open')).props('data-testid=desktop-open')
-        ui.button('Open project index file', on_click=lambda: act('native_open_index')).props(
+        open_folder = ui.button('Open project folder', on_click=lambda: act('native_open')).props('data-testid=desktop-open')
+        open_index = ui.button('Open project index file', on_click=lambda: act('native_open_index')).props(
             'data-testid=desktop-open-index')
         with ui.expansion("Import project archive").props("data-testid=import-archive-panel"):
             restored_name = ui.input("New folder name (optional)")
@@ -203,8 +228,20 @@ def build_page(app, ui, flow, settings_warnings=()):
                       act("native_import_archive",restored_name.value)).props("data-testid=import-archive")
         with ui.row().classes('items-center'):
             name = ui.input('New project name').props('data-testid=desktop-name')
-            ui.button('Create project in folder', on_click=lambda: act('native_create', name.value)).props(
+            create = ui.button('Create project in folder', on_click=lambda: act('native_create', name.value)).props(
                 'data-testid=desktop-create')
+        picker_status = ui.label('Connecting to the desktop…').props('role=status aria-live=polite data-testid=project-picker-status')
+        project_buttons = (open_folder, open_index, create)
+        for button in project_buttons:
+            button.disable()
+
+        def ready():
+            for button in project_buttons:
+                button.enable()
+            if picker_status.text == 'Connecting to the desktop…':
+                picker_status.set_text('')
+
+        ui.context.client.on_connect(ready)
         panel()
         ui.timer(2, refresh_workers)
 
