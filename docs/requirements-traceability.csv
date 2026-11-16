@@ -86,7 +86,7 @@ AI-04,2,"AT-15,AT-20",tests/test_biomedical_benchmark.py; tests/test_biomedical_
 AI-05,2,"AT-20,AT-21",tests/test_cloud_terms.py (default off; selected seed payload and costs previewed; separately confirmed transport),partial
 AI-06,2,"AT-04,AT-15",tests/test_optional_local_assistant.py (original generation parameters and linked review receipts),partial
 AI-07,2,"AT-04,AT-19",tests/test_optional_local_assistant.py (only approved draft terms reach pending source queries),partial
-UI-01,3,AT-01,tools/desktop_lifecycle.py (installed Windows launcher and host-selected folders); tests/test_project_archive.py (portable transfer and guarded restore),partial
+UI-01,3,AT-01,tools/desktop_lifecycle.py (installed Windows launcher; title-only recovery; real Windows picker cancellation and selection on reopen); tests/test_desktop_cold_start.py (bounded idle retries and user activity); tests/test_project_archive.py (portable transfer and guarded restore),partial
 UI-02,3,AT-04,tests/test_gui_strategy_setup.py; tests/test_desktop_specialist_workbench.py,partial
 UI-03,3,AT-04,tests/test_gui_strategy_setup.py; tests/test_optional_local_assistant.py,partial
 UI-04,3,AT-05,tests/test_preflight_review.py; tests/test_pilot_history.py,partial
