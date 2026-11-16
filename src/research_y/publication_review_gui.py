@@ -74,6 +74,8 @@ def _safe_pair(snapshot, project, run_id, run_revision):
                       source_record_id=s["source_record_id"]) for s in snapshot.sources],
         comparison=fields, warnings=list(snapshot.warnings),
         status=snapshot.status,
+        confidence="automatic_high_confidence" if snapshot.confidence_rule else None,
+        confidence_rule=snapshot.confidence_rule,
         pair_already_associated=snapshot.publication_ids[0] == snapshot.publication_ids[1],
         prior_decision_count=len(snapshot.prior_decisions),
         recent_decisions=prior,

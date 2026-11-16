@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 RULE_VERSION = "source-pair-comparison/1"
+REPEAT_CONFIRMATION_RULE = "unchanged-reviewed-journal-pair/1"
 _MISSING = object()
 _INVALID = object()
 
@@ -56,6 +57,42 @@ def _year(value: Any) -> str | None:
     if type(value) is int:
         value = str(value)
     return value if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]{3}", value) else None
+
+
+def bibliographic_key(doi, title, year, journal, pages):
+    """Five present, normalised fields used in the adjudicated pair benchmark."""
+    fields = (_doi(doi), _string(title), _year(year), _string(journal), _string(pages))
+    if any(value in {None, "na", "n/a", "null", "unknown", "-"} for value in fields):
+        return None
+    return fields
+
+
+def repeated_journal_pair(sources, comparison):
+    """Restrict the measured signal to two corroborated original journal records."""
+    if {s["source_name"] for s in sources} != {"pubmed", "wos"}:
+        return False
+    if not set(comparison["warnings"]) <= {
+        "doi_scope_and_registration_unverified", "incomplete_comparison_fields",
+        "document_types_different", "source_document_types_different",
+    }:
+        return False
+    if any(comparison["comparisons"][field] != "equal" for field in ("pmid", "authors")):
+        return False
+    keys = []
+    for source, side in zip(sources, comparison["sides"], strict=True):
+        fields = side["fields"]
+        pubmed = source["source_name"] == "pubmed"
+        record = source["original_metadata"].get("record", {})
+        if not isinstance(record, dict):
+            return False
+        if fields["document_types"]["normalised"] != ('["journal article"]' if pubmed else '["article"]'):
+            return False
+        identifier = _pmid(record.get("pmid")) if pubmed else _uid(record.get("uid"))
+        if identifier != source["source_record_id"] or (pubmed and fields["pmid"]["normalised"] != identifier):
+            return False
+        keys.append(bibliographic_key(*(fields[name]["normalised"]
+                                        for name in ("doi", "title", "year", "journal", "pages"))))
+    return keys[0] is not None and keys[0] == keys[1]
 
 
 def _field(payload: dict, path: tuple[str, ...], normalise=_string, *, many=False) -> dict:

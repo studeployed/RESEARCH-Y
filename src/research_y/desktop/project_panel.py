@@ -1123,6 +1123,12 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                  previous['actor'] + ' • ' +
                                  previous['evidence']).props(
                                      'data-testid=candidate-audit')
+                    if pair.get('confidence') == 'automatic_high_confidence':
+                        ui.label('High-confidence suggestion based on previously confirmed audit '
+                                 + str(pair['recent_decisions'][-1]['event_id']) + '. Both journal records '
+                                 'recur unchanged with matching DOI, PMID, title, year, authors, '
+                                 'journal and pages. Your decision is required for this pair. Rule '
+                                 + pair['confidence_rule']).props('data-testid=candidate-confidence')
                     reviewer = ui.input('Researcher recording this decision',
                                         value='')
                     rationale = ui.input(

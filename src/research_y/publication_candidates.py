@@ -14,7 +14,9 @@ from typing import Any
 
 from research_y.projects import Project, _utc_now, _validated_project_connection
 from research_y import publication_identity as identity
-from research_y.publication_match_evidence import RULE_VERSION, compare_sources
+from research_y.publication_match_evidence import (
+    REPEAT_CONFIRMATION_RULE, RULE_VERSION, compare_sources, repeated_journal_pair,
+)
 
 DECISION_EVENT = "publication_candidate_decision_v1"
 MAX_CANDIDATE_BATCH = 32
@@ -33,6 +35,7 @@ class CandidateSnapshot:
     prior_decisions: tuple[dict[str, Any], ...]
     automatic_match_allowed: bool = False
     deduplication_complete: bool = False
+    confidence_rule: str | None = None
 
 
 def _pair(left: str, right: str) -> tuple[str, str]:
@@ -210,17 +213,24 @@ def _view(db: sqlite3.Connection, pair: tuple[str, str], *,
     if any(r["pair"] != list(pair) for r in receipts):
         warnings.add("prior_run_decision_available")
     revision = identity._hash([state, receipts])
+    confidence_rule = None
     if receipts and receipts[-1]["pair"] != list(pair):
         prior_evidence, prior_state = _prior_run_evidence(db, receipts[-1], sources)
         warnings.add(prior_evidence)
         revision = identity._hash([revision, prior_evidence, prior_state])
+        prior = receipts[-1]
+        if (current is None and prior_evidence == "prior_run_metadata_unchanged"
+                and prior["status"] == "confirmed_match" and set(pair).isdisjoint(prior["pair"])
+                and repeated_journal_pair(sources, comparison)):
+            confidence_rule = REPEAT_CONFIRMATION_RULE
+            revision = identity._hash([revision, confidence_rule])
     public_sources = tuple({k: source[k] for k in (
         "retrieval_id", "run_id", "source_name", "source_record_id", "source_sha256",
         "run_status", "memberships")} for source in sources)
     return CandidateSnapshot(
         pair, revision, tuple(s.publication_id for s in snapshots),
         tuple(s.revision for s in snapshots), public_sources, comparison, status,
-        tuple(sorted(warnings)), tuple(receipts)), state
+        tuple(sorted(warnings)), tuple(receipts), confidence_rule=confidence_rule), state
 
 
 def read_candidate(project: Project, left_retrieval_id: str, right_retrieval_id: str) -> CandidateSnapshot:
