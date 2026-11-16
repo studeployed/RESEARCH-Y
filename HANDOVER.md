@@ -10,6 +10,13 @@ PROJ-07 still needs a project-wide display of the latest successful source check
 
 ## Phase 3 delivery
 
+The run comparison shows classifications attached to recurring source records,
+including the earlier researcher, decision and rationale. When the later run
+has a separate publication identity, a researcher can verify the evidence and
+record a new decision linked to the earlier one. Changed evidence or an edited
+decision requires reopening the comparison. The summary separates shared
+publication identities, recurring sources and unresolved splits or associations.
+
 See the [release matrix](docs/PHASE3_ACCEPTANCE.md) for all 22 scenarios,
 the [installation guide](docs/WINDOWS_INSTALLER.md) for the Windows build
 and [desktop guide](docs/DESKTOP.md) for researcher workflows. The full

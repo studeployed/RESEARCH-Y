@@ -174,7 +174,7 @@ def read_classification(project, publication_id):
 
 
 def review_classification(project, publication_id, *, dimension, labels, actor, rationale, expected_revision,
-                          confirmed, proposal_event_id=None):
+                          confirmed, proposal_event_id=None, earlier_decision=None):
     if (confirmed is not True or dimension not in LABELS or not isinstance(labels, list) or not labels
             or any(not isinstance(v, str) or v not in LABELS[dimension] for v in labels)
             or len(labels) != len(set(labels)) or len(labels) > 1 and (dimension != "design" or "unclear" in labels)):
@@ -193,6 +193,10 @@ def review_classification(project, publication_id, *, dimension, labels, actor, 
                     or dimension not in proposal["generated"]["proposals"]):
                 raise identity.StalePublicationError("Model proposal no longer matches the source")
             fields.append(proposal_event_id)
+        if earlier_decision is not None:
+            from research_y.run_comparison import validate_carried_decision
+            validate_carried_decision(db,publication_id,dimension,labels,earlier_decision)
+            fields.append(earlier_decision)
         request = identity._hash(fields)
         if prior and prior["request_sha256"] == request:
             return view
@@ -206,6 +210,8 @@ def review_classification(project, publication_id, *, dimension, labels, actor, 
                      prior_event_id=prior["event_id"] if prior else None)
         if proposal_event_id is not None:
             event["proposal_event_id"] = proposal_event_id
+        if earlier_decision is not None:
+            event["earlier_decision"] = earlier_decision
         receipt = identity._audit(db, EVENT, event)
         db.execute("INSERT INTO classifications VALUES(?,?,?,?,?,?,?)",
                    (cid, publication_id, dimension, identity._json(labels), status,

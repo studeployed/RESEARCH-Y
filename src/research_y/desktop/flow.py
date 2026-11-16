@@ -601,6 +601,26 @@ class RealProjectFlow:
             self._run_comparison = compare_runs(self.project,earlier,later,category=category,offset=offset)
             return self._publish()
 
+    def carry_classification(self,current_retrieval,dimension,event_id,revision,actor,rationale):
+        with self._guard:
+            self._require_open()
+            comparison = self._run_comparison
+            row = next((r for r in comparison["rows"] if r["current_retrieval"]==current_retrieval),None) if comparison else None
+            history = row and row["classifications"]
+            decision = history and history["previous_decisions"].get(dimension)
+            if (not decision or decision["event_id"]!=event_id or history["current_revision"]!=revision or
+                    row["previous_publication"]==row["current_publication"]):
+                raise ProjectFlowError("Reopen the compared publications and select an earlier decision")
+            evidence = dict(previous_retrieval=row["previous_retrieval"],current_retrieval=current_retrieval,
+                            previous_publication=row["previous_publication"],previous_revision=history["previous_revision"],
+                            event_id=event_id)
+            study_classification.review_classification(self.project,row["current_publication"],dimension=dimension,
+                        labels=decision["labels"],actor=actor,rationale=rationale,expected_revision=revision,
+                        confirmed=True,earlier_decision=evidence)
+            self._clear_master()
+            return self.compare_run_history(comparison["earlier"]["run_id"],comparison["later"]["run_id"],
+                                            comparison["category"],comparison["offset"])
+
     def save_update_method(self, run_id, earlier_run, method, actor, expected_event):
         from research_y.run_comparison import record_update_method
         with self._guard:
