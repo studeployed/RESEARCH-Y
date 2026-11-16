@@ -236,7 +236,8 @@ def _read_board(project, run_id, connection=None):
                     sources=selected,
                     publication_identity_hypotheses=group["publication_identities"],
                     group_unique_publications=None, deduplication_complete=False))
-            all_enumerated = plan_sha is not None and bool(output) and all(
+            mandatory_sources = {q["source_name"] for q in output} == {"pubmed","wos"}
+            all_enumerated = plan_sha is not None and mandatory_sources and all(
                 q["count_reconciliation"] == "equal" and
                 q["stored_query_status"] not in ("failed", "cancelled") and
                 (q["source_stage"] in (

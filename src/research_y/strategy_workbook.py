@@ -86,6 +86,8 @@ def _methods(data, report):
         *([("Research objectives", data["strategy"]["snapshot"]["objectives"])]
           if data["strategy"]["snapshot"].get("objectives") else []),
         ("Boolean logic", "OR within and across approved groups"),
+        *([("Approved source and limit settings",canonical(data["strategy"]["snapshot"]["search_scope"]))]
+          if "search_scope" in data["strategy"]["snapshot"] else []),
         ("Reported matches", "Source-reported total; Unknown is not zero. Multiple query totals are not added as a union."),
         ("Retrieved source records", "Unique provider identifiers; not a count of saved metadata or deduplicated publications."),
         ("Metadata source records", "Saved original source-record metadata with query membership."),
@@ -136,6 +138,11 @@ def _methods(data, report):
 
 def _tables(data, report):
     counts = data["counts"]
+    if data.get("known_item_checks"):
+        keys=("event_id","query_id","source","identifier","outcome","checked_on","actor","basis","plan_sha256","previous_event_id")
+        yield "Known Item Checks", ("Audit event","Frozen query","Source","Known identifier","Researcher-reported outcome",
+              "Observed on","Researcher","Check method and evidence","Plan SHA-256","Earlier check"), [
+              tuple(c[k] for k in keys) for c in data["known_item_checks"]]
     if data["format_version"] == 2:
         master = data["reviewed_master"]
         yield "Reviewed Master Results", ("Publication ID", "Original records in this run"), master["publications"]

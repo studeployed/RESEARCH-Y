@@ -147,6 +147,7 @@ class ApplicationCommand:
     admission_objectives: str | None = None
     admission_approved_by: str | None = None
     admission_groups: tuple | None = None
+    admission_scope: dict | None = None
     approval_confirmed: bool | None = None
     # Optional pre-execution review, bound to a stored immutable run/plan.
     # These values originate only from the authenticated host GUI.
@@ -280,7 +281,7 @@ class ApplicationCommand:
                     raise ValueError
             admission_fields = (self.admission_request_id, self.admission_theme, self.admission_objectives,
                                 self.admission_approved_by, self.admission_groups,
-                                self.approval_confirmed)
+                                self.approval_confirmed, self.admission_scope)
             review_fields = (self.review_id, self.review_plan_sha256,
                              self.review_reviewer_name, self.review_reviewer_role,
                              self.review_items, self.review_note,
@@ -757,14 +758,16 @@ class ApplicationCommand:
                 # Reject malformed drafts before they cross the process
                 # boundary. Storage and the compiler verify again in child.
                 from research_y.storage import _groups_snapshot, validated_objectives
-                from research_y.query_compiler import compile_both
+                from research_y.query_compiler import compile_plan
                 if self.admission_objectives is not None:
                     validated_objectives(self.admission_objectives)
                 frozen = dict(format_version=1, logic='OR',
                               theme=self.admission_theme,
                               approved_by=self.admission_approved_by,
                               groups=_groups_snapshot(self.admission_groups))
-                compile_both(frozen)
+                if self.admission_scope is not None:
+                    frozen["search_scope"] = self.admission_scope
+                compile_plan(frozen)
             elif self.operation in pair_ops:
                 pass  # Explicit local pair checkpoint; no export/provider access.
             elif self.operation in ('candidate_index_preview','candidate_index_start',
@@ -1252,6 +1255,7 @@ def execute_command(command: ApplicationCommand) -> dict:
                     objectives=command.admission_objectives or "",
                     approved_by=command.admission_approved_by,
                     groups=command.admission_groups,
+                    scope=command.admission_scope,
                     approval_confirmed=command.approval_confirmed)
             except admission.StrategyAdmissionError as exc:
                 raise ApplicationCommandError(str(exc)) from None

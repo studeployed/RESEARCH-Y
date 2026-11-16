@@ -76,13 +76,19 @@ def _stamp(value):
 def _strategy(snapshot, rows):
     """Accept the approved storage contract, not an arbitrary legacy dictionary."""
     required = {"format_version", "theme", "logic", "approved_by", "groups"}
-    if (set(snapshot) not in (required, required | {"objectives"})
+    if (not required <= set(snapshot) <= required | {"objectives","search_scope"}
             or ("objectives" in snapshot and not isinstance(snapshot["objectives"], str))
             or type(snapshot.get("format_version")) is not int or snapshot["format_version"] != 1
             or snapshot.get("logic") != "OR" or not isinstance(snapshot.get("theme"), str)
             or not isinstance(snapshot.get("approved_by"), str)
             or not isinstance(snapshot.get("groups"), list) or not snapshot["groups"]):
         raise ReportIntegrityError("Unsupported approved strategy snapshot")
+    if "search_scope" in snapshot:
+        from research_y.query_compiler import validated_scope
+        try:
+            validated_scope(snapshot["search_scope"])
+        except (TypeError,ValueError):
+            raise ReportIntegrityError("Invalid approved source scope") from None
     expected = []
     for order, group in enumerate(snapshot["groups"]):
         if (not isinstance(group, dict) or set(group) != {"group_id", "label", "group_order", "terms"}
@@ -234,6 +240,12 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
                     "source_query_translation_details_not_in_this_workbook"}))
     update_method = latest_update_method(db,run_id)
     data["society_coverage"] = society_coverage(db,run_id)
+    from research_y.preflight_evidence import KNOWN_ITEM
+    checks=[dict(decode(raw),event_id=eid) for eid,raw in db.execute(
+        "SELECT event_id,details_json FROM audit_events WHERE event_type=? AND json_extract(details_json,'$.run_id')=? "
+        "ORDER BY event_id",(KNOWN_ITEM,run_id))]
+    if checks:
+        data["known_item_checks"]=checks
     if update_method:
         data["run"]["update_method"] = update_method
     if reviewed_revision is not None:

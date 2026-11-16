@@ -16,7 +16,7 @@ import re
 _LITERAL = re.compile(r'"([^"\\*?$\x00-\x1f\x7f]+)"\[All Fields\]')
 _DATE_RANGE = re.compile(
     r'([0-9]{4}/[0-9]{2}/[0-9]{2}):([0-9]{4}/[0-9]{2}/[0-9]{2})'
-    r'\[(crdt|Date - Create)\]'
+    r'\[(crdt|Date - Create|dp|pdat|Date - Publication)\]'
 )
 _OPERATOR = re.compile(r'(AND|OR)\b')
 
@@ -68,7 +68,7 @@ def _tokens(expression: str) -> list[tuple[str, object]] | None:
     return tokens or None
 
 
-def _signature(expression: str, *, submitted: bool) -> tuple | None:
+def _signature(expression: str, *, submitted: bool, partition: bool = True) -> tuple | None:
     """Accept only (OR-only All Fields clause) AND (one fixed date range).
 
     Balanced groups are inspected iteratively, not recursively. Mixed OR/AND
@@ -96,38 +96,43 @@ def _signature(expression: str, *, submitted: bool) -> tuple | None:
         return first, last
 
     first, last = unwrap(0, len(tokens) - 1)
-    # Exactly one administrative conjunction, never a new concept restriction.
-    conjunctions = [i for i, (kind, _) in enumerate(tokens) if kind == "AND"]
-    if len(conjunctions) != 1:
-        return None
-    split = conjunctions[0]
-    depth = 0
-    for index in range(first, last + 1):
-        kind = tokens[index][0]
-        if kind == "(":
-            depth += 1
-        elif kind == ")":
-            depth -= 1
-        elif index == split and depth != 0:
+    dates = []
+    kinds = ("create","publication") if partition else ("publication",)
+    for kind in kinds:
+        if not any(tok[0]=="AND" for tok in tokens[first:last+1]):
+            break
+        split = None
+        index = first
+        while index <= last:
+            token = tokens[index][0]
+            if token == "(":
+                index = closing[index]
+            elif token == "OR":
+                return None
+            elif token == "AND":
+                split = index
+            index += 1
+        if split is None or not first < split < last:
             return None
-        elif kind == "OR" and depth == 0:
+        lo, hi = unwrap(split+1,last)
+        if lo != hi or tokens[lo][0] != "date":
             return None
-    if not first < split < last:
-        return None
-
-    date_first, date_last = unwrap(split + 1, last)
-    if date_first != date_last or tokens[date_first][0] != "date":
-        return None
-    start, end, field = tokens[date_first][1]
-    # The actual generator submits [crdt]. Only the RESPONSE may use its
-    # documented long name. Root/user dates never gain implicit permission.
-    if submitted and field != "crdt":
+        start,end,field = tokens[lo][1]
+        if kind=="create":
+            if field not in (("crdt",) if submitted else ("crdt","Date - Create")):
+                return None
+        elif (field not in (("Date - Publication",) if submitted else ("Date - Publication","dp","pdat"))
+                or start[4:] != "/01/01" or end != start[:4]+"/12/31"):
+            return None
+        dates.append((kind,start,end))
+        first,last = unwrap(first,split-1)
+    if not dates:
         return None
 
     literals: list[str] = []
     depth = 0
     need_operand = True
-    for kind, value in tokens[first:split]:
+    for kind, value in tokens[first:last+1]:
         if kind == "(":
             if not need_operand:
                 return None
@@ -149,7 +154,12 @@ def _signature(expression: str, *, submitted: bool) -> tuple | None:
             return None
     if depth or need_operand or not literals:
         return None
-    return tuple(literals), start, end
+    return tuple(literals), tuple(dates)
+
+
+def publication_year_equivalent(submitted, accepted):
+    expected = _signature(submitted,submitted=True,partition=False)
+    return expected is not None and expected == _signature(accepted,submitted=False,partition=False)
 
 
 def internal_create_date_equivalent(submitted: str, accepted: str) -> bool:
