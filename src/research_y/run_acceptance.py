@@ -44,6 +44,7 @@ def _state(db,project,run):
         if recorded["revision"]==revision and not reasons:
             receipt=dict(recorded,event_id=row[0])
     return dict(run_id=run,revision=revision,eligible=not reasons,reasons=reasons,receipt=receipt,
+                counts_revision=counts.revision,
                 status="Verified Complete" if receipt else "Incomplete",global_unique_publications=total,
                 supplementary=board["supplementary_source_records"],source_warnings={q["query_id"]:q["warnings"] for q in board["queries"]})
 

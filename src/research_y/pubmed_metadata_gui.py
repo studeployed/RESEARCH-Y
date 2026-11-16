@@ -176,9 +176,13 @@ def run_pubmed_metadata_session(
     if preview["plan_sha256"] != expected_plan_sha256:
         raise PubMedMetadataGUIError("pubmed_metadata_plan_changed")
     try:
-        progress = collect_pubmed_metadata(
-            project, query_id, client, batch_size=MAX_BATCH_IDS,
-            max_batches=MAX_METADATA_BATCHES)
+        from research_y.processing_progress import pubmed_session
+        with pubmed_session(project,query_id,"metadata") as session:
+            progress = collect_pubmed_metadata(
+                project, query_id, client, batch_size=MAX_BATCH_IDS,
+                max_batches=MAX_METADATA_BATCHES)
+            failed=progress.error and progress.status=="incomplete" and progress.error!="Batch budget reached; more metadata remains"
+            session.update(status="failed" if failed else progress.status,reason=progress.error)
         saved = inspect_pubmed_metadata(project, run_id=run_id, query_id=query_id)
     except (PubMedMetadataError, CheckpointIntegrityError,
             ValueError, KeyError, TypeError):

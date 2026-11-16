@@ -15,7 +15,7 @@ from research_y.pubmed_checkpoint_store import (
     _load_checkpoint, _snapshot_from_db, CheckpointIntegrityError,
 )
 from research_y.pubmed_checkpoint_resume import start_checkpointed_pubmed_retrieval
-from research_y.pubmed_partition import DateWindow, MAX_PARTITION_NODES
+from research_y.pubmed_partition import DateWindow, MAX_PARTITION_NODES, PARTITION_BUDGET_REASON
 from research_y.pubmed_probe import PubMedESearchProbeClient, PubMedProbeError
 
 MAX_PUBMED_REQUESTS = 512  # per explicit session, including count probes
@@ -208,9 +208,11 @@ class _BudgetedESearch:
         self.client = client
         self.budget = budget
         self.requests_made = 0
+        self.budget_exhausted = False
 
     def _reserve(self):
         if self.requests_made >= self.budget:
+            self.budget_exhausted = True
             raise PubMedProbeError("PubMed session request budget exhausted")
         self.requests_made += 1
 
@@ -249,13 +251,21 @@ def run_pubmed_source_session(
         raise PubMedSourceError("pubmed_query_not_ready")
     budgeted = _BudgetedESearch(client, request_limit)
     try:
-        result = start_checkpointed_pubmed_retrieval(
-            project, query_id, budgeted, date_window=window,
-            page_size=PUBMED_PAGE_SIZE,
-            max_count_probes=probe_limit,
-            expected_run_id=run_id,
-            expected_plan_sha256=expected_plan_sha256,
-        )
+        from research_y.processing_progress import pubmed_session
+        with pubmed_session(project,query_id,"identifiers") as session:
+            result = start_checkpointed_pubmed_retrieval(
+                project, query_id, budgeted, date_window=window,
+                page_size=PUBMED_PAGE_SIZE,
+                max_count_probes=probe_limit,
+                expected_run_id=run_id,
+                expected_plan_sha256=expected_plan_sha256,
+            )
+            if result.status == "incomplete" and budgeted.budget_exhausted:
+                session.update(status="budget_reached", reason="Confirmed session request limit reached.")
+            elif result.status == "incomplete" and result.error == PARTITION_BUDGET_REASON:
+                session.update(status="budget_reached", reason=result.error)
+            else:
+                session.update(status="failed" if result.error and result.status=="incomplete" else result.status,reason=result.error)
         saved = inspect_pubmed_source(project, run_id=run_id, query_id=query_id)
     except (CheckpointIntegrityError, KeyError, ValueError, TypeError):
         raise PubMedSourceError("pubmed_checkpoint_invalid") from None

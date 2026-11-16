@@ -145,6 +145,22 @@ def missing_pubmed_metadata_pmids(project: Project, query_id: str) -> tuple[str,
     return tuple(pmid for pmid in checkpoint.pmids if pmid not in committed)
 
 
+def _same_record(retained, returned):
+    if retained == returned:
+        return True
+    old = retained.get("journal") if isinstance(retained,dict) else None
+    new = returned.get("journal")
+    if (not isinstance(old,dict) or not isinstance(new,dict) or "article_identifier" not in old
+            or {"start_page","end_page"}.intersection(old) or not {"start_page","end_page"}<=new.keys()
+            or "article_identifier" in new):
+        return False
+    # The former parser stored Pagination/StartPage under article_identifier and omitted EndPage.
+    legacy = dict(new)
+    legacy["article_identifier"] = legacy.pop("start_page")
+    del legacy["end_page"]
+    return retained == dict(returned,journal=legacy)
+
+
 def commit_pubmed_metadata_batch(project: Project, query_id: str,
                                  batch: PubMedMetadataBatch) -> int:
     """Atomically insert EFetch records, memberships and one audit event.
@@ -206,7 +222,7 @@ def commit_pubmed_metadata_batch(project: Project, query_id: str,
                     prior = json.loads(stored)
                     validate_retained_efetch(prior, pmid, retrieved_at, committed_hashes=hashes)
                     same_record = (prior.get("source") == batch.source
-                                   and prior.get("record") == original)
+                                   and _same_record(prior.get("record"),original))
                 except (TypeError, ValueError, AttributeError):
                     same_record = False
                 if not same_record:

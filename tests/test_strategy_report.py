@@ -70,11 +70,56 @@ def test_complete_capture_uses_real_approved_strategy_and_keeps_originals(prepar
     assert data['strategy']['version_number'] == 1
     assert len(data['queries']) == 4
     assert data['queries'][0]['executed_at_utc'] is None
+    assert all(q["source_methods"]==[] for q in data["queries"])
     assert data['counts']['status'] == 'incomplete'
     assert bytes_hash(f.project) == before
     assert list((f.project.root/'exports').iterdir()) == []
     assert render_strategy_workbook(frozen).startswith(b'PK')
     assert bytes_hash(f.project) == before
+
+
+def test_run_records_source_versions_and_original_local_offset_in_both_workbooks(tmp_path,monkeypatch):
+    from datetime import datetime
+    from openpyxl import load_workbook
+    from research_y import __version__, master_results, master_exports
+    from research_y.projects import open_project
+    from test_reviewed_master import populated
+    project,run,_,_=populated(tmp_path)
+    reopened=open_project(project.root)
+    frozen=capture_strategy_report(reopened,run)
+    rows=frozen.as_dict()["queries"]
+    for query in rows:
+        methods=query["source_methods"]
+        assert methods
+        expected="NCBI E-utilities ESearch" if query["source_name"]=="pubmed" else "Web of Science Starter v1 documents"
+        assert expected in {m["api"] for m in methods}
+        for entry in methods:
+            assert entry["application"]==__version__ and entry["client"]=="RESEARCHY/0.1"
+            assert datetime.fromisoformat(entry["first_local"])==datetime.fromisoformat(entry["first_utc"])
+            assert datetime.fromisoformat(entry["last_local"])==datetime.fromisoformat(entry["last_utc"])
+    primary=tmp_path/"master.xlsx"
+    with closing(master_results.MasterResults.capture(reopened,run)) as master:
+        master_exports.export_results(reopened,master,primary,master_results.DEFAULT,scope="entire")
+    for handle in (BytesIO(render_strategy_workbook(frozen)),primary):
+        with closing(load_workbook(handle,read_only=True)) as book:
+            cells=list(book["Executed Queries"].values)
+            assert "NCBI E-utilities EFetch" in str(cells) and "Web of Science Starter v1 documents" in str(cells)
+            assert all(q["source_methods"][0]["first_local"] in str(cells) for q in rows)
+    from research_y import source_versions
+    prior_folder=tmp_path/"older"
+    prior_folder.mkdir()
+    with monkeypatch.context() as patch:
+        patch.setattr(source_versions,"OPERATIONS",{"pubmed_efetch_metadata_committed":source_versions.EFETCH})
+        older,old_run,_,_=populated(prior_folder)
+    mixed=capture_strategy_report(older,old_run)
+    methods=[m for q in mixed.as_dict()["queries"] for m in q["source_methods"]]
+    assert any(m["version_status"]=="recorded" and m["api"]==source_versions.EFETCH for m in methods)
+    unknown=[m for m in methods if m["version_status"]=="unrecorded"]
+    assert unknown and all(m["first_utc"] and m["last_utc"] and m["receipts"]>=1 for m in unknown)
+    assert all(m["client"] is m["application"] is m["first_local"] is None for m in unknown)
+    with closing(load_workbook(BytesIO(render_strategy_workbook(mixed)),read_only=True)) as book:
+        values=str(list(book["Executed Queries"].values))
+        assert "unrecorded" in values and source_versions.EFETCH in values
 
 
 def test_two_sources_two_groups_preserve_denominators_and_omit_licensed_text(prepared):

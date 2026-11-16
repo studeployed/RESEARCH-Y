@@ -84,6 +84,9 @@ def _canonical_json(value: Any) -> str:
 
 def _audit(connection: sqlite3.Connection, *, kind: str, details: dict[str, Any],
            timestamp: str) -> None:
+    from research_y.source_versions import OPERATIONS, receipt_version
+    if kind in OPERATIONS:
+        details = dict(details,source_version=receipt_version(kind,timestamp))
     connection.execute(
         "INSERT INTO audit_events (occurred_at_utc, event_type, details_json) "
         "VALUES (?, ?, ?)",

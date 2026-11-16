@@ -153,7 +153,11 @@ entire snapshot and a separate bulk selection.
 
 **Open source evidence** displays locally retained abstract text, original
 citations, source hashes, group memberships and specialist evidence for the
-chosen record. Refresh the snapshot after editing the project.
+chosen record. Open a source link to check a citation. To prefer one source
+value, select its field and record your name and reason. Refresh the snapshot
+after editing the project. Under **Crossref abstract and metadata**, inspect the
+DOI and supply a contact email to request available metadata. Earlier source
+values, the Crossref response and researcher choices remain separately attributed.
 Under **Project documents**, choose a PDF and record its source and permission
 to retain it. The project stores a verified content-addressed copy and keeps
 its original name and link. Include the displayed project-relative path when
@@ -162,10 +166,13 @@ exporting a portable archive.
 In **Export master results**, choose the entire snapshot, all filtered matches,
 or the publications in your selection. Use an `.xlsx` filename for the
 workbook and a `.ris` filename for reference-manager exchange. Abstract text
-requires an explicit permission choice. The workbook records the selected
+requires selecting the sources whose text you may share. A source link gives
+the location of the original. Check its terms for access and reuse. The workbook records the selected
 scope, run, filtering criteria and separate source denominators. Long cells
 continue in **Continued Text** and full worksheets continue on numbered tabs.
-RIS preserves bibliographic fields and a scope note. Source variants, review
+RIS preserves bibliographic fields and a scope note. Keep the companion JSON
+receipt with the bibliography. It records the run status, scope, row count
+and checksum even when the bibliography has zero entries. Source variants, review
 history, groups and specialist provenance remain available in the project
 and workbook. The standalone search-strategy workbook remains available.
 The **Reporting Checklist** sheet records the exact stored queries, applicable
@@ -209,6 +216,13 @@ reviewed label forward. The new decision links to the earlier audit event.
 
 ## Source settings
 
+Open **Application and source settings** in the launcher, including before
+selecting a project. **Open Windows Credential Manager** opens the system
+settings. **Test PubMed connection** sends a single count-only request for
+`1[uid]` with the configured NCBI contact and optional key. With a project open,
+the test observes its saved PubMed retry deadline. To check Starter entitlement
+and quota, select a project run and use its existing audited Starter pilot.
+
 Offline project inspection and workbook operations work with empty source
 settings. For live work, create the following **Generic Credentials** using
 Windows Credential Manager under your own Windows account, then restart the
@@ -220,6 +234,15 @@ entry as described above. Source actions retain their
 individual preview and confirmation controls.
 
 ## Acceptance evidence
+
+In the selected run, refresh the execution monitor to see the nine stages from
+query validation through export preparation. Each stage names its unit. A
+Crossref lookup, for example, counts as an enrichment outcome even when the
+provider supplies no abstract. Each query shows available pages, saved metadata
+batches, the latest recorded reason and any observed daily quota. PubMed counts
+confirmed sessions restarted after recorded failures. Starter counts repeated
+page attempts following a failed or abandoned attempt. Older PubMed sessions
+without retry evidence show an unavailable count.
 
 `tests/test_desktop_launcher.py` checks the empty startup, explicit project
 selection, scoped source settings and authenticated HTTP boundary. The

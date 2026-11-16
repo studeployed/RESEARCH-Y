@@ -261,7 +261,7 @@ def _read_board(project, run_id, connection=None):
             if pubmed_deadline is not None:
                 inputs.append(pubmed_deadline)
             revision = _hash(inputs)
-            return dict(
+            board = dict(
                 method=METHOD, project_id=str(project.identifier), run_id=run_id,
                 strategy_version_id=projection.strategy_version_id,
                 stored_run_status=projection.stored_run_status,
@@ -285,6 +285,11 @@ def _read_board(project, run_id, connection=None):
                     "complete_bibliography_and_multisource_acceptance_not_verified",
                     "provisional_publication_identities_not_final_unique_count",
                 ])
+            if connection is None:
+                from research_y.processing_progress import processing_stages, source_progress
+                board["processing_stages"] = processing_stages(db,run_id,board)
+                board["source_progress"] = {q["query_id"]:source_progress(db,q) for q in output}
+            return board
     except ExecutionBoardError:
         raise
     except (ApplicationInspectionError, result_counts.CountIntegrityError,

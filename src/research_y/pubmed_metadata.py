@@ -20,6 +20,8 @@ import xml.etree.ElementTree as ET
 
 from research_y.pubmed_probe import PubMedESearchProbeClient, PubMedRetryNotDue, _RejectRedirects
 
+from research_y.source_versions import USER_AGENT
+
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 MAX_BATCH_IDS = 20
 MAX_EFETCH_BYTES = 8 * 1024 * 1024
@@ -206,7 +208,8 @@ def _record(element: ET.Element) -> PubMedRecord:
         "volume": _path(issue, "Volume") if issue is not None else None,
         "issue": _path(issue, "Issue") if issue is not None else None,
         "pages": _path(article, "./Pagination/MedlinePgn"),
-        "article_identifier": _path(article, "./Pagination/StartPage"),
+        "start_page": _path(article, "./Pagination/StartPage"),
+        "end_page": _path(article, "./Pagination/EndPage"),
     }
     return PubMedRecord(
         pmid=pmid, title=_path(article, "ArticleTitle"),
@@ -341,7 +344,7 @@ class PubMedEFetchClient:
             values["api_key"] = self._client._api_key
         request = Request(
             EFETCH_URL, data=urlencode(values).encode("utf-8"),
-            headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "RESEARCHY/0.1"},
+            headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT},
             method="POST",
         )
         try:

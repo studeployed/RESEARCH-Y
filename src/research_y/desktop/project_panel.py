@@ -412,11 +412,51 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
             render_master(ui,state,act,native=native)
-            with ui.expansion("Verify final run scope",value=bool(state.get("run_acceptance"))):
+            with ui.expansion("Source execution times and versions"):
+                for query in (state.get("report") or {}).get("queries",[]):
+                    ui.label(query["source_name"]+" · "+query["group_id"]+" · "+query["query_id"])
+                    ui.label("Stored query time (UTC) · "+(query["executed_at_utc"] or "Unavailable"))
+                    for item in query.get("source_methods",[]):
+                        if item.get("version_status")=="unrecorded":
+                            ui.label(f"{item['event']} · {item['receipts']} earlier receipts · UTC {item['first_utc']} to "
+                                     f"{item['last_utc']} · source version and original local time unavailable")
+                            continue
+                        ui.label(f"{item['event']} · {item['api']} · {item['client']} · RESEARCH-Y {item['application']} · "
+                                 f"{item['receipts']} receipts · local {item['first_local']} to {item['last_local']}")
+                    if not query.get("source_methods"):
+                        ui.label("No versioned source receipt recorded.")
+            with ui.expansion("Results summary and final run verification",value=bool(state.get("run_acceptance"))):
                 ui.button("Check all source and identity evidence",on_click=lambda:act("run_acceptance"))
                 scope=state.get("run_acceptance")
                 if scope:
                     ui.label("Verification result · "+scope["status"])
+                    report = state.get("report")
+                    if report and scope.get("counts_revision") == report["counts"]["revision"]:
+                        from research_y.results_summary import results_summary
+                        summary = results_summary(report["counts"],scope["receipt"],report.get("society_coverage"))
+                        for row in summary["groups"]:
+                            reported = row["reported_matches"] if row["reported_matches"] is not None else "unknown"
+                            accepted = row["accepted_group_publications"]
+                            ui.label(f"{row['group']} · {row['source']} · reported {reported} · "
+                                     f"retrieved {row['retrieved_identifiers']} · {row['reconciliation']} · "
+                                     f"metadata missing {row['metadata_missing']} · {', '.join(row['stored_query_statuses']) or 'unplanned'} · "
+                                     f"unique within group {accepted if accepted is not None else 'unverified'}")
+                        ui.label("Supplementary records retained")
+                        for source, number in summary["supplementary_retained_records"].items():
+                            ui.label(f"{source} · {number}")
+                        coverage = summary["society_coverage"]
+                        if coverage:
+                            ui.label(f"{coverage['project_recorded_visits']} society visits recorded in this project · "
+                                     f"{coverage['visits_linked_to_this_run']} linked to this run · site hit total unavailable")
+                        for source, number in summary["source_unique_records"].items():
+                            ui.label(f"{source} · {number} unique source records across groups")
+                        ui.label(f"Extracted individual abstracts · {summary['extracted_individual_abstracts']}")
+                        for label, key in (("Sum of group publication counts","group_publication_sum"),
+                                           ("Global unique publications across all sources","global_unique_publications")):
+                            value = summary[key]
+                            ui.label(f"{label} · {value if value is not None else 'unverified'}")
+                    else:
+                        ui.label("Run evidence changed during inspection. Check the source and identity evidence again.")
                     for reason in scope["reasons"]:
                         ui.label(reason)
                     ui.label("Source warnings · "+str(scope["source_warnings"]))
@@ -521,6 +561,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.label('Stored queries could not be matched to the approved strategy. '
                              'Run-wide retrieval coverage is unknown.').props(
                                  'data-testid=run-board-plan-mismatch')
+                for stage in board.get("processing_stages",[]):
+                    value=stage["observed"] if stage["observed"] is not None else "unverified"
+                    total="" if stage["total"] is None else f" of {stage['total']}"
+                    ui.label(f"{stage['stage']} · {value}{total} · {stage['unit']}")
                 ui.label('Provisional publication identity hypotheses: ' +
                          str(board['totals']['publication_identity_hypotheses']) +
                          ' (NOT a final deduplicated result).')
@@ -550,6 +594,15 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                         if item['warnings']:
                             ui.label('Pending source issues: ' +
                                      ', '.join(item['warnings']))
+                        progress=board.get("source_progress",{}).get(item["query_id"])
+                        if progress:
+                            for label,number in (("Saved pages",item["pages_committed"]),("Metadata batches",progress["metadata_batches"]),
+                                    (progress["retry_unit"],progress["retries"]),
+                                    ("Unfinished sessions" if item["source_name"]=="pubmed" else "Indeterminate attempts",progress["unknown_outcomes"]),
+                                    ("Observed daily quota remaining",progress["daily_remaining"])):
+                                ui.label(f"{label} · {number if number is not None else 'unavailable'}")
+                            if progress["latest_reason"]:
+                                ui.label("Last recorded status reason · "+progress["latest_reason"])
                         step = item['next_step']
                         allowed = True
                         if step == 'preview_wos':
@@ -1580,6 +1633,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                           'data-testid=pubmed-pilot-offer')
             prior = state['last_pubmed_pilot']
             if prior is not None:
+                if prior.get("error_code"):
+                    from research_y.desktop.settings import source_error_help
+                    ui.label(source_error_help(prior["error_code"]))
                 ui.label('Last audited pilot attempt: ' +
                          prior['status']).props(
                              'data-testid=pubmed-pilot-status')
@@ -1688,6 +1744,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                           'data-testid=wos-pilot-revalidation-offer')
             prior = state['last_wos_pilot']
             if prior is not None:
+                if prior.get("error_code"):
+                    from research_y.desktop.settings import source_error_help
+                    ui.label(source_error_help(prior["error_code"]))
                 ui.label('Last audited Starter pilot: ' +
                          prior['status']).props(
                              'data-testid=wos-pilot-status')

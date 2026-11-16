@@ -20,6 +20,8 @@ from research_y.wos_starter import (MAX_RESPONSE_BYTES, WoSPage, WoSQuota,
                                   WoSStarterError, parse_document_page, parse_quota,
                                   validate_request)
 
+from research_y.source_versions import USER_AGENT
+
 DOCUMENTS_URL = "https://api.clarivate.com/apis/wos-starter/v1/documents"
 MIN_REQUEST_INTERVAL = 1.05  # Conservative even for trial's one request/second.
 
@@ -111,7 +113,7 @@ class WoSStarterClient:
                       "page": str(page), "sortField": "LD+A"}
             request = Request(DOCUMENTS_URL + "?" + urlencode(fields),
                               headers={"X-ApiKey": self._key, "Accept": "application/json",
-                                       "User-Agent": "RESEARCHY/0.1"}, method="GET")
+                                       "User-Agent": USER_AGENT}, method="GET")
             now = self._clock()
             if now < self._next_allowed:
                 self._sleep(self._next_allowed-now)

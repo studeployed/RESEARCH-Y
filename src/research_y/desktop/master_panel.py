@@ -31,11 +31,16 @@ def render_master(ui,state,act,*,native):
                 scope = ui.select({"entire":"Entire captured dataset","filtered":"All filtered matches",
                                    "selected":"All selected publications"},value="entire",label="Records to export")
                 rights = ui.checkbox("Include abstract text that I am permitted to export")
+                allowed = ui.select(view["options"].get("source",[]),multiple=True,value=[],
+                                    label="Sources whose abstract text I may export")
                 ui.button("Choose folder and write results",on_click=lambda:act("native_master_export",dict(
-                          name=file.value,revision=view["revision"],scope=scope.value,include_abstracts=rights.value)))
+                          name=file.value,revision=view["revision"],scope=scope.value,include_abstracts=rights.value,
+                          abstract_sources=allowed.value or [])))
                 if "export" in view:
                     done = view["export"]
                     ui.label(f'Saved {done["rows"]} publication rows to {done["filename"]}')
+                    if done.get("scope_filename"):
+                        ui.label("Run status and export scope · "+done["scope_filename"])
         with ui.expansion("Search, filters and columns"):
             query = ui.input("Search titles, abstracts, citations or identifiers",value=spec["text"])
             languages = ui.checkbox("Hide explicitly non-English records",value=spec.get("hide_non_english",False))
@@ -49,8 +54,8 @@ def render_master(ui,state,act,*,native):
                       facets={k:v.value for k,v in filters.items() if v.value},sort=sort.value,
                       descending=reverse.value,columns=columns.value,hide_non_english=languages.value,
                       hide_non_human_only=population.value)))
-            name = ui.input("Save applied view as")
-            ui.button("Save current view",on_click=lambda:send("save",name=name.value))
+            view_name = ui.input("Save applied view as")
+            ui.button("Save current view",on_click=lambda:send("save",name=view_name.value))
             if view["saved"]:
                 saved = ui.select(list(view["saved"]),label="Saved view")
                 ui.button("Load saved view",on_click=lambda:send("load",name=saved.value))
@@ -81,6 +86,50 @@ def render_master(ui,state,act,*,native):
         detail = view.get("detail")
         if detail:
             with ui.expansion(detail["title"] or detail["publication_id"],value=True):
+                selected = dict(id=detail["publication_id"],publication_revision=detail["publication_revision"])
+                lookup = detail["enrichment"]
+                with ui.expansion("Crossref abstract and metadata"):
+                    receipt = lookup["current"]
+                    ui.label("Lookup status · "+lookup["lookup_status"].replace("_"," "))
+                    if receipt:
+                        ui.label(f"Crossref · {receipt['outcome']} · {receipt['retrieved_at_utc']}")
+                        ui.label(receipt["fields"].get("abstract") or "Crossref supplied no abstract for this response.")
+                    elif lookup["prior_receipts"]:
+                        ui.label("Earlier Crossref evidence belongs to a previous publication revision.")
+                    else:
+                        ui.label("No Crossref metadata receipt for this publication.")
+                    if detail.get("last_lookup"):
+                        ui.label("Last lookup · "+detail["last_lookup"])
+                    target = lookup["target"]
+                    if target["doi"]:
+                        ui.label("DOI to send to Crossref · "+target["doi"])
+                        contact = ui.input("Contact email sent to Crossref with this DOI")
+                        lookup_actor = ui.input("Researcher requesting metadata")
+                        refresh = ui.checkbox("Refresh previously retrieved Crossref metadata")
+                        ui.button("Confirm DOI lookup",on_click=lambda:send("lookup",**selected,
+                            contact=contact.value,actor=lookup_actor.value,refresh=refresh.value,confirmed=True))
+                    else:
+                        ui.label(target["status"].replace("_"," "))
+                with ui.expansion("Choose citation values from source records"):
+                    if detail["conflicting_fields"]:
+                        ui.label("Sources disagree on "+", ".join(detail["conflicting_fields"]))
+                    choices = {f"{n}/{field}":f"{field} · {evidence['value']} · {item['source']} {item['source_record_id']}"
+                               for n,item in enumerate(detail["source_evidence"])
+                               for field,evidence in item["field_evidence"].items()
+                               if field in ("title","doi","year","journal") and evidence["status"]=="present"}
+                    for field,choice in detail["chosen_fields"].items():
+                        ui.label(f"Chosen {field} · {choice['value']}")
+                    if choices:
+                        chosen = ui.select(choices,label="Source value")
+                        editor = ui.input("Researcher selecting the value")
+                        reason = ui.input("Reason for this selection")
+                        def choose_value():
+                            if chosen.value in choices:
+                                index,field = chosen.value.split("/",1)
+                                return send("choose_field",**selected,field=field,
+                                    retrieval_id=detail["source_evidence"][int(index)]["retrieval_id"],
+                                    actor=editor.value,reason=reason.value)
+                        ui.button("Confirm source value and close snapshot",on_click=choose_value)
                 with ui.expansion("Project documents"):
                     for attachment in detail.get("attachments",[]):
                         ui.label(attachment.get("original_filename") or attachment.get("relative_path") or "Linked document")
@@ -94,7 +143,13 @@ def render_master(ui,state,act,*,native):
                                        source_url=origin.value or None,permission_confirmed=permission.value)))
                 for item in detail["source_evidence"]:
                     ui.label(item["source"]+" · "+item["source_record_id"])
-                    ui.label(item["abstract"] or "Abstract unavailable from this source")
+                    ui.label(item["abstract"] or "Abstract · "+item["abstract_status"])
+                    for link_label,url in item["links"].items():
+                        if native:
+                            ui.button("Open "+link_label,on_click=lambda n=link_label,r=item["retrieval_id"]:act("native_master_link",
+                                dict(**selected,revision=view["revision"],retrieval_id=r,link=n)))
+                        else:
+                            ui.link(link_label,url,new_tab=True)
                     ui.label("Reuse status · "+item["rights"])
                     ui.label("Groups · "+(", ".join(item["groups"].values()) or "No query membership"))
                     with ui.expansion("Original citation and provenance"):

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from research_y.projects import Project, _utc_now, _validated_project_connection
 from research_y.pubmed_ids import PubMedIdentifierPage, parse_identifier_page
-from research_y.pubmed_partition import DateWindow, PubMedPartitionResult, retrieve_date_partitioned_identifiers
+from research_y.pubmed_partition import DateWindow, PARTITION_BUDGET_REASON, PubMedPartitionResult, retrieve_date_partitioned_identifiers
 from research_y.pubmed_probe import PubMedESearchProbeClient, _translation_matches_submitted
 from research_y.pubmed_cooldown import project_requests
 from research_y.pubmed_checkpoint_store import (
@@ -172,6 +172,7 @@ def start_checkpointed_pubmed_retrieval(
         return CheckpointResumeResult(
             "incomplete", CheckpointSnapshot(query_id, result.reported_root_matches or 0,
             "incomplete", (), 0, 0, (), False),
+            PARTITION_BUDGET_REASON if PARTITION_BUDGET_REASON in result.errors else
             "A complete checkpoint plan could not be established",
         )
     if snap.stored_status == "paused":

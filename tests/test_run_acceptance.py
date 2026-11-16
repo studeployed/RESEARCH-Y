@@ -73,3 +73,15 @@ def test_supplementary_identity_with_reviewed_pairs_and_cache_invalidation(tmp_p
         decide(project,older,extra,"rejected_match")
     checked=read_acceptance(project,run)
     assert checked["eligible"] and checked["global_unique_publications"]==3
+    accept_run(project,run,expected_revision=checked["revision"],actor="Reviewer",
+               limitations="Reviewed Starter and additional manual source",confirmed=True)
+    path=tmp_path/"Accepted.xlsx"
+    with closing(MasterResults.capture(project,run)) as results:
+        export_results(project,results,path,DEFAULT,scope="entire")
+    with closing(load_workbook(path,read_only=True)) as book:
+        summary=list(book["All-source Summary"].values)
+        assert any(r[0]=="Run" and r[3:]==("global_unique_publications",3) for r in summary)
+        assert any(r[2:]==("manual_bibliographic","Retained records",1) for r in summary)
+        group_counts={row[1]:row[4] for row in summary if row[3]=="accepted_group_publications"}
+        assert len(group_counts)==2
+        assert any(r[0]=="Run" and r[3:]==("group_publication_sum",sum(group_counts.values())) for r in summary)

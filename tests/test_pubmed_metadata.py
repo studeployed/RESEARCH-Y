@@ -72,6 +72,18 @@ def make_client(transport):
     )
 
 
+def test_electronic_identifier_and_print_pages_retain_distinct_source_meanings():
+    from research_y.master_results import _record_links
+    data = response("111").replace(b"<MedlinePgn>",b"<StartPage>5</StartPage><EndPage>11</EndPage><MedlinePgn>")
+    data = data.replace(b"</Article>",b'<ELocationID EIdType="pii">e017</ELocationID></Article>')
+    record, = parse_efetch_xml(data,("111",),retrieved_at_utc=UTC).records
+    assert record.journal["start_page"]=="5" and record.journal["end_page"]=="11"
+    assert record.identifiers["pii"]==("e017",)
+    retained=json.loads(json.dumps(record.source_dict()))
+    links=_record_links(retained,"pubmed","111",{"doi":{"status":"missing"}})
+    assert links["PMC12345"]=="https://pmc.ncbi.nlm.nih.gov/articles/PMC12345/"
+
+
 def test_pubmed_xml_metadata_and_multisection_abstract_are_preserved():
     batch = parse_efetch_xml(response("111"), ("111",), retrieved_at_utc=UTC)
     r = batch.records[0]
@@ -244,6 +256,30 @@ def test_repeat_identical_records_at_different_retrieval_times_remains_idempoten
     commit_pubmed_metadata_batch(p, query_id, b1)
     assert commit_pubmed_metadata_batch(p, query_id, b2) == 0
     assert _count_db(p, query_id)[:3] == (1, 1, 1)
+
+
+@pytest.mark.parametrize("start_page",[None,"5"])
+def test_upgraded_parser_reuses_the_intact_original_journal_representation(tmp_path,start_page):
+    from dataclasses import replace
+    project,query=project_with_pmids(tmp_path,("111",))
+    xml=response("111")
+    if start_page:
+        xml=xml.replace(b"<MedlinePgn>",b"<StartPage>5</StartPage><EndPage>11</EndPage><MedlinePgn>")
+    batch=parse_efetch_xml(xml,("111",),retrieved_at_utc=UTC)
+    record,=batch.records
+    journal=dict(record.journal)
+    journal["article_identifier"]=journal.pop("start_page")
+    del journal["end_page"]
+    old=replace(batch,records=(replace(record,journal=journal),))
+    assert commit_pubmed_metadata_batch(project,query,old)==1
+    reopened=open_project(project.root)
+    assert commit_pubmed_metadata_batch(reopened,query,batch)==0
+    changed=replace(batch,records=(replace(record,journal=dict(record.journal,start_page="77")),))
+    with pytest.raises(PubMedMetadataIntegrityError):
+        commit_pubmed_metadata_batch(reopened,query,changed)
+    with closing(sqlite3.connect(reopened.database_path)) as db:
+        original,=db.execute("SELECT original_metadata_json FROM source_retrievals").fetchone()
+    assert json.loads(original)["record"]["journal"]==journal
 
 
 def test_source_metadata_change_is_explicit_conflict_and_keeps_original(tmp_path):

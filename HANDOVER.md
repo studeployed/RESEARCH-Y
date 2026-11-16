@@ -6,9 +6,18 @@
 product requirements that remained partial after Phase 3. The Windows launcher
 accepts the project index as well as its folder. The project storage evidence
 for PROJ-01 through PROJ-06 is in the [requirement register](docs/requirements-traceability.csv).
-PROJ-07 still needs a project-wide display of the latest successful source checkpoint.
+The launcher now shows the most recent successful source checkpoint across the
+project. The selected run shows source and group counts, society coverage,
+supplementary imports and the global total supported by a current acceptance receipt.
+The master workbook includes those denominators even for a filtered export.
+Record detail retains original and researcher-chosen citations separately and can
+request a DOI lookup for a missing abstract. The export dialog lets researchers
+choose which sources permit sharing abstract text. Each RIS bibliography has an
+accompanying JSON scope receipt, including an empty selection.
 
-## Phase 3 delivery
+The Windows workflow rehearses both a clean install and an upgrade of a project
+written by the Phase 3 build. Issue #163 remains open for the outstanding product
+requirements and verification of the installer built from the final merged commit.
 
 The run comparison shows classifications attached to recurring source records,
 including the earlier researcher, decision and rationale. When the later run
@@ -16,6 +25,22 @@ has a separate publication identity, a researcher can verify the evidence and
 record a new decision linked to the earlier one. Changed evidence or an edited
 decision requires reopening the comparison. The summary separates shared
 publication identities, recurring sources and unresolved splits or associations.
+
+The native launcher provides access to Windows Credential Manager and an
+explicit PubMed connection check. The test uses a public fixed query and the
+existing paced client. A project-level provider pause also applies to the test.
+The launch screen explains saved credential errors, quota holds and recovery.
+
+New source receipts preserve the API operation, application version, HTTP
+client identifier and the local time with UTC offset. Both spreadsheet exports
+and the selected run show the versions used at execution. Earlier source
+receipts without this evidence retain their original unknown status.
+
+The execution monitor shows all nine processing stages with their own units.
+The retry counts distinguish PubMed sessions restarted after failure from
+Starter page attempts repeated after failure or abandonment.
+
+## Phase 3 delivery
 
 See the [release matrix](docs/PHASE3_ACCEPTANCE.md) for all 22 scenarios,
 the [installation guide](docs/WINDOWS_INSTALLER.md) for the Windows build

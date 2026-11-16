@@ -55,6 +55,9 @@ class RealProjectFlow:
         if wos_profile is not None and type(wos_profile) is not WoSHostProfile:
             raise ProjectFlowError('wos_profile_invalid')
         self._pubmed_profile = pubmed_profile
+        from research_y.desktop.settings import PubMedConnectionTest
+        self._pubmed_connection_test = PubMedConnectionTest(pubmed_profile) if pubmed_profile else None
+        self._pubmed_test_active = False
         self._wos_profile = wos_profile
         self._local_assistant = local_assistant
         self._cloud_assistant = cloud_assistant
@@ -308,6 +311,32 @@ class RealProjectFlow:
             self._root = folder
             self._remember_project(project)
             return self._publish()
+
+    def test_pubmed_connection(self):
+        from research_y.pubmed_probe import MIN_SECONDS_BETWEEN_REQUESTS
+        with self._guard:
+            if self._closed or self._pubmed_connection_test is None:
+                raise ProjectFlowError("PubMed settings are unavailable.")
+            if self._pubmed_test_active:
+                return "A PubMed connection test is already running."
+            if (self._pending_pilot is not None or self._pubmed_source_pending is not None or
+                    self._pubmed_metadata_pending is not None or self._coord_pending and any(
+                    task["source_name"]=="pubmed" for task in self._coord_pending["tasks"])):
+                return "Finish or reconcile the active PubMed session before testing the connection."
+            project = self.project
+            self._pubmed_test_active = True
+        try:
+            # Workers own independent pacing clocks. Leave a request interval on both sides of the test.
+            time.sleep(MIN_SECONDS_BETWEEN_REQUESTS)
+            return self._pubmed_connection_test.check(project)
+        finally:
+            time.sleep(MIN_SECONDS_BETWEEN_REQUESTS)
+            with self._guard:
+                self._pubmed_test_active = False
+
+    def _require_pubmed_test_idle(self):
+        if self._pubmed_test_active:
+            raise ProjectFlowError("Wait for the PubMed connection test to finish before starting a source request.")
 
     def _require_open(self):
         if self._closed:
@@ -575,6 +604,9 @@ class RealProjectFlow:
                 if not self._run_acceptance or self._run_acceptance["run_id"]!=self.selected_run_id:
                     raise ProjectFlowError("Inspect current source verification first")
                 self._run_acceptance=accept_run(self.project,self.selected_run_id,**decision)
+            report = (self.snapshot or {}).get("report")
+            if not report or report["counts"]["revision"] != self._run_acceptance["counts_revision"]:
+                self.snapshot = self._operation("inspect",run_id=self.selected_run_id)["snapshot"]
             return self._publish(verified_scope=True)
 
     def read_project_audit(self,after=0):
@@ -1109,7 +1141,7 @@ class RealProjectFlow:
             self._master_page["detail"] = self._master.detail(self.project,publication_id)
             return self._publish()
 
-    def export_master_to(self,parent,*,name,revision,scope,include_abstracts):
+    def export_master_to(self,parent,*,name,revision,scope,include_abstracts,abstract_sources=None):
         from research_y.export_files import filename
         from research_y.master_exports import export_results
         with self._guard:
@@ -1119,7 +1151,7 @@ class RealProjectFlow:
             filename(name)
             try:
                 self._master_page["export"] = export_results(self.project,self._master,parent/name,self._master_page["spec"],
-                        scope=scope,include_abstracts=include_abstracts)
+                        scope=scope,include_abstracts=include_abstracts,abstract_sources=abstract_sources)
             except FileExistsError:
                 raise ProjectFlowError("A file with this name already exists.") from None
             return self._publish()
@@ -1131,6 +1163,21 @@ class RealProjectFlow:
 
     def master_action(self,operation,data):
         from research_y import master_results
+        if operation == "lookup":
+            from research_y.crossref_client import enrich_publication
+            with self._guard:
+                detail = self._current_master_detail(data)
+                project, run = self.project, self.selected_run_id
+                pid = detail["publication_id"]
+                revision = detail["publication_revision"]
+            result = enrich_publication(project,pid,contact=data["contact"],actor=data["actor"],
+                expected_revision=revision,confirmed=data.get("confirmed") is True,refresh=data.get("refresh",False))
+            with self._guard:
+                if self.project is project and self.selected_run_id==run and self._master_page and self._master_page.get("detail") is detail:
+                    updated = self._master.detail(project,pid)
+                    updated["last_lookup"] = result["status"]
+                    self._master_page["detail"] = updated
+                return self._publish()
         if operation == "capture":
             with self._guard:
                 self._require_open()
@@ -1176,11 +1223,43 @@ class RealProjectFlow:
                     raise ProjectFlowError("Select a visible publication.")
                 current["detail"] = self._master.detail(self.project,data["id"])
                 return self._publish()
+            elif operation == "choose_field":
+                from research_y.publication_fields import select_source_field
+                detail = self._current_master_detail(data)
+                field = data.get("field")
+                source = next((s for s in detail["source_evidence"] if s["retrieval_id"]==data.get("retrieval_id")),None)
+                if not source or field not in ("title","doi","year","journal"):
+                    raise ProjectFlowError("Choose a displayed citation field.")
+                candidate = source["field_evidence"][field]
+                if candidate["status"] != "present":
+                    raise ProjectFlowError("Choose a present source value.")
+                select_source_field(self.project,detail["publication_id"],field,retrieval_id=source["retrieval_id"],
+                    path=tuple(candidate["path"]),expected_revision=detail["publication_revision"],actor=data["actor"],reason=data["reason"])
+                self._clear_master()
+                return self._publish()
             else:
                 raise ProjectFlowError("Unknown master results operation.")
             self._master_page = self._master.page(spec,offset=offset)
             self._master_page.update(options=current["options"],saved=master_results.saved_views(self.project))
             return self._publish()
+
+    def _current_master_detail(self, data):
+        self._require_open()
+        self._require_no_unresolved_selection()
+        page = self._master_page
+        detail = page.get("detail") if page else None
+        if (not detail or self._master.run != self.selected_run_id or page["revision"] != data.get("revision")
+                or detail["publication_id"] != data.get("id") or detail["publication_revision"] != data.get("publication_revision")):
+            raise ProjectFlowError("Reopen the selected publication.")
+        return detail
+
+    def master_source_url(self, **data):
+        with self._guard:
+            detail = self._current_master_detail(data)
+            for source in detail["source_evidence"]:
+                if source["retrieval_id"] == data.get("retrieval_id") and data.get("link") in source["links"]:
+                    return source["links"][data["link"]]
+            raise ProjectFlowError("Select a displayed source link.")
 
     def _visible_study(self):
         self._require_open()
@@ -1661,6 +1740,7 @@ class RealProjectFlow:
         read-only and never resubmits a count request or invents a zero count.
         """
         with self._guard:
+            self._require_pubmed_test_idle()
             self._require_open()
             if self._pending_pilot is not None or self._pending_wos_pilot is not None:
                 raise ProjectFlowError('pilot_reconciliation_required')
@@ -2475,6 +2555,7 @@ class RealProjectFlow:
     def confirm_pubmed_source(self):
         """One explicit bounded ESearch session; return without blocking UI."""
         with self._guard:
+            self._require_pubmed_test_idle()
             self._require_open()
             self._require_no_unresolved_selection()
             candidate = self._pubmed_source_offer
@@ -2720,6 +2801,7 @@ class RealProjectFlow:
     def confirm_pubmed_metadata(self):
         """Spawn one capped EFetch session after a separate deliberate click."""
         with self._guard:
+            self._require_pubmed_test_idle()
             self._require_open()
             self._require_no_unresolved_selection()
             candidate=self._pubmed_metadata_offer
@@ -4167,6 +4249,8 @@ class RealProjectFlow:
             if (candidate is None or not candidate['tasks'] or
                     candidate['preview']['run_id'] != self.selected_run_id):
                 raise ProjectFlowError('run_coordination_confirmation_required')
+            if any(task["source_name"]=="pubmed" for task in candidate["tasks"]):
+                self._require_pubmed_test_idle()
             latest = self._operation('run_coord_preview',
                 run_id=self.selected_run_id)
             if latest != candidate['preview']:

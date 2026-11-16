@@ -186,6 +186,8 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
                        "ORDER BY group_order,group_id", (run[1],)).fetchall()
     _strategy(snapshot, index)
     queries, partitions = [], []
+    from research_y.source_versions import recorded_methods
+    methods = recorded_methods(db,run_id)
     columns = ("query_id", "group_id", "source_name", "exact_query", "parameters_json",
                "reported_matches", "status", "executed_at_utc")
     query_count_ids = {q["query_id"] for q in counts["queries"]}
@@ -199,6 +201,7 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
         if set(params) - _SAFE_PARAMETERS or any(not isinstance(v, (str, int, bool, type(None))) for v in params.values()):
             raise ReportIntegrityError("Query parameters require export-policy review")
         q["parameters"] = params
+        q["source_methods"] = methods.get(q["query_id"],[])
         q["timestamp_scope"] = "stored_query_timestamp_not_independent_request_verification"
         q["execution_evidence"] = "timestamp_not_recorded" if q["executed_at_utc"] is None else "timestamp_recorded"
         if q["query_id"] not in query_count_ids:
@@ -218,6 +221,7 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
         raise ReportIntegrityError("Report omitted a query")
     from research_y import __version__
     from research_y.run_comparison import latest_update_method
+    from research_y.results_summary import society_coverage
     data = dict(format_version=1, method=REPORT_METHOD, software_version=__version__,
                 captured_at_utc=captured_at, scope="whole_run_strategy_and_counts", status="incomplete",
                 project={"project_id": str(project.identifier), "name": project.name},
@@ -229,6 +233,7 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
                     "licensed_record_text_not_exported", "methodology_review_not_established",
                     "source_query_translation_details_not_in_this_workbook"}))
     update_method = latest_update_method(db,run_id)
+    data["society_coverage"] = society_coverage(db,run_id)
     if update_method:
         data["run"]["update_method"] = update_method
     if reviewed_revision is not None:

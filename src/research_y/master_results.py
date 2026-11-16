@@ -16,10 +16,22 @@ SORTS = {"title":"title", "year":"year", "publication_id":"id"}
 FACETS = {"source","group",*study_classification.LABELS,"review_status"}
 DEFAULT = dict(text="",facets={},sort="title",descending=False,columns=["title","year","sources","design"])
 SAVED = "master_results_view_saved_v1"
+WORKBOOK_PREPARED = "master_results_workbook_prepared_v1"
+
+SPECIALIST_CITATION_FIELDS = frozenset("""
+    title authors locator xml_id source_identifiers individual_dois number printed_first_page printed_last_page
+    pdf_page pdf_last_page pdf_page_url supplement_pdf_url individual_url conference conference_date
+    text_start text_end warnings document_types landing_url document_url edition issue_date update_statement
+    journal_citation supplement doi identifiers
+""".split())
+CONTAINER_CITATION_FIELDS = frozenset("""
+    title journal year volume issue supplement identifiers landing_url pdf_url conference conference_date pdf_file_pages
+""".split())
 
 
 def evidence_head(db):
-    return db.execute("SELECT coalesce(max(event_id),0) FROM audit_events WHERE event_type<>?",(SAVED,)).fetchone()[0]
+    return db.execute("SELECT coalesce(max(event_id),0) FROM audit_events WHERE event_type NOT IN (?,?)",
+                      (SAVED, WORKBOOK_PREPARED)).fetchone()[0]
 
 
 def specification(text="", facets=None, sort="title", descending=False, columns=None,
@@ -55,6 +67,27 @@ def _abstract(record):
         return "\n".join(v["text"] for group in groups for v in group
                          if isinstance(v,dict) and isinstance(v.get("text"),str))
     return record["text"] if isinstance(record.get("text"),str) else ""
+
+
+def _record_links(record, source, record_id, citation):
+    import re
+    from urllib.parse import quote
+    from research_y.conference_jats import _link
+    links = {name:record.get(name) for name in ("url","landing_url","document_url","individual_url","pdf_page_url")}
+    if isinstance(record.get("links"),dict):
+        links.update({f"Source {key}":value for key,value in record["links"].items() if isinstance(value,str)})
+    if source=="pubmed" and record_id.isascii() and record_id.isdecimal():
+        links["PubMed"] = f"https://pubmed.ncbi.nlm.nih.gov/{record_id}/"
+        identifiers = record.get("identifiers")
+        pmc = identifiers.get("pmc",[]) if isinstance(identifiers,dict) else []
+        if isinstance(pmc,list):
+            for value in pmc:
+                if isinstance(value,str) and re.fullmatch(r"PMC[1-9][0-9]{0,19}",value):
+                    links[value] = f"https://pmc.ncbi.nlm.nih.gov/articles/{value}/"
+    doi = citation["doi"]
+    if doi["status"]=="present":
+        links["DOI"] = "https://doi.org/" + quote(doi["normalised"],safe="/")
+    return {name:url for name,url in links.items() if _link(url)}
 
 
 def _citation(snapshot, mappings, name):
@@ -127,19 +160,30 @@ def _rows(db,run):
             entry = dict(retrieval_id=src["retrieval_id"],source=src["source_name"],source_record_id=src["source_record_id"],
                          sha256=src["source_sha256"],fields=citation,groups=members.get(src["retrieval_id"],{}))
             entry["abstract_text"] = _abstract(record)
+            journal = record.get("journal") if src["source_name"]=="pubmed" else record.get("source")
+            journal = journal if isinstance(journal,dict) else {}
+            entry["citation_details"] = {k:journal[k] for k in ("volume","issue","issn","start_page","end_page")
+                                         if journal.get(k)}
+            entry["identifiers"] = record.get("identifiers") or record.get("source_identifiers") or {}
+            entry["rights_status"] = src["original_metadata"].get("rights_status") or "review source terms for redistribution"
+            entry["source_links"] = _record_links(record,src["source_name"],src["source_record_id"],fields["fields"])
             entry["decision_event"] = src.get("association_event_id",raw[11])
             entry["decision_status"] = src.get("decision",{}).get("status")
             if entry["decision_status"] is None:
                 entry["decision_status"] = identity._object(raw[14])["status"]
             if src["source_name"] in {"conference_jats","conference_pdf","society"}:
-                entry["specialist"] = {k:v for k,v in record.items() if k!="text"}
+                entry["specialist"] = {k:v for k,v in record.items() if k in SPECIALIST_CITATION_FIELDS}
                 payload = src["original_metadata"]
                 entry["society_roles"] = payload.get("society_roles",{})
                 if payload.get("container_id"):
                     container = db.execute("SELECT metadata_json FROM containers WHERE container_id=?",
                                            (payload["container_id"],)).fetchone()
                     if container:
-                        entry["container"] = identity._object(container[0])
+                        retained = identity._object(container[0])
+                        entry["container"] = {k:v for k,v in retained.items() if k in
+                                              ("version","method","retrieval_id","original_source_sha256","document_sha256")}
+                        entry["container"]["fields"] = {k:v for k,v in retained.get("fields",{}).items()
+                                                        if k in CONTAINER_CITATION_FIELDS}
             originals.append(entry)
             searchable.extend([entry["source_record_id"],identity._json(citation),_abstract(record)])
         row = dict(publication_id=pid,**{k:_citation(snapshot,mappings,k) for k in ("title","year","journal","doi")},
@@ -269,6 +313,10 @@ class MasterResults:
         row = json.loads(found[0])
         with _read(project) as db:
             snapshot = identity._snapshot(db,pid)
+            from research_y.crossref_metadata import inspect_stored_enrichment
+            row["enrichment"] = inspect_stored_enrichment(db,pid)
+            row["publication_revision"] = snapshot.revision
+            row["chosen_fields"] = snapshot.chosen_fields
             sources = {s["retrieval_id"]:s for s in snapshot.retrievals if s["run_id"]==self.run}
             if {s["retrieval_id"]:s["sha256"] for s in row["source_evidence"]} != {
                     rid:s["source_sha256"] for rid,s in sources.items()}:
@@ -276,9 +324,17 @@ class MasterResults:
             for entry in row["source_evidence"]:
                 entry.pop("abstract_text",None)
                 raw = sources[entry["retrieval_id"]]["original_metadata"]
-                record = raw.get("record")
-                entry["abstract"] = _abstract(record) if isinstance(record,dict) else ""
+                record = raw.get("record") if isinstance(raw.get("record"),dict) else {}
+                entry["abstract"] = _abstract(record)
+                entry["abstract_status"] = "present" if entry["abstract"] else (
+                    record.get("abstract_status") or raw.get("abstract_status") or "not supplied in retained record")
+                fields = project_source(sources[entry["retrieval_id"]])["fields"]
+                entry["field_evidence"] = fields
+                entry["identifiers"] = record.get("identifiers") or record.get("source_identifiers") or {}
+                entry["links"] = _record_links(record,entry["source"],entry["source_record_id"],fields)
                 entry["rights"] = raw.get("rights_status") or "review redistribution permissions"
+                entry["retrieved_at_utc"] = sources[entry["retrieval_id"]]["retrieved_at_utc"]
+                entry["original_record"] = record
                 if entry["source"] in ("conference_jats","conference_pdf","society"):
                     entry["specialist_record"] = record
                 if raw.get("container_id"):
@@ -286,6 +342,9 @@ class MasterResults:
                                            (raw["container_id"],)).fetchone()
                     if container:
                         entry["container"] = identity._object(container[0])
+            row["conflicting_fields"] = [k for k in ("title","doi","year","journal","authors","pages")
+                if len({s["field_evidence"][k]["normalised"] for s in row["source_evidence"]
+                        if s["field_evidence"][k]["status"]=="present"})>1]
         from research_y.project_documents import list_attachments
         row["attachments"] = list_attachments(project,pid)
         return row
