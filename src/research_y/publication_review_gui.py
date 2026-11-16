@@ -49,6 +49,10 @@ def _pair(db, run_id, left, right, *, cross_run=False):
     return snapshot
 
 
+def _review_revision(snapshot, plans):
+    return identity._hash([snapshot.revision, plans]) if plans else snapshot.revision
+
+
 def _move_previews(db,snapshot):
     if snapshot.publication_ids[0]==snapshot.publication_ids[1]:
         return {},snapshot.revision
@@ -58,7 +62,7 @@ def _move_previews(db,snapshot):
         plan=identity_disposition.describe(db,pubs[i],pubs[1-i],rid)
         if plan:
             plans[rid]=identity_disposition.summary(plan)
-    return plans,identity._hash([snapshot.revision,plans]) if plans else snapshot.revision
+    return plans, _review_revision(snapshot, plans)
 
 
 def _safe_pair(snapshot, project, run_id, run_revision):
@@ -163,7 +167,8 @@ def record_candidate_review(project, run_id, left, right, *, run_revision,
             raise PublicationReviewError("publication_review_unavailable")
         return dict(
             method=METHOD, project_id=str(project.identifier), run_id=run_id,
-            decision=decision, resulting_candidate_revision=decided.revision,
+            decision=decision, resulting_candidate_revision=_review_revision(
+                decided, plans if decision == "rejected_match" else {}),
             # A returned worker outcome still needs a new authoritative preview.
             requires_reinspection=True, no_network_requests=True,
             global_unique_publications=None, deduplication_complete=False,
