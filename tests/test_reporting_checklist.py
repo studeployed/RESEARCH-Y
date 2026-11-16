@@ -10,21 +10,30 @@ from research_y.preflight_review import PRESS_ITEMS,read_preflight,record_prefli
 from test_preflight_review import _project,_submission
 
 
-@pytest.mark.parametrize("legacy_parameters", [False, True])
-def test_limits_and_connector_fields_are_reported_for_the_captured_plan(tmp_path, legacy_parameters):
+@pytest.mark.parametrize("plan", ["approved", "legacy_parameters", "title_only"])
+def test_limits_and_connector_fields_are_reported_for_the_captured_plan(tmp_path, plan):
     project, run = _project(tmp_path)
-    if legacy_parameters:
-        with closing(sqlite3.connect(project.database_path)) as db, db:
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        if plan == "legacy_parameters":
             db.execute("UPDATE source_queries SET parameters_json=? WHERE run_id=?", ('{"retmax":20}',run))
+        if plan == "title_only":
+            for source, query in (("pubmed", '"ECMO"[Title]'), ("wos", 'TI=("ECMO")')):
+                db.execute("UPDATE source_queries SET exact_query=? WHERE run_id=? AND source_name=?",
+                           (query,run,source))
     path = tmp_path / "Coverage.xlsx"
     with closing(MasterResults.capture(project,run)) as master:
         export_results(project,master,path,DEFAULT,scope="entire")
     with closing(load_workbook(path,read_only=True)) as book:
         rows = {r[1]:r[2:] for r in book["Reporting Checklist"].values if r[0]=="PRISMA-S"}
-        assert "Not web-interface All Fields" in rows["Connector fields / wos"][1]
-        assert "not article full text" in rows["Connector fields / pubmed"][1]
-        assert rows["Search limits"][0] == ("awaiting verification" if legacy_parameters else "recorded")
-        assert ("no language" in rows["Search limits"][1]) == (not legacy_parameters)
+        for source in ("pubmed", "wos"):
+            status, observation = rows["Connector fields / "+source]
+            assert status == ("recorded" if plan=="approved" else "awaiting verification")
+            assert ("All Fields" in observation) == (plan=="approved")
+        assert rows["Search limits"][0] == ("recorded" if plan=="approved" else "awaiting verification")
+        assert ("no language" in rows["Search limits"][1]) == (plan=="approved")
+        if plan=="title_only":
+            exact = {row[3] for row in list(book["Executed Queries"].values)[1:]}
+            assert exact == {'"ECMO"[Title]', 'TI=("ECMO")'}
         assert dict(list(book["Methods"].values)[1:])["Research theme"]
 
 

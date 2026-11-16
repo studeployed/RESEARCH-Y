@@ -184,13 +184,16 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     append(checklist,("PRISMA-S","Information sources","recorded",dict(database_queries=sorted(query_sources),
                      additional_retained_sources=sorted(retained_sources-query_sources))))
     status,reviews=press
+    plan_verified = status == "verified"
     for source in sorted(query_sources.intersection(SOURCE_COVERAGE)):
-        append(checklist,("PRISMA-S","Connector fields / "+source,"recorded",SOURCE_COVERAGE[source]))
-    limits_verified = status == "verified"
+        append(checklist,("PRISMA-S","Connector fields / "+source,
+                          "recorded" if plan_verified else "awaiting verification",
+                          SOURCE_COVERAGE[source] if plan_verified else
+                          "Inspect the source fields in Executed Queries. The stored plan differs from the current compiler output."))
     append(checklist,("PRISMA-S","Search limits",
-                      "recorded" if limits_verified else "awaiting verification",
+                      "recorded" if plan_verified else "awaiting verification",
                       "The approved query plan has no language, species, study-type or date restrictions."
-                      if limits_verified else "Check each stored query and its parameters before reporting limits."))
+                      if plan_verified else "Check each stored query and its parameters before reporting limits."))
     for q in data["queries"]:
         append(checklist,("PRISMA-S","Query "+q["query_id"],"recorded" if q["executed_at_utc"] else "awaiting verification",
                           dict(source=q["source_name"],strategy=q["exact_query"],timestamp=q["executed_at_utc"],
