@@ -83,6 +83,8 @@ def _methods(data, report):
         ("Scope", "Whole named run; no view filters applied; strategy/count report only"),
         ("Snapshot SHA-256", report.sha256), ("Count projection revision", data["counts"]["revision"]),
         ("Research theme", data["strategy"]["snapshot"]["theme"]),
+        *([("Research objectives", data["strategy"]["snapshot"]["objectives"])]
+          if data["strategy"]["snapshot"].get("objectives") else []),
         ("Boolean logic", "OR within and across approved groups"),
         ("Reported matches", "Source-reported total; Unknown is not zero. Multiple query totals are not added as a union."),
         ("Retrieved source records", "Unique provider identifiers; not a count of saved metadata or deduplicated publications."),

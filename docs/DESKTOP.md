@@ -27,6 +27,11 @@ services cannot coordinate SQLite writes between machines.
 
 ## Term variant review
 
+In **Research Setup**, enter the theme and any research objectives, then choose
+**Save research heading**. The heading reappears when the project is reopened.
+Approving the strategy freezes the objectives for that version. Objectives
+describe the purpose of the search and do not add terms to source queries.
+
 ### Optional Windows local assistant
 
 The approved local package contains Qwen3-1.7B Q8_0 (1,834,426,016 bytes)
