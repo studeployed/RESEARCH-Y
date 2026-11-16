@@ -84,11 +84,7 @@ def render_settings(ui,flow):
             result.set_text(message)
         ui.button("Test PubMed connection",on_click=check).set_enabled(state["pubmed_profile_configured"])
         ui.label("To verify Web of Science access and current quota, select a saved run and use its Starter pilot.")
-        for key in ("last_pubmed_pilot","last_wos_pilot"):
-            last=state.get(key) or {}
-            if last.get("error_code"):
-                provider="PubMed" if key=="last_pubmed_pilot" else "Web of Science"
-                ui.label(provider+" · "+source_error_help(last["error_code"]))
+        ui.label("If Starter refuses access, check the institutional key and Starter entitlement. If a quota is exhausted, check its recorded reset before resuming.")
 
 
 def source_error_help(code):

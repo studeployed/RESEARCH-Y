@@ -1559,6 +1559,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                           'data-testid=pubmed-pilot-offer')
             prior = state['last_pubmed_pilot']
             if prior is not None:
+                if prior.get("error_code"):
+                    from research_y.desktop.settings import source_error_help
+                    ui.label(source_error_help(prior["error_code"]))
                 ui.label('Last audited pilot attempt: ' +
                          prior['status']).props(
                              'data-testid=pubmed-pilot-status')
@@ -1667,6 +1670,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                           'data-testid=wos-pilot-revalidation-offer')
             prior = state['last_wos_pilot']
             if prior is not None:
+                if prior.get("error_code"):
+                    from research_y.desktop.settings import source_error_help
+                    ui.label(source_error_help(prior["error_code"]))
                 ui.label('Last audited Starter pilot: ' +
                          prior['status']).props(
                              'data-testid=wos-pilot-status')

@@ -136,3 +136,32 @@ def test_connection_test_sanitizes_rejection_and_honours_persisted_project_pause
         assert "secret-value" not in str(list(db.execute("SELECT details_json FROM audit_events")))
     assert "entitlement" in settings.source_error_help("authentication_or_entitlement_denied")
     assert "retry deadline" in settings.source_error_help("quota_or_rate_limited")
+
+
+def test_pubmed_test_and_source_workers_cannot_overlap(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    entered,release=Event(),Event()
+    def held(project):
+        entered.set()
+        assert release.wait(timeout=5)
+        return "complete"
+    profile=settings.PubMedHostProfile("user@example.invalid")
+    with closing(RealProjectFlow(pubmed_profile=profile)) as flow, ThreadPoolExecutor(1) as worker:
+        flow.create_native_parent(tmp_path,"Connection scheduling")
+        flow._pubmed_connection_test=SimpleNamespace(check=held)
+        for attr,value in (("_pending_pilot",{}),("_pubmed_source_pending",{}),("_pubmed_metadata_pending",{}),
+                           ("_coord_pending",{"tasks":[{"source_name":"pubmed"}]})):
+            setattr(flow,attr,value)
+            assert "active PubMed session" in flow.test_pubmed_connection()
+            setattr(flow,attr,None)
+        future=worker.submit(flow.test_pubmed_connection)
+        assert entered.wait(timeout=5)
+        try:
+            assert "already running" in flow.test_pubmed_connection()
+            for start in (flow.confirm_pubmed_pilot,flow.confirm_pubmed_source,flow.confirm_pubmed_metadata):
+                with pytest.raises(ProjectFlowError,match="connection test"):
+                    start()
+        finally:
+            release.set()
+        assert future.result(timeout=5)=="complete"
