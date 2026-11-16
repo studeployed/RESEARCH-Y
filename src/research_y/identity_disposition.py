@@ -27,8 +27,8 @@ def describe(db,origin,target,rid,*,reverse=None):
         raise identity.PublicationIntegrityError("Specialist source has lost its publication links")
     keep_roles,keep_containers=set(),set()
     old=(reverse or {}).get("disposition") or {}
-    keep_roles.update(tuple(pair) for pair in old.get("existing_target_roles",[]))
-    keep_containers.update(old.get("existing_target_containers",[]))
+    keep_roles.update(tuple(pair) for pair in old.get("independent_target_roles",[]))
+    keep_containers.update(old.get("independent_target_containers",[]))
     for s in origin.retrievals:
         if s["retrieval_id"]!=rid:
             rs,cs=_specialist(s)
@@ -45,13 +45,21 @@ def describe(db,origin,target,rid,*,reverse=None):
                                 (target.publication_id,)))
     target_containers={r[0] for r in db.execute("SELECT container_id FROM publication_containers WHERE publication_id=?",
                                                 (target.publication_id,))}
+    # A shared source-backed link must follow its current supporting originals.
+    # Only links independently present before association survive without one.
+    independent_roles = target_roles & moved_roles
+    independent_containers = target_containers & moved_containers
+    for other_source in target.retrievals:
+        supported_roles, supported_containers = _specialist(other_source)
+        independent_roles.difference_update(supported_roles)
+        independent_containers.difference_update(supported_containers)
     state=dict(origin=pid,target=target.publication_id,retrieval_id=rid,sole_source=len(origin.retrievals)==1,
                classification_ids=[r[0] for r in reviews],document_ids=[r[0] for r in docs],
                clear_fields=fields,apply_fields={k:v for k,v in proposals.items() if k not in target.chosen_fields},
                skipped_fields={k:v for k,v in proposals.items() if k in target.chosen_fields},
                add_roles=sorted(moved_roles),remove_roles=sorted(moved_roles-keep_roles),
-               existing_target_roles=sorted(target_roles&moved_roles),
-               existing_target_containers=sorted(target_containers&moved_containers),
+               independent_target_roles=sorted(independent_roles),
+               independent_target_containers=sorted(independent_containers),
                add_containers=sorted(moved_containers),remove_containers=sorted(moved_containers-keep_containers),
                retained_roles=sorted(roles-(moved_roles-keep_roles)),
                retained_containers=sorted(containers-(moved_containers-keep_containers)))
