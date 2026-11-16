@@ -113,6 +113,21 @@ def test_master_wos_abstract_lookup_source_link_and_citation_choice(tmp_path,mon
         assert source["identifiers"]["articleNumber"]=="e017" and "Source bad" not in source["links"]
         assert source["original_record"]["identifiers"]["articleNumber"]=="e017" and source["retrieved_at_utc"]
         assert flow.master_source_url(**selection,retrieval_id=rid,link="Source record")=="https://example.test/work"
+        from unittest.mock import MagicMock
+        from research_y.desktop.master_panel import render_master
+        ui=MagicMock()
+        ui.input.return_value.value="My WoS view"
+        clicked={}
+        def button(label,*,on_click):
+            clicked[label]=on_click
+            return MagicMock()
+        ui.button.side_effect=button
+        def act(action,data):
+            assert action=="master_results"
+            return flow.master_action(data["operation"],data["data"])
+        render_master(ui,flow.state(),act,native=True)
+        assert "My WoS view" in clicked["Save current view"]()["master_results"]["saved"]
+        flow.master_action("detail",selection)
         looked = flow.master_action("lookup",dict(**selection,contact="reviewer@example.test",actor="Reviewer",
             confirmed=True))["master_results"]["detail"]
         assert looked["enrichment"]["current"]["fields"]["abstract"]=="Abstract from Crossref"

@@ -54,8 +54,8 @@ def render_master(ui,state,act,*,native):
                       facets={k:v.value for k,v in filters.items() if v.value},sort=sort.value,
                       descending=reverse.value,columns=columns.value,hide_non_english=languages.value,
                       hide_non_human_only=population.value)))
-            name = ui.input("Save applied view as")
-            ui.button("Save current view",on_click=lambda:send("save",name=name.value))
+            view_name = ui.input("Save applied view as")
+            ui.button("Save current view",on_click=lambda:send("save",name=view_name.value))
             if view["saved"]:
                 saved = ui.select(list(view["saved"]),label="Saved view")
                 ui.button("Load saved view",on_click=lambda:send("load",name=saved.value))
@@ -144,12 +144,12 @@ def render_master(ui,state,act,*,native):
                 for item in detail["source_evidence"]:
                     ui.label(item["source"]+" · "+item["source_record_id"])
                     ui.label(item["abstract"] or "Abstract · "+item["abstract_status"])
-                    for name,url in item["links"].items():
+                    for link_label,url in item["links"].items():
                         if native:
-                            ui.button("Open "+name,on_click=lambda n=name,r=item["retrieval_id"]:act("native_master_link",
+                            ui.button("Open "+link_label,on_click=lambda n=link_label,r=item["retrieval_id"]:act("native_master_link",
                                 dict(**selected,revision=view["revision"],retrieval_id=r,link=n)))
                         else:
-                            ui.link(name,url,new_tab=True)
+                            ui.link(link_label,url,new_tab=True)
                     ui.label("Reuse status · "+item["rights"])
                     ui.label("Groups · "+(", ".join(item["groups"].values()) or "No query membership"))
                     with ui.expansion("Original citation and provenance"):
