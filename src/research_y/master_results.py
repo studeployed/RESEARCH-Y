@@ -317,6 +317,8 @@ class MasterResults:
             row["enrichment"] = inspect_stored_enrichment(db,pid)
             row["publication_revision"] = snapshot.revision
             row["chosen_fields"] = snapshot.chosen_fields
+            from research_y.identity_disposition import historical_annotations
+            row["prior_identity_evidence"] = historical_annotations(db,snapshot)
             sources = {s["retrieval_id"]:s for s in snapshot.retrievals if s["run_id"]==self.run}
             if {s["retrieval_id"]:s["sha256"] for s in row["source_evidence"]} != {
                     rid:s["source_sha256"] for rid,s in sources.items()}:

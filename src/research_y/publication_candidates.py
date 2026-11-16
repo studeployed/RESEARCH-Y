@@ -277,7 +277,7 @@ def decide_candidate(project: Project, left_retrieval_id: str, right_retrieval_i
                      expected_revision: str, decision: str, actor: str, evidence: str,
                      acknowledged_warnings: tuple[str, ...], decision_confirmed: bool,
                      move_retrieval_id: str | None = None,
-                     cross_run_context: tuple[str, str] | None = None) -> CandidateSnapshot:
+                     cross_run_context: tuple[str, str] | None = None, disposition_sha256=None) -> CandidateSnapshot:
     """Append an explicit decision; confirmation atomically associates ONE record.
 
     Rejection never splits an existing identity; reverse it first. Researcher
@@ -304,6 +304,8 @@ def decide_candidate(project: Project, left_retrieval_id: str, right_retrieval_i
                               move_retrieval_id, RULE_VERSION])
     if cross_run_context is not None:
         request = identity._hash([request, cross_run_context])
+    if disposition_sha256 is not None:
+        request = identity._hash([request,disposition_sha256])
     with _validated_project_connection(project) as db:
         db.execute("BEGIN IMMEDIATE")
         current, state = _view(db, pair)
@@ -335,6 +337,7 @@ def decide_candidate(project: Project, left_retrieval_id: str, right_retrieval_i
                 expected_source_revision=current.publication_revisions[moving],
                 expected_target_revision=current.publication_revisions[other],
                 actor=actor, evidence=evidence, same_publication_confirmed=True,
+                disposition_sha256=disposition_sha256,
             )
             after = identity._link(db, move_retrieval_id)
             if after[1] != before[1]:
