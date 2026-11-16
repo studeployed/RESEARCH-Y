@@ -72,6 +72,18 @@ def make_client(transport):
     )
 
 
+def test_electronic_identifier_and_print_pages_retain_distinct_source_meanings():
+    from research_y.master_results import _record_links
+    data = response("111").replace(b"<MedlinePgn>",b"<StartPage>5</StartPage><EndPage>11</EndPage><MedlinePgn>")
+    data = data.replace(b"</Article>",b'<ELocationID EIdType="pii">e017</ELocationID></Article>')
+    record, = parse_efetch_xml(data,("111",),retrieved_at_utc=UTC).records
+    assert record.journal["start_page"]=="5" and record.journal["end_page"]=="11"
+    assert record.identifiers["pii"]==("e017",)
+    retained=json.loads(json.dumps(record.source_dict()))
+    links=_record_links(retained,"pubmed","111",{"doi":{"status":"missing"}})
+    assert links["PMC12345"]=="https://pmc.ncbi.nlm.nih.gov/articles/PMC12345/"
+
+
 def test_pubmed_xml_metadata_and_multisection_abstract_are_preserved():
     batch = parse_efetch_xml(response("111"), ("111",), retrieved_at_utc=UTC)
     r = batch.records[0]

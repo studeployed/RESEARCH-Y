@@ -6,7 +6,18 @@
 product requirements that remained partial after Phase 3. The Windows launcher
 accepts the project index as well as its folder. The project storage evidence
 for PROJ-01 through PROJ-06 is in the [requirement register](docs/requirements-traceability.csv).
-PROJ-07 still needs a project-wide display of the latest successful source checkpoint.
+The launcher now shows the most recent successful source checkpoint across the
+project. The selected run shows source and group counts, society coverage,
+supplementary imports and the global total supported by a current acceptance receipt.
+The master workbook includes those denominators even for a filtered export.
+Record detail retains original and researcher-chosen citations separately and can
+request a DOI lookup for a missing abstract. The export dialog lets researchers
+choose which sources permit sharing abstract text. Each RIS bibliography has an
+accompanying JSON scope receipt, including an empty selection.
+
+The Windows workflow rehearses both a clean install and an upgrade of a project
+written by the Phase 3 build. Issue #163 remains open for the outstanding product
+requirements and verification of the installer built from the final merged commit.
 
 ## Phase 3 delivery
 

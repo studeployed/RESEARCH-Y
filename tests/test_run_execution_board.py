@@ -119,7 +119,7 @@ class Clock:
         self.seconds+=seconds
 
 
-def _wos(project, qid, exact, *, count=1, clock=None, title="PRIVATE WOS TITLE"):
+def _wos(project, qid, exact, *, count=1, clock=None, title="PRIVATE WOS TITLE", extra_fields=None):
     create_wos_checkpoint(project, qid, retention_authorized=True)
     clock = clock or Clock()
     calls=[]
@@ -133,7 +133,7 @@ def _wos(project, qid, exact, *, count=1, clock=None, title="PRIVATE WOS TITLE")
         page=int(fields["page"][0]); size=int(fields["limit"][0])
         calls.append((page,size))
         clock.sleep(2)
-        hits=[dict(uid=f"WOS:{i+1:09d}",title=title)
+        hits=[dict(uid=f"WOS:{i+1:09d}",title=title,**(extra_fields or {}))
               for i in range((page-1)*size,min(page*size,count))]
         body=json.dumps(dict(metadata=dict(total=count,page=page,limit=size),
                              hits=hits)).encode()

@@ -52,14 +52,15 @@ def _method_rows(data,context):
         ("Comparison decision","Researcher decision for a particular pair, with timestamp, rationale and warnings."),
         ("Confidence rule","A recorded suggestion based on a prior confirmed pair. The Status column records the researcher's decision. Blank when no suggestion was recorded."),
         ("Prior confirmation event","Project audit event that supports the confidence suggestion, including when the researcher rejects it."),
-        ("Abstract rights","Text inclusion follows the export's explicit permission choice."),
+        ("Abstract rights","Text inclusion follows the permissions selected for each source. Document access and text reuse depend on source terms."),
+        ("Source-specific citation values","Master citation columns identify the originating retrieval when source values differ. Empty cells indicate unavailable data."),
         ("Continued Text","Concatenate parts in numeric order for the listed worksheet, logical row and column."),
         ("Methods scope","Reporting evidence is limited to the selected run and the stored search activities."),
         ("Search update method",data["run"].get("update_method") or "No update method recorded for this run."),
     ]
 
 
-def _ris(out, rows, context, include_abstracts):
+def _ris(out, rows, context, include_abstracts, abstract_sources=None):
     count = 0
     for row in rows:
         tags = [("TY","CONF" if "conference abstract" in row["format"] else
@@ -80,9 +81,12 @@ def _ris(out, rows, context, include_abstracts):
             if names and names not in author_sets:
                 author_sets.append(names)
             tags.append(("AN",source["source_record_id"]))
+            for url in dict.fromkeys(source.get("source_links",{}).values()):
+                tags.append(("UR",url))
         if len(author_sets)==1:
             tags.extend(("AU",author) for author in author_sets[0])
-        texts = {s["abstract_text"] for s in row["source_evidence"] if s["abstract_text"]}
+        texts = {s["abstract_text"] for s in row["source_evidence"] if s["abstract_text"] and
+                 (abstract_sources is None or s["source"] in abstract_sources)}
         if include_abstracts and len(texts)==1:
             tags.append(("AB",next(iter(texts))))
         tags += [("KW",v) for v in row["design"] if v!="unclear"]
@@ -95,6 +99,14 @@ def _ris(out, rows, context, include_abstracts):
         out.write("ER  - \r\n\r\n")
         count += 1
     return count
+
+
+def _citation_values(originals, extract):
+    values = {item["retrieval_id"]:value for item in originals if (value := extract(item))}
+    if not values:
+        return None
+    first = next(iter(values.values()))
+    return first if all(value==first for value in values.values()) else values
 
 
 class _Sheets:
@@ -132,10 +144,12 @@ class _Sheets:
         if self.written >= self.limit:
             self.new()
         cells = []
-        for value in values:
+        from research_y.conference_jats import _link
+        for index,value in enumerate(values):
             cell = WriteOnlyCell(self.ws)
             strategy_workbook._literal(cell,value)
-            if isinstance(value,str) and value.startswith("https://doi.org/") and len(value)<=2048:
+            if (self.headers[index] in {"DOI link","PDF page link","Individual abstract URL","Official landing URL","Document URL"}
+                    and isinstance(value,str) and len(value)<=2048 and _link(value)):
                 cell.hyperlink = value
                 cell.style = "Hyperlink"
             cells.append(cell)
@@ -169,6 +183,22 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     for key,value in context.items():
         append(scope,(key,value))
     data = report.as_dict()
+    from research_y.results_summary import results_summary
+    summary = results_summary(data["counts"],context.get("verified_scope"),data.get("society_coverage"))
+    totals = sheet("All-source Summary",("Scope","Group","Source","Denominator","Count or status"))
+    append(totals,("Run",None,None,"Status",summary["status"]))
+    for group in summary["groups"]:
+        for key in ("reported_matches","retrieved_identifiers","reported_status","reconciliation","metadata_missing",
+                    "stored_query_statuses","accepted_group_publications"):
+            append(totals,("Within group",group["group"],group["source"],key,group[key] if group[key] is not None else "Unverified"))
+    for src, number in summary["supplementary_retained_records"].items():
+        append(totals,("Supplementary records",None,src,"Retained records",number))
+    for key, value in (summary["society_coverage"] or {}).items():
+        append(totals,("Society coverage",None,"society",key,value if value is not None else "Not available"))
+    for src, number in summary["source_unique_records"].items():
+        append(totals,("Across groups",None,src,"Unique source records",number))
+    for key in ("extracted_individual_abstracts","group_publication_sum","global_unique_publications","limitations"):
+        append(totals,("Run",None,None,key,summary[key] if summary[key] is not None else "Unverified"))
     for name,headers,values in strategy_workbook._tables(data,report):
         if name=="Report Snapshot":
             continue
@@ -215,12 +245,14 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     peer="reported by researcher" if any(r["reviewer_role"]=="independent_peer_reported" for r in reviews) else "awaiting verification"
     append(checklist,("PRESS","Independent peer review",peer,"The project records the researcher's account of peer review."))
     master = sheet("Master Results",("Publication ID","Title","Year","Journal","DOI","DOI link","Sources","Groups",
-                      "Original research","Design","Format","Language","Population","Review status","Warnings"))
+                      "Original research","Design","Format","Language","Population","Review status","Warnings",
+                      "Authors","Volume","Issue","Pages","Source identifiers","Source links","Permitted abstract text"))
     sources = sheet("Source Records",("Publication ID","Retrieval ID","Provider","Source record","Citation fields",
-                                      "Original SHA-256","Groups","Abstract text"))
+                                      "Original SHA-256","Groups","Source links","Rights status","Abstract text"))
     conf = sheet("Conference Abstracts",("Publication ID","Retrieval ID","Locator","Printed page","PDF page",
-                                         "PDF page link","Individual fields","Containing supplement"))
-    society = sheet("Society Guidelines",("Publication ID","Retrieval ID","Official landing URL","Society roles","Guidance fields"))
+                                         "PDF page link","Individual fields","Containing supplement","Individual abstract URL","Permitted abstract text"))
+    society = sheet("Society Guidelines",("Publication ID","Retrieval ID","Official landing URL","Society roles","Guidance fields",
+                                          "Document URL"))
     audit = sheet("Deduplication Audit",("Evidence type","Publication ID","First retrieval","Second retrieval","Audit event",
                                          "Status","Researcher","Rationale","UTC","Acknowledged warnings",
                                          "Confidence rule","Prior confirmation event"))
@@ -232,21 +264,35 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     count = 0
     for row in rows:
         pid,doi = row["publication_id"],row["doi"]
+        originals = row["source_evidence"]
+        allowed = context.get("abstract_sources")
+        def export_text(source):
+            if include_abstracts and (allowed is None or source["source"] in allowed):
+                return source["abstract_text"]
+            return None
         append(master,(pid,row["title"],row["year"],row["journal"],doi,
             "https://doi.org/"+quote(doi,safe="/") if isinstance(doi,str) else None,row["sources"],row["groups"],
-            row["original_research"],row["design"],row["format"],row["language"],row["population"],row["review_status"],row["warnings"]))
+            row["original_research"],row["design"],row["format"],row["language"],row["population"],row["review_status"],row["warnings"],
+            _citation_values(originals,lambda s:s["fields"].get("authors") or s.get("specialist",{}).get("authors")),
+            _citation_values(originals,lambda s:s["citation_details"].get("volume")),
+            _citation_values(originals,lambda s:s["citation_details"].get("issue")),
+            _citation_values(originals,lambda s:s["fields"].get("pages")),
+            _citation_values(originals,lambda s:dict(provider=s["source"],record=s["source_record_id"],identifiers=s["identifiers"])),
+            _citation_values(originals,lambda s:s["source_links"]),_citation_values(originals,export_text)))
         for s in row["source_evidence"]:
             rid = s["retrieval_id"]
             append(sources,(pid,rid,s["source"],s["source_record_id"],s["fields"],s["sha256"],s["groups"],
-                           s["abstract_text"] if include_abstracts else "Omitted by export choice"))
+                           s.get("source_links",{}),s.get("rights_status"),
+                           export_text(s) if include_abstracts and (allowed is None or s["source"] in allowed)
+                           else "Omitted by export choice"))
             included_sources.add(rid)
             append(audit,("Source association",pid,rid,None,s["decision_event"],s["decision_status"],None,None,None,None))
             special = s.get("specialist",{})
             if s["source"] in ("conference_pdf","conference_jats"):
                 append(conf,(pid,rid,special.get("locator"),special.get("printed_first_page"),special.get("pdf_page"),
-                             special.get("pdf_page_url"),special,s.get("container")))
+                             special.get("pdf_page_url"),special,s.get("container"),special.get("individual_url"),export_text(s)))
             if s["source"]=="society":
-                append(society,(pid,rid,special.get("landing_url"),s["society_roles"],special))
+                append(society,(pid,rid,special.get("landing_url"),s["society_roles"],special,special.get("document_url")))
         count+=1
     for event in comparisons:
         if included_sources.intersection(event["pair"]):
@@ -261,13 +307,19 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
     return count
 
 
-def export_results(project, results, destination, spec, *, scope, include_abstracts=False, row_limit=1_048_576):
+def export_results(project, results, destination, spec, *, scope, include_abstracts=False, row_limit=1_048_576,
+                   abstract_sources=None):
     path = Path(destination)
     filename(path.name)
     if (path.suffix.lower() not in {".ris",".xlsx"} or type(include_abstracts) is not bool
             or type(row_limit) is not int or not 3<=row_limit<=1_048_576 or str(project.identifier)!=results.project_id):
         raise ValueError("Invalid master export settings")
     spec = specification(**spec)
+    if abstract_sources is not None:
+        if (not isinstance(abstract_sources,(list,tuple)) or
+                any(not isinstance(s,str) or s not in results.options().get("source",[]) for s in abstract_sources)):
+            raise ValueError("Select abstract sources from the current master results")
+        abstract_sources = sorted(set(abstract_sources)) if include_abstracts else []
     with _read(project) as db:
         if evidence_head(db)!=results.audit_head:
             raise ValueError("Project changed. Refresh master results before exporting.")
@@ -283,15 +335,15 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
                    verified_scope=acceptance["receipt"] if acceptance else None,
                    snapshot_time=results.captured_at,snapshot_revision=results.revision,
                    entire_publication_identities=results.total,view=spec if scope=="filtered" else None,
-                   include_abstracts=include_abstracts)
+                   include_abstracts=include_abstracts,abstract_sources=abstract_sources)
     with Directory(path.parent) as target, tempfile.TemporaryDirectory(dir=path.parent,prefix=".researchy-report-") as temp:
-        if path.exists():
+        if target.exists(path.name):
             raise FileExistsError(path)
         stage = Path(temp)/path.name
         rows = results.records(spec,scope)
         if path.suffix.lower()==".ris":
             with stage.open("x",encoding="utf-8",newline="") as out:
-                count = _ris(out,rows,identity._json(context),include_abstracts)
+                count = _ris(out,rows,identity._json(context),include_abstracts,abstract_sources)
         else:
             count = _workbook(stage,results,rows,report,context,include_abstracts,row_limit,comparisons,press)
         digest = sha256()
@@ -299,6 +351,26 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
             for chunk in iter(lambda:out.read(1024*1024),b""):
                 digest.update(chunk)
             os.fsync(out.fileno())
+        receipt = dict(filename=path.name,sha256=digest.hexdigest(),rows=count,scope=scope,revision=results.revision)
+        if path.suffix.lower()==".ris":
+            # RIS has no file-level header. A companion receipt describes even a zero-record selection.
+            name = path.name+".json" if len(path.name)<=135 else "RIS-"+sha256(path.name.encode()).hexdigest()+".json"
+            receipt["scope_filename"] = name
+            payload = (json.dumps(dict(**receipt,context=context),ensure_ascii=False,indent=2)+"\n").encode()
+            companion = Path(temp)/name
+            with companion.open("xb") as out:
+                out.write(payload)
+                out.flush()
+                os.fsync(out.fileno())
+            try:
+                os.link(companion,path.parent/name)
+            except FileExistsError:
+                # Recover a fully written receipt from an interrupted identical publication.
+                try:
+                    target.read(name,digest=sha256(payload).hexdigest(),size=len(payload))
+                except (ValueError,OSError):
+                    raise FileExistsError(path.parent/name) from None
+            target.sync()
         os.link(stage,path)
         target.sync()
-    return dict(filename=path.name,sha256=digest.hexdigest(),rows=count,scope=scope,revision=results.revision)
+    return receipt

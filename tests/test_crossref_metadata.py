@@ -46,7 +46,8 @@ def test_positive_work_response_retains_original_record_and_primary_counts(store
     assert receipt["rights_review_required"] and receipt["outcome"] == "metadata_available"
     reopened = open_project(p.root)
     assert record_work_response(reopened,pub,**args) == receipt
-    assert inspect_enrichment(reopened,pub) == dict(target=target,current=receipt,prior_receipts=[receipt["event_id"]])
+    assert inspect_enrichment(reopened,pub) == dict(target=target,current=receipt,prior_receipts=[receipt["event_id"]],
+                                                    lookup_status="metadata_available")
     assert protected_rows(p) == originals and db_rows(p,"publications") == publications
 
 
@@ -67,6 +68,7 @@ def test_missing_and_unavailable_are_explicit_gaps_without_new_search_results(st
     view = inspect_enrichment(p,pub)
     receipt = record_work_response(p,pub,**fixture(view["target"],status=status,data={"private":"error body"}))
     assert receipt["outcome"] == outcome and receipt["fields"] == {} and "title" in receipt["gaps"]
+    assert inspect_enrichment(open_project(p.root),pub)["lookup_status"]==outcome
     assert "error body" not in json.dumps(receipt) and protected_rows(p) == before
 
 
@@ -121,6 +123,7 @@ def test_interrupted_read_finishes_reservation_and_never_uses_partial_body(store
               transport=interrupted, now=lambda:datetime(2026,11,13,tzinfo=timezone.utc))
     result = enrich_publication(p,pub,**args)
     assert result == {"status":"unknown_request_outcome","requested":True}
+    assert inspect_enrichment(open_project(p.root),pub)["lookup_status"]=="request_outcome_unknown"
     assert inspect_enrichment(p,pub)["current"] is None
     assert enrich_publication(p,pub,**args)["status"] == "provider_hold"
     logs = db_rows(p,"audit_events")

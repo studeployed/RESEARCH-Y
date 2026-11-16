@@ -218,6 +218,7 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
         raise ReportIntegrityError("Report omitted a query")
     from research_y import __version__
     from research_y.run_comparison import latest_update_method
+    from research_y.results_summary import society_coverage
     data = dict(format_version=1, method=REPORT_METHOD, software_version=__version__,
                 captured_at_utc=captured_at, scope="whole_run_strategy_and_counts", status="incomplete",
                 project={"project_id": str(project.identifier), "name": project.name},
@@ -229,6 +230,7 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
                     "licensed_record_text_not_exported", "methodology_review_not_established",
                     "source_query_translation_details_not_in_this_workbook"}))
     update_method = latest_update_method(db,run_id)
+    data["society_coverage"] = society_coverage(db,run_id)
     if update_method:
         data["run"]["update_method"] = update_method
     if reviewed_revision is not None:

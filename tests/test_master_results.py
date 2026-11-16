@@ -1,4 +1,6 @@
 from contextlib import closing
+import json
+import sqlite3
 
 from research_y import master_results
 from research_y import master_exports, study_classification
@@ -81,3 +83,41 @@ def test_desktop_merged_publication_has_both_originals_and_full_local_abstract(t
         assert len(detail["source_evidence"])==2
         assert any(s["abstract"]=="PRIVATE ABSTRACT" for s in detail["source_evidence"])
         assert all(s["sha256"] for s in detail["source_evidence"])
+
+
+def test_master_wos_abstract_lookup_source_link_and_citation_choice(tmp_path,monkeypatch):
+    from research_y import crossref_client, publication_identity
+    from test_run_execution_board import _project,_wos
+    project,run,queries = _project(tmp_path)
+    qid,query = queries["g-ecmo","wos"]
+    doi = "10.1234/example"
+    _wos(project,qid,query,extra_fields={"identifiers":{"doi":doi,"articleNumber":"e017"},
+        "links":{"record":"https://example.test/work","bad":"file:///private"}})
+    with closing(sqlite3.connect(project.database_path)) as db:
+        rid, = db.execute("SELECT retrieval_id FROM source_retrievals").fetchone()
+    paper = publication_identity.materialise_retrieval(project,rid,actor="Reviewer")
+    original = crossref_client.enrich_publication
+    def simulated(*args,**kwargs):
+        response = {"status":"ok","message-type":"work","message":{"DOI":doi,"abstract":"Abstract from Crossref"}}
+        return original(*args,**kwargs,transport=lambda req:(200,{},json.dumps(response).encode()))
+    monkeypatch.setattr(crossref_client,"enrich_publication",simulated)
+    with closing(RealProjectFlow()) as flow:
+        flow.open_native_folder(project.root)
+        flow.select_run(run)
+        page = flow.master_action("capture",{})["master_results"]
+        selection = dict(id=paper.publication_id,revision=page["revision"])
+        detail = flow.master_action("detail",selection)["master_results"]["detail"]
+        selection["publication_revision"] = detail["publication_revision"]
+        source, = detail["source_evidence"]
+        assert detail["enrichment"]["lookup_status"]=="not_queried" and not source["abstract"]
+        assert source["identifiers"]["articleNumber"]=="e017" and "Source bad" not in source["links"]
+        assert source["original_record"]["identifiers"]["articleNumber"]=="e017" and source["retrieved_at_utc"]
+        assert flow.master_source_url(**selection,retrieval_id=rid,link="Source record")=="https://example.test/work"
+        looked = flow.master_action("lookup",dict(**selection,contact="reviewer@example.test",actor="Reviewer",
+            confirmed=True))["master_results"]["detail"]
+        assert looked["enrichment"]["current"]["fields"]["abstract"]=="Abstract from Crossref"
+        assert not looked["source_evidence"][0]["abstract"]
+        flow.master_action("choose_field",dict(**selection,retrieval_id=rid,field="title",actor="Reviewer",reason="Checked source"))
+        assert flow.state()["master_results"] is None
+    reopened = publication_identity.read_publication(open_project(project.root),paper.publication_id)
+    assert reopened.chosen_fields["title"]["provenance"]["retrieval_id"]==rid
