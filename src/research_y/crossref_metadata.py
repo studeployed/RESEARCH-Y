@@ -42,14 +42,29 @@ def _history(db, pub_id):
     return [dict(identity._event(db, i, EVENT), event_id=i) for (i,) in ids]
 
 
+def inspect_stored_enrichment(db, publication_id):
+    target = _target(db, publication_id)
+    history = _history(db, publication_id)
+    current = next((event for event in reversed(history) if event["revision"] == target["revision"]
+                    and event["doi"] == target["doi"]), None)
+    from research_y.crossref_client import RESERVED, FINISHED
+    latest = db.execute("SELECT event_id,event_type,json_extract(details_json,'$.http_status') FROM audit_events "
+        "WHERE event_type IN (?,?) AND json_extract(details_json,'$.publication_id')=? "
+        "AND json_extract(details_json,'$.doi')=? ORDER BY event_id DESC LIMIT 1",
+        (RESERVED,FINISHED,publication_id,target["doi"])).fetchone()
+    if latest and (not current or latest[0]>current["event_id"]):
+        status = "request_outcome_unknown" if latest[1]==RESERVED or latest[2] is None else "response_without_current_metadata"
+    elif current:
+        status = current["outcome"]
+    else:
+        status = "historical_evidence_only" if history else "not_queried"
+    return dict(target=target,current=current,prior_receipts=[e["event_id"] for e in history],lookup_status=status)
+
+
 def inspect_enrichment(project, publication_id):
     with _validated_project_connection(project) as db:
         db.execute("BEGIN")
-        target = _target(db, publication_id)
-        history = _history(db, publication_id)
-        current = next((event for event in reversed(history) if event["revision"] == target["revision"]
-                        and event["doi"] == target["doi"]), None)
-        return dict(target=target, current=current, prior_receipts=[e["event_id"] for e in history])
+        return inspect_stored_enrichment(db,publication_id)
 
 
 def record_work_response(project, publication_id, *, expected_revision, requested_doi, status_code, body,

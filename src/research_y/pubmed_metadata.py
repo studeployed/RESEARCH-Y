@@ -206,7 +206,8 @@ def _record(element: ET.Element) -> PubMedRecord:
         "volume": _path(issue, "Volume") if issue is not None else None,
         "issue": _path(issue, "Issue") if issue is not None else None,
         "pages": _path(article, "./Pagination/MedlinePgn"),
-        "article_identifier": _path(article, "./Pagination/StartPage"),
+        "start_page": _path(article, "./Pagination/StartPage"),
+        "end_page": _path(article, "./Pagination/EndPage"),
     }
     return PubMedRecord(
         pmid=pmid, title=_path(article, "ArticleTitle"),

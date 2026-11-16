@@ -125,8 +125,8 @@ def build_page(app, ui, flow, settings_warnings=()):
                         if parent is None:
                             return
                         await asyncio.to_thread(flow.export_native_archive,parent,**value)
-                    elif action == "native_society_site":
-                        url = flow.official_society_url(**value)
+                    elif action in ("native_society_site","native_master_link"):
+                        url = flow.official_society_url(**value) if action=="native_society_site" else flow.master_source_url(**value)
                         if not await asyncio.to_thread(webbrowser.open_new_tab, url):
                             raise ProjectFlowError("external_browser_unavailable")
                     elif action == "native_pdf":

@@ -412,11 +412,38 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
             render_master(ui,state,act,native=native)
-            with ui.expansion("Verify final run scope",value=bool(state.get("run_acceptance"))):
+            with ui.expansion("Results summary and final run verification",value=bool(state.get("run_acceptance"))):
                 ui.button("Check all source and identity evidence",on_click=lambda:act("run_acceptance"))
                 scope=state.get("run_acceptance")
                 if scope:
                     ui.label("Verification result · "+scope["status"])
+                    report = state.get("report")
+                    if report and scope.get("counts_revision") == report["counts"]["revision"]:
+                        from research_y.results_summary import results_summary
+                        summary = results_summary(report["counts"],scope["receipt"],report.get("society_coverage"))
+                        for row in summary["groups"]:
+                            reported = row["reported_matches"] if row["reported_matches"] is not None else "unknown"
+                            accepted = row["accepted_group_publications"]
+                            ui.label(f"{row['group']} · {row['source']} · reported {reported} · "
+                                     f"retrieved {row['retrieved_identifiers']} · {row['reconciliation']} · "
+                                     f"metadata missing {row['metadata_missing']} · {', '.join(row['stored_query_statuses']) or 'unplanned'} · "
+                                     f"unique within group {accepted if accepted is not None else 'unverified'}")
+                        ui.label("Supplementary records retained")
+                        for source, number in summary["supplementary_retained_records"].items():
+                            ui.label(f"{source} · {number}")
+                        coverage = summary["society_coverage"]
+                        if coverage:
+                            ui.label(f"{coverage['project_recorded_visits']} society visits recorded in this project · "
+                                     f"{coverage['visits_linked_to_this_run']} linked to this run · site hit total unavailable")
+                        for source, number in summary["source_unique_records"].items():
+                            ui.label(f"{source} · {number} unique source records across groups")
+                        ui.label(f"Extracted individual abstracts · {summary['extracted_individual_abstracts']}")
+                        for label, key in (("Sum of group publication counts","group_publication_sum"),
+                                           ("Global unique publications across all sources","global_unique_publications")):
+                            value = summary[key]
+                            ui.label(f"{label} · {value if value is not None else 'unverified'}")
+                    else:
+                        ui.label("Run evidence changed during inspection. Check the source and identity evidence again.")
                     for reason in scope["reasons"]:
                         ui.label(reason)
                     ui.label("Source warnings · "+str(scope["source_warnings"]))
