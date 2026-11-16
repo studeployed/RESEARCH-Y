@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "research-y"
-version = "0.1.1"
+version = "0.1.2"
 description = "Reproducible biomedical literature discovery"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -27,6 +27,9 @@ research-y = "research_y.desktop.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"research_y.desktop" = ["forms.css", "QUICK_START.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

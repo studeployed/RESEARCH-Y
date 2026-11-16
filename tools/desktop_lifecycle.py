@@ -92,6 +92,36 @@ def run_window(stage, workspace, folder, run_id):
                  "box.dispatchEvent(new Event('change',{bubbles:true}));return true})()")
         await asyncio.sleep(.25)
 
+    async def check_first_search_page():
+        await click('[data-testid=quick-start] .q-item')
+        guide = await js("document.querySelector('[data-testid=quick-start] .nicegui-markdown').innerText")
+        if 'Save research heading' not in guide or 'Confirm one PubMed count-only request' not in guide:
+            raise RuntimeError('first_search_guide_unavailable')
+        await click('[data-testid=quick-start] .q-item')
+        await fill('[data-testid=setup-theme] input, input[data-testid=setup-theme]', 'RV Failure')
+        for width in (520, 1200):
+            app.native.main_window.resize(width, 850)
+            await wait_for(lambda: js(f'window.innerWidth {"<" if width == 520 else ">"} 650'), 'window_resize')
+            await js("document.querySelector('[data-testid=setup-objectives] textarea, textarea[data-testid=setup-objectives]').focus(); true")
+            clipped = await js("""(() => {
+                const errors = [];
+                for (const id of ['setup-theme','setup-objectives','setup-approver','setup-group-input']) {
+                    const field = document.querySelector('[data-testid='+id+']').closest('.q-field');
+                    const label = field.querySelector('.q-field__label');
+                    const editor = field.querySelector('input, textarea');
+                    const range = document.createRange();
+                    range.selectNodeContents(label);
+                    const text = range.getBoundingClientRect(), box = label.getBoundingClientRect();
+                    if (text.left < box.left-1 || text.right > box.right+1 ||
+                        box.right > document.documentElement.clientWidth+1 || box.left < 0 ||
+                        text.bottom > editor.getBoundingClientRect().top+1) errors.push(id);
+                }
+                return errors;
+            })()""")
+            if clipped:
+                raise RuntimeError(f'clipped or overlapping field labels at width {width}: {clipped}')
+        print('Checked first-search guide and labelled fields at narrow and wide window sizes.', flush=True)
+
     async def observe():
         try:
             async def ready():
@@ -107,6 +137,7 @@ def run_window(stage, workspace, folder, run_id):
                 await fill('[data-testid=desktop-name] input, input[data-testid=desktop-name]', 'Created in desktop')
                 await click('[data-testid=desktop-create]')
                 await wait_for(lambda: visible('[data-testid=open-recent]'), 'native_create')
+                await check_first_search_page()
                 active = flow.state()['project']['project_id']
                 await click('[data-testid=desktop-open]')
                 await wait_for(lambda: visible('[data-testid=operation-error]'), 'redirected_project_rejection')

@@ -1,0 +1,49 @@
+/* Keep the existing Quasar label attached to its input, including after focus. */
+.nicegui-content :is(.nicegui-column, .nicegui-row, .q-card, .q-expansion-item) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.nicegui-content .q-field {
+  width: min(100%, 46rem);
+  min-width: 0;
+  max-width: 100%;
+}
+.nicegui-content .nicegui-row > .q-field {
+  flex: 1 1 19rem;
+  max-width: min(100%, 46rem);
+}
+.nicegui-content .q-field--labeled .q-field__control {
+  height: auto;
+  min-height: 3.5rem;
+  align-items: center;
+}
+.nicegui-content .q-field--labeled .q-field__control-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  height: auto;
+  min-width: 0;
+  padding-top: 0;
+}
+.nicegui-content .q-field--labeled .q-field__label {
+  position: static !important;
+  order: -1;
+  flex: 0 0 100%;
+  max-width: 100%;
+  margin-top: .4rem;
+  font-size: .9rem;
+  line-height: 1.4;
+  white-space: normal !important;
+  overflow: visible !important;
+  overflow-wrap: anywhere;
+  transform: none;
+}
+.nicegui-content .q-field--labeled .q-field__native {
+  min-height: 2rem;
+  padding-top: .2rem;
+  padding-bottom: .4rem;
+}
+.nicegui-content .nicegui-markdown {
+  max-width: 72ch;
+}
