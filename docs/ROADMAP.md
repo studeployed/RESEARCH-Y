@@ -13,7 +13,7 @@ The scope and gates are fixed in section 20 of the approved specification. Track
 The [Phase 1 acceptance record](PHASE1_ACCEPTANCE.md) links each roadmap
 unit to its primary test or source observation. The six core milestones
 passed the section 20 retrieval and recovery gate. The additional live
-Starter two-date observation continues in [issue #119](https://github.com/studeployed/RESEARCH-Y/issues/119).
+Starter two-date observation passed on 15–16 November. [Verified aggregate and job log](WOS_LIVE_ACCEPTANCE.md)
 
 On 12 November 2026 the bounded live PubMed sample passed clinical OR
 translation and fresh-process recovery for two bibliographic records.
@@ -121,6 +121,7 @@ Offline fixtures cover counts, boundaries, duplicates, metadata gaps, repeated m
 restart check and recovered two records in the separate metadata sample.
 Starter verified institutional access and reconciled the observed fixed-query
 enumeration after a controlled restart. The retained audit checks aggregate
-evidence. Live cross-day resumption and observed quota replenishment remain
-open in #119. Broader metadata coverage and product-wide acceptance retain
+evidence. A separate four-request sample resumed across midnight with the
+first two pages intact and an increased daily allowance. Live quota exhaustion,
+broader metadata coverage and product-wide acceptance retain
 their later roadmap gates.
