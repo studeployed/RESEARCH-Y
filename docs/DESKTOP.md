@@ -27,7 +27,17 @@ services cannot coordinate SQLite writes between machines.
 
 ## Term variant review
 
+In **Research Setup**, enter the theme and any research objectives, then choose
+**Save research heading**. The heading reappears when the project is reopened.
+Approving the strategy freezes the objectives for that version. Objectives
+describe the purpose of the search and do not add terms to source queries.
+
 ### Optional Windows local assistant
+
+The initial Windows package uses the CPU on every supported machine. Hardware
+acceleration is a preferred capability in AI-03. The benchmark and approved
+integration cover the CPU engine; the project has no validated GPU build or
+measured accelerator parity for this release.
 
 The approved local package contains Qwen3-1.7B Q8_0 (1,834,426,016 bytes)
 and the Windows x64 CPU build of llama.cpp b12360. Inference uses six CPU
@@ -160,6 +170,11 @@ history, groups and specialist provenance remain available in the project
 and workbook. The standalone search-strategy workbook remains available.
 The **Reporting Checklist** sheet records the exact stored queries, applicable
 sources, activities outside the workflow and unresolved verification.
+It describes each database connector's field coverage. An unrestricted plan
+is reported when the stored queries and parameters match the approved compiler
+output. In **Deduplication Audit**, a recorded repeat-match suggestion identifies
+the confidence rule and the earlier confirmation's audit event alongside the
+researcher's final decision.
 Programmatic PRESS validation and named researcher or peer observations have
 distinct entries with their actual recorded outcomes.
 

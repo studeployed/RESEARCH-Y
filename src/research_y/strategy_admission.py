@@ -15,7 +15,7 @@ from research_y.export_files import project_guard
 from research_y.projects import Project, _utc_now, _validated_project_connection
 from research_y.query_compiler import compile_both
 from research_y.storage import (
-    StrategyGroup, _audit, _canonical_json, _groups_snapshot, _nonblank,
+    StrategyGroup, _audit, _canonical_json, _groups_snapshot, _nonblank, validated_objectives,
 )
 
 
@@ -85,6 +85,7 @@ def commit_approved_strategy(
     project: Project, *,
     request_id: str,
     theme: str,
+    objectives: str = "",
     groups: tuple[StrategyGroup, ...] | list[StrategyGroup],
     approved_by: str,
     approval_confirmed: bool,
@@ -106,6 +107,9 @@ def commit_approved_strategy(
         "format_version": 1, "theme": theme, "logic": "OR",
         "approved_by": approved_by, "groups": frozen_groups,
     }
+    objectives = validated_objectives(objectives)
+    if objectives:
+        snapshot["objectives"] = objectives
     # Compile and validate the *entire* draft before starting an audit write.
     # The compiler enforces OR, escaped literals and mandatory PubMed/WoS
     # source fields. No provider-specific byte ceiling is guessed.

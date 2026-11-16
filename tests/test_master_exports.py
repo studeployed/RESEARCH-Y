@@ -1,5 +1,6 @@
 from contextlib import closing
 from hashlib import sha256
+import sqlite3
 from uuid import uuid4
 
 from openpyxl import load_workbook
@@ -11,6 +12,45 @@ from research_y.society_sources import import_guidance, record_society_visit
 from test_conference_jats import XML
 from test_reviewed_master import populated, decide
 from test_society_sources import register,visit_args
+
+
+@pytest.mark.parametrize("decision", ["confirmed_match", "rejected_match"])
+def test_export_preserves_prior_confidence_evidence_separately_from_final_decision(tmp_path, decision):
+    from research_y import publication_identity
+    from research_y.publication_match_evidence import REPEAT_CONFIRMATION_RULE
+    from test_publication_candidates import metadata, seed
+    from test_run_execution_board import _project
+
+    project, run, queries = _project(tmp_path)
+    providers = ("pubmed", "wos")
+    earlier = [seed(project, metadata(provider), provider) for provider in providers]
+    prior = decide(project, *earlier, "confirmed_match").prior_decisions[-1]["event_id"]
+    current = []
+    with closing(sqlite3.connect(project.database_path)) as db, db:
+        for provider, earlier_id in zip(providers, earlier):
+            rid = str(uuid4())
+            db.execute("INSERT INTO source_retrievals SELECT ?,?,source_name,source_record_id,"
+                       "retrieved_at_utc,original_metadata_json FROM source_retrievals WHERE retrieval_id=?",
+                       (rid, run, earlier_id))
+            db.execute("INSERT INTO query_retrievals VALUES(?,?,?,?)",
+                       (queries["g-ecmo", provider][0], rid, run, provider))
+            current.append(rid)
+    for rid in current:
+        publication_identity.materialise_retrieval(project, rid, actor="Fixture")
+    reviewed = decide(project, *current, decision)
+    receipt = reviewed.prior_decisions[-1]["event_id"]
+    with closing(master_results.MasterResults.capture(project, run)) as master:
+        path = tmp_path / "Repeat.xlsx"
+        master_exports.export_results(project, master, path, master_results.DEFAULT, scope="entire")
+    with closing(load_workbook(path, read_only=True)) as book:
+        values = iter(book["Deduplication Audit"].values)
+        header = next(values)
+        decisions = [dict(zip(header, row)) for row in values if row[0] == "Comparison decision"]
+        assert len(decisions) == 1
+        assert decisions[0]["Audit event"] == receipt
+        assert decisions[0]["Status"] == decision
+        assert decisions[0]["Confidence rule"] == REPEAT_CONFIRMATION_RULE
+        assert decisions[0]["Prior confirmation event"] == prior
 
 
 def test_real_workbook_preserves_sources_scope_raw_counts_and_abstract_permissions(tmp_path):

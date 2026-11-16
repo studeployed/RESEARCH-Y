@@ -9,7 +9,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from research_y.query_compiler import compile_both
-from research_y.storage import ApprovedTerm, StrategyGroup, _groups_snapshot
+from research_y.storage import ApprovedTerm, StrategyGroup, _groups_snapshot, validated_objectives
 from research_y.terminology import VERSION, lexical_variants
 
 
@@ -30,8 +30,9 @@ def _text(value, *, allow_empty=False):
 
 
 class StrategyDraft:
-    def __init__(self):
-        self.theme = ''
+    def __init__(self, theme='', objectives=''):
+        self.theme = theme
+        self.objectives = objectives
         self.approved_by = ''
         self.groups = []
         self.suggestions = {}
@@ -56,9 +57,10 @@ class StrategyDraft:
                 return term
         raise DraftError('unknown_draft_term')
 
-    def update_heading(self, theme, approved_by):
-        # Validate both fields before any visible draft mutation.
+    def update_heading(self, theme, approved_by, objectives=None):
         heading, reviewer = _text(theme), _text(approved_by)
+        if objectives is not None:
+            self.objectives = validated_objectives(objectives)
         self.theme, self.approved_by = heading, reviewer
         self._invalidate()
 
@@ -214,7 +216,7 @@ class StrategyDraft:
                         groups=_groups_snapshot(self.approved_groups()))
         pubmed, wos = compile_both(snapshot)
         preview = dict(
-            theme=self.theme, approved_by=self.approved_by, logic='OR',
+            theme=self.theme, objectives=self.objectives, approved_by=self.approved_by, logic='OR',
             group_count=len(self.groups),
             active_term_count=sum(group.active_term_count for group in pubmed.groups),
             terms=snapshot['groups'],
@@ -240,7 +242,7 @@ class StrategyDraft:
 
     def state(self):
         # Defensive snapshot: browser rendering cannot mutate the draft.
-        return dict(theme=self.theme, approved_by=self.approved_by,
+        return dict(theme=self.theme, objectives=self.objectives, approved_by=self.approved_by,
                     suggestions=[dict(s) for s in self.suggestions.values()],
                     groups=[dict(group_id=group['group_id'], label=group['label'],
                                  terms=[dict(term) for term in group['terms']])

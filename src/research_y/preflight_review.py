@@ -198,7 +198,7 @@ def _inspect(db, run_id, requested_id=None, *, allow_started=False):
     summary = dict(
         method=METHOD, run_id=run_id, strategy_version_id=version_id,
         version_number=version_number, plan_sha256=plan_sha,
-        theme=strategy["theme"], approved_by=strategy["approved_by"],
+        theme=strategy["theme"], objectives=strategy.get("objectives", ""), approved_by=strategy["approved_by"],
         logic="OR", group_count=len(strategy["groups"]),
         active_group_count=len({q["group_id"] for q in ordered}),
         active_term_count=sum(g.active_term_count for g in sources[0].groups),
