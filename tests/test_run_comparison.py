@@ -86,7 +86,15 @@ def test_researcher_carries_a_classification_to_a_rediscovered_publication(tmp_p
         assert not classification.read_classification(project,new)["decisions"]
         row=compare()
         args["event_id"]=corrected["event_id"]
-        flow.carry_classification(**args)
+        flow.select_run(later)
+        queue=flow.inspect_study_queue(False,False,False)["study_queue"]
+        candidate,=queue["rows"]
+        flow.open_queued_study(new,candidate["revision"])
+        compare()
+        refreshed=flow.carry_classification(**args)
+        assert refreshed["queued_study"]["current"]["language"]==["English"]
+        assert refreshed["queued_study"]["revision"]!=candidate["revision"]
+        assert refreshed["study_queue"]["rows"][0]["revision"]==refreshed["queued_study"]["revision"]
         stored=classification.read_classification(open_project(project.root),new)["decisions"]["language"]
         assert stored["labels"]==["English"] and stored["actor"]=="Update reviewer"
         assert stored["earlier_decision"]["event_id"]==corrected["event_id"]

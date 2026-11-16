@@ -614,9 +614,13 @@ class RealProjectFlow:
             evidence = dict(previous_retrieval=row["previous_retrieval"],current_retrieval=current_retrieval,
                             previous_publication=row["previous_publication"],previous_revision=history["previous_revision"],
                             event_id=event_id)
-            study_classification.review_classification(self.project,row["current_publication"],dimension=dimension,
+            result = study_classification.review_classification(self.project,row["current_publication"],dimension=dimension,
                         labels=decision["labels"],actor=actor,rationale=rationale,expected_revision=revision,
                         confirmed=True,earlier_decision=evidence)
+            if self._study_view and self._study_view["publication_id"]==result["publication_id"]:
+                self._study_view = result
+                self._study_proposal = None
+            self._refresh_study_queue()
             self._clear_master()
             return self.compare_run_history(comparison["earlier"]["run_id"],comparison["later"]["run_id"],
                                             comparison["category"],comparison["offset"])
@@ -1368,15 +1372,18 @@ class RealProjectFlow:
                     raise ProjectFlowError("local_assistant_study_unavailable")
                 result = local_study_review.review(self.project, pub_id, event_id=event_id, **args)
             self._study_view = result
-            page = self._study_queue
-            if page and page["run_id"] == self.selected_run_id:
-                self._study_queue = read_study_page(self.project, self.selected_run_id, after=page["after"],
-                    only_review=page["only_review"], hide_non_english=page["hide_non_english"],
-                    hide_non_human_only=page["hide_non_human_only"])
-                if self._queue_study_id and not any(row["publication_id"] == self._queue_study_id
-                                                     for row in self._study_queue["rows"]):
-                    self._queue_study_id = self._study_view = self._study_proposal = None
+            self._refresh_study_queue()
             return self._publish()
+
+    def _refresh_study_queue(self):
+        page = self._study_queue
+        if page and page["run_id"] == self.selected_run_id:
+            self._study_queue = read_study_page(self.project, self.selected_run_id, after=page["after"],
+                only_review=page["only_review"], hide_non_english=page["hide_non_english"],
+                hide_non_human_only=page["hide_non_human_only"])
+            if self._queue_study_id and not any(row["publication_id"] == self._queue_study_id
+                                                 for row in self._study_queue["rows"]):
+                self._queue_study_id = self._study_view = self._study_proposal = None
 
     def propose_local_terms(self, group_id, term_id):
         with self._guard:
