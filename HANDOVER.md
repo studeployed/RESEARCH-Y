@@ -1,5 +1,13 @@
 # RESEARCH-Y handover
 
+## Initial release verification
+
+[Issue #163](https://github.com/studeployed/RESEARCH-Y/issues/163) tracks the
+product requirements that remained partial after Phase 3. The Windows launcher
+accepts the project index as well as its folder. The project storage evidence
+for PROJ-01 through PROJ-06 is in the [requirement register](docs/requirements-traceability.csv).
+PROJ-07 still needs a project-wide display of the latest successful source checkpoint.
+
 ## Phase 3 delivery
 
 See the [release matrix](docs/PHASE3_ACCEPTANCE.md) for all 22 scenarios,

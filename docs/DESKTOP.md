@@ -13,15 +13,24 @@ python -m pip install ".[desktop]"
 research-y
 ```
 
-The launcher opens an integrated window. Choose **Open project folder**, or
-enter a new project name and choose **Create project in folder**. The Windows
-folder picker supplies the location. Recent projects appear on each launch.
+The launcher opens an integrated window. Choose **Open project folder** or
+select `project.ryproj` using **Open project index file**. To start a project,
+enter a name and choose **Create project in folder**. Recent projects appear on each launch.
 Select the project and run explicitly. After moving a project, open its new
 folder to update the local history. The usual research setup, preflight,
 supervised source stages, results review and workbook controls use the same
 trusted worker and SQLite services as the isolated graphical tests.
 
+For work on another computer, export a project archive and import it at the
+destination. Keep each active working folder on local storage. File-sync
+services cannot coordinate SQLite writes between machines.
+
 ## Term variant review
+
+In **Research Setup**, enter the theme and any research objectives, then choose
+**Save research heading**. The heading reappears when the project is reopened.
+Approving the strategy freezes the objectives for that version. Objectives
+describe the purpose of the search and do not add terms to source queries.
 
 ### Optional Windows local assistant
 
@@ -161,6 +170,11 @@ history, groups and specialist provenance remain available in the project
 and workbook. The standalone search-strategy workbook remains available.
 The **Reporting Checklist** sheet records the exact stored queries, applicable
 sources, activities outside the workflow and unresolved verification.
+It describes each database connector's field coverage. An unrestricted plan
+is reported when the stored queries and parameters match the approved compiler
+output. In **Deduplication Audit**, a recorded repeat-match suggestion identifies
+the confidence rule and the earlier confirmation's audit event alongside the
+researcher's final decision.
 Programmatic PRESS validation and named researcher or peer observations have
 distinct entries with their actual recorded outcomes.
 
