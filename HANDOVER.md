@@ -19,6 +19,17 @@ The Windows workflow rehearses both a clean install and an upgrade of a project
 written by the Phase 3 build. Issue #163 remains open for the outstanding product
 requirements and verification of the installer built from the final merged commit.
 
+Research Setup defaults to PubMed and Web of Science with unrestricted
+publication dates. Researchers can select a database, an optional publication
+year and a smaller query byte limit. Each executable OR chunk is previewed
+and stored separately. A single-database run leaves mandatory primary coverage
+incomplete. Reopen the selected run's pre-run verification after a pilot to
+see counts and estimated pages for each exact query. Record a known item's
+observed outcome, date and evidence there. Both workbook formats preserve
+the check and any subsequent correction. The publication-year limit uses
+the sources' publication date fields. [PubMed date searching](https://pubmed.ncbi.nlm.nih.gov/help/#searching-by-date)
+and [Web of Science Starter field tags](https://github.com/clarivate/wosstarter_python_client/blob/master/docs/DocumentsApi.md).
+
 The run comparison shows classifications attached to recurring source records,
 including the earlier researcher, decision and rationale. When the later run
 has a separate publication identity, a researcher can verify the evidence and

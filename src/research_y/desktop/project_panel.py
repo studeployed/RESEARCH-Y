@@ -158,6 +158,30 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
         # All draft edits are host-memory mutations. A new preview is
         # mandatory after any edit, before the separate approval click.
         draft = state['strategy_draft']
+        if not draft["preview"]:
+            from research_y.query_compiler import CONNECTOR_QUERY_BYTES, search_scope
+            scope=draft.get("search_scope") or search_scope()
+            with ui.expansion("Database selection and optional search limits"):
+                selected=ui.select({"pubmed":"PubMed","wos":"Web of Science Starter"},value=scope["sources"],
+                                   multiple=True,label="Databases for this run")
+                ui.label("Full primary-source coverage requires both databases.")
+                year=ui.input("Publication year (optional)", value=str(scope["publication_year"] or ""))
+                limits={}
+                for source in ("pubmed","wos"):
+                    limits[source]=ui.number(source+" · maximum UTF-8 bytes per query",min=1,max=CONNECTOR_QUERY_BYTES,
+                                             value=scope[source+"_bytes"],precision=0)
+                def apply_scope():
+                    raw=(year.value or "").strip()
+                    if raw and (not raw.isascii() or not raw.isdecimal() or len(raw)!=4):
+                        ui.notify("Enter a four-digit publication year or leave it blank.")
+                        return
+                    if any(not box.value for box in limits.values()):
+                        ui.notify("Enter a positive query byte limit for each database.")
+                        return
+                    return act("setup_edit",dict(action="scope",data=dict(sources=selected.value,
+                        pubmed_bytes=int(limits["pubmed"].value),wos_bytes=int(limits["wos"].value),
+                        publication_year=int(raw) if raw else None)))
+                ui.button("Apply database and limit choices",on_click=apply_scope)
         local_on = state.get('local_assistant_enabled', False)
         cloud_on = state.get('cloud_enabled', False)
         ui.label('Assistant mode: ' + ('Optional cloud AI' if cloud_on else 'Local Qwen3-1.7B' if local_on else 'No AI'))
@@ -316,9 +340,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                         ui.label('OR union preview: ' + source['union_query'])
                         for query in source['groups']:
                             if query['exact_query'] is not None:
-                                ui.label('Group ' + query['label'] + ' exact query: ' +
-                                         query['exact_query']).props(
-                                             'data-testid=setup-exact-query')
+                                chunks=query.get("chunks") or [query["exact_query"]]
+                                for number, exact in enumerate(chunks,1):
+                                    ui.label(f'Group {query["label"]} · query {number} of {len(chunks)} · {exact}').props(
+                                        'data-testid=setup-exact-query')
                             else:
                                 ui.label('Group ' + query['label'] +
                                          ' disabled/empty — not executable.')
@@ -1471,12 +1496,15 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                 ui.label('Boolean logic: OR across terms and groups; '
                          'no automatic exclusions.')
                 ui.label('Recorded limits: ' + preview['limitations'])
-                ui.label('Provider counts: UNKNOWN; workload estimate: UNKNOWN '
-                         '(no pilot counts obtained).').props('data-testid=preflight-unknown')
+                observations=preview.get("pilot_observations",{})
+                if not observations:
+                    ui.label('Provider counts and workload are unknown until a pilot returns.').props('data-testid=preflight-unknown')
+                else:
+                    ui.label("Each estimate uses its own pilot count. Pages can overlap across queries. "
+                             "Verification, retries, date partitioning and previously fetched metadata can change the request total.")
                 if preview.get('objectives'):
                     ui.label('Approved research objectives: ' + preview['objectives'])
-                ui.label('Automated compiler checks are not independent PRESS peer review. '
-                         'Known-relevant records and PubMed translation have NOT been checked.')
+                ui.label('PRESS peer review and known-item checks require separate observations.')
                 for group in preview['groups']:
                     ui.label('Approved concept group: ' + group['label']).props(
                         'data-testid=preflight-group')
@@ -1491,6 +1519,17 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                              ' — ' + source['source_coverage']).props(
                                  'data-testid=preflight-coverage')
                     for query in source['queries']:
+                        observed=observations.get(query["query_id"])
+                        if observed:
+                            count=observed["reported_matches"]
+                            ui.label(f'{observed["status"]} · {observed["observed_utc"]} · '
+                                     f'pilot count {count if count is not None else "unknown"}')
+                            if observed["estimated_result_pages"] is not None:
+                                ui.label(f'Estimated result pages · {observed["estimated_result_pages"]}')
+                            if observed["estimated_metadata_batches"] is not None:
+                                ui.label(f'Estimated metadata batches before reuse · {observed["estimated_metadata_batches"]}')
+                        else:
+                            ui.label("Pilot count and workload unknown for this query")
                         ui.label('Exact stored query (' + query['group_id'] + '): ' +
                                  query['exact_query']).props(
                                      'data-testid=preflight-query')
@@ -1499,6 +1538,21 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                 for warning in preview['warnings']:
                     ui.label('Pre-run warning: ' + warning)
                 previous = preview['last_review']
+                with ui.expansion("Known-relevant item checks"):
+                    choices={q["query_id"]:s["source_name"]+" · "+q["group_id"]+" · "+q["exact_query"]
+                             for s in preview["sources"] for q in s["queries"]}
+                    query_choice=ui.select(choices,label="Exact query checked")
+                    item_id=ui.input("Known record identifier")
+                    checked=ui.input("Date checked",value=date.today().isoformat())
+                    outcome=ui.select(["found","not_found","inconclusive"],label="Observed outcome")
+                    who=ui.input("Researcher performing the source check")
+                    basis=ui.input("How the record was checked against the exact query")
+                    ui.button("Record observed source check",on_click=lambda:act("record_known_check",dict(
+                        plan_sha256=preview["plan_sha256"],query_id=query_choice.value,identifier=item_id.value,
+                        checked_on=checked.value,outcome=outcome.value,actor=who.value,basis=basis.value)))
+                    for check in preview.get("known_item_checks",[]):
+                        ui.label(f'{check["checked_on"]} · {check["actor"]} · {choices[check["query_id"]]} · '
+                                 f'{check["identifier"]} · {check["outcome"]} · {check["basis"]}')
                 if previous is not None:
                     ui.label('Last recorded PRESS checklist: ' +
                              previous['occurred_at_utc'] + ' — ' +
@@ -1510,8 +1564,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     for item, result in previous['press_items'].items():
                         ui.label('PRESS ' + item + ': ' + result)
                     if previous['known_relevant']:
-                        ui.label('Known-relevant items: provided, NOT tested '
-                                 'against a search provider.')
+                        ui.label('Identifiers proposed for checking · '+", ".join(previous['known_relevant']))
                 candidate = state['preflight_candidate']
                 if state['preflight_review_reconciliation_required']:
                     ui.label('Review outcome uncertain: retry the exact same '
@@ -1540,8 +1593,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                 'data-testid=preflight-press-item')
                     note = ui.textarea('Review notes, concerns, or limitations')
                     known = ui.textarea(
-                        'Known-relevant record identifiers (one per line; '
-                        'will NOT be checked against provider records)')
+                        'Known-relevant identifiers to check (one per line)')
                     ui.button('Review and lock these checklist answers',
                               on_click=lambda: act('preflight_offer', dict(
                                   reviewer_name=reviewer.value,

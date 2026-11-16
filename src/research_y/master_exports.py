@@ -13,7 +13,7 @@ from research_y.application_inspection import _read
 from research_y.export_files import Directory, filename
 from research_y.master_results import WORKBOOK_PREPARED, evidence_head, specification
 from research_y.projects import _utc_now, _validated_project_connection
-from research_y.query_compiler import SOURCE_COVERAGE
+from research_y.query_compiler import SOURCE_COVERAGE, search_limits
 from research_y import publication_candidates
 from research_y import preflight_review
 
@@ -63,6 +63,8 @@ def _method_rows(data,context):
     return [
         ("Workbook","RESEARCH-Y publication workbook v1"),("Software",data["software_version"]),
         ("Research theme",data["strategy"]["snapshot"]["theme"]),
+        *([("Approved source and limit settings",data["strategy"]["snapshot"]["search_scope"])]
+          if "search_scope" in data["strategy"]["snapshot"] else []),
         ("Project and run",context.get("run",data["run"]["run_id"])),("Scope",context.get("scope","entire")),
         ("Original query counts","Whole-run counts remain separate from the number of rows exported."),
         ("Publication ID","A retained identity can link multiple source records and query memberships."),
@@ -243,7 +245,7 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
                           "Inspect the source fields in Executed Queries. The stored plan differs from the current compiler output."))
     append(checklist,("PRISMA-S","Search limits",
                       "recorded" if plan_verified else "awaiting verification",
-                      "The approved query plan has no language, species, study-type or date restrictions."
+                      (search_limits(data["strategy"]["snapshot"]) or "The approved query plan has no language, species, study-type or date restrictions.")
                       if plan_verified else "Check each stored query and its parameters before reporting limits."))
     for q in data["queries"]:
         append(checklist,("PRISMA-S","Query "+q["query_id"],"recorded" if q["executed_at_utc"] else "awaiting verification",

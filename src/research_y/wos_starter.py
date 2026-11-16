@@ -22,7 +22,7 @@ SOURCE_COVERAGE = (
     "Keywords Plus; narrower than web-interface All Fields; not article full text."
 )
 # Quoted OR-only expressions emitted by the existing source query compiler.
-_TOPIC_QUERY = re.compile(r'TS=\("[^"\\*?$\x00-\x1f\x7f]+"(?: OR "[^"\\*?$\x00-\x1f\x7f]+")*\)\Z')
+_TOPIC_QUERY = re.compile(r'TS=\("[^"\\*?$\x00-\x1f\x7f]+"(?: OR "[^"\\*?$\x00-\x1f\x7f]+")*\)(?: AND PY=[1-9][0-9]{3})?\Z')
 _UID = re.compile(r"[A-Z][A-Z0-9]*:[A-Za-z0-9._-]{1,240}\Z")
 
 

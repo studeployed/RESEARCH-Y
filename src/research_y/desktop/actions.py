@@ -3,6 +3,8 @@ from research_y.desktop.flow import ProjectFlowError
 
 
 def perform_action(flow, name, value=None):
+    if name=="record_known_check":
+        return flow.record_known_check(**value)
     if name=="run_acceptance":
         return flow.run_acceptance(value)
     if name == "project_audit":

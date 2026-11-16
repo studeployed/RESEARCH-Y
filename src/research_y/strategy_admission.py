@@ -13,7 +13,7 @@ from uuid import UUID, NAMESPACE_URL, uuid5
 
 from research_y.export_files import project_guard
 from research_y.projects import Project, _utc_now, _validated_project_connection
-from research_y.query_compiler import compile_both
+from research_y.query_compiler import CONNECTOR_QUERY_BYTES, compile_plan, search_scope
 from research_y.storage import (
     StrategyGroup, _audit, _canonical_json, _groups_snapshot, _nonblank, validated_objectives,
 )
@@ -64,20 +64,17 @@ def _identity(kind: str, request_id: str) -> str:
 
 def _plans(snapshot: dict, request_id: str):
     """Compiler-derived exact per-group queries, never an inferred provider cap."""
-    sources = compile_both(snapshot)
+    sources = compile_plan(snapshot)
     plans = []
     for compiled in sources:
         for group in compiled.groups:
-            if group.exact_group_query is None:
-                continue  # An empty/disabled group has no executable query.
-            query_id = str(uuid5(
-                _NAMESPACE,
-                "query:" + request_id + ":" +
-                json.dumps([compiled.source_name, group.group_id],
-                           ensure_ascii=False, separators=(",", ":")),
-            ))
-            plans.append((query_id, group.group_id, compiled.source_name,
-                          group.exact_group_query, "{}"))
+            for chunk in group.chunks:
+                key = [compiled.source_name,group.group_id]
+                if len(group.chunks)>1:
+                    key.append(chunk.ordinal)
+                query_id = str(uuid5(_NAMESPACE,"query:"+request_id+":"+
+                                    json.dumps(key,ensure_ascii=False,separators=(",",":"))))
+                plans.append((query_id,group.group_id,compiled.source_name,chunk.exact_query,"{}"))
     return tuple(plans)
 
 
@@ -89,6 +86,7 @@ def commit_approved_strategy(
     groups: tuple[StrategyGroup, ...] | list[StrategyGroup],
     approved_by: str,
     approval_confirmed: bool,
+    scope: dict | None = None,
 ) -> StrategyAdmission:
     """Atomically freeze terms, create one pending run and plan both sources.
 
@@ -110,6 +108,8 @@ def commit_approved_strategy(
     objectives = validated_objectives(objectives)
     if objectives:
         snapshot["objectives"] = objectives
+    if scope is not None:
+        snapshot["search_scope"] = search_scope(**scope)
     # Compile and validate the *entire* draft before starting an audit write.
     # The compiler enforces OR, escaped literals and mandatory PubMed/WoS
     # source fields. No provider-specific byte ceiling is guessed.
@@ -122,19 +122,23 @@ def commit_approved_strategy(
         raise
     if not plans:
         raise StrategyAdmissionError("no_active_terms")
+    legacy_payload = _canonical_json(snapshot)
+    if scope is None and any(len(q[3].encode("utf-8"))>CONNECTOR_QUERY_BYTES for q in plans):
+        snapshot["search_scope"] = search_scope()
     payload = _canonical_json(snapshot)
     version_id = _identity("strategy", request_id)
     run_id = _identity("run", request_id)
-    expected_rows = sorted(
-        (query_id, run_id, version_id, group_id, source, query, parameters)
-        for query_id, group_id, source, query, parameters in plans
-    )
     with project_guard(project), _validated_project_connection(project) as db:
         db.execute("BEGIN IMMEDIATE")
         existing = db.execute(
             "SELECT version_number,snapshot_json FROM strategy_versions "
             "WHERE strategy_version_id=?", (version_id,)
         ).fetchone()
+        if payload != legacy_payload:
+            if existing and existing[1] == legacy_payload:
+                payload = legacy_payload
+            else:
+                plans = _plans(snapshot, request_id)
         if existing is not None:
             version_number, stored_payload = existing
             if stored_payload != payload:
@@ -157,6 +161,8 @@ def commit_approved_strategy(
                 "exact_query,parameters_json FROM source_queries WHERE run_id=?",
                 (run_id,)
             ).fetchall())
+            expected_rows = sorted((qid,run_id,version_id,gid,source,query,params)
+                                   for qid,gid,source,query,params in plans)
             if (state is None or state[0] != version_id or
                     actual_groups != expected_groups or
                     actual_rows != expected_rows):
