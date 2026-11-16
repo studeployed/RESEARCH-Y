@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 from uuid import uuid4
 
 
@@ -43,6 +44,8 @@ def install(installer, root):
 
 def verify(candidate, baseline, output):
     lifecycle = Path(__file__).resolve().parents[1]/"desktop_lifecycle.py"
+    metadata = (lifecycle.parent.parent/"pyproject.toml").read_text(encoding="utf-8")
+    expected_version = tomllib.loads(metadata)["project"]["version"]
     def evidence(python, action, project):
         value = subprocess.check_output([python,"-I","-B",__file__,action,project],timeout=90)
         return json.loads(value)
@@ -50,6 +53,11 @@ def verify(candidate, baseline, output):
     with tempfile.TemporaryDirectory(prefix="ry-installer-check-") as work:
         clean = Path(work)/"clean"
         current, python = install(candidate,clean)
+        installed = subprocess.check_output([python,"-I","-B","-c",
+                "import research_y; from importlib.metadata import version; "
+                "print(research_y.__version__,version('research-y'))"],text=True,timeout=30).split()
+        if installed != [expected_version,expected_version]:
+            raise ValueError("Bundled application version differs from package metadata")
         subprocess.run([python,"-I","-B",lifecycle],check=True,timeout=480)
         if install(candidate,clean)[0] != current:
             raise ValueError("Reinstallation changed the selected image")
@@ -67,7 +75,7 @@ def verify(candidate, baseline, output):
         baseline_commit = subprocess.check_output(["git","-C","_installer_baseline","rev-parse","HEAD"],text=True).strip()
         with candidate.open("rb") as package:
             digest = file_digest(package,"sha256").hexdigest()
-        output.write_text(json.dumps(dict(commit=commit,baseline_commit=baseline_commit,
+        output.write_text(json.dumps(dict(commit=commit,baseline_commit=baseline_commit,version=expected_version,
             installer_sha256=digest,bytes=candidate.stat().st_size,candidate_image=current,previous_image=previous,
             clean_install=True,reinstallation=True,upgrade=True,retained_project_and_queries=True,
             native_lifecycle_after_clean_install_and_upgrade=True),indent=2)+"\n",encoding="utf-8")

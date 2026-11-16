@@ -1,5 +1,9 @@
 name: Windows standalone installer
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/research_y/__init__.py'
   pull_request:
     branches: [main]
     paths:
@@ -34,8 +38,22 @@ jobs:
         run: python tools/windows_distribution/build.py build/RESEARCH-Y-Setup.exe
       - name: Verify clean install, reinstallation, real upgrade and project preservation
         run: python tools/windows_distribution/verify_install.py build/RESEARCH-Y-Setup.exe build/Baseline-Setup.exe build/verification.json
+      - name: Verify the final installer digest and record the release evidence
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          $evidence = Get-Content -Raw build/verification.json | ConvertFrom-Json
+          $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath build/RESEARCH-Y-Setup.exe).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath build/RESEARCH-Y-Setup.exe).Length
+          if ($evidence.commit -cne $env:GITHUB_SHA -or $evidence.installer_sha256 -cne $digest -or $evidence.bytes -ne $size) {
+            throw "Installer file and verification record disagree"
+          }
+          "RESEARCH-Y $($evidence.version) on Windows x64" >> $env:GITHUB_STEP_SUMMARY
+          "Commit $env:GITHUB_SHA" >> $env:GITHUB_STEP_SUMMARY
+          "Installer SHA-256 $digest ($size bytes)" >> $env:GITHUB_STEP_SUMMARY
+          Get-Content -Raw build/verification.json
       - name: Retain the tested installer and its checksum
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4.6.2
         with:
           name: RESEARCH-Y-Windows-${{ github.sha }}

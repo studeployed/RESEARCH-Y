@@ -21,7 +21,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from research_y.query_compiler import CompiledSource
 from research_y.source_versions import USER_AGENT
 from research_y.pubmed_cooldown import PubMedCooldown
-from research_y.pubmed_date_translation import internal_create_date_equivalent
+from research_y.pubmed_date_translation import internal_create_date_equivalent, publication_year_equivalent
 
 ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 MAX_RESPONSE_BYTES = 512 * 1024
@@ -154,6 +154,8 @@ def _translation_matches_submitted(
     """
     if allow_crdt_partition:
         return internal_create_date_equivalent(submitted, accepted)
+    if isinstance(submitted,str) and "[Date - Publication]" in submitted and publication_year_equivalent(submitted,accepted):
+        return True
     return (
         isinstance(submitted, str) and isinstance(accepted, str)
         and _outer_group_normal_form(submitted) == _outer_group_normal_form(accepted)
@@ -180,7 +182,7 @@ def _review_translation(
     # conjunction is administrative. Never grant an AND exemption merely
     # because a date-looking suffix or matching total count was returned.
     if (re.search(r"\b(?:AND|NOT)\b", outside_quotes, flags=re.I)
-            and not (allow_crdt_partition and equivalent)):
+            and not (allow_crdt_partition and equivalent) and not publication_year_equivalent(exact_query,accepted)):
         reasons.append("PubMed translation includes AND/NOT outside quoted literals")
     return tuple(reasons)
 

@@ -34,6 +34,35 @@ SOURCE_COVERAGE = {
     ),
 }
 
+# The desktop coordination command accepts up to 8192 characters of exact
+# query. Bounding UTF-8 bytes also bounds characters on this transport.
+CONNECTOR_QUERY_BYTES = 8192
+
+
+def search_scope(sources=("pubmed","wos"), *, pubmed_bytes=CONNECTOR_QUERY_BYTES,
+                 wos_bytes=CONNECTOR_QUERY_BYTES, publication_year=None):
+    if (not isinstance(sources,(list,tuple)) or not sources or
+            any(s not in SOURCE_COVERAGE for s in sources) or len(set(sources)) != len(sources)):
+        raise QueryCompilationError("Choose at least one supported database")
+    if any(type(n) is not int or not 1 <= n <= CONNECTOR_QUERY_BYTES for n in (pubmed_bytes,wos_bytes)):
+        raise QueryCompilationError("Invalid connector query byte limit")
+    if publication_year is not None and (type(publication_year) is not int or not 1000 <= publication_year <= 9999):
+        raise QueryCompilationError("Choose a four-digit publication year or leave it blank")
+    return dict(sources=[s for s in SOURCE_COVERAGE if s in sources],pubmed_bytes=pubmed_bytes,
+                wos_bytes=wos_bytes,publication_year=publication_year)
+
+
+def search_limits(snapshot):
+    year = (snapshot.get("search_scope") or {}).get("publication_year")
+    return f"Publication year {year}; no language, species or study-type exclusions" if year else None
+
+
+def validated_scope(scope):
+    if (not isinstance(scope,dict) or set(scope)!={"sources","publication_year","pubmed_bytes","wos_bytes"}
+            or search_scope(**scope)!=scope):
+        raise QueryCompilationError("Invalid frozen search scope")
+    return scope
+
 
 @dataclass(frozen=True, slots=True)
 class QueryChunk:
@@ -91,15 +120,17 @@ def _validate_literal(text: Any, *, context: str) -> str:
     return value
 
 
-def _source_expression(source_name: str, terms: tuple[str, ...]) -> str:
+def _source_expression(source_name: str, terms: tuple[str, ...], year=None) -> str:
     if not terms:
         raise ValueError("No active terms")
     quoted = [f'"{term}"' for term in terms]
     if source_name == "pubmed":
         tagged = [f"{part}[All Fields]" for part in quoted]
-        return "(" + " OR ".join(tagged) + ")"
+        expr = "(" + " OR ".join(tagged) + ")"
+        return f"({expr} AND {year}/01/01:{year}/12/31[Date - Publication])" if year else expr
     if source_name == "wos":
-        return "TS=(" + " OR ".join(quoted) + ")"
+        expr = "TS=(" + " OR ".join(quoted) + ")"
+        return f"{expr} AND PY={year}" if year else expr
     raise ValueError("Unsupported source")
 
 
@@ -107,17 +138,18 @@ def _chunks(
     source_name: str,
     terms: tuple[str, ...],
     max_query_bytes: int | None,
+    year=None,
 ) -> tuple[QueryChunk, ...]:
     if not terms:
         return ()
     if max_query_bytes is None:
-        return (QueryChunk(1, _source_expression(source_name, terms), terms),)
+        return (QueryChunk(1, _source_expression(source_name, terms,year), terms),)
 
     parts: list[QueryChunk] = []
     current: list[str] = []
     for term in terms:
         proposal = tuple((*current, term))
-        size = len(_source_expression(source_name, proposal).encode("utf-8"))
+        size = len(_source_expression(source_name, proposal,year).encode("utf-8"))
         if size <= max_query_bytes:
             current.append(term)
             continue
@@ -127,16 +159,16 @@ def _chunks(
                 f"{max_query_bytes} UTF-8 bytes; never truncate it"
             )
         existing = tuple(current)
-        parts.append(QueryChunk(len(parts) + 1, _source_expression(source_name, existing), existing))
+        parts.append(QueryChunk(len(parts) + 1, _source_expression(source_name, existing,year), existing))
         current = [term]
-        if len(_source_expression(source_name, (term,)).encode("utf-8")) > max_query_bytes:
+        if len(_source_expression(source_name, (term,),year).encode("utf-8")) > max_query_bytes:
             raise QuerySizeError(
                 f"Atomic term {term!r} exceeds source limit of "
                 f"{max_query_bytes} UTF-8 bytes; never truncate it"
             )
     if current:
         existing = tuple(current)
-        parts.append(QueryChunk(len(parts) + 1, _source_expression(source_name, existing), existing))
+        parts.append(QueryChunk(len(parts) + 1, _source_expression(source_name, existing,year), existing))
     return tuple(parts)
 
 
@@ -166,6 +198,17 @@ def compile_source(
         raise QueryCompilationError("Initial strategies must be approved OR-only snapshots")
     _validate_text(approved_snapshot.get("theme"), context="research theme")
     _validate_text(approved_snapshot.get("approved_by"), context="approver")
+    scope = approved_snapshot.get("search_scope")
+    year = None
+    if scope is not None:
+        validated_scope(scope)
+        if source_name not in scope["sources"]:
+            raise QueryCompilationError("Source was excluded from the approved plan")
+        year = scope["publication_year"]
+        limit = scope[source_name+"_bytes"]
+        if max_query_bytes is not None and max_query_bytes != limit:
+            raise QueryCompilationError("Query size differs from the approved plan")
+        max_query_bytes = limit
     stored_groups = approved_snapshot.get("groups")
     if not isinstance(stored_groups, list) or not stored_groups:
         raise QueryCompilationError("An approved strategy requires named groups")
@@ -216,8 +259,8 @@ def compile_source(
                 active.append(value)
 
         active_tuple = tuple(active)
-        full_query = _source_expression(source_name, active_tuple) if active_tuple else None
-        executable = _chunks(source_name, active_tuple, max_query_bytes)
+        full_query = _source_expression(source_name, active_tuple,year) if active_tuple else None
+        executable = _chunks(source_name, active_tuple, max_query_bytes,year)
         if len(executable) > 1:
             any_partitioned = True
         if full_query is not None:
@@ -247,6 +290,13 @@ def compile_source(
         logical_union_query=union, union_fits_limit=union_fits,
         max_query_bytes=max_query_bytes, warnings=tuple(warnings),
     )
+
+
+def compile_plan(snapshot):
+    scope=snapshot.get("search_scope")
+    if scope is None:
+        return compile_both(snapshot)
+    return tuple(compile_source(snapshot,s) for s in validated_scope(scope)["sources"])
 
 
 def compile_both(

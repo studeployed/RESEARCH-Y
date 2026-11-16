@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "research-y"
-version = "0.1.0.dev0"
-description = "Reproducible biomedical literature discovery (under development)"
+version = "0.1.0"
+description = "Reproducible biomedical literature discovery"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = {text = "Proprietary; no redistribution licence granted"}

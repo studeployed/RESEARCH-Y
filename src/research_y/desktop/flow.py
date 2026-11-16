@@ -1014,6 +1014,7 @@ class RealProjectFlow:
     # Research Setup draft controls. The only persistence boundary is the
     # explicit Confirm approval action below. There is no network action here.
     _SETUP_ACTIONS = {
+        'scope': 'set_scope',
         'heading': 'update_heading',
         'revise_preview': 'revise_preview',
         'add_group': 'add_group',
@@ -1659,6 +1660,7 @@ class RealProjectFlow:
                     admission_objectives=self._setup.objectives,
                     admission_approved_by=self._setup.approved_by,
                     admission_groups=self._setup.approved_groups(),
+                    admission_scope=deepcopy(self._setup.scope),
                     approval_confirmed=True,
                 )
             request_id = self._pending_admission_id
@@ -1668,7 +1670,7 @@ class RealProjectFlow:
                 result = self._operation('admit_strategy',
                     admission_request_id=request_id, **payload)
                 if (result.get('request_id') != request_id
-                        or result.get('query_count', 0) < 2
+                        or result.get('query_count', 0) < 1
                         or result.get('source_retrieval_verified') is not False):
                     raise ProjectFlowError('invalid_admission_receipt')
                 # Inspection is authoritative; a successful-looking worker
@@ -1701,6 +1703,16 @@ class RealProjectFlow:
             except ProjectFlowError:
                 self._publish()
                 raise
+
+    def record_known_check(self,plan_sha256,**details):
+        from research_y.preflight_evidence import record_known_check
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if not self._preflight or self._preflight["plan_sha256"]!=plan_sha256:
+                raise ProjectFlowError("Refresh the strategy preview.")
+            record_known_check(self.project,self.selected_run_id,plan_sha256,**details)
+            return self.inspect_preflight()
 
     def inspect_preflight(self):
         """Explicit worker read of one frozen run, not an execution trigger."""
@@ -4104,7 +4116,7 @@ class RealProjectFlow:
             offer = self._candidate_offer
             page = self._publication_page
             cross_run = offer is not None and offer.get('cross_run') is True
-            if (cross_run or offer_revision is not None) and (
+            if (cross_run or (offer and offer.get("move_dispositions")) or offer_revision is not None) and (
                     not offer or offer_revision != offer['revision']):
                 raise ProjectFlowError('publication_review_stale')
             if cross_run and decision == 'confirmed_match' and not any(
@@ -4176,7 +4188,7 @@ class RealProjectFlow:
             self._require_no_unresolved_selection()
             offer = self._reversal_offer
             page = self._publication_page
-            if offer and (offer.get("retained_annotations") or offer_revision is not None):
+            if offer and (offer.get("retained_annotations") or offer.get("disposition") or offer_revision is not None):
                 if offer_revision != offer["revision"]:
                     raise ProjectFlowError('publication_review_stale')
             if (offer is None or self.selected_run_id is None or page is None

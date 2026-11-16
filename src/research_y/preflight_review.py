@@ -15,7 +15,7 @@ import sqlite3
 from research_y.application_inspection import _read
 from research_y.export_files import project_guard
 from research_y.projects import _validated_project_connection
-from research_y.query_compiler import compile_both, QueryCompilationError
+from research_y.query_compiler import compile_plan, search_limits, QueryCompilationError
 from research_y.storage import _audit
 from research_y.strategy_report import canonical, decode, _strategy, ReportIntegrityError
 
@@ -137,14 +137,11 @@ def _matched_query_plan(db, run_id, version_id, raw, *, allow_started):
             (version_id,)
         ).fetchall()
         _strategy(strategy, indexed_groups)
-        sources = compile_both(strategy)
+        sources = compile_plan(strategy)
     except (ReportIntegrityError, QueryCompilationError, ValueError, TypeError):
         raise PreflightError("plan_unverified") from None
-    expected = {}
-    for source in sources:
-        for group in source.groups:
-            if group.exact_group_query is not None:
-                expected[(source.source_name, group.group_id)] = group.exact_group_query
+    expected = [(s.source_name,g.group_id,c.exact_query) for s in sources for g in s.groups for c in g.chunks]
+    expected_set = set(expected)
     actual = {}
     for ident, version, group_id, source, exact, params, stored_status, matches, executed in db.execute(
         "SELECT query_id,strategy_version_id,group_id,source_name,exact_query,"
@@ -157,10 +154,10 @@ def _matched_query_plan(db, run_id, version_id, raw, *, allow_started):
                 raise ValueError
         except (PreflightError, ValueError, TypeError):
             raise PreflightError("plan_unverified") from None
-        key = (source, group_id)
+        key = (source, group_id, exact)
         from research_y.schema import RUN_STATUSES
-        if (version != version_id or key in actual or key not in expected
-                or exact != expected[key] or stored_status not in RUN_STATUSES
+        if (version != version_id or key in actual or key not in expected_set
+                or stored_status not in RUN_STATUSES
                 or (not allow_started and
                     (stored_status != "pending" or matches is not None
                      or executed is not None))):
@@ -169,13 +166,9 @@ def _matched_query_plan(db, run_id, version_id, raw, *, allow_started):
                            exact_query=exact, parameters={},
                            status="pending", reported_matches=None,
                            provider_translation="not_checked")
-    if actual.keys() != expected.keys():
+    if actual.keys() != expected_set or len(expected_set)!=len(expected):
         raise PreflightError("plan_unverified")
-    ordered = [
-        actual[(source.source_name, group.group_id)]
-        for source in sources for group in source.groups
-        if group.exact_group_query is not None
-    ]
+    ordered = [actual[key] for key in expected]
     plan_sha = sha256(canonical(dict(run_id=run_id, version_id=version_id,
         strategy_snapshot=strategy, queries=ordered)).encode("utf-8")).hexdigest()
     return strategy, sources, ordered, plan_sha
@@ -208,7 +201,7 @@ def _inspect(db, run_id, requested_id=None, *, allow_started=False):
             warnings=list(source.warnings),
             queries=[q for q in ordered if q["source"] == source.source_name])
             for source in sources],
-        limitations="none recorded in planned queries; no automatic exclusions",
+        limitations=search_limits(strategy) or "none recorded in planned queries; no automatic exclusions",
         programmatic_checks=dict(
             immutable_snapshot="verified", exact_compiler_match="verified",
             broad_or_only="verified", stored_query_coverage="verified",
@@ -226,6 +219,11 @@ def _inspect(db, run_id, requested_id=None, *, allow_started=False):
                   "PRESS self-check is not an independent peer review."],
     )
     latest, requested = _previous(db, run_id, plan_sha, requested_id)
+    short_terms=[t["text"] for g in strategy["groups"] for t in g["terms"]
+                 if t["enabled"] and len(t["text"])<=3]
+    if short_terms:
+        summary["warnings"].append("Short terms may have unrelated meanings. Review their pilot counts and translations: "
+                                   +", ".join(short_terms))
     summary["last_review"] = latest
     if requested_id is not None:
         summary["requested_review"] = requested
@@ -245,6 +243,19 @@ def read_preflight(project, run_id: str, *, review_id: str | None = None) -> dic
             # before its generic conversion can obscure the precise status.
             try:
                 result = _inspect(db, run_id, review_id)
+                from research_y.preflight_evidence import pilot_observations, known_checks
+                observations = pilot_observations(db,result)
+                result["pilot_observations"] = observations
+                result["known_item_checks"] = known_checks(db,run_id,result["plan_sha256"])
+                if observations:
+                    result["workload_status"] = "per_query_pilot_observations"
+                    result["estimated_workload"] = {q:dict(result_pages=v["estimated_result_pages"],
+                        metadata_batches=v["estimated_metadata_batches"]) for q,v in observations.items()}
+                    result["warnings"] = [w for w in result["warnings"] if not w.startswith("Wide search")]
+                    if any(v["estimated_result_pages"] is not None and v["estimated_result_pages"]>=100 for v in observations.values()):
+                        result["warnings"].append("One or more pilot counts imply at least 100 result pages. Review the workload before starting retrieval.")
+                if result["known_item_checks"]:
+                    result["known_relevant_status"] = "researcher_reported_source_checks"
             except PreflightError as exc:
                 code = exc.code
         if code is not None:

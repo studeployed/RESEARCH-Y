@@ -131,6 +131,19 @@ def render_master(ui,state,act,*,native):
                                     actor=editor.value,reason=reason.value)
                         ui.button("Confirm source value and close snapshot",on_click=choose_value)
                 with ui.expansion("Project documents"):
+                    for historical in detail.get("prior_identity_evidence",[]):
+                        ui.label(f'Earlier publication {historical["origin"]} · identity review {historical["event_id"]} · '
+                                 f'{historical["actor"]} · {historical["reason"]}')
+                        for review in historical["classifications"]:
+                            ui.label(f'Historical {review["dimension"]} · {review["label"]} · {review["status"]}')
+                        for doc in historical["documents"]:
+                            ui.label("Document on original identity · "+str(doc["relative_path"] or doc["source_url"]))
+                        for field in historical["prior_fields"]:
+                            ui.label("Earlier source choice retained in history · "+field)
+                        for role in historical["retained_roles"]:
+                            ui.label("Historical organisation and role · "+" · ".join(role))
+                        for container in historical["retained_containers"]:
+                            ui.label("Historical container · "+container)
                     for attachment in detail.get("attachments",[]):
                         ui.label(attachment.get("original_filename") or attachment.get("relative_path") or "Linked document")
                         ui.label(attachment.get("relative_path") or attachment.get("source_url"))

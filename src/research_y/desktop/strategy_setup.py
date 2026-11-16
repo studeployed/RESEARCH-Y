@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from research_y.query_compiler import compile_both
+from research_y.query_compiler import compile_plan, search_scope, search_limits
 from research_y.storage import ApprovedTerm, StrategyGroup, _groups_snapshot, validated_objectives
 from research_y.terminology import VERSION, lexical_variants
 
@@ -36,10 +36,15 @@ class StrategyDraft:
         self.approved_by = ''
         self.groups = []
         self.suggestions = {}
+        self.scope = search_scope()
         self.preview_data = None
 
     def _invalidate(self):
         self.preview_data = None
+
+    def set_scope(self, **settings):
+        self.scope = search_scope(**settings)
+        self._invalidate()
 
     def _group(self, group_id):
         if type(group_id) is not str:
@@ -221,14 +226,14 @@ class StrategyDraft:
         # the admission service. No model/provider/worker/storage writes.
         snapshot = dict(format_version=1, theme=_text(self.theme),
                         logic='OR', approved_by=_text(self.approved_by),
-                        groups=_groups_snapshot(self.approved_groups()))
-        pubmed, wos = compile_both(snapshot)
+                        groups=_groups_snapshot(self.approved_groups()),search_scope=self.scope)
+        sources = compile_plan(snapshot)
         preview = dict(
             theme=self.theme, objectives=self.objectives, approved_by=self.approved_by, logic='OR',
             group_count=len(self.groups),
-            active_term_count=sum(group.active_term_count for group in pubmed.groups),
+            active_term_count=sum(group.active_term_count for group in sources[0].groups),
             terms=snapshot['groups'],
-            limitations='none selected; no default language/species/study-type exclusions',
+            limitations=search_limits(snapshot) or 'none selected; no default language/species/study-type exclusions',
             sources=[
                 dict(name=source.source_name, coverage=source.source_coverage,
                      union_query=source.logical_union_query,
@@ -237,10 +242,11 @@ class StrategyDraft:
                                   term_count=group.approved_term_count,
                                   active_terms=group.active_term_count,
                                   exact_query=group.exact_group_query,
+                                  chunks=[chunk.exact_query for chunk in group.chunks],
                                   execution_status='not_executed',
                                   reported_matches=None)
                              for group in source.groups])
-                for source in (pubmed, wos)
+                for source in sources
             ],
             provider_execution='not_performed', provider_counts='unknown',
             source_retrieval_verified=False,
@@ -251,6 +257,7 @@ class StrategyDraft:
     def state(self):
         # Defensive snapshot: browser rendering cannot mutate the draft.
         return dict(theme=self.theme, objectives=self.objectives, approved_by=self.approved_by,
+                    search_scope={**self.scope,"sources":list(self.scope["sources"])},
                     suggestions=[dict(s) for s in self.suggestions.values()],
                     groups=[dict(group_id=group['group_id'], label=group['label'],
                                  terms=[dict(term) for term in group['terms']])

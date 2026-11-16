@@ -133,6 +133,8 @@ product-wide review of the 115 clauses marked partial after Phase 3. Each row
 in the [requirement register](requirements-traceability.csv) identifies its
 evidence or the behaviour that still needs verification. The completed
 [Phase 3 acceptance scenarios](PHASE3_ACCEPTANCE.md) remain the regression
-baseline. Complete the outstanding mandatory clauses, document any departures
-from preferred behaviour, and exercise the installer built from the final
-integrated commit.
+baseline. The 0.1.0 register contains 117 verified product requirements and
+22 verified acceptance scenarios. The Phase 3 record also describes the
+WebView2 prerequisite, optional local model, signing status and scope of
+the live-source checks. Issue #163 records the final installer run and
+its checksum after the release commit reaches main.

@@ -25,8 +25,28 @@ and edit their draft during inference. A late response for a removed seed
 cannot add suggestions to the revised draft.
 
 The Windows workflow rehearses both a clean install and an upgrade of a project
-written by the Phase 3 build. Issue #163 remains open for the outstanding product
-requirements and verification of the installer built from the final merged commit.
+written by the Phase 3 build. The release register maps all 117 product requirements
+and 22 acceptance scenarios to verification evidence. Issue #163 records the
+Windows installer verification for the final merged commit.
+
+Research Setup defaults to PubMed and Web of Science with unrestricted
+publication dates. Researchers can select a database, an optional publication
+year and a smaller query byte limit. Each executable OR chunk is previewed
+and stored separately. A single-database run leaves mandatory primary coverage
+incomplete. Reopen the selected run's pre-run verification after a pilot to
+see counts and estimated pages for each exact query. Record a known item's
+observed outcome, date and evidence there. Both workbook formats preserve
+the check and any subsequent correction. The publication-year limit uses
+the sources' publication date fields. [PubMed date searching](https://pubmed.ncbi.nlm.nih.gov/help/#searching-by-date)
+and [Web of Science Starter field tags](https://github.com/clarivate/wosstarter_python_client/blob/master/docs/DocumentsApi.md).
+
+In duplicate review, each possible move shows which citation choices and
+specialist links would follow the original. A previously selected destination
+value takes precedence. Classifications and documents remain attributed to
+the publication where the researcher recorded them. When its last original
+moves, the receiving publication's source detail links to that earlier
+evidence. Reversing the move restores the source and its eligible field
+choices and specialist links in one project transaction.
 
 The run comparison shows classifications attached to recurring source records,
 including the earlier researcher, decision and rationale. When the later run

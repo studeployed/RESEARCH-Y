@@ -23,6 +23,7 @@ the project identity, strategy, run and both queries after opening them with
 the upgraded application. The bundled native project/workbook lifecycle runs
 on both installation paths.
 
-Run **Windows standalone installer** on the final integrated revision. Its
+Merging a package version change to main starts **Windows standalone installer**
+for that exact commit. The workflow can also be run manually. Its
 artifact contains the tested executable and `verification.json`, including
-the source commit, baseline commit, image identifiers, file size and SHA-256.
+the package version, source commit, baseline commit, image identifiers, file size and SHA-256.
