@@ -183,10 +183,11 @@ def _tables(data, report):
         c = qcounts[q["query_id"]]
         queries.append((q["query_id"], q["group_id"], q["source_name"], q["exact_query"], canonical(q["parameters"]),
             q["executed_at_utc"], q["execution_evidence"], q["status"], q["reported_matches"],
-            c["retrieved_source_records"], c["metadata_source_records"], "; ".join(c["warnings"])))
+            c["retrieved_source_records"], c["metadata_source_records"], "; ".join(c["warnings"]),
+            canonical(q["source_methods"]) if q.get("source_methods") else "No versioned source receipt recorded"))
     yield "Executed Queries", ("Query ID", "Group ID", "Source", "Exact stored query", "Parameters (JSON)",
         "Stored timestamp (UTC)", "Execution evidence", "Stored query status", "Reported matches",
-        "Retrieved identifiers", "Saved metadata", "Warnings"), queries
+        "Retrieved identifiers", "Saved metadata", "Warnings", "Source receipts, versions and local timestamps"), queries
     yield "Query Partitions", ("Query ID", "Group ID", "Node", "Parent node", "Start", "End", "Exact subquery",
         "Reported node count", "Decision", "Depth", "Rationale", "Evidence scope"), [
         (p["query_id"], p["group_id"], p["index"], p["parent_index"], p["start"], p["end"], p["exact_subquery"],

@@ -186,6 +186,8 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
                        "ORDER BY group_order,group_id", (run[1],)).fetchall()
     _strategy(snapshot, index)
     queries, partitions = [], []
+    from research_y.source_versions import recorded_methods
+    methods = recorded_methods(db,run_id)
     columns = ("query_id", "group_id", "source_name", "exact_query", "parameters_json",
                "reported_matches", "status", "executed_at_utc")
     query_count_ids = {q["query_id"] for q in counts["queries"]}
@@ -199,6 +201,7 @@ def _capture(db, project, run_id, captured_at, *, reviewed_revision=None):
         if set(params) - _SAFE_PARAMETERS or any(not isinstance(v, (str, int, bool, type(None))) for v in params.values()):
             raise ReportIntegrityError("Query parameters require export-policy review")
         q["parameters"] = params
+        q["source_methods"] = methods.get(q["query_id"],[])
         q["timestamp_scope"] = "stored_query_timestamp_not_independent_request_verification"
         q["execution_evidence"] = "timestamp_not_recorded" if q["executed_at_utc"] is None else "timestamp_recorded"
         if q["query_id"] not in query_count_ids:

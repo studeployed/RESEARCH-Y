@@ -10,6 +10,11 @@ PROJ-07 still needs a project-wide display of the latest successful source check
 
 ## Phase 3 delivery
 
+New source receipts preserve the API operation, application version, HTTP
+client identifier and the local time with UTC offset. Both spreadsheet exports
+and the selected run show the versions used at execution. Earlier source
+receipts without this evidence retain their original unknown status.
+
 See the [release matrix](docs/PHASE3_ACCEPTANCE.md) for all 22 scenarios,
 the [installation guide](docs/WINDOWS_INSTALLER.md) for the Windows build
 and [desktop guide](docs/DESKTOP.md) for researcher workflows. The full

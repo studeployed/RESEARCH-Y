@@ -391,6 +391,15 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
             ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
             render_study_queue(ui,state,act,study_edits)
             render_master(ui,state,act,native=native)
+            with ui.expansion("Source execution times and versions"):
+                for query in (state.get("report") or {}).get("queries",[]):
+                    ui.label(query["source_name"]+" · "+query["group_id"]+" · "+query["query_id"])
+                    ui.label("Stored query time (UTC) · "+(query["executed_at_utc"] or "Unavailable"))
+                    for item in query.get("source_methods",[]):
+                        ui.label(f"{item['event']} · {item['api']} · {item['client']} · RESEARCH-Y {item['application']} · "
+                                 f"{item['receipts']} receipts · local {item['first_local']} to {item['last_local']}")
+                    if not query.get("source_methods"):
+                        ui.label("No versioned source receipt recorded.")
             with ui.expansion("Verify final run scope",value=bool(state.get("run_acceptance"))):
                 ui.button("Check all source and identity evidence",on_click=lambda:act("run_acceptance"))
                 scope=state.get("run_acceptance")
