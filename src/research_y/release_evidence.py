@@ -7,6 +7,7 @@ import tempfile
 from research_y import __version__,publication_identity as identity
 from research_y.application_inspection import _read
 from research_y.export_files import Directory,filename
+from research_y.study_classification import EVENT as CLASSIFICATION_EVENT, LABELS
 
 # Only these documented identifiers and small state fields enter diagnostic output.
 SAFE_ID = {"run_id","query_id","publication_id","retrieval_id","review_id","export_id","strategy_version_id"}
@@ -15,7 +16,7 @@ STATES = {"pending","running","paused","incomplete","failed","cancelled","comple
 KNOWN = {"project_created","schema_migrated","strategy_approved","strategy_admitted","source_query_planned",
          "research_setup_updated","publication_identity_v1","publication_field_v1","publication_candidate_decision_v1",
          "pre_run_review_v1","publication_pdf_attachment_v1","manual_bibliographic_import_v1","researcher_publication_note_v1",
-         "study_classification_review_v1","conference_abstract_admission_v1","society_guidance_import_v1",
+         "study_classification_review_v1",CLASSIFICATION_EVENT,"conference_abstract_admission_v1","society_guidance_import_v1",
          "society_manual_search_v1","master_results_view_saved_v1","local_study_proposal_v1"}
 
 
@@ -33,6 +34,29 @@ def _receipt(row):
         value=info.get(key)
         if isinstance(value,str) and value in STATES:
             safe[key]=value
+    if kind == identity.IDENTITY_EVENT:
+        for key in ("before", "after"):
+            value = info.get(key)
+            if isinstance(value, str):
+                try:
+                    safe[key] = identity._identifier(value)
+                except ValueError:
+                    pass
+        if info.get("action") in ("materialise", "associate", "reverse"):
+            safe["action"] = info["action"]
+        parent = info.get("reverses_event_id")
+        if type(parent) is int and 0 < parent < eid:
+            safe["reverses_event_id"] = parent
+    if kind == CLASSIFICATION_EVENT:
+        dimension, labels = info.get("dimension"), info.get("labels")
+        if isinstance(dimension, str) and dimension in LABELS:
+            safe["dimension"] = dimension
+            if isinstance(labels, list) and all(isinstance(s,str) and s in LABELS[dimension] for s in labels):
+                safe["labels"] = labels
+        if info.get("status") in ("user-confirmed", "user-corrected"):
+            safe["status"] = info["status"]
+    if kind == identity.FIELD_EVENT and info.get("action") in ("select","clear"):
+        safe["action"] = info["action"]
     from datetime import datetime
     parsed=datetime.fromisoformat(stamp)
     return dict(event_id=eid,utc=parsed.isoformat(),event_type=kind if kind in KNOWN else "other_project_event",fields=safe)

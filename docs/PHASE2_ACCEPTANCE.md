@@ -34,6 +34,6 @@ verification handles researcher-selected text on one page. Image-only and
 multi-page abstracts require manual examination. These tests exercise a known,
 permitted sample and do not establish the coverage of a live search.
 
-Windows release packaging, broader end-to-end acceptance and the full export
-scope remain in Phase 3. Issue #119 separately tracks the live cross-day
-Web of Science observation. [Development roadmap](ROADMAP.md)
+The [Phase 3 acceptance record](PHASE3_ACCEPTANCE.md) documents the later
+Windows packaging and export checks. [Issue #119](https://github.com/studeployed/RESEARCH-Y/issues/119)
+records the completed live cross-day Web of Science observation.
