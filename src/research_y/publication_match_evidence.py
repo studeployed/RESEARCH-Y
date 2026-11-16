@@ -87,6 +87,11 @@ def repeated_journal_pair(sources, comparison):
             return False
         if fields["document_types"]["normalised"] != ('["journal article"]' if pubmed else '["article"]'):
             return False
+        source_types = fields["source_document_types"]
+        if not pubmed and source_types["status"] == "present":
+            compatible = {"journal", "journals", "article", "journal article"}
+            if any(_string(kind) not in compatible for kind in source_types["value"]):
+                return False
         identifier = _pmid(record.get("pmid")) if pubmed else _uid(record.get("uid"))
         if identifier != source["source_record_id"] or (pubmed and fields["pmid"]["normalised"] != identifier):
             return False

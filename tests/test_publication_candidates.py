@@ -366,13 +366,16 @@ def test_historical_reversal_invalidates_fresh_run_preview(tmp_path, already_out
 
 
 @pytest.mark.parametrize("case", ["shared_supplement", "meeting_abstract", "conflicting_pmid",
-                                  "missing_author", "unknown_pages", "no_prior", "shared_retrieval"])
+                                  "missing_author", "unknown_pages", "no_prior", "shared_retrieval",
+                                  "review_source", "book_source"])
 def test_repeat_suggestion_abstains_on_ambiguous_or_unreviewed_pairs(tmp_path, case):
     pubmed, wos = metadata("pubmed"), metadata("wos")
     if case == "shared_supplement":
         wos["record"]["source"]["supplement"] = "Conference supplement"
     elif case == "meeting_abstract":
         wos["record"]["types"] = ["Meeting Abstract"]
+    elif case in {"review_source", "book_source"}:
+        wos["record"]["sourceTypes"] = ["Journals", "Review" if case == "review_source" else "Book"]
     elif case == "conflicting_pmid":
         pubmed["record"]["identifiers"]["pmid"] = ["101"]
     elif case == "missing_author":
@@ -387,6 +390,25 @@ def test_repeat_suggestion_abstains_on_ambiguous_or_unreviewed_pairs(tmp_path, c
     viewed = read_candidate(project, a2, b2)
     assert viewed.confidence_rule is None and viewed.status == "review_required"
     assert len(set(viewed.publication_ids)) == 2
+
+
+def test_desktop_preview_names_rule_and_prior_audit_without_changing_counts(tmp_path):
+    from research_y.publication_review_gui import preview_candidate_review
+    from research_y.result_counts import read_run_counts
+
+    wos = metadata("wos")
+    wos["record"]["sourceTypes"] = ["Journals"]
+    project, a, b = setup(tmp_path, right=wos)
+    reviewed = decide(project, a, b, **args(read_candidate(project, a, b), decision="confirmed_match", moving=a))
+    a2, b2 = seed(project, metadata("pubmed"), "pubmed"), seed(project, wos, "wos")
+    run = next(s["run_id"] for s in read_candidate(project, a2, b2).sources if s["retrieval_id"] == a2)
+    counts = read_run_counts(project, run)
+    preview = preview_candidate_review(project, run, a2, b2, run_revision=counts.revision, cross_run=True)
+    assert preview["confidence"] == "automatic_high_confidence"
+    assert preview["confidence_rule"] == "unchanged-reviewed-journal-pair/1"
+    assert preview["recent_decisions"][-1]["event_id"] == reviewed.prior_decisions[-1]["event_id"]
+    assert preview["status"] == "review_required" and not preview["pair_already_associated"]
+    assert read_run_counts(project, run) == counts
 
 
 def test_reopen_and_relocation_preserve_receipts(tmp_path):
