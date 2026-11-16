@@ -7,6 +7,12 @@ exports. Installation and project upgrade evidence are recorded in
 [the Windows installer guide](docs/WINDOWS_INSTALLER.md) and
 [the release verification issue](https://github.com/studeployed/RESEARCH-Y/issues/163).
 
+## Download for Windows
+
+[Download the v0.1.0 Windows x64 installer](https://github.com/studeployed/RESEARCH-Y/releases/download/v0.1.0/RESEARCH-Y-Setup.exe) · [Download the SHA-256 checksum file](https://github.com/studeployed/RESEARCH-Y/releases/download/v0.1.0/RESEARCH-Y-Setup.exe.sha256)
+
+**Installer SHA-256** `87527d4ca7d71ae9cb9be8319da3cb7c757f165d12baaa5cc13fd5f990084f49`
+
 ## Scientific and technical baseline
 
 The authoritative requirements are in [`RESEARCH-Y_SPEC.md`](RESEARCH-Y_SPEC.md), version `1.0.0-draft.1`, approved 23 October 2026. Search sensitivity and auditability take priority: term groups are combined using **OR**. No Medical Subject Headings (MeSH), automatic AND/NOT restrictions or silent retrieval truncation are authorised.
