@@ -9,8 +9,9 @@ group memberships and reviewed publications are counted separately.
 **The Phase 1 core retrieval and recovery gate passed.** All six units have
 evidence on main. [P1-05's acceptance criteria](https://github.com/studeployed/RESEARCH-Y/issues/8)
 call for controlled cross-day fixtures and a live institutional entitlement
-check. The additional live two-date observation remains open in
-[issue #119](https://github.com/studeployed/RESEARCH-Y/issues/119).
+check. On 15–16 November a fresh process retained both previously committed pages
+and added page three. The daily allowance increased from 4,997 to 4,999 out of
+5,000. [Verified closeout](https://github.com/studeployed/RESEARCH-Y/issues/119#issuecomment-6903594120)
 
 | Roadmap unit | Verified observation | Evidence |
 |---|---|---|

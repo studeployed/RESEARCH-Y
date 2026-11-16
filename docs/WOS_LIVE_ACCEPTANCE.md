@@ -76,10 +76,19 @@ saved two pages with 4,998 daily requests remaining. Its resume step failed
 before producing an artifact. That version logged no second-day request count,
 quota reading or cause. [Attempt 2](https://github.com/studeployed/RESEARCH-Y/actions/runs/43389377308/attempts/2)
 
+On 15–16 November a fresh process reopened the original project, verified
+pages one and two and added page three. Starter reported 19,699 matches on
+both dates. The sample retained 150 records in four requests. The last
+first-day response showed 4,997 daily requests remaining and the first
+second-day probe showed 4,999 out of 5,000. The allowance never reached zero.
+The downloaded evidence ZIP had SHA-256
+`b703cef4e7e08359e97997de973cf4c99b187c97450cbd83e3994b1c79565cf7`.
+[Aggregate](evidence/wos-cross-day-43777095256.json) · [Live run](https://github.com/studeployed/RESEARCH-Y/actions/runs/43777095256) · [Independent artifact check](https://github.com/studeployed/RESEARCH-Y/issues/119#issuecomment-6903594120)
+
 | Requirement / scenario | Evidence now available | Still open |
 |---|---|---|
-| SRC-05, SRC-06; AT-08 | Institutional allowance, full 50-record pagination and observed count reconciliation for this query | Real quota-exhaustion/reset and multi-day recovery; broader provider-limit behaviour |
-| RUN-04, RUN-06; AT-09 | Controlled pause, separate-process reopen, unchanged committed first acquisition page | Live multi-day interruption/failure scenarios; product-wide recovery |
+| SRC-05, SRC-06; AT-08 | Institutional allowance, full 50-record pagination, count reconciliation, and observed cross-date allowance increase | Actual quota exhaustion and broader provider-limit behaviour |
+| RUN-04, RUN-06; AT-09 | Separate-process reopen on the next UTC date, unchanged prior pages, and acquisition of the next page | Other live interruption/failure scenarios and product-wide recovery |
 | SRC-08, RUN-05; AT-19 | Explicit warning status and no snapshot/full-source claim | Other partial/failing source paths and end-to-end presentation |
 | DATA-03–06; SRC-07 | Supplied source metadata retained by the tested implementation | Independent field-level completeness, full abstracts and permitted enrichment |
 | AT-21 | Offline safeguards and aggregate-only source evidence; project storage checks are covered in [the Phase 3 record](PHASE3_ACCEPTANCE.md) | Source checks alone cover only the provider workflow |
@@ -90,7 +99,6 @@ live entitlement check. The 5,000/day institutional smoke check, the observed
 enumeration above and the [reviewed cross-day fixtures](https://github.com/studeployed/RESEARCH-Y/pull/118)
 satisfy its core acceptance criteria. The separate
 [live two-date check](https://github.com/studeployed/RESEARCH-Y/issues/119)
-remains pending. Its 23:45 UTC start window lets one temporary runner span
-midnight and keep its private SQLite project through the restart.
+passed on 16 November using one disposable runner and its private SQLite project.
 The [Phase 1 acceptance record](PHASE1_ACCEPTANCE.md) links the master list,
 initial workbook and installed Windows application evidence.

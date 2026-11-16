@@ -1,0 +1,19 @@
+{
+  "actual_exhaustion_observed": false,
+  "commit_sha": "e693ba24fcc8c017c2af1149e6ad4822fb44b40e",
+  "cross_day_resume_verified": true,
+  "daily_limit": 5000,
+  "first_day_remaining": 4997,
+  "first_utc_date": "2026-11-15",
+  "github_run_id": "43777095256",
+  "original_pages_unchanged": true,
+  "pages_after": 3,
+  "pages_before": 2,
+  "quota_increase_observed": true,
+  "records_retained": 150,
+  "requests": 4,
+  "resumed_probe_remaining": 4999,
+  "resumed_utc_date": "2026-11-16",
+  "source_retrieval_verified": false,
+  "stable_reported_matches": 19699
+}
