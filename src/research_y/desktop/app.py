@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from importlib.metadata import version
+from importlib.resources import files
 import multiprocessing
 import os
 from pathlib import Path
@@ -58,6 +59,9 @@ async def recover_missing_home(window, session, *, delay=12):
 
 
 def build_page(app, ui, flow, settings_warnings=()):
+    resources = files('research_y.desktop')
+    field_styles = resources.joinpath('forms.css').read_text(encoding='utf-8')
+    quick_start = resources.joinpath('QUICK_START.md').read_text(encoding='utf-8')
     lock = asyncio.Lock()
     inference = asyncio.Lock()
     crossref = asyncio.Lock()
@@ -213,8 +217,11 @@ def build_page(app, ui, flow, settings_warnings=()):
                     await act(action)
                     break
 
-        ui.query('.nicegui-content').classes('q-pa-md q-mx-auto').style('max-width: 75rem; width: 100%')
+        ui.add_css(field_styles)
+        ui.query('.nicegui-content').classes('q-pa-md q-mx-auto').style('max-width: 75rem; width: 100%; overflow-wrap: anywhere')
         ui.label('RESEARCH-Y').classes('text-h4').props('data-testid=desktop-title')
+        with ui.expansion('How to use RESEARCH-Y', icon='help_outline').props('data-testid=quick-start'):
+            ui.markdown(quick_start)
         from research_y.desktop.settings import render_settings
         render_settings(ui,flow)
         for warning in settings_warnings:

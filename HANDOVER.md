@@ -1,5 +1,9 @@
 # RESEARCH-Y handover
 
+## Windows forms and first-search guide
+
+Version 0.1.2 places field labels above their editors and lets them wrap as the window narrows. **How to use RESEARCH-Y** opens the packaged first-search guide from the home screen. The native lifecycle check opens the guide and measures populated, focused and empty Research Setup fields at two window widths.
+
 ## Windows project picker
 
 In 0.1.0, starting the packaged launcher without `HOMEPATH` reproduced a

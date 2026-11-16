@@ -9,6 +9,8 @@ exports. Installation and project upgrade evidence are recorded in
 
 ## Download for Windows
 
+Open **How to use RESEARCH-Y** at the top of the application, or read the [first-search guide](src/research_y/desktop/QUICK_START.md).
+
 [Download the v0.1.0 Windows x64 installer](https://github.com/studeployed/RESEARCH-Y/releases/download/v0.1.0/RESEARCH-Y-Setup.exe) · [Download the SHA-256 checksum file](https://github.com/studeployed/RESEARCH-Y/releases/download/v0.1.0/RESEARCH-Y-Setup.exe.sha256)
 
 **Installer SHA-256** `87527d4ca7d71ae9cb9be8319da3cb7c757f165d12baaa5cc13fd5f990084f49`
