@@ -58,6 +58,9 @@ async def recover_missing_home(window, session, *, delay=12):
 
 def build_page(app, ui, flow, settings_warnings=()):
     lock = asyncio.Lock()
+    inference = asyncio.Lock()
+    crossref = asyncio.Lock()
+    provider = asyncio.Lock()
 
     @ui.page('/')
     def project_page():
@@ -74,9 +77,18 @@ def build_page(app, ui, flow, settings_warnings=()):
 
         async def act(action, value=None):
             nonlocal error
-            if lock.locked():
+            action_lock = lock
+            if action in ("cloud_confirm", "local_suggest", "study_suggest", "native_install_local_model"):
+                action_lock = inference
+            elif action in ("pubmed_pilot_confirm","wos_pilot_confirm","wos_acquisition_tick_confirm"):
+                action_lock = provider
+            elif isinstance(value, dict) and (
+                    (action == "specialist" and value.get("action") == "enrichment_lookup")
+                    or (action == "master_results" and value.get("operation") == "lookup")):
+                action_lock = crossref
+            if lock.locked() or action_lock.locked():
                 return
-            async with lock:
+            async with action_lock:
                 try:
                     if action == "native_install_local_model":
                         from research_y.install_local_assistant import download_local_package

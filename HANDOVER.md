@@ -15,6 +15,15 @@ request a DOI lookup for a missing abstract. The export dialog lets researchers
 choose which sources permit sharing abstract text. Each RIS bibliography has an
 accompanying JSON scope receipt, including an empty selection.
 
+Open **Review queues** under the selected run to inspect conflicting source
+tags, citation differences, missing abstracts or incomplete conference
+extraction. Society follow-up covers the project directory and links to the
+original visits. Reviewing a citation preserves the source values and records
+the researcher's reason. A changed publication can require review again.
+Researchers can inspect the project audit while a pilot request is running
+and edit their draft during inference. A late response for a removed seed
+cannot add suggestions to the revised draft.
+
 The Windows workflow rehearses both a clean install and an upgrade of a project
 written by the Phase 3 build. Issue #163 remains open for the outstanding product
 requirements and verification of the installer built from the final merged commit.
