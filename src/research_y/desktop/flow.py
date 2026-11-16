@@ -601,6 +601,18 @@ class RealProjectFlow:
             self._run_comparison = compare_runs(self.project,earlier,later,category=category,offset=offset)
             return self._publish()
 
+    def save_update_method(self, run_id, earlier_run, method, actor, expected_event):
+        from research_y.run_comparison import record_update_method
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if run_id != self.selected_run_id or not run_id:
+                raise ProjectFlowError("Select the run whose update method you want to record.")
+            record_update_method(self.project,run_id,earlier_run=earlier_run,method=method,actor=actor,
+                                 expected_event=expected_event)
+            self.snapshot = self._operation('inspect',run_id=run_id)['snapshot']
+            return self._publish()
+
     def note_comparison_source(self,retrieval_id,actor,text,expected_event):
         from research_y.run_comparison import append_note
         with self._guard:

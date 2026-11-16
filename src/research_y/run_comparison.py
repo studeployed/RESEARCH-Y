@@ -5,6 +5,39 @@ from research_y.publication_candidates import _source_key
 from research_y.projects import _utc_now,_validated_project_connection
 
 NOTE = "researcher_publication_note_v1"
+UPDATE_METHOD = "search_update_method_v1"
+
+
+def latest_update_method(db, run_id):
+    row = db.execute("SELECT event_id,details_json FROM audit_events WHERE event_type=? "
+                     "AND json_extract(details_json,'$.run_id')=? ORDER BY event_id DESC LIMIT 1",
+                     (UPDATE_METHOD,run_id)).fetchone()
+    return dict(identity._object(row[1]),event_id=row[0]) if row else None
+
+
+def record_update_method(project, run_id, *, earlier_run, method, actor, expected_event):
+    identity._identifier(run_id)
+    identity._text(method,4000)
+    identity._text(actor,200)
+    if earlier_run is not None:
+        identity._identifier(earlier_run)
+    with _validated_project_connection(project) as db:
+        db.execute("BEGIN IMMEDIATE")
+        current = db.execute("SELECT created_at_utc FROM search_runs WHERE run_id=?", (run_id,)).fetchone()
+        if not current:
+            raise ValueError("Select a run")
+        if earlier_run is not None and (earlier_run == run_id or not db.execute(
+                "SELECT 1 FROM search_runs WHERE run_id=? AND created_at_utc<=?",
+                (earlier_run,current[0])).fetchone()):
+            raise ValueError("Select an earlier run from this project")
+        prior = latest_update_method(db,run_id)
+        fields = dict(run_id=run_id,earlier_run=earlier_run,actor=actor,method=method)
+        if prior and all(prior[k]==v for k,v in fields.items()):
+            return prior
+        if (prior and prior["event_id"]) != expected_event:
+            raise ValueError("The recorded update method changed. Reopen the run.")
+        event = dict(fields,at_utc=_utc_now(),prior_event_id=expected_event)
+        return dict(event,event_id=identity._audit(db,UPDATE_METHOD,event))
 
 
 def _notes(db,project_source):

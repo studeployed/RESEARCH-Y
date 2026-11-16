@@ -1,5 +1,7 @@
 from contextlib import closing
+from io import BytesIO
 import sqlite3
+from uuid import uuid4
 
 from openpyxl import load_workbook
 import pytest
@@ -8,6 +10,47 @@ from research_y.master_exports import export_results
 from research_y.master_results import MasterResults,DEFAULT
 from research_y.preflight_review import PRESS_ITEMS,read_preflight,record_preflight_review
 from test_preflight_review import _project,_submission
+
+
+def test_expansion_ancestry_and_run_update_method_in_both_workbooks(tmp_path):
+    from research_y.desktop.strategy_setup import StrategyDraft
+    from research_y.desktop.flow import RealProjectFlow
+    from research_y.run_comparison import record_update_method
+    from research_y.strategy_admission import commit_approved_strategy
+    from research_y.strategy_report import capture_strategy_report
+    from research_y.strategy_workbook import render_strategy_workbook
+    project, earlier = _project(tmp_path)
+    draft = StrategyDraft()
+    group = draft.add_group("Support")
+    seed = draft.add_term(group,"ECMO")
+    draft.local_offers(group,seed,{"terms":["extracorporeal membrane oxygenation"],"model":"fixture"},12)
+    draft.review_variant(next(iter(draft.suggestions)),"accept")
+    second = draft.groups[0]["terms"][-1]["term_id"]
+    draft.local_offers(group,second,{"terms":["ECLS"],"model":"fixture"},13)
+    draft.review_variant(next(reversed(draft.suggestions)),"accept","extracorporeal life support")
+    later = commit_approved_strategy(project,request_id=str(uuid4()),theme="Updated strategy",
+        approved_by="Reviewer",groups=draft.approved_groups(),approval_confirmed=True).run_id
+    method = "Repeated both database searches from inception with the revised approved terminology."
+    with closing(RealProjectFlow()) as flow:
+        flow.open_native_folder(project.root)
+        flow.select_run(later)
+        state = flow.save_update_method(later,earlier,method,"Reviewer",None)
+        receipt = state["report"]["run"]["update_method"]
+        assert receipt["earlier_run"] == earlier
+        assert flow.save_update_method(later,earlier,method,"Reviewer",None)["report"]["run"]["update_method"] == receipt
+    with pytest.raises(ValueError,match="changed"):
+        record_update_method(project,later,earlier_run=earlier,method="Stale edit",actor="Reviewer",expected_event=None)
+    report = capture_strategy_report(project,later)
+    standalone = BytesIO(render_strategy_workbook(report))
+    workbook = tmp_path/"Update.xlsx"
+    with closing(MasterResults.capture(project,later)) as master:
+        export_results(project,master,workbook,DEFAULT,scope="entire")
+    for path in (standalone,workbook):
+        with closing(load_workbook(path,read_only=True)) as book:
+            assert method in str(list(book["Methods"].values))
+            row = next(r for r in book["Search Terms"].values if "extracorporeal life support" in r)
+            assert row[-3:] == ("ECMO","extracorporeal membrane oxygenation","extracorporeal life support")
+    assert "update_method" not in capture_strategy_report(project,earlier).as_dict()["run"]
 
 
 @pytest.mark.parametrize("plan", ["approved", "legacy_parameters", "title_only"])

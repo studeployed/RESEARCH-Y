@@ -9,6 +9,8 @@ def perform_action(flow, name, value=None):
         return flow.read_project_audit(value or 0)
     if name == "compare_run_history":
         return flow.compare_run_history(**value)
+    if name == "save_update_method":
+        return flow.save_update_method(**value)
     if name == "note_comparison_source":
         return flow.note_comparison_source(**value)
     if name == "import_bibliography":

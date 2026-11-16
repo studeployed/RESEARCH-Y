@@ -29,6 +29,7 @@ class ApprovedTerm:
     approved: bool
     rationale: str = ""
     enabled: bool = True
+    expansion_path: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +122,9 @@ def _groups_snapshot(groups: Sequence[StrategyGroup]) -> list[dict[str, Any]]:
                 raise ValueError("AI-generated terms require a visible rationale")
             if type(term.enabled) is not bool:
                 raise TypeError("enabled must be a boolean")
+            if not isinstance(term.expansion_path, tuple) or any(
+                    not isinstance(parent, str) or not parent.strip() for parent in term.expansion_path):
+                raise ValueError("Expansion ancestry must contain recorded seed terms")
             if value in seen_terms:
                 raise ValueError("Duplicate atomic term in approved group")
             seen_terms.add(value)
@@ -128,6 +132,8 @@ def _groups_snapshot(groups: Sequence[StrategyGroup]) -> list[dict[str, Any]]:
                 "text": value, "origin": term.origin, "rationale": term.rationale,
                 "enabled": term.enabled, "approved": True,
             })
+            if term.expansion_path:
+                stored_terms[-1]["expansion_path"] = list(term.expansion_path)
         stored.append({
             "group_id": group_id, "label": label,
             "group_order": number, "terms": stored_terms,

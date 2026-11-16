@@ -335,6 +335,19 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                      ' stored; pending run ' + done['run_id'] +
                      '. Queries planned but NOT EXECUTED.').props(
                          'data-testid=setup-approval-result')
+        if state.get('report'):
+            run = state['report']['run']
+            update = run.get('update_method') or {}
+            with ui.expansion("Search update method"):
+                earlier_runs = {r["run_id"]: f'Version {r["version_number"]} · {r["run_id"]}' for r in state["runs"]
+                                if r["run_id"] != run["run_id"] and r["created_at_utc"] <= run["created_at_utc"]}
+                earlier_run = ui.select(earlier_runs,label="Earlier project run (if applicable)",
+                                        value=update.get("earlier_run"),clearable=True)
+                method = ui.textarea("How this search was run or updated, for the methods report",value=update.get("method",""))
+                update_author = ui.input("Researcher recording the method",value=update.get("actor",""))
+                ui.button("Record search update method",on_click=lambda:act("save_update_method",dict(
+                    run_id=run["run_id"],earlier_run=earlier_run.value,method=method.value,actor=update_author.value,
+                    expected_event=update.get("event_id"))))
         if len(state['runs'])>=2:
             comparison=state.get("run_comparison")
             with ui.expansion("Compare search runs",value=bool(comparison)):

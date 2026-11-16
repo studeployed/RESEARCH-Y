@@ -55,6 +55,7 @@ def _method_rows(data,context):
         ("Abstract rights","Text inclusion follows the export's explicit permission choice."),
         ("Continued Text","Concatenate parts in numeric order for the listed worksheet, logical row and column."),
         ("Methods scope","Reporting evidence is limited to the selected run and the stored search activities."),
+        ("Search update method",data["run"].get("update_method") or "No update method recorded for this run."),
     ]
 
 
@@ -201,6 +202,9 @@ def _workbook(path, results, rows, report, context, include_abstracts, row_limit
                           dict(source=q["source_name"],strategy=q["exact_query"],timestamp=q["executed_at_utc"],
                                status=q["status"],execution_evidence=q["execution_evidence"])))
     append(checklist,("PRISMA-S","Deduplication method","recorded","Current source associations and applicable comparison receipts in Deduplication Audit."))
+    update = data["run"].get("update_method")
+    append(checklist,("PRISMA-S","Search update method","reported by researcher" if update else "awaiting verification",
+                      update or "No update method recorded for this run."))
     append(checklist,("PRISMA-S","Citation chasing","not undertaken in this workflow","No citation-chasing stage is recorded."))
     append(checklist,("PRISMA-S","Registry search","not applicable to these source connectors","Coverage is described for the selected databases."))
     append(checklist,("PRESS","Programmatic plan validation",status,"Match to the approved stored source query inventory."))
