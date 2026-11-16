@@ -57,6 +57,15 @@ Shared-host Continuous Integration (CI) timing varies with hardware and runner c
 
 ## Safety and provenance
 
+When the same provider record keys appear in a later review, the application
+compares the complete stored provider metadata for both records with the latest
+reviewed pair. It reports changed metadata, unchanged metadata, or an outdated
+decision if the earlier publication state or rule changed. This check uses the
+original records in the same database transaction as the preview. Reversing
+the historical association invalidates a pending decision on the later pair.
+The researcher can inspect the earlier match or rejection before deciding.
+The queue performance measurements above predate this comparison.
+
 No programmatically generated data resembles or incorporates the researcher's private literature searches. The performance workflow uses disposable synthetic identifiers, **no abstracts, credentials, network/provider queries, clinical documents or patient information**. Measurements and aggregate counts do not represent retrieved biomedical literature. No language/species filtering, search Boolean logic, deduplication rule or original publication identity is changed.
 
 Every queue response still declares `global_unique_publications=null`, `deduplication_complete=false`, `candidate_discovery_complete=false`, `source_retrieval_verified=false`, `verified_complete=false`. A completed indexed **pair hint** is not a verified publication or automatically confirmed duplicate.
