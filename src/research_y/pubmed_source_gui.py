@@ -15,7 +15,7 @@ from research_y.pubmed_checkpoint_store import (
     _load_checkpoint, _snapshot_from_db, CheckpointIntegrityError,
 )
 from research_y.pubmed_checkpoint_resume import start_checkpointed_pubmed_retrieval
-from research_y.pubmed_partition import DateWindow
+from research_y.pubmed_partition import DateWindow, MAX_PARTITION_NODES
 from research_y.pubmed_probe import PubMedESearchProbeClient, PubMedProbeError
 
 MAX_PUBMED_REQUESTS = 512  # per explicit session, including count probes
@@ -39,6 +39,17 @@ class PubMedSourceError(ValueError):
     def __init__(self, code="pubmed_source_unavailable"):
         self.code = code if code in SAFE_CODES else "pubmed_source_unavailable"
         super().__init__(self.code)
+
+
+def identifier_session_limits(extended: bool) -> tuple[int, int]:
+    """Return transport and planning limits for the mode shown before consent."""
+    if type(extended) is not bool:
+        raise PubMedSourceError("pubmed_identifier_budget_invalid")
+    if extended:
+        # Allow every plan the checkpoint store can represent plus work after
+        # planning. Subsequent sessions recheck the root and each saved leaf.
+        return MAX_PARTITION_NODES + MAX_PUBMED_REQUESTS, MAX_PARTITION_NODES
+    return MAX_PUBMED_REQUESTS, MAX_COUNT_PROBES
 
 
 def _uuid(value):
@@ -216,9 +227,10 @@ class _BudgetedESearch:
 
 def run_pubmed_source_session(
     project, *, run_id, query_id, expected_plan_sha256,
-    coverage_start, coverage_end, confirmed, client,
+    coverage_start, coverage_end, confirmed, client, extended=False,
 ):
     """One explicit bounded ESearch session; final metadata is NOT retrieved."""
+    request_limit, probe_limit = identifier_session_limits(extended)
     _sha(expected_plan_sha256)
     window = _window(coverage_start, coverage_end)
     if (confirmed is not True or type(client) is not PubMedESearchProbeClient):
@@ -227,7 +239,7 @@ def run_pubmed_source_session(
     if preview["plan_sha256"] != expected_plan_sha256:
         raise PubMedSourceError("pubmed_plan_unverified")
     prior = preview["checkpoint"]
-    if prior is not None and not prior["resume_budget_sufficient"]:
+    if prior is not None and prior["minimum_resume_requests"] > request_limit:
         raise PubMedSourceError("pubmed_verification_exceeds_budget")
     if prior is not None and prior["coverage"] is not None:
         if prior["coverage"] != {"start": coverage_start, "end": coverage_end}:
@@ -235,12 +247,12 @@ def run_pubmed_source_session(
     # A completed identifier stage is not a fresh network entitlement.
     if prior is not None and prior["status"] == "identifiers_reconciled_metadata_pending":
         raise PubMedSourceError("pubmed_query_not_ready")
-    budgeted = _BudgetedESearch(client, MAX_PUBMED_REQUESTS)
+    budgeted = _BudgetedESearch(client, request_limit)
     try:
         result = start_checkpointed_pubmed_retrieval(
             project, query_id, budgeted, date_window=window,
             page_size=PUBMED_PAGE_SIZE,
-            max_count_probes=MAX_COUNT_PROBES,
+            max_count_probes=probe_limit,
             expected_run_id=run_id,
             expected_plan_sha256=expected_plan_sha256,
         )
@@ -251,7 +263,7 @@ def run_pubmed_source_session(
         "run_id": run_id, "query_id": query_id,
         "plan_sha256": expected_plan_sha256,
         "session_requests_reserved": budgeted.requests_made,
-        "session_request_limit": MAX_PUBMED_REQUESTS,
+        "session_request_limit": request_limit,
         "status": result.status,
         "checkpoint": saved["checkpoint"],
         "source_retrieval_verified": False,

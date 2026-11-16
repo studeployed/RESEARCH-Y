@@ -1,6 +1,7 @@
 from contextlib import closing
 
 from research_y import master_results
+from research_y import master_exports, study_classification
 from research_y.desktop.flow import RealProjectFlow
 from research_y.projects import open_project
 from research_y.run_execution_board import read_run_execution_board
@@ -41,6 +42,30 @@ def test_frozen_master_search_facets_selection_and_saved_views(tmp_path):
     reopened = open_project(project.root)
     assert master_results.saved_views(reopened)["Evidence"]["spec"]==spec
     assert read_run_execution_board(reopened,run)["source_count_revision"]==before["source_count_revision"]
+
+
+def test_post_retrieval_exclusions_preserve_ambiguous_selected_export_and_source_counts(tmp_path):
+    project, run, _, _ = populated(tmp_path)
+    before = read_run_execution_board(project, run)["source_count_revision"]
+    with closing(master_results.MasterResults.capture(project, run)) as results:
+        papers = [row["publication_id"] for row in results.records(master_results.DEFAULT,"entire")]
+    for pid, dimension, label in [(papers[0], "language", "non-English"), (papers[1], "population", "non-human"),
+                                  (papers[2], "language", "multilingual"), (papers[2], "population", "unclear")]:
+        view = study_classification.read_classification(project,pid)
+        study_classification.review_classification(project,pid,dimension=dimension,labels=[label],actor="Reviewer",
+            rationale="Reviewed the original source",expected_revision=view["revision"],confirmed=True)
+    spec = master_results.specification(hide_non_english=True,hide_non_human_only=True)
+    with closing(master_results.MasterResults.capture(project,run)) as results:
+        assert results.page(spec)["matching"] == 1
+        results.select(spec,all_matching=True)
+        assert [r["publication_id"] for r in results.records(spec,"selected")] == [papers[2]]
+        assert len(list(results.records(spec,"entire"))) == 3
+        receipt = master_exports.export_results(project,results,tmp_path/"Selected.ris",spec,scope="selected")
+        assert receipt["rows"] == 1
+        assert (tmp_path/"Selected.ris").read_text(encoding="utf-8").count("TY  -") == 1
+        master_results.save_view(project,"Post-retrieval exclusions",spec)
+    assert master_results.saved_views(open_project(project.root))["Post-retrieval exclusions"]["spec"] == spec
+    assert read_run_execution_board(project,run)["source_count_revision"] == before
 
 
 def test_desktop_merged_publication_has_both_originals_and_full_local_abstract(tmp_path):

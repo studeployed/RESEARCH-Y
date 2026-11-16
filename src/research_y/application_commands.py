@@ -188,6 +188,7 @@ class ApplicationCommand:
     pubmed_source_plan_sha256: str | None = None
     pubmed_coverage_start: str | None = None
     pubmed_coverage_end: str | None = None
+    pubmed_extended_session: bool | None = None
     pubmed_source_confirmed: bool | None = None
     pubmed_source_contact_email: str | None = None
     pubmed_source_api_key: str | None = None
@@ -297,7 +298,7 @@ class ApplicationCommand:
                 self.pubmed_source_query_id, self.pubmed_source_plan_sha256,
                 self.pubmed_coverage_start, self.pubmed_coverage_end,
                 self.pubmed_source_confirmed, self.pubmed_source_contact_email,
-                self.pubmed_source_api_key,
+                self.pubmed_source_api_key, self.pubmed_extended_session,
             )
             coordination_fields = (
                 self.coord_plan_sha256, self.coord_tasks,
@@ -582,7 +583,10 @@ class ApplicationCommand:
                     _sha(self.pubmed_source_plan_sha256)
                     if self.operation == 'pubmed_identifier_run':
                         _window(self.pubmed_coverage_start, self.pubmed_coverage_end)
-                    elif self.pubmed_coverage_start is not None or self.pubmed_coverage_end is not None:
+                        if self.pubmed_extended_session is not None and type(self.pubmed_extended_session) is not bool:
+                            raise ValueError
+                    elif any(v is not None for v in (self.pubmed_coverage_start, self.pubmed_coverage_end,
+                                                       self.pubmed_extended_session)):
                         raise ValueError
                     if (self.pubmed_source_confirmed is not True or
                             type(self.pubmed_source_contact_email) is not str or
@@ -1167,6 +1171,7 @@ def execute_command(command: ApplicationCommand) -> dict:
                     expected_plan_sha256=command.pubmed_source_plan_sha256,
                     coverage_start=command.pubmed_coverage_start,
                     coverage_end=command.pubmed_coverage_end,
+                    extended=command.pubmed_extended_session is True,
                     confirmed=command.pubmed_source_confirmed,client=client)
             except source.PubMedSourceError as exc:
                 raise ApplicationCommandError(exc.code) from None

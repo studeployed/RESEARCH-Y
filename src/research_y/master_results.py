@@ -22,12 +22,14 @@ def evidence_head(db):
     return db.execute("SELECT coalesce(max(event_id),0) FROM audit_events WHERE event_type<>?",(SAVED,)).fetchone()[0]
 
 
-def specification(text="", facets=None, sort="title", descending=False, columns=None):
+def specification(text="", facets=None, sort="title", descending=False, columns=None,
+                  hide_non_english=False, hide_non_human_only=False):
     if facets is None:
         facets = {}
     if columns is None:
         columns = DEFAULT["columns"]
     if (not isinstance(text,str) or len(text)>512 or not isinstance(facets,dict) or facets.keys()-FACETS
+            or type(hide_non_english) is not bool or type(hide_non_human_only) is not bool
             or sort not in SORTS or type(descending) is not bool or not isinstance(columns,list)
             or not columns or len(columns)>len(COLUMNS) or any(c not in COLUMNS for c in columns)
             or len(set(columns))!=len(columns)):
@@ -36,8 +38,13 @@ def specification(text="", facets=None, sort="title", descending=False, columns=
         if (not isinstance(values,list) or not 1<=len(values)<=100 or
                 any(not isinstance(v,str) or not v or len(v)>500 for v in values)):
             raise ValueError("Invalid facet values")
-    return dict(text=text.strip(),facets={k:sorted(set(v)) for k,v in facets.items()},
+    spec = dict(text=text.strip(),facets={k:sorted(set(v)) for k,v in facets.items()},
                 sort=sort,descending=descending,columns=list(columns))
+    if hide_non_english:
+        spec["hide_non_english"] = True
+    if hide_non_human_only:
+        spec["hide_non_human_only"] = True
+    return spec
 
 
 def _abstract(record):
@@ -99,9 +106,11 @@ def _rows(db,run):
             source = identity._source_from_row(raw[:6],raw[6])
             identity._link_from_evidence(source,pid,raw[8],raw[11:])
             snapshot = identity.PublicationSnapshot(pid,raw[9],source["source_sha256"],(source,),{})
+        non_human_only = False
         if pid in reviewed:
             view = study_classification._view(db,pid)
             dimensions,statuses = view["current"],sorted(set(view["review_status"].values()))
+            non_human_only = view["explicit_non_human_only"]
             conflict = view["warnings"]
         else:
             dimensions,_,conflict = study_classification._proposals(snapshot)
@@ -136,7 +145,7 @@ def _rows(db,run):
         row = dict(publication_id=pid,**{k:_citation(snapshot,mappings,k) for k in ("title","year","journal","doi")},
                    sources=sorted({s["source_name"] for s in sources}), groups=groups,**dimensions,
                    review_status=statuses,warnings=conflict,source_evidence=originals)
-        yield row," ".join(searchable).casefold()
+        yield row," ".join(searchable).casefold(),non_human_only
 
 
 class MasterResults:
@@ -163,13 +172,15 @@ class MasterResults:
                 results.audit_head = evidence_head(original)
                 digest = sha256(identity._json([results.project_id,run,info]).encode())
                 results.total = 0
-                for row,search_text in _rows(original,run):
+                for row,search_text,non_human_only in _rows(original,run):
                     pid, record = row["publication_id"],identity._json(row)
                     digest.update(sha256(record.encode()).digest())
                     results.db.execute("INSERT INTO rows VALUES(?,?,?,?,?)",(pid,(row["title"] or "").casefold(),
                                        row["year"] or "",search_text,record))
                     values = dict(source=row["sources"],group=row["groups"],review_status=row["review_status"],
                                   **{k:row[k] for k in study_classification.LABELS})
+                    if non_human_only:
+                        values["exclusion"] = ["reviewed_non_human_only"]
                     results.db.executemany("INSERT INTO facets VALUES(?,?,?)",
                                            ((k,v,pid) for k,group in values.items() for v in group))
                     results.total += 1
@@ -184,7 +195,7 @@ class MasterResults:
 
     def options(self):
         result = {}
-        for key,value in self.db.execute("SELECT DISTINCT kind,value FROM facets ORDER BY kind,value"):
+        for key,value in self.db.execute("SELECT DISTINCT kind,value FROM facets WHERE kind<>'exclusion' ORDER BY kind,value"):
             result.setdefault(key,[]).append(value)
         return result
 
@@ -198,6 +209,11 @@ class MasterResults:
             marks = ",".join("?" for _ in values)
             clauses.append(f"r.id IN (SELECT id FROM facets WHERE kind=? AND value IN ({marks}))")
             params.extend([kind,*values])
+        for enabled, kind, value in (("hide_non_english", "language", "non-English"),
+                                     ("hide_non_human_only", "exclusion", "reviewed_non_human_only")):
+            if spec.get(enabled):
+                clauses.append("r.id NOT IN (SELECT id FROM facets WHERE kind=? AND value=?)")
+                params.extend([kind, value])
         if selected:
             clauses.append("r.id IN (SELECT id FROM chosen)")
         where = " FROM rows r" + (" WHERE "+" AND ".join(clauses) if clauses else "")

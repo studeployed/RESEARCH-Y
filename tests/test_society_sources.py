@@ -41,6 +41,8 @@ def test_guideline_without_doi_or_journal_has_distinct_roles_evidence_and_unchan
     args = dict(request_id=str(uuid4()), run_id=run, visit_event_id=visit["event_id"],
                 record=dict(title="Rehabilitation practice guidance", document_types=["clinical practice guideline"],
                             edition="2025", landing_url="https://society.example/guidance",
+                            identifiers=[{"scheme": "society catalogue", "value": "G-00017"},
+                                         {"scheme": "ISBN", "value": "978-0-00-000000-2"}],
                             document_url="https://society.example/guidance/2025.pdf"),
                 roles={"issuing": [issuer["society_id"]], "collaborating": [collaborator["society_id"]]},
                 actor="Reviewer", confirmed=True)

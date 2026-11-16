@@ -151,7 +151,7 @@ def perform_action(flow, name, value=None):
     if name == 'pubmed_identifier_read':
         return flow.inspect_stored_pubmed_source(value)
     if name == 'pubmed_identifier_offer':
-        if type(value) is not dict or set(value) != {
+        if type(value) is not dict or set(value) - {'extended'} != {
                 'query_id','coverage_start','coverage_end'}:
             raise ProjectFlowError('pubmed_coverage_invalid')
         return flow.offer_pubmed_source(**value)

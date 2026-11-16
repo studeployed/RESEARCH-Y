@@ -38,6 +38,8 @@ def render_master(ui,state,act,*,native):
                     ui.label(f'Saved {done["rows"]} publication rows to {done["filename"]}')
         with ui.expansion("Search, filters and columns"):
             query = ui.input("Search titles, abstracts, citations or identifiers",value=spec["text"])
+            languages = ui.checkbox("Hide explicitly non-English records",value=spec.get("hide_non_english",False))
+            population = ui.checkbox("Hide reviewed non-human-only records",value=spec.get("hide_non_human_only",False))
             filters = {key:ui.select(values,value=spec["facets"].get(key,[]),label=key.replace("_"," ").title(),
                                      multiple=True) for key,values in view["options"].items()}
             sort = ui.select(["title","year","publication_id"],value=spec["sort"],label="Sort by")
@@ -45,7 +47,8 @@ def render_master(ui,state,act,*,native):
             columns = ui.select(list(COLUMNS),value=spec["columns"],label="Visible columns",multiple=True)
             ui.button("Apply filters and columns",on_click=lambda:send("apply",spec=dict(text=query.value or "",
                       facets={k:v.value for k,v in filters.items() if v.value},sort=sort.value,
-                      descending=reverse.value,columns=columns.value)))
+                      descending=reverse.value,columns=columns.value,hide_non_english=languages.value,
+                      hide_non_human_only=population.value)))
             name = ui.input("Save applied view as")
             ui.button("Save current view",on_click=lambda:send("save",name=name.value))
             if view["saved"]:

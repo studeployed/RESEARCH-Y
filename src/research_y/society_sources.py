@@ -150,7 +150,7 @@ def import_guidance(project, *, request_id, run_id, visit_event_id, record, role
     if confirmed is not True or not isinstance(record, dict) or not isinstance(roles, dict):
         raise ValueError("Researcher confirmation and guidance metadata required")
     optional = {"authors", "edition", "issue_date", "update_statement", "document_url", "journal_citation",
-                "supplement", "doi"}
+                "supplement", "doi", "identifiers"}
     required = {"title", "document_types", "landing_url"}
     if not required <= record.keys() or record.keys() - required - optional:
         raise ValueError("Unexpected or missing guidance fields")
@@ -163,6 +163,15 @@ def import_guidance(project, *, request_id, run_id, visit_event_id, record, role
     for field in optional & record.keys():
         if field == "document_url":
             web_url(record[field])
+        elif field == "identifiers":
+            identifiers = record[field]
+            if not isinstance(identifiers, list) or len(identifiers) > 128:
+                raise ValueError("Expected up to 128 identifiers")
+            for item in identifiers:
+                if not isinstance(item, dict) or set(item) != {"scheme", "value"}:
+                    raise ValueError("Each identifier requires its scheme and value")
+                identity._text(item["scheme"], 100)
+                identity._text(item["value"], 2048)
         elif field == "authors":
             if not isinstance(record[field], list) or len(record[field]) > 512:
                 raise ValueError("Expected a list of authors")

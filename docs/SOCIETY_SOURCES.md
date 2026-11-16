@@ -18,7 +18,10 @@ same request and input to recover a lost reply.
   `actor`, `record` and `roles`. The record needs a title, document types and
   an observed official landing URL. Optional source fields include authors,
   edition, issue date, update statement, direct document URL, journal
-  citation, supplement and DOI. Omit unavailable fields. Each supplied
+  citation, supplement and DOI. In the desktop form, enter additional source
+  identifiers one per line as `scheme=value`. The import accepts them in
+  `identifiers` as a list of objects with `scheme` and `value` fields, preserving
+  the source's spelling and leading zeros. Omit unavailable fields. Each supplied
   role lists the corresponding project society IDs. At least one issuing
   society is required. Collaborating and endorsing organisations must be
   identified explicitly from the source.

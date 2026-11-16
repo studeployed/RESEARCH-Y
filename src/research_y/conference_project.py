@@ -43,12 +43,12 @@ def _preview_pdf_block(project, retrieval_id, page_view, **selection):
 
 
 def admit_pdf_block(project, retrieval_id, payload, *, page, selection, expected_revision, actor, confirmed,
-                    retention_authorized):
+                    retention_authorized, last_page=None):
     from research_y import conference_pdf
     if confirmed is not True or retention_authorized is not True:
         raise ValueError("Confirm the abstract and local text retention")
     identity._text(actor,200)
-    inspection = conference_pdf.select_block(conference_pdf.read_page(payload,page),**selection)
+    inspection = conference_pdf.select_block(conference_pdf.read_page(payload,page,last_page),**selection)
     return _admit(project,retrieval_id,inspection,[inspection["abstracts"][0]["locator"]],expected_revision,
                   actor,conference_pdf.METHOD,"conference_pdf")
 

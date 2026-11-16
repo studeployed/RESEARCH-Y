@@ -6,6 +6,12 @@ transaction. It returns proposed and current values for design, format,
 original research, language and population. Each rule observation identifies
 the original retrieval, source hash, exact metadata field and observed value.
 
+When reviewing original research, check the methods and results. A secondary
+analysis reporting new estimates from an existing cohort qualifies. A review
+or meta-analysis synthesising published studies is evidence synthesis. Record
+a protocol without findings as a protocol and select no for original research.
+Leave the decision unclear when the available record does not establish this.
+
 ```text
 python -m scripts.review_publication_classification PROJECT PUBLICATION_ID inspect
 python -m scripts.review_publication_classification PROJECT PUBLICATION_ID review --dimension design --label RCT --actor Researcher --rationale "Checked the methods" --revision REVISION --confirm

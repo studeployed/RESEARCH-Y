@@ -125,7 +125,8 @@ class LocalAssistant:
         fields["design"] = {"type": "array", "minItems": 1, "maxItems": 6, "items": fields["design"]}
         schema = {"type": "object", "properties": fields, "required": list(dimensions), "additionalProperties": False}
         task = ("Propose provisional study classifications using only the quoted evidence. "
-                "New empirical analyses are original research. Protocols without results and reviews are not. "
+                "Primary observations and new analyses of existing data reporting their own findings are original "
+                "research. Reviews, meta-analyses and protocols without findings receive no for original research. "
                 "Evaluate publication format separately from study design. Choose unclear for insufficient evidence. "
                 "Use the supplied JSON schema. Evidence: " + json.dumps(evidence, ensure_ascii=False))
         result, receipt = self._generate(task, evidence, schema, "reviewed-study-labels/1")
