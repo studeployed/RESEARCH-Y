@@ -11,7 +11,8 @@ from research_y import publication_identity as identity
 from research_y import strategy_report, strategy_workbook
 from research_y.application_inspection import _read
 from research_y.export_files import Directory, filename
-from research_y.master_results import evidence_head, specification
+from research_y.master_results import WORKBOOK_PREPARED, evidence_head, specification
+from research_y.projects import _utc_now, _validated_project_connection
 from research_y.query_compiler import SOURCE_COVERAGE
 from research_y import publication_candidates
 from research_y import preflight_review
@@ -389,6 +390,12 @@ def export_results(project, results, destination, spec, *, scope, include_abstra
                 except (ValueError,OSError):
                     raise FileExistsError(path.parent/name) from None
             target.sync()
+        else:
+            # The stage is flushed and hash-verified. Record preparation before
+            # publishing, so a crash cannot leave an unaccounted-for workbook.
+            with _validated_project_connection(project) as db:
+                db.execute("BEGIN IMMEDIATE")
+                identity._audit(db,WORKBOOK_PREPARED,dict(run_id=results.run,at_utc=_utc_now(),**receipt))
         os.link(stage,path)
         target.sync()
     return receipt

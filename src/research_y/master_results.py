@@ -16,6 +16,7 @@ SORTS = {"title":"title", "year":"year", "publication_id":"id"}
 FACETS = {"source","group",*study_classification.LABELS,"review_status"}
 DEFAULT = dict(text="",facets={},sort="title",descending=False,columns=["title","year","sources","design"])
 SAVED = "master_results_view_saved_v1"
+WORKBOOK_PREPARED = "master_results_workbook_prepared_v1"
 
 SPECIALIST_CITATION_FIELDS = frozenset("""
     title authors locator xml_id source_identifiers individual_dois number printed_first_page printed_last_page
@@ -29,7 +30,8 @@ CONTAINER_CITATION_FIELDS = frozenset("""
 
 
 def evidence_head(db):
-    return db.execute("SELECT coalesce(max(event_id),0) FROM audit_events WHERE event_type<>?",(SAVED,)).fetchone()[0]
+    return db.execute("SELECT coalesce(max(event_id),0) FROM audit_events WHERE event_type NOT IN (?,?)",
+                      (SAVED, WORKBOOK_PREPARED)).fetchone()[0]
 
 
 def specification(text="", facets=None, sort="title", descending=False, columns=None,

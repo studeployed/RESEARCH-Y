@@ -26,6 +26,7 @@ from research_y.pubmed_probe import PubMedCountProbe, PubMedProbeError
 # publication date because historical publication dates can be imprecise.
 DATE_FIELD = "crdt"
 DEFAULT_COUNT_PROBE_BUDGET = 255
+PARTITION_BUDGET_REASON = "Configured date-partition probe budget exceeded"
 MAX_PARTITION_NODES = 10_000
 
 
@@ -186,7 +187,7 @@ def retrieve_date_partitioned_identifiers(
 
         def count_window(window: DateWindow, parent: int | None, depth: int) -> tuple[int, int]:
             if len(partitions) >= max_count_probes:
-                raise _PartitionStopped("incomplete", "Configured date-partition probe budget exceeded")
+                raise _PartitionStopped("incomplete", PARTITION_BUDGET_REASON)
             query = window.query_for(approved_query)
             # Do not propagate provider exceptions that may include local or
             # credential details from an injected client implementation.

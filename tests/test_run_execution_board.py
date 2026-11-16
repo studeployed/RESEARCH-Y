@@ -202,6 +202,16 @@ def test_execution_stages_follow_saved_reviews_and_export_receipts(tmp_path):
     later=stages()
     assert later["Classification"]["observed"]==later["Export preparation"]["observed"]==1
     assert later["Enrichment"]["observed"]==0 and later["Deduplication"]["observed"] is None
+    from research_y.desktop.flow import RealProjectFlow
+    with closing(RealProjectFlow()) as flow:
+        flow.open_native_folder(project.root)
+        flow.select_run(run)
+        master=flow.master_action("capture", {})["master_results"]
+        settings=dict(revision=master["revision"], name="Master.xlsx", scope="entire", include_abstracts=False)
+        flow.export_master_to(tmp_path, **settings)
+        with pytest.raises(ValueError, match="already exists"):
+            flow.export_master_to(tmp_path, **settings)
+    assert stages()["Export preparation"]["observed"] == 2
 
 
 def test_pubmed_identifiers_metadata_and_wos_stages_keep_run_incomplete(tmp_path):

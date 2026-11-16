@@ -116,8 +116,7 @@ def _limit_synthetic_esearch_attempts(monkeypatch, *, limit):
     original = source._BudgetedESearch._reserve
 
     def capped_reserve(self):
-        if self.requests_made >= limit:
-            raise source.PubMedProbeError("Synthetic local transport budget exhausted")
+        self.budget = min(self.budget, limit)
         return original(self)
 
     monkeypatch.setattr(source._BudgetedESearch, "_reserve", capped_reserve)
@@ -300,6 +299,8 @@ def test_request_budget_exhaustion_keeps_root_count_but_no_fictional_ids(
     assert resumed['checkpoint']['identifiers_committed']==4
     assert resumed['checkpoint']['pages_committed']==1
     assert not resumed['source_retrieval_verified']
+    from research_y.run_execution_board import read_run_execution_board
+    assert read_run_execution_board(project,rid)["source_progress"][qid]["retries"] == 0
 
 
 def test_missing_date_coverage_for_large_query_fails_closed_without_checkpoint(tmp_path):

@@ -5,6 +5,7 @@ from uuid import uuid4
 from research_y import publication_identity as identity
 from research_y.projects import _utc_now, _validated_project_connection
 from research_y.study_classification import LABELS
+from research_y.master_results import WORKBOOK_PREPARED
 
 SESSION = "pubmed_processing_session_v1"
 
@@ -82,6 +83,8 @@ def processing_stages(db,run,board):
     exports,=db.execute("SELECT COUNT(*) FROM audit_events WHERE event_type GLOB 'workbook_export_v1:*' AND "
                         "json_extract(details_json,'$.action')='prepared' AND json_extract(details_json,'$.data.run_id')=?",
                         (run,)).fetchone()
+    desktop_exports,=db.execute("SELECT COUNT(*) FROM audit_events WHERE event_type=? AND "
+                                "json_extract(details_json,'$.run_id')=?",(WORKBOOK_PREPARED,run)).fetchone()
     queries=board["queries"]
     def row(stage,unit,observed,total=None):
         return dict(stage=stage,unit=unit,observed=observed,total=total)
@@ -95,5 +98,5 @@ def processing_stages(db,run,board):
             sum(q["count_reconciliation"]=="equal" for q in queries),len(queries)),
         row("Deduplication","reconciled primary publications",board["reconciled_primary_run_unique_publications"]),
         row("Classification","distinct researcher-reviewed publication dimensions",decisions,count*len(LABELS)),
-        row("Export preparation","prepared run workbooks",exports),
+        row("Export preparation","recorded workbook preparations",exports + desktop_exports),
     ]
