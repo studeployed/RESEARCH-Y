@@ -1,5 +1,6 @@
 """Compare two retained run inventories without modifying either run or inferring withdrawals."""
 from research_y import publication_identity as identity
+from research_y import study_classification
 from research_y.application_inspection import _read
 from research_y.publication_candidates import _source_key
 from research_y.projects import _utc_now,_validated_project_connection
@@ -89,6 +90,75 @@ def _inventory(db,run):
     return dict(run_id=run,status=row[0],strategy_version=row[1]),records
 
 
+def validate_carried_decision(db, publication_id, dimension, labels, evidence):
+    if not isinstance(evidence,dict) or set(evidence)!={"previous_retrieval","current_retrieval","previous_publication",
+                                                        "previous_revision","event_id"}:
+        raise ValueError("Select one earlier classification and its two source records")
+    previous = identity._source(db,identity._identifier(evidence["previous_retrieval"]))
+    current = identity._source(db,identity._identifier(evidence["current_retrieval"]))
+    old_link = identity._link(db,previous["retrieval_id"])
+    new_link = identity._link(db,current["retrieval_id"])
+    if (not old_link or not new_link or new_link[0]!=publication_id or old_link[0]==new_link[0]
+            or old_link[0]!=evidence["previous_publication"] or _source_key(previous)!=_source_key(current)
+            or previous["run_id"]==current["run_id"] or db.execute(
+                "SELECT (SELECT created_at_utc FROM search_runs WHERE run_id=?) > "
+                "(SELECT created_at_utc FROM search_runs WHERE run_id=?)",
+                (previous["run_id"],current["run_id"])).fetchone()[0]):
+        raise identity.StalePublicationError("The compared sources or publication associations changed")
+    prior = study_classification._view(db,old_link[0])
+    decision = prior["decisions"].get(dimension)
+    if (not decision or prior["revision"]!=evidence["previous_revision"] or
+            decision["event_id"]!=evidence["event_id"] or decision["labels"]!=labels):
+        raise identity.StalePublicationError("Reopen the earlier classification before carrying it forward")
+
+
+def _review_history(db, previous, current, cached):
+    old_id = previous and previous["publication_id"]
+    if not old_id or not db.execute("SELECT 1 FROM classifications WHERE publication_id=? LIMIT 1",(old_id,)).fetchone():
+        return {}
+    def view(pid):
+        if pid not in cached:
+            cached[pid] = study_classification._view(db,pid)
+        return cached[pid]
+    earlier = view(old_id)
+    new_id = current and current["publication_id"]
+    later = view(new_id) if new_id else None
+    return dict(previous_revision=earlier["revision"],previous_decisions=earlier["decisions"],
+                current_revision=later["revision"] if later else None,current_decisions=later["decisions"] if later else {},
+                current_proposals=later["proposed"] if later else {})
+
+
+def _publication_correspondence(old, new):
+    earlier = {item["publication_id"] for item in old.values() if item["publication_id"]}
+    later = {item["publication_id"] for item in new.values() if item["publication_id"]}
+    forward = {pid:set() for pid in earlier}
+    backward = {pid:set() for pid in later}
+    for pid in earlier & later:
+        forward[pid].add(pid)
+        backward[pid].add(pid)
+    missing_identity = set()
+    for key in old.keys() & new.keys():
+        left,right = old[key]["publication_id"],new[key]["publication_id"]
+        if left and right:
+            forward[left].add(right)
+            backward[right].add(left)
+        else:
+            missing_identity.update(pid for pid in (left,right) if pid)
+    old_only = sum(not peers and pid not in missing_identity for pid,peers in forward.items())
+    new_only = sum(not peers and pid not in missing_identity for pid,peers in backward.items())
+    shared = repeated = 0
+    for pid,peers in forward.items():
+        if len(peers)==1 and pid not in missing_identity:
+            peer = next(iter(peers))
+            if len(backward[peer])==1 and peer not in missing_identity:
+                shared += pid==peer
+                repeated += pid!=peer
+    return dict(earlier_only=old_only,later_only=new_only,shared_publication_id=shared,
+                distinct_ids_with_recurring_source=repeated,
+                earlier_unresolved=len(earlier)-old_only-shared-repeated,
+                later_unresolved=len(later)-new_only-shared-repeated)
+
+
 def compare_runs(project, earlier, later, *, category="all",offset=0,page_size=25):
     if (earlier==later or category not in {"all","new","retained","absent","metadata_changed"} or
             type(offset) is not int or offset<0 or type(page_size) is not int or not 1<=page_size<=100):
@@ -96,7 +166,11 @@ def compare_runs(project, earlier, later, *, category="all",offset=0,page_size=2
     with _read(project) as db:
         left,old=_inventory(db,earlier)
         right,new=_inventory(db,later)
+        if db.execute("SELECT (SELECT created_at_utc FROM search_runs WHERE run_id=?) > "
+                      "(SELECT created_at_utc FROM search_runs WHERE run_id=?)",(earlier,later)).fetchone()[0]:
+            raise ValueError("Choose the earlier search run first")
         rows=[]
+        reviewed={}
         counts=dict(new=0,retained=0,absent=0,metadata_changed=0)
         matched=0
         for key in sorted(old.keys()|new.keys()):
@@ -115,6 +189,7 @@ def compare_runs(project, earlier, later, *, category="all",offset=0,page_size=2
                 notes = _notes(db,identity._source(db,linked["retrieval_id"]))
                 rows.append(dict(source=key[0],namespace=key[1],source_record_id=key[2],status=status,notes=notes,
                     changed_fields=changed,previous_retrieval=previous and previous["retrieval_id"],
+                    classifications=_review_history(db,previous,current,reviewed),
                     current_retrieval=current and current["retrieval_id"],
                     previous_publication=previous and previous["publication_id"],
                     current_publication=current and current["publication_id"]))
@@ -124,5 +199,6 @@ def compare_runs(project, earlier, later, *, category="all",offset=0,page_size=2
         return dict(earlier=left,later=right,category=category,offset=offset,matching=matched,page_size=page_size,
                     source_counts=counts,rows=rows,publication_identities=dict(new=len(new_pubs-old_pubs),
                     retained=len(new_pubs&old_pubs),absent=len(old_pubs-new_pubs)),
+                    publication_correspondence=_publication_correspondence(old,new),
                     unlinked_sources=dict(earlier=sum(r["publication_id"] is None for r in old.values()),
                                           later=sum(r["publication_id"] is None for r in new.values())))

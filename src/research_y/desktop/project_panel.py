@@ -361,6 +361,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                 if comparison:
                     ui.label("Source records · "+str(comparison["source_counts"]))
                     ui.label("Current publication identities · "+str(comparison["publication_identities"]))
+                    for label,number in comparison["publication_correspondence"].items():
+                        ui.label(label.replace("_"," ").capitalize()+" · "+str(number))
                     ui.label("Absence means the source record was not retained in the later run.")
                     for record in comparison["rows"]:
                         ui.label(record["source"]+" "+record["source_record_id"]+" · "+record["status"]+
@@ -373,6 +375,25 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                             ui.button("Save note",on_click=lambda r=record,w=who,b=body:act("note_comparison_source",
                                       dict(retrieval_id=r["current_retrieval"] or r["previous_retrieval"],
                                       actor=w.value,text=b.value,expected_event=r["notes"][-1]["event_id"] if r["notes"] else None)))
+                        history=record["classifications"]
+                        if history:
+                            with ui.expansion("Reviewed classifications for "+record["source_record_id"]):
+                                ui.label("Earlier publication · "+record["previous_publication"])
+                                if record["current_publication"]:
+                                    ui.label("Later publication · "+record["current_publication"])
+                                for dimension,decision in history["previous_decisions"].items():
+                                    ui.label(f"{dimension} · {', '.join(decision['labels'])} · {decision['actor']} · "
+                                             f"{decision['at_utc']} · {decision['rationale']}")
+                                    if record["current_publication"] and record["current_publication"]!=record["previous_publication"]:
+                                        current=history["current_decisions"].get(dimension)
+                                        labels=current["labels"] if current else history["current_proposals"][dimension]
+                                        ui.label(("Later researcher decision · " if current else "Later proposal · ")+", ".join(labels))
+                                        reviewer=ui.input("Researcher verifying "+dimension)
+                                        why=ui.input("Evidence for carrying this decision forward")
+                                        ui.button("Confirm earlier "+dimension,on_click=lambda r=record,h=history,d=dimension,
+                                                e=decision["event_id"],w=reviewer,b=why:act("carry_classification",
+                                                dict(current_retrieval=r["current_retrieval"],dimension=d,event_id=e,
+                                                     revision=h["current_revision"],actor=w.value,rationale=b.value)))
                     def turn(delta):
                         return act("compare_run_history",dict(earlier=comparison["earlier"]["run_id"],
                                    later=comparison["later"]["run_id"],category=comparison["category"],
