@@ -311,6 +311,48 @@ def test_other_source_namespace_does_not_inherit_receipt(tmp_path):
     assert not c.prior_decisions
 
 
+@pytest.mark.parametrize("decision", ["confirmed_match", "rejected_match"])
+@pytest.mark.parametrize("changed", [False, True])
+def test_rediscovered_pair_compares_entire_record_by_source_key(tmp_path, decision, changed):
+    project, a, b = setup(tmp_path)
+    first = read_candidate(project, a, b)
+    recorded = decide(project, a, b, **args(first, decision=decision,
+                                             moving=a if decision == "confirmed_match" else None))
+    # Change a field outside the DOI/title/author comparison.
+    left = metadata("pubmed")
+    if changed:
+        left["record"]["abstract_sections"][0]["text"] = "Updated abstract"
+    b2 = seed(project, metadata("wos"), "wos")
+    a2 = seed(project, left, "pubmed")
+    before = dump(project)
+    reopened = read_candidate(open_project(project.root), b2, a2)
+    expected = "prior_run_metadata_changed" if changed else "prior_run_metadata_unchanged"
+    assert expected in reopened.warnings
+    assert reopened.prior_decisions[-1]["event_id"] == recorded.prior_decisions[-1]["event_id"]
+    assert reopened.status == "review_required" and not reopened.automatic_match_allowed
+    assert len(set(reopened.publication_ids)) == 2 and dump(project) == before
+
+
+def test_historical_reversal_invalidates_fresh_run_preview(tmp_path):
+    project, a, b = setup(tmp_path)
+    first = read_candidate(project, a, b)
+    recorded = decide(project, a, b, **args(first, decision="confirmed_match", moving=a))
+    a2 = seed(project, metadata("pubmed"), "pubmed")
+    b2 = seed(project, metadata("wos"), "wos")
+    preview = read_candidate(project, a2, b2)
+    event = recorded.prior_decisions[-1]
+    origin = first.publication_ids[first.retrieval_ids.index(a)]
+    reverse_association(project, a, event["association_event_id"],
+                        expected_current_revision=recorded.publication_revisions[0],
+                        expected_restored_revision=read_publication(project, origin).revision,
+                        actor="Researcher", evidence="Reassessed")
+    refreshed = read_candidate(project, a2, b2)
+    assert "prior_run_decision_outdated" in refreshed.warnings
+    assert refreshed.revision != preview.revision
+    with pytest.raises(StalePublicationError):
+        decide(project, a2, b2, **args(preview))
+
+
 def test_reopen_and_relocation_preserve_receipts(tmp_path):
     p,a,b=setup(tmp_path);result=decide(p,a,b,**args(read_candidate(p,a,b)))
     destination=tmp_path/'relocated';shutil.move(str(p.root),destination)

@@ -164,6 +164,21 @@ def _index_validated_receipts(receipts: list[dict]) -> dict[tuple, list[dict]]:
     return grouped
 
 
+def _prior_run_evidence(db, receipt, sources):
+    """Match full provider payloads to their source keys, independently of retrieval order."""
+    _, previous, _, _, previous_state = _state(db, tuple(receipt["pair"]))
+    if previous_state != receipt["post_state_sha256"] or receipt["method"] != RULE_VERSION:
+        return "prior_run_decision_outdated"
+
+    def evidence(records):
+        return sorted((_source_key(record), identity._hash(record["original_metadata"]))
+                      for record in records)
+
+    if evidence(previous) != evidence(sources):
+        return "prior_run_metadata_changed"
+    return "prior_run_metadata_unchanged"
+
+
 def _view(db: sqlite3.Connection, pair: tuple[str, str], *,
           validated_receipts_by_keys: dict[tuple, list[dict]] | None = None
           ) -> tuple[CandidateSnapshot, str]:
@@ -188,6 +203,10 @@ def _view(db: sqlite3.Connection, pair: tuple[str, str], *,
     if any(r["pair"] != list(pair) for r in receipts):
         warnings.add("prior_run_decision_available")
     revision = identity._hash([state, receipts])
+    if receipts and receipts[-1]["pair"] != list(pair):
+        prior_evidence = _prior_run_evidence(db, receipts[-1], sources)
+        warnings.add(prior_evidence)
+        revision = identity._hash([revision, prior_evidence])
     public_sources = tuple({k: source[k] for k in (
         "retrieval_id", "run_id", "source_name", "source_record_id", "source_sha256",
         "run_status", "memberships")} for source in sources)
