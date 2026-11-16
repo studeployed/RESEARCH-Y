@@ -55,6 +55,8 @@ class RealProjectFlow:
         if wos_profile is not None and type(wos_profile) is not WoSHostProfile:
             raise ProjectFlowError('wos_profile_invalid')
         self._pubmed_profile = pubmed_profile
+        from research_y.desktop.settings import PubMedConnectionTest
+        self._pubmed_connection_test = PubMedConnectionTest(pubmed_profile) if pubmed_profile else None
         self._wos_profile = wos_profile
         self._local_assistant = local_assistant
         self._cloud_assistant = cloud_assistant
@@ -308,6 +310,13 @@ class RealProjectFlow:
             self._root = folder
             self._remember_project(project)
             return self._publish()
+
+    def test_pubmed_connection(self):
+        with self._guard:
+            if self._closed or self._pubmed_connection_test is None:
+                raise ProjectFlowError("PubMed settings are unavailable.")
+            project = self.project
+        return self._pubmed_connection_test.check(project)
 
     def _require_open(self):
         if self._closed:

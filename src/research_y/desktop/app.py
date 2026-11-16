@@ -70,6 +70,8 @@ def build_page(app, ui, flow, settings_warnings=()):
 
         @ui.refreshable
         def panel():
+            from research_y.desktop.settings import render_settings
+            render_settings(ui,flow)
             render_project_panel(ui, flow, act, native=True, error=error, study_edits=study_edits)
 
         async def act(action, value=None):

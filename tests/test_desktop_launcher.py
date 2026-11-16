@@ -86,3 +86,53 @@ def test_invalid_source_profile_leaves_other_source_and_offline_work_available(m
         return None
     monkeypatch.setattr(settings, "_read", read)
     assert settings.source_profiles() == (None, None, ("PubMed settings could not be loaded.",))
+
+
+def test_launcher_connection_control_sends_one_fixed_count_without_disclosing_settings(monkeypatch):
+    from urllib.parse import parse_qs
+    from unittest.mock import MagicMock
+    from test_pubmed_probe import response
+    from research_y.pubmed_probe import ESEARCH_URL
+    profile=settings.PubMedHostProfile("fixture@example.invalid","fixture-secret")
+    calls=[]
+    def send(req,timeout):
+        calls.append(req)
+        assert req.full_url==ESEARCH_URL and req.get_method()=="POST"
+        fields=parse_qs(req.data.decode())
+        assert fields["retmax"]==["0"] and fields["term"]==["1[uid]"]
+        assert fields["email"]==[profile.contact_email] and fields["api_key"]==[profile.api_key]
+        return response("1[uid]","1")
+    with closing(RealProjectFlow(pubmed_profile=profile)) as flow:
+        flow._pubmed_connection_test=settings.PubMedConnectionTest(profile,transport=send)
+        ui=MagicMock()
+        controls={}
+        def button(label,on_click):
+            controls[label]=on_click
+            return MagicMock()
+        ui.button.side_effect=button
+        settings.render_settings(ui,flow)
+        assert not calls and flow.project is None
+        asyncio.run(controls["Test PubMed connection"]())
+        assert len(calls)==1
+        ui.label.return_value.set_text.assert_called_with("PubMed returned a valid count for the connection test.")
+        assert "fixture-secret" not in str(ui.mock_calls) and profile.contact_email not in str(flow.state())
+
+
+def test_connection_test_sanitizes_rejection_and_honours_persisted_project_pause(tmp_path):
+    from urllib.error import HTTPError
+    from contextlib import closing
+    import sqlite3
+    profile=settings.PubMedHostProfile("fixture@example.invalid","secret-value")
+    project=create_project(tmp_path,"Source settings")
+    calls=[]
+    def denied(req,timeout):
+        calls.append(req)
+        raise HTTPError(req.full_url,403,"secret-value",{"Retry-After":"120"},None)
+    first=settings.PubMedConnectionTest(profile,transport=denied)
+    assert "Windows Credential Manager" in first.check(project)
+    fresh=settings.PubMedConnectionTest(profile,transport=denied)
+    assert "requested a pause" in fresh.check(project) and len(calls)==1
+    with closing(sqlite3.connect(project.database_path)) as db:
+        assert "secret-value" not in str(list(db.execute("SELECT details_json FROM audit_events")))
+    assert "entitlement" in settings.source_error_help("authentication_or_entitlement_denied")
+    assert "retry deadline" in settings.source_error_help("quota_or_rate_limited")

@@ -200,6 +200,13 @@ values when a lookup succeeds or fails.
 
 ## Source settings
 
+Open **Application and source settings** in the launcher, including before
+selecting a project. **Open Windows Credential Manager** opens the system
+settings. **Test PubMed connection** sends a single count-only request for
+`1[uid]` with the configured NCBI contact and optional key. With a project open,
+the test observes its saved PubMed retry deadline. To check Starter entitlement
+and quota, select a project run and use its existing audited Starter pilot.
+
 Offline project inspection and workbook operations work with empty source
 settings. For live work, create the following **Generic Credentials** using
 Windows Credential Manager under your own Windows account, then restart the

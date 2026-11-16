@@ -10,6 +10,11 @@ PROJ-07 still needs a project-wide display of the latest successful source check
 
 ## Phase 3 delivery
 
+The native launcher provides access to Windows Credential Manager and an
+explicit PubMed connection check. The test uses a public fixed query and the
+existing paced client. A project-level provider pause also applies to the test.
+The launch screen explains saved credential errors, quota holds and recovery.
+
 See the [release matrix](docs/PHASE3_ACCEPTANCE.md) for all 22 scenarios,
 the [installation guide](docs/WINDOWS_INSTALLER.md) for the Windows build
 and [desktop guide](docs/DESKTOP.md) for researcher workflows. The full
