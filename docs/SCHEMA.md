@@ -55,4 +55,4 @@ Tests: `tests/test_schema_migrations.py`, `tests/test_wos_migration.py`, `tests/
 
 Reconciliation uses source count, contiguous acquisition pages, accession uniqueness, source-record/membership integrity, a separate full ordered-accession pass and a final count probe. The strongest current Starter result is `completed_with_warnings`: enumeration observed consistent, provider snapshot unavailable, abstract enrichment and parent run completion pending. Changes/errors stay incomplete or paused/cancelled with durable evidence.
 
-Checksums detect accidental/inconsistent modification, not malicious wholesale rewriting of a database. Broad multi-writer orchestration, untrusted archives, full provenance UI, enrichment and exports remain later gates. [Windows junction issue #11](https://github.com/studeployed/RESEARCH-Y/issues/11) remains open before untrusted imports/release.
+Checksums detect accidental/inconsistent modification, not malicious wholesale rewriting of a database. The [project transfer guide](PROJECT_ARCHIVES.md) describes archive validation and the Windows storage checks from [issue #11](https://github.com/studeployed/RESEARCH-Y/issues/11).

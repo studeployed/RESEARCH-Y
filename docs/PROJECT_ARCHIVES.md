@@ -25,3 +25,15 @@ published in one operation. An existing destination is preserved. A hard
 interruption can leave a private staging directory in the selected parent.
 Run archive creation or restoration again with the same source to recover.
 The format supports up to 16,384 payload files, 4 GiB per file and 8 GiB in total.
+
+## Opening a transferred project
+
+Choose the folder or its `project.ryproj` manifest under a parent directory
+you trust. Keep the manifest, `data` folder and SQLite database as ordinary
+entries inside the project. On Windows the app checks each opened file or
+directory handle for reparse points, including junctions, and holds it against
+replacement during access. This also applies when reopening recent projects,
+reading counts and opening the restored archive. Ordinary SQLite journals
+remain available for crash recovery. Migration snapshots require an ordinary
+`backups` directory. Keep the working folder private while it is open and
+use archive transfer to move it between computers.

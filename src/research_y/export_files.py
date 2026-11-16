@@ -8,6 +8,7 @@ No destructive rename, overwrite, automatic deletion or network access is used.
 from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
+from functools import lru_cache
 from hashlib import sha256
 import os
 from pathlib import Path, PureWindowsPath
@@ -42,12 +43,16 @@ def identity(info: os.stat_result) -> tuple[int, int]:
     return info.st_dev, info.st_ino
 
 
-@contextmanager
 def _windows_directory(path: Path):
-    """Lock this directory against rename/delete and inspect the opened handle."""
+    return _windows_path(path, directory=True)
+
+
+@lru_cache(maxsize=1)
+def _windows_file_api(load_library):
+    """Bind the Windows API once for repeated project and export operations."""
     import ctypes
     from ctypes import wintypes as w
-    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel = load_library('kernel32', use_last_error=True)
     create = kernel.CreateFileW
     create.argtypes = (w.LPCWSTR, w.DWORD, w.DWORD, w.LPVOID, w.DWORD, w.DWORD, w.HANDLE)
     create.restype = w.HANDLE
@@ -62,18 +67,27 @@ def _windows_directory(path: Path):
 
     get_info = kernel.GetFileInformationByHandle
     get_info.argtypes, get_info.restype = (w.HANDLE, ctypes.POINTER(Info)), w.BOOL
-    # FILE_LIST_DIRECTORY participates in Windows sharing checks; access=0 is
-    # metadata-only and does NOT enforce our no-delete-sharing rename guard.
-    # Fail closed if directory-read access is denied; never retry with access=0.
-    directory_read_access = 0x0001
+    return create, get_info, close, Info
+
+
+@contextmanager
+def _windows_path(path: Path, *, directory: bool):
+    """Pin an existing ordinary file or directory and inspect its handle."""
+    import ctypes
+    from ctypes import wintypes as w
+    create, get_info, close, Info = _windows_file_api(ctypes.WinDLL)
+    # FILE_READ_DATA / FILE_LIST_DIRECTORY participates in sharing checks.
+    # Metadata-only access would not enforce the no-delete-sharing guard.
+    read_access = 0x0001
     # OPEN_EXISTING, BACKUP_SEMANTICS | OPEN_REPARSE_POINT; share read/write, NOT delete.
-    handle = create(str(path), directory_read_access, 3, None, 3, 0x02000000 | 0x00200000, None)
+    handle = create(str(path), read_access, 3, None, 3, 0x02000000 | 0x00200000, None)
     if handle == w.HANDLE(-1).value:
-        raise OSError('Export directory cannot be locked')
+        raise OSError('Path cannot be locked')
     try:
         info = Info()
-        if not get_info(handle, ctypes.byref(info)) or info.attributes & 0x400 or not info.attributes & 0x10:
-            raise ExportFileError('Export directory is a reparse point or unavailable')
+        if (not get_info(handle, ctypes.byref(info)) or info.attributes & 0x400
+                or bool(info.attributes & 0x10) != directory):
+            raise ExportFileError('Path is a reparse point, unavailable or the wrong type')
         yield
     finally:
         close(handle)

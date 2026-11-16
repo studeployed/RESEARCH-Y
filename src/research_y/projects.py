@@ -7,14 +7,16 @@ future migrations are a separately tracked feature.
 
 from __future__ import annotations
 
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import sqlite3
+import stat
 import unicodedata
 from typing import Iterator
 from uuid import UUID, uuid4
@@ -24,6 +26,7 @@ from research_y.checkpoint_schema import apply_v3_schema
 from research_y.wos_checkpoint_schema import apply_v4_schema
 from research_y.candidate_index_schema import apply_v5_schema
 from research_y.candidate_pair_schema import apply_v6_schema
+from research_y.export_files import ExportFileError, _ordinary, _windows_path
 
 MANIFEST_FILENAME = "project.ryproj"
 DATABASE_RELATIVE_PATH = Path("data") / "researchy.sqlite3"
@@ -116,6 +119,47 @@ def _sqlite_connection(path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(f"{path.as_uri()}?mode=rw", uri=True, timeout=5)
     connection.execute("PRAGMA foreign_keys=ON")
     return connection
+
+
+@contextmanager
+def _project_entry(path: Path, *, directory: bool):
+    """Inspect the entry itself. On Windows hold it against replacement during use."""
+    with ExitStack() as stack:
+        try:
+            if os.name == "nt":
+                stack.enter_context(_windows_path(path, directory=directory))
+            else:
+                _ordinary(path.lstat(), directory=directory)
+        except (ExportFileError, OSError) as exc:
+            raise ProjectFormatError(
+                f"Project entry {path.name!r} is missing, a symbolic link or reparse point, "
+                "inaccessible, or the wrong type"
+            ) from exc
+        yield
+
+
+@contextmanager
+def _project_storage_paths(root: Path):
+    """The chosen parent is trusted; pin each fixed component below it in order."""
+    database = root / DATABASE_RELATIVE_PATH
+    with (
+        _project_entry(root, directory=True),
+        _project_entry(root / MANIFEST_FILENAME, directory=False),
+        _project_entry(database.parent, directory=True),
+        _project_entry(database, directory=False),
+    ):
+        if root.resolve(strict=True) != root:
+            raise ProjectFormatError("Project folder moved or redirected; select its current location")
+        # SQLite must be free to create and retire its own journals during recovery.
+        for suffix in ("-journal", "-wal", "-shm"):
+            try:
+                info = database.with_name(database.name + suffix).lstat()
+            except FileNotFoundError:
+                continue
+            if (not stat.S_ISREG(info.st_mode)
+                    or getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+                raise ProjectFormatError("Linked or non-ordinary SQLite journal")
+        yield
 
 
 def _create_database(database_path: Path, project: Project) -> None:
@@ -250,17 +294,18 @@ def _snapshot_before_upgrade(
     filename = f"researchy-before-v{expected_version + 1}-{uuid4().hex}.sqlite3"
     snapshot = backups / filename
     temporary = backups / f"{filename}.partial"
-    try:
-        with closing(sqlite3.connect(temporary)) as destination:
-            connection.backup(destination)
-            if destination.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-                raise sqlite3.DatabaseError("Snapshot integrity check failed")
-            if destination.execute("PRAGMA user_version").fetchone()[0] != expected_version:
-                raise sqlite3.DatabaseError("Unexpected snapshot schema version")
-        temporary.replace(snapshot)
-    except (OSError, sqlite3.DatabaseError) as exc:
-        temporary.unlink(missing_ok=True)
-        raise ProjectMigrationError("Could not create a recoverable migration snapshot") from exc
+    with _project_entry(backups, directory=True):
+        try:
+            with closing(sqlite3.connect(temporary)) as destination:
+                connection.backup(destination)
+                if destination.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise sqlite3.DatabaseError("Snapshot integrity check failed")
+                if destination.execute("PRAGMA user_version").fetchone()[0] != expected_version:
+                    raise sqlite3.DatabaseError("Unexpected snapshot schema version")
+            temporary.replace(snapshot)
+        except (OSError, sqlite3.DatabaseError) as exc:
+            temporary.unlink(missing_ok=True)
+            raise ProjectMigrationError("Could not create a recoverable migration snapshot") from exc
     return snapshot
 
 
@@ -405,6 +450,12 @@ def _upgrade_v5_project(project: Project, connection: sqlite3.Connection) -> Non
 
 @contextmanager
 def _validated_project_connection(project: Project) -> Iterator[sqlite3.Connection]:
+    with _project_storage_paths(project.root), _identity_checked_database(project) as connection:
+        yield connection
+
+
+@contextmanager
+def _identity_checked_database(project: Project) -> Iterator[sqlite3.Connection]:
     """Validate and operate on one open SQLite handle, with crash recovery.
 
     The non-creating writable connection can roll back a hot journal before
@@ -412,10 +463,6 @@ def _validated_project_connection(project: Project) -> Iterator[sqlite3.Connecti
     a directory replacement after validation cannot redirect a later open.
     """
     db_path = project.database_path
-    if (project.root / "data").is_symlink() or db_path.is_symlink():
-        raise ProjectFormatError("Project database may not be a symbolic link")
-    if not db_path.is_file():
-        raise ProjectFormatError("Project SQLite database is missing")
     try:
         connection = _sqlite_connection(db_path)
     except sqlite3.DatabaseError as exc:
@@ -459,16 +506,13 @@ def open_project(folder_or_manifest: Path | str) -> Project:
     # A directory itself may legitimately be named "project.ryproj".
     if provided.name == MANIFEST_FILENAME and provided.is_file():
         provided = provided.parent
-    root = provided.resolve(strict=True)
-    if not root.is_dir():
-        raise ProjectFormatError("Expected a project directory or project.ryproj")
-    manifest_path = root / MANIFEST_FILENAME
-    if manifest_path.is_symlink():
-        raise ProjectFormatError("Project manifest may not be a symbolic link")
-    identifier, name, created_at_utc = _parse_manifest(manifest_path)
-    project = Project(root, identifier, name, created_at_utc)
-    with _validated_project_connection(project):
-        pass
+    chosen = Path(os.path.abspath(provided))
+    root = chosen.parent.resolve(strict=True) / chosen.name
+    with _project_storage_paths(root):
+        identifier, name, created_at_utc = _parse_manifest(root / MANIFEST_FILENAME)
+        project = Project(root, identifier, name, created_at_utc)
+        with _identity_checked_database(project):
+            pass
     return project
 
 

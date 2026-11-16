@@ -27,7 +27,7 @@ from research_y.local_assistant import LocalAssistantError
 from research_y import local_study_review, study_classification
 from research_y.study_review_queue import read_study_page
 from research_y.desktop.specialist_workbench import SpecialistWorkbench
-from research_y.projects import _utc_now, _validated_project_connection
+from research_y.projects import _project_storage_paths, _utc_now, _validated_project_connection
 from research_y.publication_identity import _audit as append_audit
 from research_y.preflight_review import (
     PreflightError, _review_payload, PRESS_ITEMS, read_preflight,
@@ -281,10 +281,8 @@ class RealProjectFlow:
                 raise ProjectFlowError(str(exc)) from None
             try:
                 folder = self._validated_host_directory(Path(entry['location']))
-                with Directory(folder):
+                with Directory(folder), _project_storage_paths(folder):
                     manifest_path = folder / MANIFEST_FILENAME
-                    if manifest_path.is_symlink():
-                        raise ProjectFlowError('recent_project_unavailable')
                     # Critical: open_project may migrate an older supported
                     # database. Compare its canonical manifest UUID first,
                     # so a stale/tampered recent entry cannot mutate a

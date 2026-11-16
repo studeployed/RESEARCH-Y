@@ -32,7 +32,7 @@ def run_window(stage, workspace, folder, run_id):
     from research_y.desktop.flow import RealProjectFlow
 
     flow = RealProjectFlow(recent_parent=workspace / 'recents')
-    choices = iter([workspace, folder] if stage == 'save' else [folder])
+    choices = iter([workspace, workspace / 'Redirected', folder] if stage == 'save' else [folder])
     passed = []
     tasks = []
 
@@ -71,6 +71,12 @@ def run_window(stage, workspace, folder, run_id):
                 await fill('[data-testid=desktop-name] input, input[data-testid=desktop-name]', 'Created in desktop')
                 await click('[data-testid=desktop-create]')
                 await wait_for(lambda: visible('[data-testid=open-recent]'), 'native_create')
+                active = flow.state()['project']['project_id']
+                await click('[data-testid=desktop-open]')
+                await wait_for(lambda: visible('[data-testid=operation-error]'), 'redirected_project_rejection')
+                message = await js("document.querySelector('[data-testid=operation-error]').textContent")
+                if 'invalid_project' not in message or flow.state()['project']['project_id'] != active:
+                    raise RuntimeError('redirected_project_selection')
             await click('[data-testid=desktop-open]')
             await click('[data-testid=select-run]')
             await click('[data-testid=society-panel] .q-item')
@@ -146,6 +152,14 @@ def main():
             groups=(StrategyGroup('g1', 'Group', (ApprovedTerm('ECMO', 'researcher', True),)),),
             approval_confirmed=True)
         folder = project.root
+        redirected = create_project(workspace, 'Redirected')
+        data = redirected.root / 'data'
+        data.rename(redirected.root / 'original-data')
+        if sys.platform == 'win32':
+            from _winapi import CreateJunction
+            CreateJunction(str(folder / 'exports'), str(data))
+        else:
+            data.symlink_to(folder / 'exports', target_is_directory=True)
         filename = f'provenance-{run.run_id}.xlsx'
         checksums = []
         observations = []
