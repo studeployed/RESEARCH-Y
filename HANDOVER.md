@@ -1,5 +1,9 @@
 # RESEARCH-Y handover
 
+## Simplified Windows project workspace
+
+Version 0.1.3 centres the work area and gives the research question and terms separate columns on wide windows. Plan search, Run search, Results and Export show the actions for each stage. Saved runs use short names in the daily workflow. Project details retains identifiers and audit history. The Windows lifecycle check covers responsive buttons and fields, switching stages with an unsaved theme, explicit run selection and workbook verification.
+
 ## Windows forms and first-search guide
 
 Version 0.1.2 places field labels above their editors and lets them wrap as the window narrows. **How to use RESEARCH-Y** opens the packaged first-search guide from the home screen. The native lifecycle check opens the guide and measures populated, focused and empty Research Setup fields at two window widths.

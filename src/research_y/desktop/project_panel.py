@@ -1,4 +1,5 @@
 """Render project controls using the current trusted-host snapshot."""
+from contextlib import nullcontext
 from datetime import date
 
 from research_y.desktop.manifest_consent import render_manifest_consent
@@ -27,59 +28,73 @@ def render_identity_disposition(ui,plan):
         ui.label("Existing destination choices retained · "+", ".join(plan["keep_target_fields"]))
 
 
-def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
+def render_project_panel(ui, flow, act, *, native, error, study_edits=None, workspace=None):
     state = flow.state()
     project = state['project']
     if project is not None:
-        audit=state.get("project_audit")
-        with ui.expansion("Project audit and diagnostics",value=bool(audit)):
-            ui.button("Inspect audit history",on_click=lambda:act("project_audit",0))
-            if audit:
-                for event in audit["rows"]:
-                    ui.label(f'{event["event_id"]} · {event["utc"]} · {event["event_type"]} · {event["fields"]}')
-                if audit["next_after"]:
-                    ui.button("Next audit events",on_click=lambda:act("project_audit",audit["next_after"]))
-            if native:
-                diagnostic=ui.input("Diagnostic filename",value="Project diagnostic.json")
-                ui.button("Choose folder and save diagnostic",on_click=lambda:act("native_diagnostics",diagnostic.value))
-    if native and project is not None:
-        with ui.expansion("Export project archive",value=bool(state.get("archive_receipt"))):
-            archive_name = ui.input("Archive filename",value="Project.researchy")
-            files = ui.textarea("Supporting files to transfer (one project-relative path per line)")
-            ui.label("Include linked documents and any permitted files from documents, exports or data/raw.")
-            permission = ui.checkbox("I may transfer the project database and selected files")
-            ui.button("Choose destination and create archive",on_click=lambda:act("native_export_archive",dict(
-                basename=archive_name.value,supporting_files=[s.strip() for s in (files.value or "").splitlines() if s.strip()],
-                transfer_confirmed=permission.value)))
-            receipt = state.get("archive_receipt")
-            if receipt:
-                ui.label(f'Saved {receipt["filename"]} with {receipt["files"]} files.')
-    if project is not None:
-        if state.get("run_acceptance",None) and state["run_acceptance"]["receipt"]:
-            ui.label("Selected run verification at "+state["run_acceptance"]["receipt"]["at_utc"]+
-                     " · Verified Complete").props("data-testid=run-accepted")
+        ui.label('Project: ' + project['name']).classes('project-title').props('data-testid=project-name')
+    grouped = workspace is not None and project is not None
+    area = workspace.render(ui, state) if grouped else lambda *args: nullcontext()
+    def disclosure(key, title):
+        return workspace.disclosure(ui, key, title) if grouped else nullcontext()
+
+    with area('details'):
+        if project is not None:
+            audit=state.get("project_audit")
+            with ui.expansion("Project audit and diagnostics",value=bool(audit)):
+                ui.button("Inspect audit history",on_click=lambda:act("project_audit",0))
+                if audit:
+                    for event in audit["rows"]:
+                        ui.label(f'{event["event_id"]} · {event["utc"]} · {event["event_type"]} · {event["fields"]}')
+                    if audit["next_after"]:
+                        ui.button("Next audit events",on_click=lambda:act("project_audit",audit["next_after"]))
+                if native:
+                    diagnostic=ui.input("Diagnostic filename",value="Project diagnostic.json")
+                    ui.button("Choose folder and save diagnostic",on_click=lambda:act("native_diagnostics",diagnostic.value))
+        if native and project is not None:
+            with ui.expansion("Export project archive",value=bool(state.get("archive_receipt"))):
+                archive_name = ui.input("Archive filename",value="Project.researchy")
+                files = ui.textarea("Supporting files to transfer (one project-relative path per line)")
+                ui.label("Include linked documents and any permitted files from documents, exports or data/raw.")
+                permission = ui.checkbox("I may transfer the project database and selected files")
+                ui.button("Choose destination and create archive",on_click=lambda:act("native_export_archive",dict(
+                    basename=archive_name.value,supporting_files=[s.strip() for s in (files.value or "").splitlines() if s.strip()],
+                    transfer_confirmed=permission.value)))
+                receipt = state.get("archive_receipt")
+                if receipt:
+                    ui.label(f'Saved {receipt["filename"]} with {receipt["files"]} files.')
+    with area('search'):
+        if project is not None and (state['selected_run_id'] or not grouped):
+            if state.get("run_acceptance",None) and state["run_acceptance"]["receipt"]:
+                ui.label("Selected run verification at "+state["run_acceptance"]["receipt"]["at_utc"]+
+                         " · Verified Complete").props("data-testid=run-accepted")
+            else:
+                ui.label('Search incomplete' if grouped else 'INCOMPLETE — current source-scope verification required.').props('data-testid=incomplete')
+    with area('details'):
+        ui.label('Recent projects').classes('section-title').props(
+            'data-testid=recent-heading')
+        if state['recent_history_error']:
+            ui.label('Recent project history is unavailable; select a folder to open.').props(
+                'data-testid=recent-history-error')
+        elif not state['recent_projects']:
+            ui.label('No recent projects recorded.').props('data-testid=recent-empty')
         else:
-            ui.label('INCOMPLETE — current source-scope verification required.').props('data-testid=incomplete')
-    ui.label('Recent Projects (explicit selection; locations verified on open).').props(
-        'data-testid=recent-heading')
-    if state['recent_history_error']:
-        ui.label('Recent project history is unavailable; select a folder to open.').props(
-            'data-testid=recent-history-error')
-    elif not state['recent_projects']:
-        ui.label('No recent projects recorded.').props('data-testid=recent-empty')
-    else:
-        for entry in state['recent_projects']:
-            project_id = entry['project_id']
-            ui.button('Open recent: ' + entry['name'] + ' — ' + entry['location'],
-                      on_click=lambda project_id=project_id: act(
-                          'recent_open', project_id)).props('data-testid=open-recent')
-    ui.button('Refresh recent projects',
-              on_click=lambda: act('recent_refresh')).props(
-                  'data-testid=refresh-recents')
+            for entry in state['recent_projects']:
+                project_id = entry['project_id']
+                repeated = sum(other['name'] == entry['name'] for other in state['recent_projects']) > 1
+                ui.button(entry['name'] + (' — ' + entry['location'] if repeated else ''),
+                          on_click=lambda project_id=project_id: act(
+                              'recent_open', project_id)).props('flat no-caps data-testid=open-recent').tooltip(entry['location'])
+        ui.button('Refresh recent projects',
+                  on_click=lambda: act('recent_refresh')).props(
+                      'data-testid=refresh-recents')
     if project is None:
-        ui.label('No project open. A host-selected location is required.')
-    else:
-        ui.label('Project: ' + project['name']).props('data-testid=project-name')
+        if workspace is None:
+            ui.label('No project open. A host-selected location is required.')
+        if error:
+            ui.label('Operation error: ' + error).props('data-testid=operation-error')
+        return
+    with area('details'):
         ui.label('Location: ' + project['location']).props('data-testid=project-location')
         checkpoint = state.get('last_source_checkpoint')
         if checkpoint:
@@ -98,6 +113,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                 if item['recorded_state'] not in ('published','cancelled'):
                     ui.label(f"Export {item['filename']} · {item['recorded_state']}")
         ui.separator()
+    with area('details', 'Pilot request history'):
         ui.label('Saved source-pilot audit history — read-only, including '
                  'earlier sessions and runs. Not verified source retrieval.').props(
                      'data-testid=pilot-history-heading')
@@ -168,60 +184,12 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                 if detail.get('quota_status') is not None:
                     ui.label('Observed provider quota status: ' +
                              detail['quota_status'])
-        # The source text enters only NiceGUI text widgets, not HTML.
-        # All draft edits are host-memory mutations. A new preview is
-        # mandatory after any edit, before the separate approval click.
+    with area('plan'):
         draft = state['strategy_draft']
-        if not draft["preview"]:
-            from research_y.query_compiler import CONNECTOR_QUERY_BYTES, search_scope
-            scope=draft.get("search_scope") or search_scope()
-            with ui.expansion("Database selection and optional search limits"):
-                selected=ui.select({"pubmed":"PubMed","wos":"Web of Science Starter"},value=scope["sources"],
-                                   multiple=True,label="Databases for this run")
-                ui.label("Full primary-source coverage requires both databases.")
-                year=ui.input("Publication year (optional)", value=str(scope["publication_year"] or ""))
-                limits={}
-                for source in ("pubmed","wos"):
-                    limits[source]=ui.number(source+" · maximum UTF-8 bytes per query",min=1,max=CONNECTOR_QUERY_BYTES,
-                                             value=scope[source+"_bytes"],precision=0)
-                def apply_scope():
-                    raw=(year.value or "").strip()
-                    if raw and (not raw.isascii() or not raw.isdecimal() or len(raw)!=4):
-                        ui.notify("Enter a four-digit publication year or leave it blank.")
-                        return
-                    if any(not box.value for box in limits.values()):
-                        ui.notify("Enter a positive query byte limit for each database.")
-                        return
-                    return act("setup_edit",dict(action="scope",data=dict(sources=selected.value,
-                        pubmed_bytes=int(limits["pubmed"].value),wos_bytes=int(limits["wos"].value),
-                        publication_year=int(raw) if raw else None)))
-                ui.button("Apply database and limit choices",on_click=apply_scope)
-        local_on = state.get('local_assistant_enabled', False)
         cloud_on = state.get('cloud_enabled', False)
-        ui.label('Assistant mode: ' + ('Optional cloud AI' if cloud_on else 'Local Qwen3-1.7B' if local_on else 'No AI'))
-        if local_on or cloud_on:
-            ui.button('Use no AI', on_click=lambda: act('local_mode', False))
-        if state.get('local_assistant_installed') and not local_on:
-            ui.button('Use local AI', on_click=lambda: act('local_mode', True))
-        if native and not state.get('local_assistant_installed'):
-            with ui.expansion("Set up optional local AI"):
-                ui.label("Qwen3-1.7B Q8_0 from Qwen (Apache 2.0) and llama.cpp from GitHub (MIT). "
-                         "Download about 1.86 GB. Allow 4 GB free during setup. The model runs on your CPU.")
-                consent = ui.checkbox("Download and verify these components on this computer")
-                ui.button("Install optional local assistant",on_click=lambda:act("native_install_local_model",consent.value))
-        if state.get('cloud_configured') and not cloud_on:
-            ui.button('Choose optional cloud AI', on_click=lambda: act('cloud_mode'))
-        if state.get('cloud_offer'):
-            offer = state['cloud_offer']
-            ui.label(offer['provider'] + ' · ' + offer['model'] + ' · ' + offer['cost_notice'])
-            ui.label('Exact data to send')
-            ui.label(offer['payload'])
-            ui.button('Authorize and send this request', on_click=lambda rev=offer['revision']: act('cloud_confirm',rev))
-        ui.separator()
-        ui.label('Research Setup — draft only until explicitly approved').props(
+        ui.label('Research Setup').classes('section-title').props(
             'data-testid=setup-heading')
-        ui.label('OR between all enabled terms AND NO hidden restrictions; '
-                 'the group union is also OR. No provider has been queried.').props(
+        ui.label('An article can match any included term in any group (OR). You can review the exact search before approving it.').props(
                      'data-testid=setup-broad-or')
         if state['strategy_reconciliation_required']:
             ui.label('Approval outcome uncertain — retry the original request '
@@ -232,102 +200,112 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                           'data-testid=setup-approval-retry')
         else:
             if draft['preview'] is None:
-                theme_input = ui.input('Research theme', value=draft['theme']).props(
-                    'data-testid=setup-theme')
-                objectives_input = ui.textarea('Research objectives (optional)', value=draft['objectives']).props(
-                    'data-testid=setup-objectives')
-                approver_input = ui.input('Researcher approving', value=draft['approved_by']).props(
-                    'data-testid=setup-approver')
-                ui.button('Save research heading',
-                          on_click=lambda: act('setup_edit', dict(
-                              action='heading', data=dict(
-                                  theme=theme_input.value,
-                                  objectives=objectives_input.value or '',
-                                  approved_by=approver_input.value)))).props(
-                                      'data-testid=setup-save-heading')
-                new_group = ui.input('New concept group name').props('data-testid=setup-group-input')
-                ui.button('Add concept group', on_click=lambda: act('setup_edit', dict(
-                    action='add_group', data=dict(label=new_group.value)))).props(
-                        'data-testid=setup-add-group')
-                for group in draft['groups']:
-                    gid = group['group_id']
-                    with ui.card():
-                        label_input = ui.input('Group name', value=group['label'])
-                        ui.button('Rename group', on_click=lambda gid=gid, box=label_input:
-                                  act('setup_edit', dict(
-                                      action='rename_group',
-                                      data=dict(group_id=gid, label=box.value)))).props(
-                                          'data-testid=setup-rename-group')
-                        ui.button('Move group up', on_click=lambda gid=gid:
-                                  act('setup_edit', dict(action='move_group',
-                                      data=dict(group_id=gid, direction=-1))))
-                        ui.button('Move group down', on_click=lambda gid=gid:
-                                  act('setup_edit', dict(action='move_group',
-                                      data=dict(group_id=gid, direction=1))))
-                        ui.button('Remove group', on_click=lambda gid=gid:
-                                  act('setup_edit', dict(action='remove_group',
-                                      data=dict(group_id=gid)))).props('data-testid=setup-remove-group')
-                        new_term = ui.input('New atomic term (single literal)')
-                        ui.button('Add researcher term', on_click=lambda gid=gid, box=new_term:
-                                  act('setup_edit', dict(action='add_term',
-                                      data=dict(group_id=gid, text=box.value)))).props(
-                                          'data-testid=setup-add-term')
-                        for term in group['terms']:
-                            tid = term['term_id']
+                with ui.element('div').classes('plan-columns') if grouped else nullcontext():
+                    with ui.column().classes('plan-card') if grouped else nullcontext():
+                        if grouped:
+                            ui.label('Research question').classes('section-title')
+                        theme_input = ui.input('Research theme', value=draft['theme']).props(
+                            'data-testid=setup-theme')
+                        objectives_input = ui.textarea('Research objectives (optional)', value=draft['objectives']).props(
+                            'data-testid=setup-objectives')
+                        approver_input = ui.input('Researcher approving', value=draft['approved_by']).props(
+                            'data-testid=setup-approver')
+                        ui.button('Save research heading',
+                                  on_click=lambda: act('setup_edit', dict(
+                                      action='heading', data=dict(
+                                          theme=theme_input.value,
+                                          objectives=objectives_input.value or '',
+                                          approved_by=approver_input.value)))).props(
+                                              'data-testid=setup-save-heading')
+                    with ui.column().classes('plan-card') if grouped else nullcontext():
+                        if grouped:
+                            ui.label('Search terms').classes('section-title')
+                        new_group = ui.input('New concept group name').props('data-testid=setup-group-input')
+                        ui.button('Add concept group', on_click=lambda: act('setup_edit', dict(
+                            action='add_group', data=dict(label=new_group.value)))).props(
+                                'data-testid=setup-add-group')
+                        for group in draft['groups']:
+                            gid = group['group_id']
                             with ui.card():
-                                term_input = ui.input('Atomic term', value=term['text'])
-                                if term['enabled']:
-                                    if cloud_on:
-                                        ui.button('Preview cloud term request', on_click=lambda gid=gid, tid=tid:
-                                                  act('cloud_offer', dict(group_id=gid,term_id=tid)))
-                                    if state.get('local_assistant_enabled'):
-                                        ui.button('Ask local AI for terms', on_click=lambda gid=gid, tid=tid:
-                                                  act('local_suggest', dict(group_id=gid, term_id=tid)))
-                                    ui.button('Suggest term variants', on_click=lambda gid=gid, tid=tid:
-                                              act('setup_edit', dict(action='suggest_variants',
-                                                  data=dict(group_id=gid, term_id=tid))))
-                                for offer in draft['suggestions']:
-                                    if offer['source_term_id'] != tid or offer['status'] != 'pending':
-                                        continue
-                                    sid = offer['suggestion_id']
-                                    render_term_provenance(ui, offer)
-                                    wording = ui.input('Proposed variant', value=offer['text'])
-                                    ui.button('Accept wording', on_click=lambda sid=sid, box=wording:
-                                              act('setup_edit', dict(action='review_variant',
-                                                  data=dict(suggestion_id=sid, decision='accept', text=box.value))))
-                                    ui.button('Reject variant', on_click=lambda sid=sid:
-                                              act('setup_edit', dict(action='review_variant',
-                                                  data=dict(suggestion_id=sid, decision='reject'))))
-                                origin_input = ui.select(
-                                    {'researcher': 'Researcher', 'deterministic': 'Deterministic',
-                                     'ai': 'AI-assisted (requires rationale)'},
-                                    value=term['origin'], label='Term provenance')
-                                rationale_input = ui.input(
-                                    'Origin rationale / notes', value=term['rationale'])
-                                enabled_input = ui.checkbox('Include term in OR union',
-                                                            value=term['enabled'])
-                                ui.button('Save term changes', on_click=lambda
-                                          gid=gid, tid=tid, box=term_input,
-                                          origin=origin_input, note=rationale_input,
-                                          enabled=enabled_input:
-                                          act('setup_edit', dict(action='edit_term',
-                                              data=dict(group_id=gid, term_id=tid,
-                                                        text=box.value, origin=origin.value,
-                                                        rationale=note.value,
-                                                        enabled=enabled.value)))).props(
-                                                            'data-testid=setup-save-term')
-                                ui.button('Move term up', on_click=lambda gid=gid, tid=tid:
-                                          act('setup_edit', dict(action='move_term',
-                                              data=dict(group_id=gid, term_id=tid,
-                                                        direction=-1))))
-                                ui.button('Move term down', on_click=lambda gid=gid, tid=tid:
-                                          act('setup_edit', dict(action='move_term',
-                                              data=dict(group_id=gid, term_id=tid,
-                                                        direction=1))))
-                                ui.button('Remove term', on_click=lambda gid=gid, tid=tid:
-                                          act('setup_edit', dict(action='remove_term',
-                                              data=dict(group_id=gid, term_id=tid)))).props(
-                                                  'data-testid=setup-remove-term')
+                                if grouped:
+                                    ui.label(group['label']).classes('section-title')
+                                with disclosure(('group', gid), 'Edit group'):
+                                    label_input = ui.input('Group name', value=group['label'])
+                                    ui.button('Rename group', on_click=lambda gid=gid, box=label_input:
+                                              act('setup_edit', dict(
+                                                  action='rename_group',
+                                                  data=dict(group_id=gid, label=box.value)))).props(
+                                                      'data-testid=setup-rename-group')
+                                    ui.button('Move group up', on_click=lambda gid=gid:
+                                              act('setup_edit', dict(action='move_group',
+                                                  data=dict(group_id=gid, direction=-1))))
+                                    ui.button('Move group down', on_click=lambda gid=gid:
+                                              act('setup_edit', dict(action='move_group',
+                                                  data=dict(group_id=gid, direction=1))))
+                                    ui.button('Remove group', on_click=lambda gid=gid:
+                                              act('setup_edit', dict(action='remove_group',
+                                                  data=dict(group_id=gid)))).props('data-testid=setup-remove-group')
+                                new_term = ui.input('Search term or phrase')
+                                ui.button('Add researcher term', on_click=lambda gid=gid, box=new_term:
+                                          act('setup_edit', dict(action='add_term',
+                                              data=dict(group_id=gid, text=box.value)))).props(
+                                                  'data-testid=setup-add-term')
+                                for term in group['terms']:
+                                    tid = term['term_id']
+                                    with disclosure(('term', tid), term['text'] + ('' if term['enabled'] else ' (excluded)')):
+                                        term_input = ui.input('Atomic term', value=term['text'])
+                                        if term['enabled']:
+                                            if cloud_on:
+                                                ui.button('Preview cloud term request', on_click=lambda gid=gid, tid=tid:
+                                                          act('cloud_offer', dict(group_id=gid,term_id=tid)))
+                                            if state.get('local_assistant_enabled'):
+                                                ui.button('Ask local AI for terms', on_click=lambda gid=gid, tid=tid:
+                                                          act('local_suggest', dict(group_id=gid, term_id=tid)))
+                                            ui.button('Suggest term variants', on_click=lambda gid=gid, tid=tid:
+                                                      act('setup_edit', dict(action='suggest_variants',
+                                                          data=dict(group_id=gid, term_id=tid))))
+                                        for offer in draft['suggestions']:
+                                            if offer['source_term_id'] != tid or offer['status'] != 'pending':
+                                                continue
+                                            sid = offer['suggestion_id']
+                                            render_term_provenance(ui, offer)
+                                            wording = ui.input('Proposed variant', value=offer['text'])
+                                            ui.button('Accept wording', on_click=lambda sid=sid, box=wording:
+                                                      act('setup_edit', dict(action='review_variant',
+                                                          data=dict(suggestion_id=sid, decision='accept', text=box.value))))
+                                            ui.button('Reject variant', on_click=lambda sid=sid:
+                                                      act('setup_edit', dict(action='review_variant',
+                                                          data=dict(suggestion_id=sid, decision='reject'))))
+                                        origin_input = ui.select(
+                                            {'researcher': 'Researcher', 'deterministic': 'Deterministic',
+                                             'ai': 'AI-assisted (requires rationale)'},
+                                            value=term['origin'], label='Term provenance')
+                                        rationale_input = ui.input(
+                                            'Origin rationale / notes', value=term['rationale'])
+                                        enabled_input = ui.checkbox('Include term in OR union',
+                                                                    value=term['enabled'])
+                                        ui.button('Save term changes', on_click=lambda
+                                                  gid=gid, tid=tid, box=term_input,
+                                                  origin=origin_input, note=rationale_input,
+                                                  enabled=enabled_input:
+                                                  act('setup_edit', dict(action='edit_term',
+                                                      data=dict(group_id=gid, term_id=tid,
+                                                                text=box.value, origin=origin.value,
+                                                                rationale=note.value,
+                                                                enabled=enabled.value)))).props(
+                                                                    'data-testid=setup-save-term')
+                                        ui.button('Move term up', on_click=lambda gid=gid, tid=tid:
+                                                  act('setup_edit', dict(action='move_term',
+                                                      data=dict(group_id=gid, term_id=tid,
+                                                                direction=-1))))
+                                        ui.button('Move term down', on_click=lambda gid=gid, tid=tid:
+                                                  act('setup_edit', dict(action='move_term',
+                                                      data=dict(group_id=gid, term_id=tid,
+                                                                direction=1))))
+                                        ui.button('Remove term', on_click=lambda gid=gid, tid=tid:
+                                                  act('setup_edit', dict(action='remove_term',
+                                                      data=dict(group_id=gid, term_id=tid)))).props(
+                                                          'data-testid=setup-remove-term')
                 ui.button('Preview exact broad-OR source queries',
                           on_click=lambda: act('setup_preview')).props(
                               'data-testid=setup-preview')
@@ -368,12 +346,60 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.button('Approve frozen strategy and create pending run',
                               on_click=lambda: act('setup_approve')).props(
                                   'data-testid=setup-approve')
-        if state['last_strategy_admission'] is not None:
+        if state['last_strategy_admission'] is not None and not grouped:
             done = state['last_strategy_admission']
             ui.label('Strategy version ' + str(done['version_number']) +
                      ' stored; pending run ' + done['run_id'] +
                      '. Queries planned but NOT EXECUTED.').props(
                          'data-testid=setup-approval-result')
+    with area('plan'):
+        if not draft["preview"]:
+            from research_y.query_compiler import CONNECTOR_QUERY_BYTES, search_scope
+            scope=draft.get("search_scope") or search_scope()
+            with ui.expansion("Database selection and optional search limits"):
+                selected=ui.select({"pubmed":"PubMed","wos":"Web of Science Starter"},value=scope["sources"],
+                                   multiple=True,label="Databases for this run")
+                ui.label("Full primary-source coverage requires both databases.")
+                year=ui.input("Publication year (optional)", value=str(scope["publication_year"] or ""))
+                limits={}
+                for source in ("pubmed","wos"):
+                    limits[source]=ui.number(source+" · maximum UTF-8 bytes per query",min=1,max=CONNECTOR_QUERY_BYTES,
+                                             value=scope[source+"_bytes"],precision=0)
+                def apply_scope():
+                    raw=(year.value or "").strip()
+                    if raw and (not raw.isascii() or not raw.isdecimal() or len(raw)!=4):
+                        ui.notify("Enter a four-digit publication year or leave it blank.")
+                        return
+                    if any(not box.value for box in limits.values()):
+                        ui.notify("Enter a positive query byte limit for each database.")
+                        return
+                    return act("setup_edit",dict(action="scope",data=dict(sources=selected.value,
+                        pubmed_bytes=int(limits["pubmed"].value),wos_bytes=int(limits["wos"].value),
+                        publication_year=int(raw) if raw else None)))
+                ui.button("Apply database and limit choices",on_click=apply_scope)
+    with area('plan', 'Optional search assistant'):
+        local_on = state.get('local_assistant_enabled', False)
+        cloud_on = state.get('cloud_enabled', False)
+        ui.label('Assistant mode: ' + ('Optional cloud AI' if cloud_on else 'Local Qwen3-1.7B' if local_on else 'No AI'))
+        if local_on or cloud_on:
+            ui.button('Use no AI', on_click=lambda: act('local_mode', False))
+        if state.get('local_assistant_installed') and not local_on:
+            ui.button('Use local AI', on_click=lambda: act('local_mode', True))
+        if native and not state.get('local_assistant_installed'):
+            with ui.expansion("Set up optional local AI"):
+                ui.label("Qwen3-1.7B Q8_0 from Qwen (Apache 2.0) and llama.cpp from GitHub (MIT). "
+                         "Download about 1.86 GB. Allow 4 GB free during setup. The model runs on your CPU.")
+                consent = ui.checkbox("Download and verify these components on this computer")
+                ui.button("Install optional local assistant",on_click=lambda:act("native_install_local_model",consent.value))
+        if state.get('cloud_configured') and not cloud_on:
+            ui.button('Choose optional cloud AI', on_click=lambda: act('cloud_mode'))
+        if state.get('cloud_offer'):
+            offer = state['cloud_offer']
+            ui.label(offer['provider'] + ' · ' + offer['model'] + ' · ' + offer['cost_notice'])
+            ui.label('Exact data to send')
+            ui.label(offer['payload'])
+            ui.button('Authorize and send this request', on_click=lambda rev=offer['revision']: act('cloud_confirm',rev))
+    with area('details'):
         if state.get('report'):
             run = state['report']['run']
             update = run.get('update_method') or {}
@@ -441,17 +467,41 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                         ui.button("Previous comparison records",on_click=lambda:turn(-comparison["page_size"]))
                     if comparison["offset"]+comparison["page_size"]<comparison["matching"]:
                         ui.button("Next comparison records",on_click=lambda:turn(comparison["page_size"]))
-        for item in state['runs']:
-            rid = item['run_id']
-            ui.button(f"Select run/version {item['version_number']} ({rid})",
-                      on_click=lambda rid=rid: act('select_run', rid)).props('data-testid=select-run')
-        if state['selected_run_id'] is None:
-            ui.label('No run selected (explicit selection required).')
+    with area('search'):
+        names = {}
+        counts = {}
+        for row in sorted(state['runs'], key=lambda r: (r['created_at_utc'], r['run_id'])):
+            version = row['version_number']
+            counts[version] = counts.get(version, 0) + 1
+            names[row['run_id']] = f'Search {version}' + (f' · run {counts[version]}' if counts[version] > 1 else '')
+        if grouped:
+            ui.label('Saved searches').classes('section-title')
+        if grouped and len(names) > 1:
+            choice = ui.select(names, label='Choose a saved search', value=state['selected_run_id'])
+            ui.button('Open search', on_click=lambda: act('select_run', choice.value)).props(
+                'data-testid=select-run').bind_enabled_from(choice, 'value', backward=bool)
         else:
-            ui.label('Selected run: ' + state['selected_run_id']).props('data-testid=selected-run')
+            for item in state['runs']:
+                rid = item['run_id']
+                if grouped and rid == state['selected_run_id']:
+                    continue
+                ui.button(('Open ' + names[rid].lower()) if grouped else f"Select run/version {item['version_number']} ({rid})",
+                          on_click=lambda rid=rid: act('select_run', rid)).props('data-testid=select-run')
+        if state['selected_run_id'] is None:
+            ui.label('Choose a saved search to check its plan and collect records.')
+        else:
+            selected_run = state['selected_run_id']
+            ui.label(names[selected_run] if grouped else 'Selected run: ' + selected_run).props('data-testid=selected-run')
+    if grouped:
+        with area('details', 'Search identifiers'):
+            for rid, label in names.items():
+                ui.label(f'{label} · {rid}')
+    if state['selected_run_id'] is not None:
+        with area('results'):
             render_study_queue(ui,state,act,study_edits)
             render_review_tasks(ui,state,act,study_edits)
             render_master(ui,state,act,native=native)
+        with area('details'):
             with ui.expansion("Source execution times and versions"):
                 for query in (state.get("report") or {}).get("queries",[]):
                     ui.label(query["source_name"]+" · "+query["group_id"]+" · "+query["query_id"])
@@ -465,6 +515,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                  f"{item['receipts']} receipts · local {item['first_local']} to {item['last_local']}")
                     if not query.get("source_methods"):
                         ui.label("No versioned source receipt recorded.")
+        with area('results'):
             with ui.expansion("Results summary and final run verification",value=bool(state.get("run_acceptance"))):
                 ui.button("Check all source and identity evidence",on_click=lambda:act("run_acceptance"))
                 scope=state.get("run_acceptance")
@@ -538,6 +589,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     if state.get("import_receipt"):
                         ui.label(f'Saved {state["import_receipt"]["count"]} records from {state["import_receipt"]["source"]}.')
             society_panel(ui,state,act,native=native)
+        with area('results', 'Search counts and exact queries'):
             data = state['report']
             if data is None:
                 ui.label('Report not available.')
@@ -552,7 +604,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.label('Exact query: ' + item['exact_query']).props('data-testid=exact-query')
                     ui.label('Reported matches: ' +
                              ('unknown' if count is None else str(count))).props('data-testid=query-count')
-        if state['selected_run_id'] is not None:
+    if state['selected_run_id'] is not None:
+        with area('search', 'Search progress'):
             ui.separator()
             ui.label('Combined PubMed + Web of Science execution board '
                      '— all approved OR groups, without new source calls.').props(
@@ -666,7 +719,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                          'missing abstracts, deduplication, official society '
                          'coverage or completed Preferred Reporting Items for '
                          'Systematic Reviews and Meta-Analyses searches.')
-
+    with area('details', 'Citation index'):
         if state['project'] is not None:
             ui.separator()
             ui.label('Durable candidate-key index — optional LOCAL '
@@ -749,8 +802,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                          str(last['processed_records']) +
                          '. This does not establish deduplication.').props(
                              'data-testid=candidate-index-outcome')
-
-        if state['selected_run_id'] is not None:
+    if state['selected_run_id'] is not None:
+        with area('results', 'Find potential duplicates'):
             ui.separator()
             ui.label('Run-specific durable potential-duplicate PAIR '
                      'index — local candidate hints, never a unique '
@@ -850,8 +903,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                          str(last_pair['unique_pairs'])+
                          '. This does not establish deduplication.').props(
                              'data-testid=candidate-pairs-outcome')
-
-        if state['selected_run_id'] is not None:
+    if state['selected_run_id'] is not None:
+        with area('results', 'Review potential duplicates'):
             ui.separator()
             ui.label('Project-wide POTENTIAL DUPLICATE queue — exact '
                      'citation-key hints and historical reviewer receipts, '
@@ -942,7 +995,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                   act('candidate_queue_next',{
                                       'cursor':p,'revision':r})).props(
                                           'data-testid=candidate-queue-next')
-        if state['selected_run_id'] is not None:
+    if state['selected_run_id'] is not None:
+        with area('results', 'Provisional publications and comparisons'):
             ui.separator()
             ui.label('Provisional publication results — local, paginated, '
                      'and NOT a verified deduplicated master list.').props(
@@ -1380,8 +1434,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                              '. Final unique-publication count remains '
                              'UNKNOWN; refresh source evidence for next review.').props(
                                  'data-testid=candidate-result')
-
-        if state['selected_run_id'] is not None:
+    if state['selected_run_id'] is not None:
+        with area('search', 'Collect records from both databases'):
             ui.separator()
             ui.label('Bounded whole-run source coordination — '
                      'EXPLICIT CONFIRMATION required before ANY provider '
@@ -1494,10 +1548,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                          str(outcome['stopped_reason']) +
                          '; whole search verified: FALSE.').props(
                              'data-testid=run-coordination-outcome')
-
+    with area('search'):
         if state['selected_run_id'] is not None:
             ui.separator()
-            ui.label('Pre-run verification — no source searches are executed.').props(
+            ui.label('Check the search plan').props(
                 'data-testid=preflight-heading')
             if not state['preflight_review_reconciliation_required']:
                 ui.button('Verify saved exact source plan',
@@ -1505,10 +1559,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                               'data-testid=preflight-inspect')
             preview = state['preflight_report']
             if preview is None:
-                ui.label('The approved source plan has not yet been verified '
-                         'in this session. No PRESS review is recorded here.')
+                ui.label('Check the saved plan before sending a search to a database.')
             else:
-                ui.label('Validated frozen plan SHA-256: ' +
+                with disclosure('plan-hash', 'Plan verification details'):
+                    ui.label('Validated frozen plan SHA-256: ' +
                          preview['plan_sha256']).props('data-testid=preflight-hash')
                 ui.label('Strategy version: ' + str(preview['version_number']) +
                          '; concept groups: ' + str(preview['group_count']) +
@@ -1534,6 +1588,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                  ('active' if term['enabled'] else 'disabled') +
                                  ' | rationale: ' + term['rationale']).props(
                                      'data-testid=preflight-term')
+                group_names = {g['group_id']: g['label'] for g in preview['groups']}
                 for source in preview['sources']:
                     ui.label('Source coverage: ' + source['source_name'] +
                              ' — ' + source['source_coverage']).props(
@@ -1550,7 +1605,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                                 ui.label(f'Estimated metadata batches before reuse · {observed["estimated_metadata_batches"]}')
                         else:
                             ui.label("Pilot count and workload unknown for this query")
-                        ui.label('Exact stored query (' + query['group_id'] + '): ' +
+                        ui.label('Exact stored query (' + group_names[query['group_id']] + '): ' +
                                  query['exact_query']).props(
                                      'data-testid=preflight-query')
                     for warning in source['warnings']:
@@ -1559,7 +1614,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.label('Pre-run warning: ' + warning)
                 previous = preview['last_review']
                 with ui.expansion("Known-relevant item checks"):
-                    choices={q["query_id"]:s["source_name"]+" · "+q["group_id"]+" · "+q["exact_query"]
+                    choices={q["query_id"]:s["source_name"]+" · "+group_names[q["group_id"]]+" · "+q["exact_query"]
                              for s in preview["sources"] for q in s["queries"]}
                     query_choice=ui.select(choices,label="Exact query checked")
                     item_id=ui.input("Known record identifier")
@@ -1643,8 +1698,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                     ui.button('Confirm and record pre-run checklist',
                               on_click=lambda: act('preflight_record')).props(
                                   'data-testid=preflight-record')
-        if (state['selected_run_id'] is not None and
-                state['preflight_report'] is not None):
+    if (state['selected_run_id'] is not None and
+            state['preflight_report'] is not None):
+        with area('search', 'Try a PubMed search'):
             ui.separator()
             ui.label('PubMed pilot counts — optional single-query '
                      'ESearch requests; NOT a literature retrieval.').props(
@@ -1735,8 +1791,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                 ui.label('Pilot results never establish final '
                          'retrieval or PRESS peer review.').props(
                              'data-testid=pubmed-pilot-incomplete')
-        if (state['selected_run_id'] is not None and
-                state['preflight_report'] is not None):
+    if (state['selected_run_id'] is not None and
+            state['preflight_report'] is not None):
+        with area('search', 'Try a Web of Science search'):
             ui.separator()
             ui.label('Web of Science Starter — optional one-record '
                      'count/quota pilot; NOT a count-only request or '
@@ -1854,7 +1911,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                          'translation. This pilot neither verifies '
                          'source retrieval nor completes PRESS review.').props(
                              'data-testid=wos-pilot-incomplete')
-        if state['selected_run_id'] is not None:
+    if state['selected_run_id'] is not None:
+        with area('search', 'Collect Web of Science records'):
             ui.separator()
             ui.label('Web of Science Starter — checkpointed source '
                      'acquisition (EXPERIMENTAL).').props(
@@ -2019,102 +2077,105 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                               on_click=lambda: act(
                                   'wos_acquisition_tick_confirm')).props(
                                       'data-testid=wos-acquisition-tick-confirm')
-        ui.separator()
-        ui.label('Web of Science — longer supervised identity verification '
-                 '(experimental)').props('data-testid=wos-verification-heading')
-        if state['wos_verification_pending']:
-            ui.label('An explicitly authorised verification worker is '
-                     'running or needs final receipt reconciliation. '
-                     'Other project/run operations remain locked.')
-            ui.label('Supervisor status: ' +
-                     state['wos_verification_worker_state'] +
-                     '; error: ' +
-                     str(state['wos_verification_worker_error'])).props(
-                         'data-testid=wos-verification-worker-state')
-            active = state['wos_acquisition']
-            if active is not None:
-                progress = active['checkpoint']
-                ui.label('Durable verification progress: ' +
-                         str(progress['verification_pages']) + ' / ' +
-                         ('UNKNOWN' if progress['pages_expected'] is None
-                          else str(progress['pages_expected'])) +
-                         ' pages; recorded source hits ' +
-                         str(progress['records_committed']) +
-                         '; unknown requests ' +
-                         str(progress['requests_unknown'])).props(
-                             'data-testid=wos-verification-progress')
-                if progress['worker_active'] or progress['requests_unknown']:
-                    ui.label('Do not repeat provider calls: the original '
-                             'worker or an HTTP outcome may be unknown.')
-            ui.button('Refresh source verification status (no provider request)',
-                      on_click=lambda: act('wos_verification_poll')).props(
-                          'data-testid=wos-verification-poll')
-            if state['wos_verification_worker_state'] == 'running':
-                ui.button('Request graceful pause after current page',
-                          on_click=lambda: act('wos_verification_pause')).props(
-                              'data-testid=wos-verification-pause')
+    if not grouped or state['selected_run_id'] is not None:
+        with area('search', 'Verify Web of Science coverage'):
+            ui.separator()
+            ui.label('Web of Science — longer supervised identity verification '
+                     '(experimental)').props('data-testid=wos-verification-heading')
+            if state['wos_verification_pending']:
+                ui.label('An explicitly authorised verification worker is '
+                         'running or needs final receipt reconciliation. '
+                         'Other project/run operations remain locked.')
+                ui.label('Supervisor status: ' +
+                         state['wos_verification_worker_state'] +
+                         '; error: ' +
+                         str(state['wos_verification_worker_error'])).props(
+                             'data-testid=wos-verification-worker-state')
+                active = state['wos_acquisition']
+                if active is not None:
+                    progress = active['checkpoint']
+                    ui.label('Durable verification progress: ' +
+                             str(progress['verification_pages']) + ' / ' +
+                             ('UNKNOWN' if progress['pages_expected'] is None
+                              else str(progress['pages_expected'])) +
+                             ' pages; recorded source hits ' +
+                             str(progress['records_committed']) +
+                             '; unknown requests ' +
+                             str(progress['requests_unknown'])).props(
+                                 'data-testid=wos-verification-progress')
+                    if progress['worker_active'] or progress['requests_unknown']:
+                        ui.label('Do not repeat provider calls: the original '
+                                 'worker or an HTTP outcome may be unknown.')
+                ui.button('Refresh source verification status (no provider request)',
+                          on_click=lambda: act('wos_verification_poll')).props(
+                              'data-testid=wos-verification-poll')
+                if state['wos_verification_worker_state'] == 'running':
+                    ui.button('Request graceful pause after current page',
+                              on_click=lambda: act('wos_verification_pause')).props(
+                                  'data-testid=wos-verification-pause')
+                else:
+                    ui.button('Reconcile stopped worker with durable checkpoint',
+                              on_click=lambda: act('wos_verification_reconcile')).props(
+                                  'data-testid=wos-verification-reconcile')
+            elif state['wos_verification_offer'] is not None:
+                proposal = state['wos_verification_offer']
+                ui.label('Locked exact query: ' + proposal['exact_query']).props(
+                    'data-testid=wos-verification-locked-query')
+                ui.label('Previously captured pages requiring verification: ' +
+                         str(proposal['pages_to_verify']) +
+                         '; exact maximum provider requests in this session: ' +
+                         str(proposal['expected_requests']) +
+                         ' (one initial recheck, all verification pages, '
+                         'one final recheck). Up to 512 requests supported. '
+                         'Rate limits, quota, server Retry-After or source '
+                         'change can pause or fail this sweep.').props(
+                             'data-testid=wos-verification-budget')
+                ui.label('No source request has been sent by this preview. '
+                         'Confirmation stores permitted validation evidence '
+                         'in the original project and may consume institutional quota. '
+                         'The app must remain open; closing it interrupts '
+                         'the child and may require explicit recovery.')
+                if proposal['revalidate_quota']:
+                    ui.label('Explicit revalidation requested, but server '
+                             'cooldown and unknown previous provider '
+                             'requests cannot be bypassed.')
+                ui.button('Cancel unsent verification',
+                          on_click=lambda: act('wos_verification_dismiss')).props(
+                              'data-testid=wos-verification-dismiss')
+                ui.button('CONFIRM one bounded supervised verification session',
+                          on_click=lambda: act('wos_verification_confirm')).props(
+                              'data-testid=wos-verification-confirm')
             else:
-                ui.button('Reconcile stopped worker with durable checkpoint',
-                          on_click=lambda: act('wos_verification_reconcile')).props(
-                              'data-testid=wos-verification-reconcile')
-        elif state['wos_verification_offer'] is not None:
-            proposal = state['wos_verification_offer']
-            ui.label('Locked exact query: ' + proposal['exact_query']).props(
-                'data-testid=wos-verification-locked-query')
-            ui.label('Previously captured pages requiring verification: ' +
-                     str(proposal['pages_to_verify']) +
-                     '; exact maximum provider requests in this session: ' +
-                     str(proposal['expected_requests']) +
-                     ' (one initial recheck, all verification pages, '
-                     'one final recheck). Up to 512 requests supported. '
-                     'Rate limits, quota, server Retry-After or source '
-                     'change can pause or fail this sweep.').props(
-                         'data-testid=wos-verification-budget')
-            ui.label('No source request has been sent by this preview. '
-                     'Confirmation stores permitted validation evidence '
-                     'in the original project and may consume institutional quota. '
-                     'The app must remain open; closing it interrupts '
-                     'the child and may require explicit recovery.')
-            if proposal['revalidate_quota']:
-                ui.label('Explicit revalidation requested, but server '
-                         'cooldown and unknown previous provider '
-                         'requests cannot be bypassed.')
-            ui.button('Cancel unsent verification',
-                      on_click=lambda: act('wos_verification_dismiss')).props(
-                          'data-testid=wos-verification-dismiss')
-            ui.button('CONFIRM one bounded supervised verification session',
-                      on_click=lambda: act('wos_verification_confirm')).props(
-                          'data-testid=wos-verification-confirm')
-        else:
-            acquired = state['wos_acquisition']
-            if (acquired is not None and
-                    acquired['approved_gui_retention'] is True and
-                    state['wos_profile_configured'] and
-                    acquired['checkpoint']['stage'] in ('verify', 'final') and
-                    not acquired['checkpoint']['enumeration_reconciled'] and
-                    not acquired['checkpoint']['worker_active'] and
-                    acquired['checkpoint']['requests_unknown'] == 0):
-                ui.label('The existing short-session limit cannot '
-                         'finish this verification sweep. A separate '
-                         'longer supervised worker can verify the '
-                         'already captured pages in one explicit session.')
-                ui.button('Preview full source verification workload',
-                          on_click=lambda: act('wos_verification_offer')).props(
-                              'data-testid=wos-verification-offer')
-                ui.button('Preview verification with explicit quota revalidation',
-                          on_click=lambda: act(
-                              'wos_verification_revalidate_offer')).props(
-                                  'data-testid=wos-verification-revalidate')
-        if state['wos_verification_last_outcome'] is not None:
-            outcome = state['wos_verification_last_outcome']
-            ui.label('Last supervised session: ' +
-                     outcome['worker_state'] +
-                     '; source status: ' + outcome['durable_source_status'] +
-                     '; enumeration reconciled: ' +
-                     str(outcome['enumeration_reconciled']) +
-                     '; whole search verified: FALSE').props(
-                         'data-testid=wos-verification-outcome')
-        if state['selected_run_id'] is not None:
+                acquired = state['wos_acquisition']
+                if (acquired is not None and
+                        acquired['approved_gui_retention'] is True and
+                        state['wos_profile_configured'] and
+                        acquired['checkpoint']['stage'] in ('verify', 'final') and
+                        not acquired['checkpoint']['enumeration_reconciled'] and
+                        not acquired['checkpoint']['worker_active'] and
+                        acquired['checkpoint']['requests_unknown'] == 0):
+                    ui.label('The existing short-session limit cannot '
+                             'finish this verification sweep. A separate '
+                             'longer supervised worker can verify the '
+                             'already captured pages in one explicit session.')
+                    ui.button('Preview full source verification workload',
+                              on_click=lambda: act('wos_verification_offer')).props(
+                                  'data-testid=wos-verification-offer')
+                    ui.button('Preview verification with explicit quota revalidation',
+                              on_click=lambda: act(
+                                  'wos_verification_revalidate_offer')).props(
+                                      'data-testid=wos-verification-revalidate')
+            if state['wos_verification_last_outcome'] is not None:
+                outcome = state['wos_verification_last_outcome']
+                ui.label('Last supervised session: ' +
+                         outcome['worker_state'] +
+                         '; source status: ' + outcome['durable_source_status'] +
+                         '; enumeration reconciled: ' +
+                         str(outcome['enumeration_reconciled']) +
+                         '; whole search verified: FALSE').props(
+                             'data-testid=wos-verification-outcome')
+    if state['selected_run_id'] is not None:
+        with area('search', 'Collect PubMed identifiers'):
             ui.separator()
             ui.label('PubMed ESearch — supervised identifier retrieval '
                      '(EXPERIMENTAL; metadata is a separate stage).').props(
@@ -2267,7 +2328,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                           else str(outcome['requests_reserved'])) +
                          '; whole search verified: FALSE').props(
                              'data-testid=pubmed-source-outcome')
-        if state['selected_run_id'] is not None:
+    if state['selected_run_id'] is not None:
+        with area('search', 'Collect PubMed article details'):
             ui.separator()
             ui.label('PubMed — full EFetch bibliographic metadata and abstracts '
                      '(experimental)').props('data-testid=pubmed-metadata-heading')
@@ -2389,7 +2451,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None):
                           else str(last['successful_batches'])) +
                          '; whole run verified: FALSE').props(
                              'data-testid=pubmed-metadata-outcome')
+
+    with area('export'):
         render_manifest_consent(ui, state, act)
+    with area('export', 'Strategy and reviewed workbooks'):
         for item in state['exports']:
             # Only offer requests belonging to the explicitly selected run.
             if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:

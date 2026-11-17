@@ -20,6 +20,7 @@ from research_y.desktop.folders import select_ris_document
 from research_y.project_archive import ArchiveError
 from research_y.desktop.native import open_desktop_window
 from research_y.desktop.project_panel import render_project_panel
+from research_y.desktop.workspace import ProjectWorkspace
 from research_y.desktop.session import DesktopGuard, LaunchSession
 from research_y.local_assistant import LocalAssistant, PACKAGE
 
@@ -71,6 +72,7 @@ def build_page(app, ui, flow, settings_warnings=()):
     def project_page():
         error = None
         study_edits = {}
+        workspace = ProjectWorkspace()
         # Run in the authenticated document. Native window RPC shares a response
         # queue with folder selection, so a background probe must never use it.
         if flow.project is None:
@@ -78,7 +80,10 @@ def build_page(app, ui, flow, settings_warnings=()):
 
         @ui.refreshable
         def panel():
-            render_project_panel(ui, flow, act, native=True, error=error, study_edits=study_edits)
+            if flow.project is not None and workspace.project_id != str(flow.project.identifier):
+                launcher.close()
+            render_project_panel(ui, flow, act, native=True, error=error, study_edits=study_edits,
+                                 workspace=workspace)
 
         async def act(action, value=None):
             nonlocal error
@@ -190,6 +195,10 @@ def build_page(app, ui, flow, settings_warnings=()):
                             await asyncio.to_thread(flow.offer_external_directory, folder)
                     else:
                         await asyncio.to_thread(perform_action, flow, action, value)
+                        if action == 'setup_approve':
+                            workspace.stage = 'search'
+                        if action == 'cloud_offer':
+                            workspace.open_sections[('plan', 'Optional search assistant')] = True
                     error = None
                 except (ProjectFlowError, NativeFolderError, ArchiveError) as exc:
                     error = str(exc)
@@ -218,25 +227,31 @@ def build_page(app, ui, flow, settings_warnings=()):
                     break
 
         ui.add_css(field_styles)
-        ui.query('.nicegui-content').classes('q-pa-md q-mx-auto').style('max-width: 75rem; width: 100%; overflow-wrap: anywhere')
-        ui.label('RESEARCH-Y').classes('text-h4').props('data-testid=desktop-title')
-        with ui.expansion('How to use RESEARCH-Y', icon='help_outline').props('data-testid=quick-start'):
-            ui.markdown(quick_start)
-        from research_y.desktop.settings import render_settings
-        render_settings(ui,flow)
+        ui.label('RESEARCH-Y').classes('app-title').props('data-testid=desktop-title')
+        with ui.element('div').classes('app-tools'):
+            with ui.expansion('How to use RESEARCH-Y', icon='help_outline').props('dense data-testid=quick-start'):
+                ui.markdown(quick_start)
+            from research_y.desktop.settings import render_settings
+            render_settings(ui,flow)
         for warning in settings_warnings:
             ui.label(warning)
-        open_folder = ui.button('Open project folder', on_click=lambda: act('native_open')).props('data-testid=desktop-open')
-        open_index = ui.button('Open project index file', on_click=lambda: act('native_open_index')).props(
-            'data-testid=desktop-open-index')
-        with ui.expansion("Import project archive").props("data-testid=import-archive-panel"):
-            restored_name = ui.input("New folder name (optional)")
-            ui.button("Choose .researchy archive and destination folder",on_click=lambda:
-                      act("native_import_archive",restored_name.value)).props("data-testid=import-archive")
-        with ui.row().classes('items-center'):
-            name = ui.input('New project name').props('data-testid=desktop-name')
-            create = ui.button('Create project in folder', on_click=lambda: act('native_create', name.value)).props(
-                'data-testid=desktop-create')
+        with ui.expansion('Open or create a project', value=flow.project is None).classes('project-launcher').props(
+                'data-testid=project-launcher') as launcher:
+            with ui.element('div').classes('project-choices'):
+                with ui.column():
+                    ui.label('Open a project').classes('section-title')
+                    open_folder = ui.button('Open project folder', on_click=lambda: act('native_open')).props('data-testid=desktop-open')
+                    open_index = ui.button('Open project index file', on_click=lambda: act('native_open_index')).props(
+                        'flat data-testid=desktop-open-index')
+                with ui.column():
+                    ui.label('Create a project').classes('section-title')
+                    name = ui.input('New project name').props('data-testid=desktop-name')
+                    create = ui.button('Create project in folder', on_click=lambda: act('native_create', name.value)).props(
+                        'data-testid=desktop-create')
+            with ui.expansion("Import project archive").props("dense data-testid=import-archive-panel"):
+                restored_name = ui.input("New folder name (optional)")
+                ui.button("Choose .researchy archive and destination folder",on_click=lambda:
+                          act("native_import_archive",restored_name.value)).props("data-testid=import-archive")
         picker_status = ui.label('Connecting to the desktop…').props('role=status aria-live=polite data-testid=project-picker-status')
         project_buttons = (open_folder, open_index, create)
         for button in project_buttons:

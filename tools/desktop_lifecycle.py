@@ -93,12 +93,18 @@ def run_window(stage, workspace, folder, run_id):
         await asyncio.sleep(.25)
 
     async def check_first_search_page():
+        if await visible('[data-testid=run-board-heading]') or await visible('[data-testid=export-id]'):
+            raise RuntimeError('advanced_controls_visible_in_setup')
         await click('[data-testid=quick-start] .q-item')
         guide = await js("document.querySelector('[data-testid=quick-start] .nicegui-markdown').innerText")
         if 'Save research heading' not in guide or 'Confirm one PubMed count-only request' not in guide:
             raise RuntimeError('first_search_guide_unavailable')
         await click('[data-testid=quick-start] .q-item')
         await fill('[data-testid=setup-theme] input, input[data-testid=setup-theme]', 'RV Failure')
+        await click('[data-testid=stage-details]')
+        await click('[data-testid=stage-plan]')
+        if await js("document.querySelector('[data-testid=setup-theme] input, input[data-testid=setup-theme]').value") != 'RV Failure':
+            raise RuntimeError('navigating_away_discarded_unsaved_theme')
         for width in (520, 1200):
             app.native.main_window.resize(width, 850)
             await wait_for(lambda: js(f'window.innerWidth {"<" if width == 520 else ">"} 650'), 'window_resize')
@@ -120,6 +126,18 @@ def run_window(stage, workspace, folder, run_id):
             })()""")
             if clipped:
                 raise RuntimeError(f'clipped or overlapping field labels at width {width}: {clipped}')
+            layout_ok = await js("""(() => {
+                const box = node => node.getBoundingClientRect();
+                const page = box(document.querySelector('.nicegui-content'));
+                const cards = [...document.querySelectorAll('.plan-card')].map(box);
+                const button = box(document.querySelector('[data-testid=setup-save-heading]'));
+                const fits = Math.abs(page.left - (document.documentElement.clientWidth - page.right)) < 2;
+                const columns = window.innerWidth > 740 ? Math.abs(cards[0].top - cards[1].top) < 2
+                                                        : cards[1].top >= cards[0].bottom;
+                return fits && columns && button.width < cards[0].width * .85;
+            })()""")
+            if not layout_ok:
+                raise RuntimeError(f'project layout or button width at {width}')
         print('Checked first-search guide and labelled fields at narrow and wide window sizes.', flush=True)
 
     async def observe():
@@ -136,9 +154,10 @@ def run_window(stage, workspace, folder, run_id):
             if stage == 'save':
                 await fill('[data-testid=desktop-name] input, input[data-testid=desktop-name]', 'Created in desktop')
                 await click('[data-testid=desktop-create]')
-                await wait_for(lambda: visible('[data-testid=open-recent]'), 'native_create')
+                await wait_for(lambda: visible('[data-testid=project-name]'), 'native_create')
                 await check_first_search_page()
                 active = flow.state()['project']['project_id']
+                await click('[data-testid=project-launcher] > .q-expansion-item__container > .q-item')
                 await click('[data-testid=desktop-open]')
                 await wait_for(lambda: visible('[data-testid=operation-error]'), 'redirected_project_rejection')
                 message = await js("document.querySelector('[data-testid=operation-error]').textContent")
@@ -163,7 +182,12 @@ def run_window(stage, workspace, folder, run_id):
                 print('Cancelled and selected the relocated project in the native folder dialog.', flush=True)
             else:
                 await click('[data-testid=desktop-open-index]')
+            await click('[data-testid=stage-search]')
             await click('[data-testid=select-run]')
+            await wait_for(lambda: visible('[data-testid=selected-run]'), 'selected_search')
+            if run_id in await js("document.querySelector('.workspace-panels').innerText"):
+                raise RuntimeError('technical_run_id_in_primary_workflow')
+            await click('[data-testid=stage-results]')
             await click('[data-testid=society-panel] .q-item')
             await fill('[data-testid=society-terms] textarea, textarea[data-testid=society-terms]', 'ECMO')
             await click('[data-testid=society-search]')
@@ -182,6 +206,7 @@ def run_window(stage, workspace, folder, run_id):
             await wait_for(lambda: visible('[data-testid=master-table]'), 'accessible_master_table')
             if flow.state()['master_results']['total'] != 0:
                 raise RuntimeError('unexpected_fixture_publications')
+            await click('[data-testid=stage-export]')
             await click('[data-testid=manifest-panel] .q-item')
             if flow.state()['selected_run_id'] != run_id:
                 raise RuntimeError('wrong_selected_run')
