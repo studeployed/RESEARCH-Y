@@ -34,7 +34,7 @@ def run_window(stage, workspace, folder, run_id):
     from research_y.desktop.flow import RealProjectFlow
 
     flow = RealProjectFlow(recent_parent=workspace / 'recents')
-    choices = iter([workspace, workspace / 'Redirected'])
+    choices = iter([workspace, workspace / 'Created-in-desktop', workspace / 'Redirected'])
     selections = asyncio.Queue()
     real_dialog = desktop.select_from_native_window
     passed = []
@@ -139,6 +139,43 @@ def run_window(stage, workspace, folder, run_id):
             if not layout_ok:
                 raise RuntimeError(f'project layout or button width at {width}')
         print('Checked first-search guide and labelled fields at narrow and wide window sizes.', flush=True)
+        objective = '[data-testid=setup-objectives] textarea, textarea[data-testid=setup-objectives]'
+        reviewer = '[data-testid=setup-approver] input, input[data-testid=setup-approver]'
+        await fill(objective, 'First objective')
+        await click('[data-testid=setup-save-heading]')
+        async def message_contains(text):
+            return await js("document.querySelector('[data-testid=question-message]')?.textContent.includes("
+                            + json.dumps(text) + ")")
+        await wait_for(lambda: message_contains('Enter your name'), 'missing_researcher_feedback')
+        await fill(reviewer, 'Fixture researcher')
+        await click('[data-testid=setup-save-heading]')
+        await wait_for(lambda: visible('[data-testid=question-saved]'), 'first_question_save')
+        if await visible(objective) or flow.state()['saved_question']['objectives'] != 'First objective':
+            raise RuntimeError('question_not_collapsed_or_persisted')
+        await click('[data-testid=question-edit]')
+        if await js('document.querySelector(' + json.dumps(objective) + ').value') != 'First objective':
+            raise RuntimeError('saved_objective_missing_from_editor')
+        await fill(objective, 'Revised objective')
+        await fill(reviewer, 'x' * 2049)
+        await click('[data-testid=setup-save-heading]')
+        await wait_for(lambda: message_contains('Check your theme'), 'rejected_question_save')
+        if await js('document.querySelector(' + json.dumps(objective) + ').value') != 'Revised objective':
+            raise RuntimeError('failed_save_lost_edit')
+        await fill(reviewer, 'Fixture researcher')
+        await click('[data-testid=setup-save-heading]')
+        await wait_for(lambda: visible('[data-testid=question-saved]'), 'revised_question_save')
+        await click('[data-testid=switch-project]')
+        await click('[data-testid=desktop-open]')
+        await wait_for(lambda: js("document.querySelector('[data-testid=project-picker-status]').textContent "
+                                  "=== 'Opened Created in desktop.'"), 'reopened_same_project')
+        await wait_for(lambda: visible('[data-testid=question-saved]'), 'reopened_question')
+        if await js("document.querySelector('.question-objectives').textContent") != 'Revised objective':
+            raise RuntimeError('reopened_question_not_current')
+        if await js("document.querySelector('.search-path [aria-current=step]').textContent") != 'Next · Add search terms':
+            raise RuntimeError('incorrect_next_milestone')
+        if await visible('[data-testid=desktop-open]'):
+            await click('[data-testid=switch-project]')
+        print('Checked inline save, failure, editing, reopening and next search milestone.', flush=True)
 
     async def observe():
         try:

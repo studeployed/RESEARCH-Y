@@ -100,12 +100,25 @@ def build_page(app, ui, flow, settings_warnings=()):
                     or (action == "master_results" and value.get("operation") == "lookup")):
                 action_lock = crossref
             if lock.locked() or action_lock.locked():
+                if action == 'save_question':
+                    return 'Another action is in progress. Try Save question again in a moment.'
                 if project_picker:
                     ui.notify('Another action is in progress. If a Windows picker is open, finish or cancel it first.')
                 return
             async with action_lock:
                 try:
-                    if action == "native_install_local_model":
+                    if action == 'save_question':
+                        project_id, values = value
+                        if flow.project is None or project_id != str(flow.project.identifier):
+                            return 'The open project has changed. Open the intended project before saving.'
+                        try:
+                            await asyncio.to_thread(flow.edit_setup, 'heading', values)
+                        except ProjectFlowError as exc:
+                            if str(exc) == 'invalid_setup_input':
+                                return 'Check your theme and name for length or unusual characters, then save again.'
+                            return 'Could not confirm the save. ' + str(exc)
+                        workspace.question_inputs = None
+                    elif action == "native_install_local_model":
                         from research_y.install_local_assistant import download_local_package
                         if value is not True:
                             raise ProjectFlowError("Confirm the optional local model download.")
@@ -191,12 +204,18 @@ def build_page(app, ui, flow, settings_warnings=()):
                         else:
                             saved = await asyncio.to_thread(flow.open_native_folder, folder)
                             picker_status.set_text('Opened ' + saved['project']['name'] + '.')
+                        workspace.question_inputs = None
                     elif action == 'native_export':
                         folder = await select_from_native_window(app.native.main_window)
                         if folder is not None:
                             await asyncio.to_thread(flow.offer_external_directory, folder)
                     else:
+                        if action == 'setup_preview' and workspace.question_inputs is not None:
+                            ui.notify('Save your question before previewing the search.')
+                            return
                         await asyncio.to_thread(perform_action, flow, action, value)
+                        if action == 'recent_open':
+                            workspace.question_inputs = None
                         if action == 'setup_approve':
                             workspace.stage = 'search'
                         if action == 'cloud_offer':
@@ -206,6 +225,8 @@ def build_page(app, ui, flow, settings_warnings=()):
                     error = str(exc)
                 except Exception:
                     error = 'operation_unavailable'
+                if action == 'save_question' and error:
+                    return 'Could not confirm the save. Check the project folder and try again.'
                 if project_picker and error:
                     picker_status.set_text({
                         'native_dialog_unavailable': 'Windows could not open the picker. Try again.',

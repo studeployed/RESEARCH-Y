@@ -1,5 +1,9 @@
 # RESEARCH-Y handover
 
+## Question feedback and search milestones
+
+Version 0.1.4 confirms a project question save inline and returns to a read-only summary. Edit question restores the form. Failed saves retain the entered text. Plan search tracks the current draft. Run search tracks a selected saved plan and its first recorded collection response separately from pilots. The Windows lifecycle fixture exercises validation, saving, editing and reopening. No provider requests are needed for these checks.
+
 ## Simplified Windows project workspace
 
 Version 0.1.3 centres the work area and gives the research question and terms separate columns on wide windows. Plan search, Run search, Results and Export show the actions for each stage. Saved runs use short names in the daily workflow. Project details retains identifiers and audit history. The Windows lifecycle check covers responsive buttons and fields, switching stages with an unsaved theme, explicit run selection and workbook verification.

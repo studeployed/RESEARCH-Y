@@ -8,11 +8,13 @@ class ProjectWorkspace:
         self.run_id = None
         self.stage = 'plan'
         self.open_sections = {}
+        self.question_inputs = None
 
     def render(self, ui, state):
         project_id = state['project']['project_id']
         if self.project_id != project_id:
             self.project_id = project_id
+            self.question_inputs = None
             self.stage = 'search' if state['runs'] else 'plan'
             self.open_sections.clear()
         if self.run_id != state['selected_run_id']:
