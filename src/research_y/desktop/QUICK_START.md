@@ -5,7 +5,8 @@ Open **RESEARCH-Y** from the Windows Start menu. To start a project, type its na
 ## Set up your first search
 
 1. On **Plan search**, enter your **Research theme** under **Research question**. For example, enter *RV Failure*. Under **Research objectives (optional)** you could write *Find studies on right ventricular failure in adults.* Enter your name in **Approving researcher’s name**, then click **Save question**.
-2. Enter a **Group name**, such as *Right ventricular failure*, and click **Add group**. A group keeps related search terms together.
+   Look for **✓ Saved** beside **Edit question**. The theme and objective are now stored in the project. To change them, click **Edit question**, make your changes and save again. If you reopen the project, enter your name again before previewing a new search.
+2. Follow **Next** in **Steps to your search**. Enter a **Group name**, such as *Right ventricular failure*, and click **Add group**. A group keeps related search terms together.
 3. Inside the group, enter *right ventricular failure* under **Search term or phrase** and click **Add term**. Repeat with *right heart failure* if you want to search for that phrase too. Click a saved term to edit it or ask for suggestions.
 4. Click **Preview search** and read the wording for each database. An article can match **any** enabled term across the groups. The example objective alone does not limit results to adults. Use **Database selection and optional search limits** to review the available limits.
 5. To change the wording, click **Edit search plan**. When the preview matches your intent, click **Approve and save search**. This saves the search plan. The databases are queried in a later step.

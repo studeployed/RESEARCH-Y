@@ -13,6 +13,13 @@
 .app-title { font-weight: 650; font-size: 1.65rem; letter-spacing: .035em; }
 .project-title { font-size: clamp(1.35rem, 2.5vw, 1.8rem); font-weight: 600; }
 .section-title { font-size: 1.1rem; font-weight: 600; }
+.question-theme, .question-saved { font-weight: 600; }
+.question-saved, .search-path .done { color: #21665d; }
+.question-objectives { white-space: pre-wrap; }
+.search-path { width: 100%; padding-bottom: .7rem; border-bottom: 1px solid #dbe5e1; }
+.search-path ol { display: flex; flex-wrap: wrap; gap: .35rem 1rem; padding: 0; margin: .4rem 0; list-style: none; }
+.search-path li { font-size: .9rem; color: #52625e; }
+.search-path .current { font-weight: 650; color: #233a38; }
 .app-tools, .plan-columns, .project-choices {
   display: grid;
   width: 100%;

@@ -3,6 +3,8 @@ from contextlib import nullcontext
 from datetime import date
 
 from research_y.desktop.manifest_consent import render_manifest_consent
+from research_y.desktop.question_card import render_question
+from research_y.desktop.search_path import render_search_steps
 from research_y.desktop.master_panel import render_master
 from research_y.desktop.review_panel import render_review_tasks
 from research_y.desktop.study_panel import render_study_panel, render_study_queue
@@ -64,6 +66,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 if receipt:
                     ui.label(f'Saved {receipt["filename"]} with {receipt["files"]} files.')
     with area('search'):
+        if grouped and state['runs']:
+            render_search_steps(ui, state, planning=False)
         if project is not None and (state['selected_run_id'] or not grouped):
             if state.get("run_acceptance",None) and state["run_acceptance"]["receipt"]:
                 ui.label("Selected run verification at "+state["run_acceptance"]["receipt"]["at_utc"]+
@@ -186,6 +190,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              detail['quota_status'])
     with area('plan'):
         draft = state['strategy_draft']
+        if grouped:
+            render_search_steps(ui, state, planning=True)
         cloud_on = state.get('cloud_enabled', False)
         ui.label('Research Setup').classes('section-title').props(
             'data-testid=setup-heading')
@@ -203,20 +209,16 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 with ui.element('div').classes('plan-columns') if grouped else nullcontext():
                     with ui.column().classes('plan-card') if grouped else nullcontext():
                         if grouped:
-                            ui.label('Research question').classes('section-title')
-                        theme_input = ui.input('Research theme', value=draft['theme']).props(
-                            'data-testid=setup-theme')
-                        objectives_input = ui.textarea('Research objectives (optional)', value=draft['objectives']).props(
-                            'data-testid=setup-objectives')
-                        approver_input = ui.input('Approving researcher’s name', value=draft['approved_by']).props(
-                            'data-testid=setup-approver')
-                        ui.button('Save question',
-                                  on_click=lambda: act('setup_edit', dict(
-                                      action='heading', data=dict(
-                                          theme=theme_input.value,
-                                          objectives=objectives_input.value or '',
-                                          approved_by=approver_input.value)))).props(
-                                              'data-testid=setup-save-heading')
+                            render_question(ui, workspace, state, act)
+                        else:
+                            theme_input = ui.input('Research theme', value=draft['theme']).props('data-testid=setup-theme')
+                            objectives_input = ui.textarea('Research objectives (optional)', value=draft['objectives']).props(
+                                'data-testid=setup-objectives')
+                            approver_input = ui.input('Approving researcher’s name', value=draft['approved_by']).props(
+                                'data-testid=setup-approver')
+                            ui.button('Save question', on_click=lambda: act('setup_edit', dict(
+                                action='heading', data=dict(theme=theme_input.value, objectives=objectives_input.value or '',
+                                                            approved_by=approver_input.value)))).props('data-testid=setup-save-heading')
                     with ui.column().classes('plan-card') if grouped else nullcontext():
                         if grouped:
                             ui.label('Search terms').classes('section-title')

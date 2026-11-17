@@ -110,6 +110,7 @@ class RealProjectFlow:
         self.observation = None
         self.retained_export_report = None
         self._setup = StrategyDraft()
+        self._saved_setup = ResearchSetup('', '')
         # Stable until the authoritative run inventory confirms a commit.
         # On worker interruption, every retry carries the same exact snapshot.
         self._pending_admission_id = None
@@ -5013,6 +5014,8 @@ class RealProjectFlow:
                 'recent_projects': list(self._recent_items),
                 'recent_history_error': self._recent_error,
                 'strategy_draft': self._setup.state(),
+                'saved_question': (dict(theme=self._saved_setup.theme, objectives=self._saved_setup.objectives)
+                                   if self.project and self._saved_setup.theme else None),
                 'local_assistant_installed': bool(self._local_assistant and self._local_assistant.installed),
                 'local_assistant_enabled': self._local_enabled,
                 'cloud_configured': self._cloud_assistant is not None,
