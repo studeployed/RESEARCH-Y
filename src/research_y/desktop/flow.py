@@ -110,6 +110,7 @@ class RealProjectFlow:
         self.observation = None
         self.retained_export_report = None
         self._setup = StrategyDraft()
+        self._saved_setup = ResearchSetup('', '')
         # Stable until the authoritative run inventory confirms a commit.
         # On worker interruption, every retry carries the same exact snapshot.
         self._pending_admission_id = None
