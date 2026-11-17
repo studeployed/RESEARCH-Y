@@ -477,9 +477,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
         if grouped:
             ui.label('Saved searches').classes('section-title')
         if grouped and len(names) > 1:
-            choice = ui.select(names, label='Choose a saved search', value=state['selected_run_id'])
-            ui.button('Open search', on_click=lambda: act('select_run', choice.value)).props(
-                'data-testid=select-run').bind_enabled_from(choice, 'value', backward=bool)
+            run_selector = ui.select(names, label='Choose a saved search', value=state['selected_run_id'])
+            ui.button('Open search', on_click=lambda box=run_selector: act('select_run', box.value)).props(
+                'data-testid=select-run').bind_enabled_from(run_selector, 'value', backward=bool)
         else:
             for item in state['runs']:
                 rid = item['run_id']
