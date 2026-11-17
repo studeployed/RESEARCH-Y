@@ -208,9 +208,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                             'data-testid=setup-theme')
                         objectives_input = ui.textarea('Research objectives (optional)', value=draft['objectives']).props(
                             'data-testid=setup-objectives')
-                        approver_input = ui.input('Researcher approving', value=draft['approved_by']).props(
+                        approver_input = ui.input('Approving researcher’s name', value=draft['approved_by']).props(
                             'data-testid=setup-approver')
-                        ui.button('Save research heading',
+                        ui.button('Save question',
                                   on_click=lambda: act('setup_edit', dict(
                                       action='heading', data=dict(
                                           theme=theme_input.value,
@@ -220,8 +220,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     with ui.column().classes('plan-card') if grouped else nullcontext():
                         if grouped:
                             ui.label('Search terms').classes('section-title')
-                        new_group = ui.input('New concept group name').props('data-testid=setup-group-input')
-                        ui.button('Add concept group', on_click=lambda: act('setup_edit', dict(
+                        new_group = ui.input('Group name').props('data-testid=setup-group-input')
+                        ui.button('Add group', on_click=lambda: act('setup_edit', dict(
                             action='add_group', data=dict(label=new_group.value)))).props(
                                 'data-testid=setup-add-group')
                         for group in draft['groups']:
@@ -246,7 +246,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                               act('setup_edit', dict(action='remove_group',
                                                   data=dict(group_id=gid)))).props('data-testid=setup-remove-group')
                                 new_term = ui.input('Search term or phrase')
-                                ui.button('Add researcher term', on_click=lambda gid=gid, box=new_term:
+                                ui.button('Add term', on_click=lambda gid=gid, box=new_term:
                                           act('setup_edit', dict(action='add_term',
                                               data=dict(group_id=gid, text=box.value)))).props(
                                                   'data-testid=setup-add-term')
@@ -306,14 +306,14 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                                   act('setup_edit', dict(action='remove_term',
                                                       data=dict(group_id=gid, term_id=tid)))).props(
                                                           'data-testid=setup-remove-term')
-                ui.button('Preview exact broad-OR source queries',
+                ui.button('Preview search',
                           on_click=lambda: act('setup_preview')).props(
                               'data-testid=setup-preview')
             else:
                 ui.label('Exact-query preview is locked. To change any field, '
-                         'choose Revise draft and preview again.').props(
+                         'choose Edit search plan and preview again.').props(
                              'data-testid=setup-preview-locked')
-                ui.button('Revise draft before approval',
+                ui.button('Edit search plan',
                           on_click=lambda: act('setup_edit', dict(
                               action='revise_preview', data={}))).props(
                                   'data-testid=setup-revise')
@@ -343,7 +343,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                             ui.label('Compiler warning: ' + warning)
                     ui.label('Provider matches: UNKNOWN (not queried).').props(
                         'data-testid=setup-unknown-counts')
-                    ui.button('Approve frozen strategy and create pending run',
+                    ui.button('Approve and save search',
                               on_click=lambda: act('setup_approve')).props(
                                   'data-testid=setup-approve')
         if state['last_strategy_admission'] is not None and not grouped:
@@ -1554,7 +1554,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
             ui.label('Check the search plan').props(
                 'data-testid=preflight-heading')
             if not state['preflight_review_reconciliation_required']:
-                ui.button('Verify saved exact source plan',
+                ui.button('Check saved plan',
                           on_click=lambda: act('preflight_inspect')).props(
                               'data-testid=preflight-inspect')
             preview = state['preflight_report']

@@ -20,6 +20,7 @@
   gap: 1rem;
 }
 .app-tools { gap: .5rem; }
+.plan-columns, .project-choices { align-items: start; }
 .app-tools .q-item { min-height: 2.5rem; }
 .nicegui-content .q-btn {
   width: fit-content;

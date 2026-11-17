@@ -11,7 +11,7 @@ SEC-04/05 and partial AT-04/05/17/19/21.
 
 After a researcher approves a strategy through the preceding GUI, the
 researcher can explicitly select its existing **pending** run and ask the host
-to **Verify saved exact source plan**. It uses the existing read-only project
+to **Check saved plan**. It uses the existing read-only project
 connection/path guard, parses the frozen strategy snapshot, compares every
 indexed group with its snapshot, recompiles both sources deterministically,
 and validates that each active group has **exactly one stored pending query

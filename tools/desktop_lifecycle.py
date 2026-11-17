@@ -97,7 +97,7 @@ def run_window(stage, workspace, folder, run_id):
             raise RuntimeError('advanced_controls_visible_in_setup')
         await click('[data-testid=quick-start] .q-item')
         guide = await js("document.querySelector('[data-testid=quick-start] .nicegui-markdown').innerText")
-        if 'Save research heading' not in guide or 'Confirm one PubMed count-only request' not in guide:
+        if 'Save question' not in guide or 'Confirm one PubMed count-only request' not in guide:
             raise RuntimeError('first_search_guide_unavailable')
         await click('[data-testid=quick-start] .q-item')
         await fill('[data-testid=setup-theme] input, input[data-testid=setup-theme]', 'RV Failure')
