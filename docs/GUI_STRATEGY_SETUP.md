@@ -18,7 +18,7 @@ Group ordering/term ordering are not Boolean operands: all enabled terms and
 all named groups form a **logical OR**. No hidden conjunction, exclusion, Medical
 Subject Headings (MeSH) expansion or default filters are introduced.
 
-A separate **Preview exact broad-OR source queries** action runs the already
+A separate **Preview search** action runs the already
 approved deterministic compiler entirely in local memory. The interface
 shows exact PubMed `[All Fields]` and Web of Science Starter `TS` group
 expressions, a logical overall union, group/term counts, source coverage and
@@ -31,7 +31,7 @@ invalidate the preview and prohibit approval until the researcher re-previews
 the current draft. Browser input typed but not explicitly saved cannot be
 mistaken for a reviewed, approved term.
 
-Only **Approve frozen strategy and create pending run**, a distinct user
+Only **Approve and save search**, a distinct user
 button appearing after successful preview, creates a durable version. It
 invokes the pre-existing `commit_approved_strategy` through a validated
 allowlisted `ApplicationCommand` in the supervised `ApplicationWorker`,

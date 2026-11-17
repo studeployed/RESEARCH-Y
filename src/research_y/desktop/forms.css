@@ -1,4 +1,56 @@
 /* Keep the existing Quasar label attached to its input, including after focus. */
+.nicegui-layout { background: #f6f8f7; color: #233a38; }
+.nicegui-content {
+  box-sizing: border-box;
+  width: min(100%, 68rem);
+  margin-inline: auto;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  gap: .85rem;
+  overflow-wrap: anywhere;
+  font-family: "Segoe UI", sans-serif;
+  --q-primary: #21665d;
+}
+.app-title { font-weight: 650; font-size: 1.65rem; letter-spacing: .035em; }
+.project-title { font-size: clamp(1.35rem, 2.5vw, 1.8rem); font-weight: 600; }
+.section-title { font-size: 1.1rem; font-weight: 600; }
+.app-tools, .plan-columns, .project-choices {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.app-tools { gap: .5rem; }
+.plan-columns, .project-choices { align-items: start; }
+.app-tools .q-item { min-height: 2.5rem; }
+.nicegui-content .q-btn {
+  width: fit-content;
+  min-width: 0;
+  max-width: 100%;
+  align-self: flex-start;
+  padding: .35rem .85rem;
+  min-height: 2.25rem;
+  text-transform: none;
+  font-size: .92rem;
+  line-height: 1.35;
+}
+.nicegui-content .q-btn::before { box-shadow: none; }
+.workspace-tabs, .workspace-panels { width: 100%; min-width: 0; }
+.workspace-tabs .q-tab { flex: 0 0 auto; text-transform: none; padding-inline: .85rem; }
+.workspace-panels, .project-launcher {
+  background: white;
+  border: 1px solid #d7e3df;
+  border-radius: .6rem;
+}
+.workspace-panels .q-tab-panel { padding: clamp(.85rem, 2vw, 1.5rem); }
+.project-launcher { padding: clamp(.85rem, 2vw, 1.5rem); }
+.plan-card { padding: 1rem; border: 1px solid #dbe5e1; border-radius: .5rem; }
+.nicegui-content .q-card { box-shadow: none; border: 1px solid #dbe5e1; }
+.nicegui-content [role=status]:empty { display: none; }
+@media (max-width: 46rem) {
+  .app-tools, .plan-columns, .project-choices { grid-template-columns: minmax(0, 1fr); }
+  .app-tools { gap: 0; }
+  .workspace-tabs .q-tab { padding-inline: .6rem; }
+}
 .nicegui-content :is(.nicegui-column, .nicegui-row, .q-card, .q-expansion-item) {
   width: 100%;
   min-width: 0;

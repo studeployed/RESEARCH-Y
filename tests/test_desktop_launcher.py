@@ -13,6 +13,28 @@ from research_y.projects import create_project
 from test_gui_prototype import call, owner, ORIGIN, TOKEN
 
 
+def test_saved_search_selector_keeps_its_target_with_an_unsent_source_preview(tmp_path):
+    from unittest.mock import MagicMock
+    from research_y.desktop.project_panel import render_project_panel
+    from tools.gui_feasibility.run_real_project import fixture
+
+    project, first = fixture(tmp_path)
+    with closing(RealProjectFlow(recent_parent=tmp_path / 'recent')) as flow:
+        flow.open_native_folder(project.root)
+        state = flow.select_run(first)
+    other = 'another-saved-run'
+    state['runs'] = [*state['runs'], dict(state['runs'][0], run_id=other)]
+    state['pubmed_source_offer'] = dict(max_session_requests=1, max_partition_count_probes=1,
+                                        exact_query='example', coverage_start='2000-01-01', coverage_end='2020-01-01')
+    ui, act = MagicMock(), MagicMock()
+    render_project_panel(ui, SimpleNamespace(state=lambda: state), act, native=True,
+                         workspace=MagicMock(), error=None)
+    button = next(call for call in ui.button.call_args_list if call.args == ('Open search',))
+    ui.select.return_value.value = other
+    button.kwargs['on_click']()
+    act.assert_called_once_with('select_run', other)
+
+
 def test_index_picker_reopens_relocated_project_and_preserves_selection_on_cancel(tmp_path, monkeypatch):
     project = create_project(tmp_path, "Relocated index")
     moved = project.root.rename(tmp_path / "New location")
