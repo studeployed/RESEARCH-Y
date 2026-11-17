@@ -41,6 +41,7 @@
   border-radius: .6rem;
 }
 .workspace-panels .q-tab-panel { padding: clamp(.85rem, 2vw, 1.5rem); }
+.project-launcher { padding: clamp(.85rem, 2vw, 1.5rem); }
 .plan-card { padding: 1rem; border: 1px solid #dbe5e1; border-radius: .5rem; }
 .nicegui-content .q-card { box-shadow: none; border: 1px solid #dbe5e1; }
 .nicegui-content [role=status]:empty { display: none; }

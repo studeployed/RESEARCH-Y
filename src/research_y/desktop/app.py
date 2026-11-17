@@ -81,7 +81,9 @@ def build_page(app, ui, flow, settings_warnings=()):
         @ui.refreshable
         def panel():
             if flow.project is not None and workspace.project_id != str(flow.project.identifier):
-                launcher.close()
+                launcher.set_visibility(False)
+                switch_project.set_text('Switch project')
+                switch_project.set_visibility(True)
             render_project_panel(ui, flow, act, native=True, error=error, study_edits=study_edits,
                                  workspace=workspace)
 
@@ -235,8 +237,13 @@ def build_page(app, ui, flow, settings_warnings=()):
             render_settings(ui,flow)
         for warning in settings_warnings:
             ui.label(warning)
-        with ui.expansion('Open or create a project', value=flow.project is None).classes('project-launcher').props(
-                'data-testid=project-launcher') as launcher:
+        def toggle_launcher():
+            launcher.set_visibility(not launcher.visible)
+            switch_project.set_text('Close project chooser' if launcher.visible else 'Switch project')
+
+        switch_project = ui.button('Switch project', on_click=toggle_launcher).props('flat data-testid=switch-project')
+        switch_project.set_visibility(flow.project is not None)
+        with ui.column().classes('project-launcher').props('data-testid=project-launcher') as launcher:
             with ui.element('div').classes('project-choices'):
                 with ui.column():
                     ui.label('Open a project').classes('section-title')
@@ -252,6 +259,7 @@ def build_page(app, ui, flow, settings_warnings=()):
                 restored_name = ui.input("New folder name (optional)")
                 ui.button("Choose .researchy archive and destination folder",on_click=lambda:
                           act("native_import_archive",restored_name.value)).props("data-testid=import-archive")
+        launcher.set_visibility(flow.project is None)
         picker_status = ui.label('Connecting to the desktop…').props('role=status aria-live=polite data-testid=project-picker-status')
         project_buttons = (open_folder, open_index, create)
         for button in project_buttons:

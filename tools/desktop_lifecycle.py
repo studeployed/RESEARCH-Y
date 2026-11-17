@@ -157,7 +157,7 @@ def run_window(stage, workspace, folder, run_id):
                 await wait_for(lambda: visible('[data-testid=project-name]'), 'native_create')
                 await check_first_search_page()
                 active = flow.state()['project']['project_id']
-                await click('[data-testid=project-launcher] > .q-expansion-item__container > .q-item')
+                await click('[data-testid=switch-project]')
                 await click('[data-testid=desktop-open]')
                 await wait_for(lambda: visible('[data-testid=operation-error]'), 'redirected_project_rejection')
                 message = await js("document.querySelector('[data-testid=operation-error]').textContent")

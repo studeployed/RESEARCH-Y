@@ -1,6 +1,6 @@
 ## Create or open a project
 
-Open **RESEARCH-Y** from the Windows Start menu. To start a project, type its name, click **Create project in folder**, and choose the folder where you want it saved. RESEARCH-Y creates a new folder inside it and shows the project name. To return later, click **Open project folder** and choose the folder containing `project.ryproj`.
+Open **RESEARCH-Y** from the Windows Start menu. To start a project, type its name, click **Create project in folder**, and choose the folder where you want it saved. RESEARCH-Y creates a new folder inside it and shows the project name. To return later, click **Open project folder** and choose the folder containing `project.ryproj`. To open a different project while working, click **Switch project**.
 
 ## Set up your first search
 

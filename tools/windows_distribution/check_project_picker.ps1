@@ -74,7 +74,7 @@ try {
     Choose-Folder $parent
     Wait-For { Test-Path -LiteralPath $index -PathType Leaf } 'created project index' | Out-Null
     Wait-For { Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) 'Project: Picker test' } 'open created project' | Out-Null
-    Click-Button 'Open or create a project'
+    Click-Button 'Switch project'
     Click-Button $open
     Choose-Folder (Join-Path $testRoot $existingName)
     Wait-For { Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) 'Project: Existing' } 'opened existing project' | Out-Null
