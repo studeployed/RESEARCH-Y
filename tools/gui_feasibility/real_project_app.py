@@ -589,7 +589,8 @@ def run(args):
                         if not evidence:
                             raise RuntimeError('native_worker_error_not_rendered')
                         proof = json.loads(evidence)
-                        if (not 'worker_interrupted' in proof['error'] or
+                        if ('The operation was interrupted.' not in proof['error'] or
+                                'outcome is not yet confirmed' not in proof['error'] or
                                 'RECOVERY REQUIRED' not in proof['recovery'] or
                                 proof['injected']):
                             raise RuntimeError('native_worker_recovery_notice_missing')
