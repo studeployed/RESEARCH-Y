@@ -1,0 +1,43 @@
+{
+  "version": "0.1.7",
+  "date": "2026-11-23",
+  "application_source_commit": "87f94e19eda1a41ecff706eab0db6aeb7a9055be",
+  "regression": {
+    "passed": 2576,
+    "skipped": 7,
+    "seconds": 476.33
+  },
+  "native_lifecycle": "passed create, picker, save, reopen, relocation and workbook verification",
+  "installed_acceptance": {
+    "passed": true,
+    "checks": [
+      "Results automatically show saved articles",
+      "Checkbox immediately updates selection",
+      "Article row opens its details",
+      "One save writes and verifies an article workbook",
+      "Saved groups stay visible after approval and reopening",
+      "Edit a copy retains terms and creates an unapproved draft",
+      "Narrow review uses one scroll area",
+      "Comparison action reveals its result",
+      "Review filters leave the updated queue open"
+    ],
+    "provider_requests": 0
+  },
+  "native_large_results": {
+    "records": 100000,
+    "selected": 100000,
+    "page_rows": 25,
+    "second_page_offset": 25,
+    "browser_timer_ticks": 334,
+    "native_capture_seconds": 33.447,
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.12.10",
+    "scope": "Real WebView2 window and production master controls on 100000 synthetic original publications"
+  },
+  "locally_tested_installer": {
+    "sha256": "13935fc72a7f0bc5f97ac4eb79289e597aa45586f4087fc8afe008a6b0bb61af",
+    "bytes": 35687424
+  },
+  "provider_requests": 0,
+  "final_reviews_and_ci": "See PR #195; this file records local fixture evidence, not later review or main-build results."
+}
