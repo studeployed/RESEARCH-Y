@@ -20,6 +20,7 @@ def render_study_panel(ui, state, detail, act, memory=None):
     view = state.get("study_view")
     if not view:
         return
+    ui.label(view.get('title', 'Article classification')).classes('section-title')
     proposal = state.get("study_proposal")
     memory = {} if memory is None else memory
     edits = review_edits(memory, view, proposal)
@@ -29,7 +30,7 @@ def render_study_panel(ui, state, detail, act, memory=None):
                       on_click=lambda rid=source["retrieval_id"]: act("study_suggest", rid))
     if view["warnings"]:
         ui.label("Review needed: " + ", ".join(v.replace("_", " ") for v in view["warnings"]))
-    actor = ui.input("Reviewer", value=memory.get("actor",state["strategy_draft"]["approved_by"]),
+    actor = ui.input("Reviewer", value=memory.get("actor",state.get('researcher_name', '')),
                      on_change=lambda e: memory.update(actor=e.value))
     reason = ui.input("Evidence for this decision", value=memory.get("reason",""),
                       on_change=lambda e: memory.update(reason=e.value))
@@ -73,7 +74,7 @@ def render_study_queue(ui,state,act,memory):
             ui.label(f'Examined {page["examined"]} publications on this page; {page["hidden_by_filter"]} hidden by filters; {page["displayed"]} displayed.')
             for row in page["rows"]:
                 ui.label(", ".join(row["dimensions"]["design"]) + " · " + ", ".join(row["warnings"]))
-                ui.button("Review "+row["publication_id"],on_click=lambda r=row:act("study_queue_open",
+                ui.button("Review "+row.get('title', 'article'),on_click=lambda r=row:act("study_queue_open",
                           {"publication_id":r["publication_id"],"revision":r["revision"]}))
             if page["next_after"]:
                 ui.button("Next review page",on_click=lambda:act("study_queue",dict(only_review=page["only_review"],

@@ -429,7 +429,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 earlier_run = ui.select(earlier_runs,label="Earlier project run (if applicable)",
                                         value=update.get("earlier_run"),clearable=True)
                 method = ui.textarea("How this search was run or updated, for the methods report",value=update.get("method",""))
-                update_author = ui.input("Researcher recording the method",value=update.get("actor",""))
+                update_author = ui.input("Researcher recording the method",value=update.get("actor") or state.get('researcher_name', ''))
                 ui.button("Record search update method",on_click=lambda:act("save_update_method",dict(
                     run_id=run["run_id"],earlier_run=earlier_run.value,method=method.value,actor=update_author.value,
                     expected_event=update.get("event_id"))))
@@ -473,7 +473,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                         current=history["current_decisions"].get(dimension)
                                         labels=current["labels"] if current else history["current_proposals"][dimension]
                                         ui.label(("Later researcher decision · " if current else "Later proposal · ")+", ".join(labels))
-                                        reviewer=ui.input("Researcher verifying "+dimension)
+                                        reviewer=ui.input("Researcher verifying "+dimension, value=state.get('researcher_name', ''))
                                         why=ui.input("Evidence for carrying this decision forward")
                                         ui.button("Confirm earlier "+dimension,on_click=lambda r=record,h=history,d=dimension,
                                                 e=decision["event_id"],w=reviewer,b=why:act("carry_classification",

@@ -31,7 +31,7 @@ def read_study_page(project, run_id, *, after=None, only_review=True, hide_non_e
             conflicts=[v for v in view["warnings"] if v.startswith(("conflicting_","reviewed_"))]
             if only_review and not (unresolved or conflicts):
                 continue
-            results.append(dict(publication_id=pid,revision=view["revision"],dimensions=view["current"],
+            results.append(dict(publication_id=pid,title=view['title'],revision=view["revision"],dimensions=view["current"],
                                 unresolved=unresolved,warnings=view["warnings"]))
         return dict(run_id=run_id,rows=results,after=after,examined=len(selected),hidden_by_filter=len(selected)-len(results),
                     displayed=len(results),only_review=only_review,hide_non_english=hide_non_english,

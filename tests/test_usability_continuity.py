@@ -138,6 +138,7 @@ def test_classification_form_atomic_failure_replay_and_stale_review(tmp_path):
     with closing(master_results.MasterResults.capture(project, run)) as results:
         pid = results.page(master_results.DEFAULT)['rows'][0]['publication_id']
     view = study_classification.read_classification(project, pid)
+    assert view['title'] == 'PRIVATE TITLE'
     choices = dict(view['current'])
     args = dict(actor='Reviewer', rationale='Checked source evidence', expected_revision=view['revision'], confirmed=True)
     invalid = dict(choices, population=['unsupported'])

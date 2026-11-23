@@ -223,7 +223,9 @@ def render_search_review(ui, state, act, workspace=None, error=None):
                             same.on_value_change(use_researcher)
                             reviewer.bind_enabled_from(same, 'value', backward=lambda v: not v)
                             role.bind_enabled_from(same, 'value', backward=lambda v: not v)
-                        for key, (label, help_text) in CHECKS.items():
+                        for key in ('research_objective', 'terminology_coverage', 'boolean_logic', 'spelling',
+                                    'source_syntax', 'search_fields', 'limits'):
+                            label, help_text = CHECKS[key]
                             with ui.element('div').classes('review-check'):
                                 if key == 'research_objective':
                                     ui.label('Question and search terms').classes('section-title')

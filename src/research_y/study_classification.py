@@ -134,6 +134,14 @@ def _view(db, publication_id):
     snapshot = identity._snapshot(db, identity._identifier(publication_id))
     if not snapshot.active:
         raise ValueError("Publication has no active source")
+    from research_y.publication_match_evidence import project_source
+    from research_y.publication_results import _citation_chosen_source
+    chosen = _citation_chosen_source(snapshot, 'title')
+    titles = {field['value'] for source in snapshot.retrievals
+              if (field := project_source(source)['fields']['title'])['status'] == 'present'}
+    title = (snapshot.chosen_fields['title']['value'] if chosen is not None else
+             next(iter(titles)) if len(titles) == 1 else
+             'Conflicting article titles — open source evidence' if titles else 'Untitled article')
     proposed, evidence, warnings = _proposals(snapshot)
     decisions = {}
     rows = db.execute("SELECT classification_id,dimension,label,review_status,provenance_json,classified_at_utc "
@@ -161,7 +169,7 @@ def _view(db, publication_id):
     revision = identity._hash([RULE, snapshot.revision, {d: v["event_id"] for d, v in decisions.items()}])
     statuses = {dim: decisions[dim]["status"] if dim in decisions else
                 ("requires-review" if warnings else "machine-provisional") for dim in LABELS}
-    return dict(publication_id=publication_id, rule=RULE, revision=revision, evidence_revision=snapshot.revision,
+    return dict(publication_id=publication_id, title=title, rule=RULE, revision=revision, evidence_revision=snapshot.revision,
                 proposed=proposed, evidence=evidence, current=current, decisions=decisions, review_status=statuses,
                 warnings=warnings,
                 explicit_non_human_only="population" in decisions and current["population"] == ["non-human"])
