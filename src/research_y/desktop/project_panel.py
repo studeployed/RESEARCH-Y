@@ -2411,6 +2411,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                               'data-testid=pubmed-metadata-confirm')
             else:
                 current=state['pubmed_metadata']
+                metadata_groups = {row[0]: row[1] for row in state['report']['strategy']['group_index']} if state['report'] else {}
                 for query in (state['report']['queries'] if
                               state['report'] is not None else ()):
                     if query['source_name'] != 'pubmed':
@@ -2428,7 +2429,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                             state['pubmed_source']['checkpoint'][
                                 'identifiers_reconciled']):
                         ui.button('Preview EFetch metadata session for ' +
-                                  group_names[query['group_id']],
+                                  metadata_groups[query['group_id']],
                                   on_click=lambda qid=qid: act(
                                       'pubmed_metadata_offer',qid)).props(
                                           'data-testid=pubmed-metadata-offer')
