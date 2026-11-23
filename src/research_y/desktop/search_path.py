@@ -4,12 +4,13 @@
 def search_steps(state, *, planning):
     if planning:
         draft = state['strategy_draft']
+        saved = state.get('planning_mode') == 'saved'
         terms = any(term['enabled'] for group in draft['groups'] for term in group['terms'])
         return [
             ('Save question', bool(state['saved_question'])),
             ('Add search terms', terms),
-            ('Preview search', draft['preview'] is not None),
-            ('Approve and save search', False),
+            ('Preview search', saved or draft['preview'] is not None),
+            ('Approve and save search', saved),
             ('Open and check saved plan', False),
             ('Start database collection', False),
         ]
@@ -38,15 +39,20 @@ def render_search_steps(ui, state, *, planning):
     steps = search_steps(state, planning=planning)
     next_step = None if steps[-1][1] else next((label for label, done in steps if not done), None)
     with ui.element('section').classes('search-path').props('aria-label="Search progress"'):
-        ui.label('Steps to your search' if planning else 'Saved search progress').classes('section-title')
         ui.label('Next · ' + next_step if next_step else 'Collection started · follow run progress').classes('path-next')
-        with ui.element('ol'):
+        with ui.expansion('Steps to your search' if planning else 'Saved search progress').props('dense'), ui.element('ol'):
             for label, done in steps:
                 current = label == next_step
                 with ui.element('li').classes('done' if done else 'current' if current else '') as item:
                     if current:
                         item.props('aria-current=step')
                     ui.label(('Done · ' if done else 'Next · ' if current else '') + label)
+        if not planning:
+            review = (state.get('preflight_report') or {}).get('last_review')
+            if review:
+                unchecked = sum(v == 'not_reviewed' for v in review['press_items'].values())
+                concerns = sum(v == 'needs_revision' for v in review['press_items'].values())
+                ui.label(f'Checks recorded · {unchecked} unchecked · {concerns} need revision').classes('check-status')
         if not planning and steps[-1][1]:
             ui.label('Database collection has started. See run progress for coverage.')
         elif not planning and any(state[key] for key in (

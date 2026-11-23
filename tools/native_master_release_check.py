@@ -12,7 +12,7 @@ from tools.desktop_lifecycle import wait_for
 
 
 def native(folder,run_id,output):
-    from nicegui import app
+    from nicegui import app, Client
     from research_y.desktop import app as desktop
     from research_y.desktop.flow import RealProjectFlow
     flow=RealProjectFlow()
@@ -21,22 +21,40 @@ def native(folder,run_id,output):
     desktop.select_from_native_window=choose
     tasks=[]
     async def js(expression):
-        return await asyncio.wait_for(app.native.main_window.evaluate_js(expression),10)
+        clients = [client for client in Client.instances.values() if client.has_socket_connection]
+        if len(clients) != 1:
+            return None
+        return await asyncio.wait_for(clients[0].run_javascript(expression, timeout=9),10)
     async def visible(selector):
         return await js("Boolean(document.querySelector("+json.dumps(selector)+")?.getClientRects().length)")
     async def click(selector):
         await wait_for(lambda:visible(selector),selector,timeout=120)
+        async def available():
+            return await js("!document.querySelector('[inert]')")
+        await wait_for(available, 'action_finished', timeout=120)
         await js("document.querySelector("+json.dumps(selector)+").click(); true")
     async def body_has(value):
         return await js("document.body.innerText.includes("+json.dumps(value)+")")
     async def observe():
         try:
+            async def ready():
+                return await js('Boolean(window.did_handshake && window.socket?.connected)')
+            await wait_for(ready, 'connected desktop', timeout=60)
             await click("[data-testid=desktop-open]")
+            await click("[data-testid=stage-search]")
+            runs = sorted(flow.state()['runs'], key=lambda row: (row['created_at_utc'], row['run_id']))
+            if len(runs) > 1:
+                index = next(i for i, row in enumerate(runs) if row['run_id'] == run_id)
+                await click('.q-select .q-field__control')
+                await wait_for(lambda: visible('.q-menu .q-item'), 'saved search choices')
+                await js(f'document.querySelectorAll(".q-menu .q-item")[{index}].click(); true')
+                async def enabled():
+                    return await js('!document.querySelector("[data-testid=select-run]").disabled')
+                await wait_for(enabled, 'saved search selected')
             await click("[data-testid=select-run]")
-            await click("[data-testid=master-panel] .q-item")
             await js("window.masterTicks=0; window.masterInterval=setInterval(()=>window.masterTicks++,100); true")
             started=perf_counter()
-            await click("[data-testid=master-refresh]")
+            await click("[data-testid=stage-results]")
             await wait_for(lambda:visible("[data-testid=master-table]"),"capture",timeout=180)
             elapsed=perf_counter()-started
             ticks=await js("clearInterval(window.masterInterval); window.masterTicks")
@@ -58,6 +76,7 @@ def native(folder,run_id,output):
             output.write_text(json.dumps(data,indent=2)+"\n",encoding="utf-8")
         except Exception as exc:
             print(type(exc).__name__,str(exc),flush=True)
+            print(await js('document.body.innerText'), flush=True)
         finally:
             try:
                 await asyncio.wait_for(app.native.main_window.destroy(),10)

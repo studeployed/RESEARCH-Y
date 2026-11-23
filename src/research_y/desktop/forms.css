@@ -23,7 +23,7 @@
 .workspace-header .search-path { padding: .25rem .5rem 0; border: 0; }
 .workspace-header .search-path .section-title { font-size: .9rem; }
 .workspace-header .search-path li { font-size: .8rem; }
-.path-next { display: none; font-weight: 600; font-size: .85rem; }
+.path-next { display: block; font-weight: 600; font-size: .85rem; }
 .message {
   width: 100%; box-sizing: border-box; border-left: 3px solid #9caaa7;
   border-radius: .25rem; padding: .65rem .85rem; background: #f2f5f4;
@@ -40,7 +40,7 @@
 .acronym { border-bottom: 1px dotted currentColor; cursor: help; }
 .q-tooltip { font-size: .85rem; line-height: 1.45; max-width: 28rem; }
 @media (max-width: 600px) {
-  .workspace-header .search-path ol, .workspace-header .search-path .section-title { display: none; }
+  .workspace-header .search-path .section-title { display: none; }
   .path-next { display: block; }
   .checklist-fields { grid-template-columns: minmax(0, 1fr); }
 }
@@ -168,8 +168,31 @@
 .search-review .q-field__label { white-space: normal; }
 .search-review .message { font-size: .88rem; padding: .5rem .65rem; }
 @media (max-width: 700px) {
-  .review-comparison { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, .9fr) minmax(0, 1.1fr); }
-  .review-context, .review-answers { padding: .65rem .9rem; }
+  .review-comparison { display: block; overflow-y: auto; }
+  .review-context, .review-answers { padding: .65rem .9rem; overflow: visible; }
   .review-header, .review-footer { padding: .5rem .75rem; }
   .review-header .section-title { font-size: .95rem; }
+}
+.action-status { position: fixed; bottom: .4rem; left: 50%; transform: translateX(-50%); width: min(64rem, calc(100% - 2rem)); z-index: 35; font-size: .85rem; padding: .4rem .75rem; }
+.nicegui-content { padding-bottom: 4rem; }
+.app-tools { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: start; }
+.app-tools > .q-btn { margin-top: .15rem; }
+.results-toolbar { align-items: center; gap: .5rem 1rem; }
+.results-toolbar > .section-title { flex: 1; }
+.nicegui-content .results-table { width: 100%; box-shadow: none; border: 1px solid #dbe5e1; }
+.nicegui-content .results-toolbar > .q-field { max-width: 35rem; }
+@media (max-width: 650px) { .app-tools { grid-template-columns: minmax(0,1fr); gap: 0; } }
+.workspace-header .search-path { display: flex; gap: .25rem .75rem; align-items: center; flex-wrap: wrap; }
+.workspace-header .search-path > .q-expansion-item { width: auto; flex: 1; }
+.workspace-header .search-path .q-item { padding: 0 .5rem; min-height: 1.8rem; font-size: .8rem; }
+.workspace-header .check-status { font-size: .78rem; }
+.results-table td { vertical-align: top; }
+.results-table td:first-of-type { width: 2rem; }
+.results-table th { font-weight: 600; background: #f4f7f6; }
+.collection-card { gap: .4rem; padding: .8rem 1rem; }
+[data-testid=collection-current] { scroll-margin-top: 9rem; }
+@media (max-height: 650px) {
+  .workspace-header { padding: .25rem 0; }
+  .workspace-header .project-title { font-size: 1rem; }
+  .workspace-header .q-tab { min-height: 2rem; }
 }

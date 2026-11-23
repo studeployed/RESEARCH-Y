@@ -37,7 +37,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
     if project is not None and workspace is None:
         ui.label('Project: ' + project['name']).classes('project-title').props('data-testid=project-name')
     grouped = workspace is not None and project is not None
-    area = workspace.render(ui, state) if grouped else lambda *args: nullcontext()
+    area = workspace.render(ui, state, act) if grouped else lambda *args: nullcontext()
     def disclosure(key, title):
         return workspace.disclosure(ui, key, title) if grouped else nullcontext()
 
@@ -201,8 +201,21 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
             ui.button('Retry original strategy approval',
                       on_click=lambda: act('setup_approve')).props(
                           'data-testid=setup-approval-retry')
+        elif state.get('planning_mode') == 'saved':
+            if grouped:
+                render_question(ui, workspace, state, act)
+            ui.label('Saved search ' + str(state['planning_base_version'])).classes('section-title')
+            ui.label('These terms are saved. Editing a copy creates a new version; this search stays unchanged.').classes('message success')
+            for group in draft['groups']:
+                ui.label(group['label']).classes('section-title')
+                ui.label(' OR '.join(t['text'] for t in group['terms'] if t['enabled']))
+            with ui.row():
+                ui.button('Edit a copy', on_click=lambda: act('begin_plan', False)).props('data-testid=setup-copy')
+                ui.button('Start a blank search', on_click=lambda: act('begin_plan', True)).props('flat data-testid=setup-blank')
         else:
             if draft['preview'] is None:
+                if state.get('planning_base_version'):
+                    ui.label('Draft based on Search ' + str(state['planning_base_version']) + ' · changes saved as you add them').classes('message info')
                 with ui.element('div').classes('plan-columns') if grouped else nullcontext():
                     with ui.column().classes('plan-card') if grouped else nullcontext():
                         if grouped:
@@ -358,7 +371,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                      '. Queries planned but NOT EXECUTED.').props(
                          'data-testid=setup-approval-result')
     with area('plan'):
-        if not draft["preview"]:
+        if not draft["preview"] and state.get('planning_mode') != 'saved':
             from research_y.query_compiler import CONNECTOR_QUERY_BYTES, search_scope
             scope=draft.get("search_scope") or search_scope()
             with ui.expansion("Database selection and optional search limits"):
@@ -367,9 +380,11 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 ui.label("Full primary-source coverage requires both databases.")
                 year=ui.input("Publication year (optional)", value=str(scope["publication_year"] or ""))
                 limits={}
-                for source in ("pubmed","wos"):
-                    limits[source]=ui.number(source+" · maximum UTF-8 bytes per query",min=1,max=CONNECTOR_QUERY_BYTES,
-                                             value=scope[source+"_bytes"],precision=0)
+                with ui.expansion('Advanced query size settings'):
+                    ui.label('The app splits long queries automatically. Change these only if a provider requires a smaller request.')
+                    for source in ("pubmed","wos"):
+                        limits[source]=ui.number(source+" · maximum UTF-8 bytes per query",min=1,max=CONNECTOR_QUERY_BYTES,
+                                                 value=scope[source+"_bytes"],precision=0)
                 def apply_scope():
                     raw=(year.value or "").strip()
                     if raw and (not raw.isascii() or not raw.isdecimal() or len(raw)!=4):
@@ -414,7 +429,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 earlier_run = ui.select(earlier_runs,label="Earlier project run (if applicable)",
                                         value=update.get("earlier_run"),clearable=True)
                 method = ui.textarea("How this search was run or updated, for the methods report",value=update.get("method",""))
-                update_author = ui.input("Researcher recording the method",value=update.get("actor",""))
+                update_author = ui.input("Researcher recording the method",value=update.get("actor") or state.get('researcher_name', ''))
                 ui.button("Record search update method",on_click=lambda:act("save_update_method",dict(
                     run_id=run["run_id"],earlier_run=earlier_run.value,method=method.value,actor=update_author.value,
                     expected_event=update.get("event_id"))))
@@ -440,7 +455,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                         with ui.expansion("Notes for "+record["source_record_id"]):
                             for note in record["notes"]:
                                 ui.label(note["at_utc"]+" · "+note["actor"]+" · "+note["text"])
-                            who=ui.input("Researcher")
+                            who=ui.input("Researcher", value=state.get('researcher_name', ''))
                             body=ui.input("Source-scoped research note")
                             ui.button("Save note",on_click=lambda r=record,w=who,b=body:act("note_comparison_source",
                                       dict(retrieval_id=r["current_retrieval"] or r["previous_retrieval"],
@@ -458,7 +473,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                         current=history["current_decisions"].get(dimension)
                                         labels=current["labels"] if current else history["current_proposals"][dimension]
                                         ui.label(("Later researcher decision · " if current else "Later proposal · ")+", ".join(labels))
-                                        reviewer=ui.input("Researcher verifying "+dimension)
+                                        reviewer=ui.input("Researcher verifying "+dimension, value=state.get('researcher_name', ''))
                                         why=ui.input("Evidence for carrying this decision forward")
                                         ui.button("Confirm earlier "+dimension,on_click=lambda r=record,h=history,d=dimension,
                                                 e=decision["event_id"],w=reviewer,b=why:act("carry_classification",
@@ -503,9 +518,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 ui.label(f'{label} · {rid}')
     if state['selected_run_id'] is not None:
         with area('results'):
+            render_master(ui,state,act,native=native)
             render_study_queue(ui,state,act,study_edits)
             render_review_tasks(ui,state,act,study_edits)
-            render_master(ui,state,act,native=native)
         with area('details'):
             with ui.expansion("Source execution times and versions"):
                 for query in (state.get("report") or {}).get("queries",[]):
@@ -560,7 +575,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                         ui.label("Recorded limitations · "+scope["receipt"]["limitations"])
                     if scope["eligible"]:
                         ui.label("Reviewed retained publications · "+str(scope["global_unique_publications"]))
-                        verifier=ui.input("Researcher confirming source coverage")
+                        verifier=ui.input("Researcher confirming source coverage", value=state.get('researcher_name', ''))
                         limitation=ui.input("Material source limitations and coverage reviewed")
                         confirmed=ui.checkbox("I verified the reported scope and the disclosed limitations")
                         ui.button("Record final run verification",on_click=lambda:act("run_acceptance",dict(
@@ -569,7 +584,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
             if native:
                 with ui.expansion("Import or enter additional citations",value=bool(state.get("bibliography_preview") or state.get("import_receipt"))):
                     origin=ui.input("Source or collection name")
-                    import_actor=ui.input("Researcher importing records")
+                    import_actor=ui.input("Researcher importing records", value=state.get('researcher_name', ''))
                     rights=ui.checkbox("I reviewed these records and may retain their contents")
                     ui.button("Choose local RIS file",on_click=lambda:act("native_ris"))
                     bibliographic=state.get("bibliography_preview")
@@ -789,7 +804,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              'index rows and an audit receipt.').props(
                                  'data-testid=candidate-index-offer')
                     researcher=ui.input('Researcher confirming local index '
-                                        'work',value='')
+                                        'work',value=state.get('researcher_name', ''))
                     ui.button('CONFIRM ' + offer['action'] +
                               ' (ONE bounded SQLite transaction)',
                               on_click=lambda box=researcher:
@@ -889,7 +904,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              'decisions remain unchanged.').props(
                                  'data-testid=candidate-pairs-offer')
                     researcher=ui.input('Researcher confirming '
-                                        'pair-index work',value='')
+                                        'pair-index work',value=state.get('researcher_name', ''))
                     ui.button('CONFIRM '+pair_offer['action']+
                               ' — ONE bounded, audited transaction',
                               on_click=lambda box=researcher:
@@ -1036,7 +1051,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              'data-testid=publication-materialise-preview')
                 if offer['batch_count']:
                     researcher = ui.input('Researcher recording provisional '
-                                          'materialisation',value='')
+                                          'materialisation',value=state.get('researcher_name', ''))
                     ui.button('CONFIRM one bounded local identity batch',
                               on_click=lambda box=researcher:
                                   act('publication_materialise_confirm',box.value)).props(
@@ -1104,7 +1119,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     if window_offer['proposed_source_records'] > 0:
                         author=ui.input('Researcher explicitly authorising '
                                         'THIS finite original-source window',
-                                        value='').props('data-testid=publication-window-actor')
+                                        value=state.get('researcher_name', '')).props('data-testid=publication-window-actor')
                         ui.button('CONFIRM this finite two-batch '
                                   'publication preparation',
                                   on_click=lambda field=author:
@@ -1280,10 +1295,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                     on_click=lambda rid=current_retrieval:
                                         act('candidate_reversal_offer', rid)).props(
                                             'data-testid=candidate-reversal-offer')
-                    ui.label('Full abstract display and permission-aware '
-                             'bibliography export remain future work. '
-                             'No duplicate-candidate decision has been '
-                             'made by reading this page.').props(
+                    ui.label('Read available abstracts by opening an article in Results. '
+                             'Save a bibliography from Export. Viewing this page does not decide a duplicate match.').props(
                                  'data-testid=publication-not-exported')
                 if state['candidate_error'] is not None:
                     ui.label('Candidate decision outcome cannot be verified. '
@@ -1350,7 +1363,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                  'journal and pages. Your decision is required for this pair. Rule '
                                  + pair['confidence_rule']).props('data-testid=candidate-confidence')
                     reviewer = ui.input('Researcher recording this decision',
-                                        value='')
+                                        value=state.get('researcher_name', ''))
                     rationale = ui.input(
                         'Specific bibliographic evidence or reason '
                         'for this decision', value='')
@@ -1417,7 +1430,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                  f'records and {retained["documents"]} documents with publication '
                                  f'{retained["publication_id"]} and its remaining sources.')
                     reverser = ui.input(
-                        'Researcher recording reversal', value='')
+                        'Researcher recording reversal', value=state.get('researcher_name', ''))
                     reason = ui.input(
                         'Reason for reversing current association', value='')
                     ui.button('CONFIRM reverse CURRENT association',
@@ -1556,6 +1569,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
     with area('search'):
         if state['selected_run_id'] is not None:
             render_search_review(ui, state, act, workspace, error)
+            from research_y.desktop.collection_panel import render_collection
+            render_collection(ui, state, act)
     group_names = {g['group_id']: g['label'] for g in (state['preflight_report'] or {}).get('groups', [])}
     if (state['selected_run_id'] is not None and
             state['preflight_report'] is not None):
@@ -2313,8 +2328,12 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              'data-testid=pubmed-metadata-outcome')
 
     with area('export'):
+        if state['selected_run_id'] is not None:
+            from research_y.desktop.export_panel import render_exports
+            render_exports(ui, state, act, native=native)
+    with area('export', 'Advanced manifests and retention permissions'):
         render_manifest_consent(ui, state, act)
-    with area('export', 'Strategy and reviewed workbooks'):
+    with area('export', 'Advanced export recovery'):
         for item in state['exports']:
             # Only offer requests belonging to the explicitly selected run.
             if state['selected_run_id'] is None or item['run_id'] != state['selected_run_id']:
@@ -2377,7 +2396,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     ui.label('Recorded export error: ' + saved['last_error']).props('data-testid=export-error')
                 if saved['recorded_state'] not in ('cancelled', 'published'):
                     ui.button('Cancel pending export', on_click=lambda: act('cancel')).props('data-testid=cancel')
-                if saved['recorded_state'] != 'cancelled':
+                if saved['recorded_state'] not in ('cancelled', 'published'):
                     ui.button('Resume publication', on_click=lambda: act('resume')).props('data-testid=resume')
             ui.button('Verify workbook', on_click=lambda: act('observe')).props('data-testid=observe')
             ui.label('Export request ID: ' + state['selected_export_id']).props('data-testid=export-id')
@@ -2411,7 +2430,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                          'failure and resume the same export; this observation '
                          'is not success.').props('data-testid=stage-recovery')
     if error:
-        ui.label('Operation error: ' + error).props('data-testid=operation-error').classes('message error')
+        from research_y.desktop.feedback import explain
+        ui.label(explain(error)).props('data-testid=operation-error').classes('message error')
+        with ui.expansion('Diagnostic details'):
+            ui.label(error)
         if (error == 'worker_interrupted' and
                 state['selected_export_id'] is not None):
             ui.label('RECOVERY REQUIRED — the supervised export worker was '

@@ -3,6 +3,7 @@ from contextlib import nullcontext
 from datetime import date
 
 from research_y.desktop.search_checks import CHECKS, ANSWERS, PRESS_HELP
+from research_y.desktop.feedback import readable_time
 
 
 SOURCE_NAMES = {'pubmed': 'PubMed', 'wos': 'Web of Science Starter'}
@@ -26,7 +27,10 @@ def review_values(preview, researcher, drafts):
             review_note=previous.get('review_note', ''),
             known_text='\n'.join(previous.get('known_relevant', [])),
         )
-    return drafts[key]
+    values = drafts[key]
+    if values['same_researcher']:
+        values['reviewer_name'] = researcher
+    return values
 
 
 def database_status(source, observations):
@@ -161,7 +165,10 @@ def render_search_review(ui, state, act, workspace=None, error=None):
         return
     previous = preview['last_review']
     if previous:
-        ui.label('Search checks saved · ' + previous['reviewer_name'] + ' · ' + previous['occurred_at_utc']).classes('message success').props('data-testid=preflight-last-review')
+        ui.label('Search checks saved · ' + previous['reviewer_name'] + ' · ' + readable_time(previous['occurred_at_utc'])).classes('message success').props('data-testid=preflight-last-review')
+        incomplete = sum(value != 'reviewed' for value in previous['press_items'].values())
+        if incomplete:
+            ui.label(f'{incomplete} checks still need attention. Saving answers does not mark them as passed.').classes('message warning')
     else:
         ui.label('The saved plan is ready to review. No database request has been sent by this check.')
     dialog = None
@@ -206,7 +213,7 @@ def render_search_review(ui, state, act, workspace=None, error=None):
                         if dialog:
                             action_button('Done', on_click=dialog.close)
                     else:
-                        researcher = state['strategy_draft']['approved_by']
+                        researcher = state.get('researcher_name', '')
                         values = review_values(preview, researcher, workspace.review_drafts if workspace else {})
                         ui.label('Reviewer · ' + (values['reviewer_name'] or 'Enter your name below'))
                         with ui.expansion('Reviewer details', value=not bool(values['reviewer_name'])):
@@ -219,9 +226,19 @@ def render_search_review(ui, state, act, workspace=None, error=None):
                             same.on_value_change(use_researcher)
                             reviewer.bind_enabled_from(same, 'value', backward=lambda v: not v)
                             role.bind_enabled_from(same, 'value', backward=lambda v: not v)
-                        for key, (label, help_text) in CHECKS.items():
+                        for key in ('research_objective', 'terminology_coverage', 'boolean_logic', 'spelling',
+                                    'source_syntax', 'search_fields', 'limits'):
+                            label, help_text = CHECKS[key]
                             with ui.element('div').classes('review-check'):
+                                if key == 'research_objective':
+                                    ui.label('Question and search terms').classes('section-title')
+                                elif key == 'source_syntax':
+                                    ui.label('Database behaviour').classes('section-title')
+                                elif key == 'limits':
+                                    ui.label('Search limits').classes('section-title')
                                 ui.label(label).tooltip(help_text).props('tabindex=0')
+                                if key in ('source_syntax', 'search_fields'):
+                                    ui.label(help_text).classes('review-hint')
                                 ui.radio(ANSWERS).bind_value(values['press_items'], key).props('inline dense data-testid=review-check-' + key)
                         with ui.expansion('Notes and known articles (optional)'):
                             note = ui.textarea('Review notes, concerns, or limitations').bind_value(values, 'review_note').props('rows=3 data-testid=review-note')
@@ -231,4 +248,4 @@ def render_search_review(ui, state, act, workspace=None, error=None):
                             press_items=dict(values['press_items']), review_note=note.value or '',
                             known_relevant=tuple(line.strip() for line in (known.value or '').splitlines() if line.strip())))).props('data-testid=preflight-offer')
                     ui.label('These answers record a researcher review. Database collection requires its own confirmation.').classes('review-hint')
-    render_known_checks(ui, preview, state['strategy_draft']['approved_by'], act)
+    render_known_checks(ui, preview, state.get('researcher_name', ''), act)

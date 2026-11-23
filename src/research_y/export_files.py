@@ -237,6 +237,39 @@ class Directory:
             raise ExportFileError('Retained export checksum or identity changed')
         return data
 
+    def verify_digest(self, name: str, *, digest: str | None = None) -> tuple[str, int]:
+        """Stream-verify a final export, including an intentionally empty RIS file."""
+        filename(name)
+        before = self._stat_component(name)
+        _ordinary(before, directory=False)
+        if not 0 <= before.st_size <= MAX_ARTIFACT_BYTES:
+            raise ExportFileError('Invalid artifact size')
+        flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+        fd = (os.open(name, flags, dir_fd=self.fd) if self.fd is not None else os.open(self.path / name, flags))
+        checksum, total = sha256(), 0
+        try:
+            opened = os.fstat(fd)
+            _ordinary(opened, directory=False)
+            if identity(before) != identity(opened) or opened.st_size != before.st_size:
+                raise ExportFileError('Export identity changed')
+            while block := os.read(fd, min(1024 * 1024, before.st_size + 1 - total)):
+                total += len(block)
+                checksum.update(block)
+                if total > before.st_size:
+                    raise ExportFileError('Export size changed')
+            after = os.fstat(fd)
+        finally:
+            os.close(fd)
+        current = self._stat_component(name)
+        _ordinary(current, directory=False)
+        if (identity(current) != identity(opened) or total != before.st_size or after.st_size != opened.st_size
+                or after.st_mtime_ns != opened.st_mtime_ns or current.st_mtime_ns != after.st_mtime_ns):
+            raise ExportFileError('Export changed during verification')
+        actual = checksum.hexdigest()
+        if digest is not None and actual != digest:
+            raise ExportFileError('Export checksum changed')
+        return actual, total
+
     def flush(self, name: str) -> None:
         """Retry durability work before accepting an interrupted complete write."""
         before = self._stat(name)

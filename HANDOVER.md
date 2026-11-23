@@ -1,5 +1,13 @@
 # RESEARCH-Y handover
 
+## First-search usability, version 0.1.7
+
+Issue #194 implements the twelve accepted usability findings. Planning drafts persist with concurrent-edit protection; approved terms stay visible and Edit a copy preserves the immutable prior plan. Interrupted approval can be reconciled after reopening. Results opens the article list directly, checkboxes immediately update selection, and comparison/review actions reveal their result. Export has one primary form that saves and verifies the chosen file; existing reports retain their recovery workflow. Classification choices save atomically. Search checks preserves all seven scientific items, with a single scroll area in narrow windows. Guided collection uses the existing source previews, budgets and confirmations.
+
+See docs/USABILITY_017.md for the finding-to-change and test mapping. Core regression coverage is tests/test_usability_continuity.py; native acceptance is tools/usability_acceptance.py, tools/desktop_lifecycle.py and tools/native_master_release_check.py. All use disposable fixtures without provider requests. Final code/security review and installer evidence are recorded on the release pull request; source-test success alone does not verify a packaged installer. No scientific specification, provider terms, credentials or application dependencies change.
+
+Draft search-check answers are still local to the current app window until confirmed. Result selections belong to the current result snapshot and are cleared when it is refreshed. These boundaries are intentional; saved scientific decisions and immutable plans remain in the project.
+
 ## Focused saved-search review
 
 Version 0.1.6 opens a dedicated comparison screen from Check saved plan. The frozen question, terms, actual source coverage and limits are shown beside the seven audited Search checks. Wide windows use independent side-by-side panes; narrow windows retain both panes vertically. Radio choices reduce the clicks needed. Draft answers survive closing and reopening the screen in the same application window, and are isolated by project, run and immutable plan. The confirmation step and uncertain-save recovery retain their existing audit contract.

@@ -33,6 +33,18 @@ def test_previous_external_answers_are_copied_without_relabelling_the_reviewer()
     assert receipt == before
 
 
+def test_unfinished_self_check_tracks_current_researcher_but_keeps_answers():
+    plan = dict(run_id='first', plan_sha256='a', last_review=None)
+    drafts = {}
+    values = review_values(plan, 'Original approver', drafts)
+    values['press_items']['spelling'] = 'reviewed'
+    current = review_values(plan, 'Current researcher', drafts)
+    assert current['reviewer_name'] == 'Current researcher'
+    assert current['press_items']['spelling'] == 'reviewed'
+    current.update(same_researcher=False, reviewer_name='External reviewer')
+    assert review_values(plan, 'Another researcher', drafts)['reviewer_name'] == 'External reviewer'
+
+
 def test_database_checks_do_not_treat_absent_partial_or_warning_evidence_as_a_pass():
     source = dict(source_name='pubmed', queries=[dict(query_id='a'), dict(query_id='b')])
     assert database_status(source, {})[0].startswith('Not tested yet')
