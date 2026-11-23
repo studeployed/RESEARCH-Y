@@ -74,7 +74,11 @@ def run_window(stage, workspace, folder, run_id):
         clients = [client for client in Client.instances.values() if client.has_socket_connection]
         if len(clients) != 1:
             raise RuntimeError('desktop_client_not_connected')
-        return await asyncio.wait_for(clients[0].run_javascript(expression, timeout=8), timeout=9)
+        try:
+            return await asyncio.wait_for(clients[0].run_javascript(expression, timeout=8), timeout=9)
+        except TimeoutError:
+            print('Timed out in fixture script: ' + expression[:250], flush=True)
+            raise
 
     async def visible(selector):
         key = json.dumps(selector)
@@ -225,11 +229,51 @@ def run_window(stage, workspace, folder, run_id):
         await click('[data-testid=select-run]')
         await click('[data-testid=preflight-inspect]')
         reviewer_input = '[data-testid=preflight-reviewer] input, input[data-testid=preflight-reviewer]'
-        await wait_for(lambda: visible(reviewer_input), 'plain_search_checks')
+        await wait_for(lambda: visible('[data-testid=search-review]'), 'focused_search_review')
         if await js("document.querySelector(" + json.dumps(reviewer_input) + ").value") != 'Fixture researcher':
             raise RuntimeError('self_check_lost_researcher')
         if not await visible('[data-testid=press-help]'):
             raise RuntimeError('search_check_help_missing')
+        for width in (1200, 520):
+            app.native.main_window.resize(width, 850)
+            await asyncio.sleep(.4)
+            if not await js("""(() => {
+                const rect = selector => document.querySelector(selector).getBoundingClientRect();
+                const context = rect('.review-context'), answers = rect('.review-answers');
+                const limits = rect('[data-testid=review-limits]');
+                const next = rect('[data-testid=preflight-offer]');
+                return context.left >= 0 && answers.right <= innerWidth &&
+                    context.bottom <= innerHeight && answers.bottom <= innerHeight &&
+                    limits.top >= context.top && limits.bottom <= context.bottom &&
+                    next.top >= 0 && next.bottom <= innerHeight && next.right <= innerWidth &&
+                    (innerWidth > 700 ? context.right <= answers.left + 1 : context.bottom <= answers.top + 1);
+            })()"""):
+                raise RuntimeError('review_comparison_or_limits_out_of_view')
+        app.native.main_window.resize(1200,850)
+        if not await js("""(() => {
+            const choices = document.querySelectorAll('[data-testid=review-check-research_objective] [role=radio]');
+            if (choices.length !== 3) return false;
+            choices[1].click(); return true;
+        })()"""):
+            raise RuntimeError('review_answer_choices_missing')
+        # Closing this screen must not discard an unfinished review.
+        await click('[data-testid=review-close]')
+        await click('[data-testid=review-open]')
+        await wait_for(lambda: visible('[data-testid=search-review]'), 'reopened_review')
+        await click('[data-testid=preflight-offer]')
+        await wait_for(lambda: visible('[data-testid=preflight-confirmation]'), 'review_confirmation')
+        candidate = flow.state()['preflight_candidate']
+        if candidate['press_items']['research_objective'] != 'reviewed' or candidate['press_items']['source_syntax'] != 'not_reviewed':
+            raise RuntimeError('review_draft_lost_or_automatically_passed')
+        await click('[data-testid=preflight-revise]')
+        await click('[data-testid=preflight-offer]')
+        await click('[data-testid=preflight-record]')
+        await wait_for(lambda: visible('[data-testid=review-saved]'), 'review_save_feedback')
+        receipt = flow.state()['preflight_report']['last_review']
+        if receipt['press_items'] != candidate['press_items'] or receipt['execution_authorized'] is not False:
+            raise RuntimeError('saved_review_changed_or_authorised_execution')
+        await click('[data-testid=review-close]')
+        print('Checked comparison layout, visible limits, retained draft, revise and audited review save.', flush=True)
         print('Checked Enter entry, retry focus, persistent navigation, selectable output and researcher reuse.', flush=True)
 
     async def observe():

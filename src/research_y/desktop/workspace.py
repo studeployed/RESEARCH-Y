@@ -12,6 +12,9 @@ class ProjectWorkspace:
         self.question_inputs = None
         self.entry_values = {}
         self.focus_entry = None
+        self.review_open = False
+        self.review_saved = False
+        self.review_drafts = {}
 
     def render(self, ui, state):
         project_id = state['project']['project_id']
@@ -20,10 +23,15 @@ class ProjectWorkspace:
             self.question_inputs = None
             self.entry_values.clear()
             self.focus_entry = None
+            self.review_drafts.clear()
+            self.review_open = False
+            self.review_saved = False
             self.stage = 'search' if state['runs'] else 'plan'
             self.open_sections.clear()
         if self.run_id != state['selected_run_id']:
             self.run_id = state['selected_run_id']
+            self.review_open = False
+            self.review_saved = False
             self.open_sections.clear()
             if self.run_id:
                 self.stage = 'search'

@@ -217,6 +217,13 @@ def build_page(app, ui, flow, settings_warnings=()):
                             ui.notify('Save your question before previewing the search.')
                             return
                         await asyncio.to_thread(perform_action, flow, action, value)
+                        if action == 'preflight_inspect':
+                            workspace.review_open = True
+                            workspace.review_saved = bool(flow.state()['preflight_report']['last_review'])
+                        elif action == 'preflight_record':
+                            workspace.review_saved = True
+                        elif action == 'preflight_revise':
+                            workspace.review_saved = False
                         if action == 'recent_open':
                             workspace.question_inputs = None
                         if repeat_entry:
