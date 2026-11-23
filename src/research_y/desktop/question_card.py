@@ -26,7 +26,9 @@ def render_question(ui, workspace, state, act):
                 ui.label('✓ Saved').classes('question-saved').props(
                     'role=status aria-live=polite data-testid=question-saved')
             if not draft['approved_by']:
-                ui.label('Before previewing a new search, use Edit question to enter your name for this session.')
+                ui.label('Use Edit question to save your name for this project.').classes('message info')
+            else:
+                ui.label('Researcher · ' + draft['approved_by']).classes('setting-summary')
             return
 
         if workspace.question_inputs is None:
@@ -60,5 +62,7 @@ def render_question(ui, workspace, state, act):
             if saved:
                 cancel_button = ui.button('Cancel edit', on_click=cancel).props('flat')
                 cancel_button.bind_enabled_from(button, 'enabled')
+        theme.on('keydown.enter', save)
+        reviewer.on('keydown.enter', save)
 
     card()

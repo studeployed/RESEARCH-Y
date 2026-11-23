@@ -529,20 +529,49 @@ def read_research_setup(project: Project) -> ResearchSetup:
     return ResearchSetup(theme=theme, objectives=objectives)
 
 
+def _researcher_name(connection):
+    row = connection.execute(
+        "SELECT json_extract(details_json, '$.researcher_name') FROM audit_events "
+        "WHERE event_type='research_setup_updated' AND json_type(details_json, '$.researcher_name') IS NOT NULL "
+        "ORDER BY event_id DESC LIMIT 1"
+    ).fetchone()
+    name = row[0] if row else ''
+    if (not isinstance(name, str) or len(name) > 2048
+            or any(ord(c) < 32 or ord(c) == 127 for c in name)):
+        raise ValueError("Invalid saved researcher name")
+    return name
+
+
+def read_researcher_name(project: Project) -> str:
+    """Read the explicitly saved project researcher, including older projects."""
+    with _validated_project_connection(project) as connection:
+        return _researcher_name(connection)
+
+
 def update_research_setup(project: Project, *, theme: str, objectives: str = "",
-                          expected: ResearchSetup | None = None) -> None:
+                          expected: ResearchSetup | None = None, researcher_name: str | None = None,
+                          expected_researcher_name: str | None = None) -> None:
     """Transactionally save theme/objectives and one corresponding audit event."""
     if not isinstance(theme, str) or not isinstance(objectives, str):
         raise TypeError("Theme and objectives must be text")
+    if researcher_name is not None:
+        if (not isinstance(researcher_name, str) or not researcher_name.strip() or len(researcher_name) > 2048
+                or any(ord(c) < 32 or ord(c) == 127 for c in researcher_name)):
+            raise ValueError("Invalid researcher name")
+        researcher_name = researcher_name.strip()
     with _validated_project_connection(project) as connection:
         connection.execute("BEGIN IMMEDIATE")
         old_theme, old_objectives = connection.execute(
             "SELECT theme, objectives FROM project_metadata WHERE singleton_id=1"
         ).fetchone()
+        if (researcher_name is not None and expected_researcher_name is not None
+                and _researcher_name(connection) not in (researcher_name, expected_researcher_name)):
+            raise ResearchSetupChangedError("The project researcher changed. Reopen the project before editing.")
         if expected is not None:
-            if (theme, objectives) == (old_theme, old_objectives):
+            unchanged = (theme, objectives) == (old_theme, old_objectives)
+            if unchanged and (researcher_name is None or researcher_name == _researcher_name(connection)):
                 return
-            if expected != ResearchSetup(old_theme, old_objectives):
+            if not unchanged and expected != ResearchSetup(old_theme, old_objectives):
                 raise ResearchSetupChangedError("The research heading changed. Reopen the project before editing.")
         connection.execute(
             "UPDATE project_metadata SET theme=?, objectives=? WHERE singleton_id=1",
@@ -558,6 +587,7 @@ def update_research_setup(project: Project, *, theme: str, objectives: str = "",
                     {
                         "previous": {"theme": old_theme, "objectives": old_objectives},
                         "current": {"theme": theme, "objectives": objectives},
+                        **({"researcher_name": researcher_name} if researcher_name is not None else {}),
                     },
                     ensure_ascii=False,
                     sort_keys=True,

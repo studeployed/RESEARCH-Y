@@ -111,6 +111,7 @@ class RealProjectFlow:
         self.retained_export_report = None
         self._setup = StrategyDraft()
         self._saved_setup = ResearchSetup('', '')
+        self._saved_researcher_name = ''
         # Stable until the authoritative run inventory confirms a commit.
         # On worker interruption, every retry carries the same exact snapshot.
         self._pending_admission_id = None
@@ -431,6 +432,8 @@ class RealProjectFlow:
             raise ProjectFlowError('invalid_worker_result')
         heading = snapshot['project']
         saved_setup = ResearchSetup(heading['theme'], heading['objectives'])
+        from research_y.projects import read_researcher_name
+        researcher_name = read_researcher_name(project)
         self._clear_master()
         self.project = project
         self._run_acceptance = None
@@ -452,7 +455,9 @@ class RealProjectFlow:
         self.observation = None
         self.retained_export_report = None
         self._saved_setup = saved_setup
+        self._saved_researcher_name = researcher_name
         self._setup = StrategyDraft(saved_setup.theme, saved_setup.objectives)
+        self._setup.approved_by = researcher_name
         self._pending_admission_id = None
         self._pending_admission_payload = None
         self._last_strategy_admission = None
@@ -1044,10 +1049,12 @@ class RealProjectFlow:
                     heading = ResearchSetup(updated.theme, updated.objectives)
                     try:
                         update_research_setup(self.project, theme=heading.theme, objectives=heading.objectives,
-                                              expected=self._saved_setup)
+                                              expected=self._saved_setup, researcher_name=updated.approved_by,
+                                              expected_researcher_name=self._saved_researcher_name)
                     except ResearchSetupChangedError:
                         raise ProjectFlowError('Research heading changed. Reopen the project to review it.') from None
                     self._saved_setup = heading
+                    self._saved_researcher_name = updated.approved_by
                     self._setup = updated
                     self._last_strategy_admission = None
                     return self._publish()
@@ -1698,7 +1705,9 @@ class RealProjectFlow:
                 }
                 self._pending_admission_id = None
                 self._pending_admission_payload = None
+                researcher_name = self._setup.approved_by
                 self._setup = StrategyDraft(self._saved_setup.theme, self._saved_setup.objectives)
+                self._setup.approved_by = researcher_name
                 # No implicit run selection or source execution.
                 return self._publish()
             except ProjectFlowError:

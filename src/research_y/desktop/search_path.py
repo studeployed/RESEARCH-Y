@@ -39,6 +39,7 @@ def render_search_steps(ui, state, *, planning):
     next_step = None if steps[-1][1] else next((label for label, done in steps if not done), None)
     with ui.element('section').classes('search-path').props('aria-label="Search progress"'):
         ui.label('Steps to your search' if planning else 'Saved search progress').classes('section-title')
+        ui.label('Next · ' + next_step if next_step else 'Collection started · follow run progress').classes('path-next')
         with ui.element('ol'):
             for label, done in steps:
                 current = label == next_step

@@ -60,6 +60,8 @@ async def recover_missing_home(window, session, *, delay=12):
 
 
 def build_page(app, ui, flow, settings_warnings=()):
+    from research_y.desktop.glossary import ExplainedUi
+    ui = ExplainedUi(ui)
     resources = files('research_y.desktop')
     field_styles = resources.joinpath('forms.css').read_text(encoding='utf-8')
     quick_start = resources.joinpath('QUICK_START.md').read_text(encoding='utf-8')
@@ -89,6 +91,7 @@ def build_page(app, ui, flow, settings_warnings=()):
 
         async def act(action, value=None):
             nonlocal error
+            repeat_entry = action == 'setup_edit' and value.get('action') in ('add_group', 'add_term')
             project_picker = action in ('native_open', 'native_create', 'native_open_index')
             action_lock = lock
             if action in ("cloud_confirm", "local_suggest", "study_suggest", "native_install_local_model"):
@@ -100,7 +103,7 @@ def build_page(app, ui, flow, settings_warnings=()):
                     or (action == "master_results" and value.get("operation") == "lookup")):
                 action_lock = crossref
             if lock.locked() or action_lock.locked():
-                if action == 'save_question':
+                if action == 'save_question' or repeat_entry:
                     return 'Another action is in progress. Try Save question again in a moment.'
                 if project_picker:
                     ui.notify('Another action is in progress. If a Windows picker is open, finish or cancel it first.')
@@ -216,6 +219,8 @@ def build_page(app, ui, flow, settings_warnings=()):
                         await asyncio.to_thread(perform_action, flow, action, value)
                         if action == 'recent_open':
                             workspace.question_inputs = None
+                        if repeat_entry:
+                            workspace.entry_values[workspace.focus_entry] = ''
                         if action == 'setup_approve':
                             workspace.stage = 'search'
                         if action == 'cloud_offer':
@@ -227,6 +232,8 @@ def build_page(app, ui, flow, settings_warnings=()):
                     error = 'operation_unavailable'
                 if action == 'save_question' and error:
                     return 'Could not confirm the save. Check the project folder and try again.'
+                if repeat_entry and error:
+                    return 'Could not add this entry. Check for duplicate terms or unusual characters and try again.'
                 if project_picker and error:
                     picker_status.set_text({
                         'native_dialog_unavailable': 'Windows could not open the picker. Try again.',
@@ -235,6 +242,7 @@ def build_page(app, ui, flow, settings_warnings=()):
                         'native_selection_unsafe': 'Choose a local folder that the application can open directly.',
                     }.get(error, error))
                 panel.refresh()
+                return True
 
         async def refresh_workers():
             state = flow.state()
@@ -257,7 +265,7 @@ def build_page(app, ui, flow, settings_warnings=()):
             from research_y.desktop.settings import render_settings
             render_settings(ui,flow)
         for warning in settings_warnings:
-            ui.label(warning)
+            ui.label(warning).classes('message warning')
         def toggle_launcher():
             launcher.set_visibility(not launcher.visible)
             switch_project.set_text('Close project chooser' if launcher.visible else 'Switch project')
@@ -276,6 +284,7 @@ def build_page(app, ui, flow, settings_warnings=()):
                     name = ui.input('New project name').props('data-testid=desktop-name')
                     create = ui.button('Create project in folder', on_click=lambda: act('native_create', name.value)).props(
                         'data-testid=desktop-create')
+                    name.on('keydown.enter', lambda: act('native_create', name.value))
             with ui.expansion("Import project archive").props("dense data-testid=import-archive-panel"):
                 restored_name = ui.input("New folder name (optional)")
                 ui.button("Choose .researchy archive and destination folder",on_click=lambda:
@@ -321,7 +330,7 @@ def run_desktop(flow, *, settings_warnings=()):
         app.on_shutdown(session.revoke)
         app.on_shutdown(flow.close)
         native_mode._open_window = open_desktop_window
-        app.native.window_args.update(url=session.origin + '/bootstrap#' + launch)
+        app.native.window_args.update(url=session.origin + '/bootstrap#' + launch, text_select=True)
         app.native.settings.update(ALLOW_FILE_URLS=False, ALLOW_DOWNLOADS=False,
                                    OPEN_EXTERNAL_LINKS_IN_BROWSER=False)
         app.native.start_args.update(gui='edgechromium', private_mode=True, debug=False)

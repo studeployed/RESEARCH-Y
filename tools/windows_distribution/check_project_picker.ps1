@@ -73,11 +73,11 @@ try {
     Click-Button 'Create project in folder'
     Choose-Folder $parent
     Wait-For { Test-Path -LiteralPath $index -PathType Leaf } 'created project index' | Out-Null
-    Wait-For { Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) 'Project: Picker test' } 'open created project' | Out-Null
+    Wait-For { Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) 'RESEARCH-Y · Picker test' } 'open created project' | Out-Null
     Click-Button 'Switch project'
     Click-Button $open
     Choose-Folder (Join-Path $testRoot $existingName)
-    Wait-For { Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) 'Project: Existing' } 'opened existing project' | Out-Null
+    Wait-For { Find-Control $window ([Windows.Automation.AutomationElement]::NameProperty) 'RESEARCH-Y · Existing' } 'opened existing project' | Out-Null
     Write-Output 'Packaged launcher created a project and opened a different existing project.'
 } catch {
     if ($window) {

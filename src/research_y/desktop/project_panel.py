@@ -4,7 +4,8 @@ from datetime import date
 
 from research_y.desktop.manifest_consent import render_manifest_consent
 from research_y.desktop.question_card import render_question
-from research_y.desktop.search_path import render_search_steps
+from research_y.desktop.entry import render_entry
+from research_y.desktop.search_checks import CHECKS, ANSWERS, PRESS_HELP
 from research_y.desktop.master_panel import render_master
 from research_y.desktop.review_panel import render_review_tasks
 from research_y.desktop.study_panel import render_study_panel, render_study_queue
@@ -33,7 +34,7 @@ def render_identity_disposition(ui,plan):
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None, workspace=None):
     state = flow.state()
     project = state['project']
-    if project is not None:
+    if project is not None and workspace is None:
         ui.label('Project: ' + project['name']).classes('project-title').props('data-testid=project-name')
     grouped = workspace is not None and project is not None
     area = workspace.render(ui, state) if grouped else lambda *args: nullcontext()
@@ -66,14 +67,12 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 if receipt:
                     ui.label(f'Saved {receipt["filename"]} with {receipt["files"]} files.')
     with area('search'):
-        if grouped and state['runs']:
-            render_search_steps(ui, state, planning=False)
         if project is not None and (state['selected_run_id'] or not grouped):
             if state.get("run_acceptance",None) and state["run_acceptance"]["receipt"]:
                 ui.label("Selected run verification at "+state["run_acceptance"]["receipt"]["at_utc"]+
                          " · Verified Complete").props("data-testid=run-accepted")
             else:
-                ui.label('Search incomplete' if grouped else 'INCOMPLETE — current source-scope verification required.').props('data-testid=incomplete')
+                ui.label('Search incomplete' if grouped else 'INCOMPLETE — current source-scope verification required.').props('data-testid=incomplete').classes('message info')
     with area('details'):
         ui.label('Recent projects').classes('section-title').props(
             'data-testid=recent-heading')
@@ -96,7 +95,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
         if workspace is None:
             ui.label('No project open. A host-selected location is required.')
         if error:
-            ui.label('Operation error: ' + error).props('data-testid=operation-error')
+            ui.label('Operation error: ' + error).props('data-testid=operation-error').classes('message error')
         return
     with area('details'):
         ui.label('Location: ' + project['location']).props('data-testid=project-location')
@@ -190,8 +189,6 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              detail['quota_status'])
     with area('plan'):
         draft = state['strategy_draft']
-        if grouped:
-            render_search_steps(ui, state, planning=True)
         cloud_on = state.get('cloud_enabled', False)
         ui.label('Research Setup').classes('section-title').props(
             'data-testid=setup-heading')
@@ -200,7 +197,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
         if state['strategy_reconciliation_required']:
             ui.label('Approval outcome uncertain — retry the original request '
                      'unchanged to reconcile the saved run and query plans.').props(
-                         'data-testid=setup-recovery')
+                         'data-testid=setup-recovery').classes('message error')
             ui.button('Retry original strategy approval',
                       on_click=lambda: act('setup_approve')).props(
                           'data-testid=setup-approval-retry')
@@ -222,10 +219,13 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     with ui.column().classes('plan-card') if grouped else nullcontext():
                         if grouped:
                             ui.label('Search terms').classes('section-title')
-                        new_group = ui.input('Group name').props('data-testid=setup-group-input')
-                        ui.button('Add group', on_click=lambda: act('setup_edit', dict(
-                            action='add_group', data=dict(label=new_group.value)))).props(
-                                'data-testid=setup-add-group')
+                        if grouped:
+                            render_entry(ui, workspace, act, key='setup-group-input', label='Group name',
+                                         button_text='Add group', action='add_group', data_key='label')
+                        else:
+                            new_group = ui.input('Group name').props('data-testid=setup-group-input')
+                            ui.button('Add group', on_click=lambda: act('setup_edit', dict(
+                                action='add_group', data=dict(label=new_group.value)))).props('data-testid=setup-add-group')
                         for group in draft['groups']:
                             gid = group['group_id']
                             with ui.card():
@@ -247,11 +247,14 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                     ui.button('Remove group', on_click=lambda gid=gid:
                                               act('setup_edit', dict(action='remove_group',
                                                   data=dict(group_id=gid)))).props('data-testid=setup-remove-group')
-                                new_term = ui.input('Search term or phrase')
-                                ui.button('Add term', on_click=lambda gid=gid, box=new_term:
-                                          act('setup_edit', dict(action='add_term',
-                                              data=dict(group_id=gid, text=box.value)))).props(
-                                                  'data-testid=setup-add-term')
+                                if grouped:
+                                    render_entry(ui, workspace, act, key='setup-term-' + gid, label='Search term or phrase',
+                                                 button_text='Add term', action='add_term', data_key='text',
+                                                 data=dict(group_id=gid))
+                                else:
+                                    new_term = ui.input('Search term or phrase')
+                                    ui.button('Add term', on_click=lambda gid=gid, box=new_term: act('setup_edit', dict(
+                                        action='add_term', data=dict(group_id=gid, text=box.value)))).props('data-testid=setup-add-term')
                                 for term in group['terms']:
                                     tid = term['term_id']
                                     with disclosure(('term', tid), term['text'] + ('' if term['enabled'] else ' (excluded)')):
@@ -314,7 +317,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
             else:
                 ui.label('Exact-query preview is locked. To change any field, '
                          'choose Edit search plan and preview again.').props(
-                             'data-testid=setup-preview-locked')
+                             'data-testid=setup-preview-locked').classes('message info')
                 ui.button('Edit search plan',
                           on_click=lambda: act('setup_edit', dict(
                               action='revise_preview', data={}))).props(
@@ -322,7 +325,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 preview = draft['preview']
                 if preview is not None:
                     ui.label('Strategy preview — NOT EXECUTED').props(
-                        'data-testid=setup-preview-active')
+                        'data-testid=setup-preview-active').classes('section-title')
                     ui.label('Concept groups: ' + str(preview['group_count']) +
                              '; enabled terms: ' + str(preview['active_term_count']))
                     ui.label('Filters/limits: ' + preview['limitations'])
@@ -330,21 +333,21 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                         ui.label('Research objectives: ' + preview['objectives'])
                     for source in preview['sources']:
                         ui.label('Source: ' + source['name'] + ' — ' +
-                                 source['coverage']).props('data-testid=setup-source-coverage')
+                                 source['coverage']).props('data-testid=setup-source-coverage').classes('message info')
                         ui.label('OR union preview: ' + source['union_query'])
                         for query in source['groups']:
                             if query['exact_query'] is not None:
                                 chunks=query.get("chunks") or [query["exact_query"]]
                                 for number, exact in enumerate(chunks,1):
                                     ui.label(f'Group {query["label"]} · query {number} of {len(chunks)} · {exact}').props(
-                                        'data-testid=setup-exact-query')
+                                        'data-testid=setup-exact-query').classes('query-text')
                             else:
                                 ui.label('Group ' + query['label'] +
                                          ' disabled/empty — not executable.')
                         for warning in source['warnings']:
-                            ui.label('Compiler warning: ' + warning)
+                            ui.label('Source guidance · ' + warning).classes('message info')
                     ui.label('Provider matches: UNKNOWN (not queried).').props(
-                        'data-testid=setup-unknown-counts')
+                        'data-testid=setup-unknown-counts').classes('message info')
                     ui.button('Approve and save search',
                               on_click=lambda: act('setup_approve')).props(
                                   'data-testid=setup-approve')
@@ -620,7 +623,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 ui.label('The run board could not validate the original '
                          'local ledger. Source status UNKNOWN; no '
                          'result or count is being inferred.').props(
-                             'data-testid=run-board-error')
+                             'data-testid=run-board-error').classes('message error')
             elif board is None:
                 ui.label('Select Refresh to read all source/group '
                          'checkpoints. No provider request is made.').props(
@@ -638,7 +641,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                          str(board['totals']['identifiers_missing_metadata']) +
                          '; unique publications in the reconciled primary run: ' +
                          ('NOT ESTABLISHED' if run_unique is None else str(run_unique))).props(
-                             'data-testid=run-board-totals')
+                             'data-testid=run-board-totals').classes('message result')
                 if master:
                     ui.label(f"Reviewed retained publications: {master['retained_unique_publications']} "
                              f"across {master['source_count']} original records. Sum of group counts: "
@@ -655,7 +658,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 if not board['approved_query_inventory_matches']:
                     ui.label('Stored queries could not be matched to the approved strategy. '
                              'Run-wide retrieval coverage is unknown.').props(
-                                 'data-testid=run-board-plan-mismatch')
+                                 'data-testid=run-board-plan-mismatch').classes('message error')
                 for stage in board.get("processing_stages",[]):
                     value=stage["observed"] if stage["observed"] is not None else "unverified"
                     total="" if stage["total"] is None else f" of {stage['total']}"
@@ -1549,12 +1552,12 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                          '; stop reason ' +
                          str(outcome['stopped_reason']) +
                          '; whole search verified: FALSE.').props(
-                             'data-testid=run-coordination-outcome')
+                             'data-testid=run-coordination-outcome').classes('message info')
     with area('search'):
         if state['selected_run_id'] is not None:
             ui.separator()
             ui.label('Check the search plan').props(
-                'data-testid=preflight-heading')
+                'data-testid=preflight-heading').classes('section-title')
             if not state['preflight_review_reconciliation_required']:
                 ui.button('Check saved plan',
                           on_click=lambda: act('preflight_inspect')).props(
@@ -1571,19 +1574,19 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                          '; active terms: ' + str(preview['active_term_count']))
                 ui.label('Boolean logic: OR across terms and groups; '
                          'no automatic exclusions.')
-                ui.label('Recorded limits: ' + preview['limitations'])
+                ui.label('Recorded limits · ' + preview['limitations']).classes('setting-summary')
                 observations=preview.get("pilot_observations",{})
                 if not observations:
-                    ui.label('Provider counts and workload are unknown until a pilot returns.').props('data-testid=preflight-unknown')
+                    ui.label('Provider counts and workload are unknown until a pilot returns.').props('data-testid=preflight-unknown').classes('message info')
                 else:
                     ui.label("Each estimate uses its own pilot count. Pages can overlap across queries. "
                              "Verification, retries, date partitioning and previously fetched metadata can change the request total.")
                 if preview.get('objectives'):
-                    ui.label('Approved research objectives: ' + preview['objectives'])
+                    ui.label('Research objective · ' + preview['objectives']).classes('message info')
                 ui.label('PRESS peer review and known-item checks require separate observations.')
                 for group in preview['groups']:
                     ui.label('Approved concept group: ' + group['label']).props(
-                        'data-testid=preflight-group')
+                        'data-testid=preflight-group').classes('section-title')
                     for term in group['terms']:
                         ui.label('Atomic term: ' + term['text'] + ' | origin: ' +
                                  term['origin'] + ' | ' +
@@ -1594,7 +1597,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 for source in preview['sources']:
                     ui.label('Source coverage: ' + source['source_name'] +
                              ' — ' + source['source_coverage']).props(
-                                 'data-testid=preflight-coverage')
+                                 'data-testid=preflight-coverage').classes('message info')
                     for query in source['queries']:
                         observed=observations.get(query["query_id"])
                         if observed:
@@ -1609,11 +1612,11 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                             ui.label("Pilot count and workload unknown for this query")
                         ui.label('Exact stored query (' + group_names[query['group_id']] + '): ' +
                                  query['exact_query']).props(
-                                     'data-testid=preflight-query')
+                                     'data-testid=preflight-query').classes('query-text')
                     for warning in source['warnings']:
-                        ui.label('Compiler warning: ' + warning)
+                        ui.label('Source guidance · ' + warning).classes('message info')
                 for warning in preview['warnings']:
-                    ui.label('Pre-run warning: ' + warning)
+                    ui.label('Before searching · ' + warning).classes('message warning')
                 previous = preview['last_review']
                 with ui.expansion("Known-relevant item checks"):
                     choices={q["query_id"]:s["source_name"]+" · "+group_names[q["group_id"]]+" · "+q["exact_query"]
@@ -1622,7 +1625,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     item_id=ui.input("Known record identifier")
                     checked=ui.input("Date checked",value=date.today().isoformat())
                     outcome=ui.select(["found","not_found","inconclusive"],label="Observed outcome")
-                    who=ui.input("Researcher performing the source check")
+                    who=ui.input("Researcher performing the source check", value=draft["approved_by"])
                     basis=ui.input("How the record was checked against the exact query")
                     ui.button("Record observed source check",on_click=lambda:act("record_known_check",dict(
                         plan_sha256=preview["plan_sha256"],query_id=query_choice.value,identifier=item_id.value,
@@ -1631,43 +1634,50 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                         ui.label(f'{check["checked_on"]} · {check["actor"]} · {choices[check["query_id"]]} · '
                                  f'{check["identifier"]} · {check["outcome"]} · {check["basis"]}')
                 if previous is not None:
-                    ui.label('Last recorded PRESS checklist: ' +
+                    ui.label('Saved search checks · ' +
                              previous['occurred_at_utc'] + ' — ' +
                              previous['reviewer_name'] + ' (' +
                              previous['reviewer_role'] + ', self-reported).').props(
-                                 'data-testid=preflight-last-review')
+                                 'data-testid=preflight-last-review').classes('message success')
                     ui.label('No independent review has been verified, '
                              'and no search execution is authorised by this receipt.')
                     for item, result in previous['press_items'].items():
-                        ui.label('PRESS ' + item + ': ' + result)
+                        ui.label(CHECKS[item][0] + ' · ' + ANSWERS[result]).classes(
+                            'message warning' if result == 'needs_revision' else 'setting-summary')
                     if previous['known_relevant']:
                         ui.label('Identifiers proposed for checking · '+", ".join(previous['known_relevant']))
                 candidate = state['preflight_candidate']
                 if state['preflight_review_reconciliation_required']:
                     ui.label('Review outcome uncertain: retry the exact same '
                              'review request to reconcile the audit journal.').props(
-                                 'data-testid=preflight-retry-required')
+                                 'data-testid=preflight-retry-required').classes('message error')
                     ui.button('Retry original pre-run review',
                               on_click=lambda: act('preflight_record')).props(
                                   'data-testid=preflight-retry')
                 elif candidate is None:
-                    ui.label('PRESS checklist — researcher observations. '
-                             'Not reviewed / Needs revision do not imply a pass.')
-                    reviewer = ui.input('Reviewing researcher', value='').props(
+                    ui.label('Search checks').classes('section-title').tooltip(PRESS_HELP)
+                    ui.label('Check the items you have reviewed. Record any concerns below.').classes('message info')
+                    ui.label('Based on PRESS · About these checks').classes('acronym').props(
+                        'tabindex=0 data-testid=press-help').tooltip(PRESS_HELP)
+                    same_researcher = ui.checkbox('I am reviewing my own search', value=bool(draft['approved_by']))
+                    reviewer = ui.input('Reviewing researcher', value=draft['approved_by']).props(
                         'data-testid=preflight-reviewer')
                     reviewer_role = ui.select({
                         'researcher_self_check': 'Researcher self-check',
                         'independent_peer_reported':
                             'External peer review (user-reported, not verified)'},
-                        value='researcher_self_check', label='Review role')
+                        value='researcher_self_check', label='Review role').props('data-testid=preflight-role')
+                    def use_researcher(event):
+                        reviewer.set_value(draft['approved_by'] if event.value else '')
+                        reviewer_role.set_value('researcher_self_check')
+                    same_researcher.on_value_change(use_researcher)
+                    reviewer.bind_enabled_from(same_researcher, 'value', backward=lambda value: not value)
+                    reviewer_role.bind_enabled_from(same_researcher, 'value', backward=lambda value: not value)
                     press = {}
-                    for item in preview['press_items']:
-                        press[item] = ui.select({
-                            'not_reviewed': 'Not reviewed',
-                            'reviewed': 'Reviewed by named person',
-                            'needs_revision': 'Needs revision'},
-                            value='not_reviewed', label='PRESS: ' + item).props(
-                                'data-testid=preflight-press-item')
+                    with ui.element('div').classes('checklist-fields'):
+                        for item in preview['press_items']:
+                            press[item] = ui.select(ANSWERS, value='not_reviewed', label=CHECKS[item][0]).props(
+                                'data-testid=preflight-press-item').tooltip(CHECKS[item][1])
                     note = ui.textarea('Review notes, concerns, or limitations')
                     known = ui.textarea(
                         'Known-relevant identifiers to check (one per line)')
@@ -1688,7 +1698,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     ui.label('Reviewer: ' + candidate['reviewer_name'] +
                              '; role: ' + candidate['reviewer_role'])
                     for item, value in candidate['press_items'].items():
-                        ui.label('PRESS ' + item + ': ' + value)
+                        ui.label(CHECKS[item][0] + ' · ' + ANSWERS[value]).classes(
+                            'message warning' if value == 'needs_revision' else 'setting-summary')
                     ui.label('Note: ' + candidate['review_note'])
                     if candidate['known_relevant']:
                         ui.label('Known-relevant items: ' +
@@ -1755,9 +1766,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                         qid = query['query_id']
                         ui.label('PubMed ' + query['group_id'] +
                                  ': ' + query['exact_query']).props(
-                                     'data-testid=pubmed-pilot-saved-query')
+                                     'data-testid=pubmed-pilot-saved-query').classes('query-text')
                         ui.button('Preview pilot for group ' +
-                                  query['group_id'],
+                                  group_names[query['group_id']],
                                   on_click=lambda qid=qid: act(
                                       'pubmed_pilot_offer', qid)).props(
                                           'data-testid=pubmed-pilot-offer')
@@ -1765,29 +1776,29 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
             if prior is not None:
                 if prior.get("error_code"):
                     from research_y.desktop.settings import source_error_help
-                    ui.label(source_error_help(prior["error_code"]))
+                    ui.label(source_error_help(prior["error_code"])).classes("message error")
                 ui.label('Last audited pilot attempt: ' +
                          prior['status']).props(
-                             'data-testid=pubmed-pilot-status')
+                             'data-testid=pubmed-pilot-status').classes('setting-summary')
                 count = prior['reported_matches']
                 ui.label('Provider-reported PILOT matches: ' +
                          ('UNKNOWN' if count is None else str(count)) +
                          '. No records retrieved or search completed.').props(
-                             'data-testid=pubmed-pilot-count')
+                             'data-testid=pubmed-pilot-count').classes('message result')
                 if prior.get('accepted_translation'):
                     ui.label('Accepted PubMed translation: ' +
                              prior['accepted_translation']).props(
-                                 'data-testid=pubmed-pilot-translation')
+                                 'data-testid=pubmed-pilot-translation').classes('query-text')
                 for warning in prior.get('warnings', []):
-                    ui.label('PubMed provider warning: ' + warning)
+                    ui.label('PubMed warning · ' + warning).classes('message warning')
                 for reason in prior.get('review_reasons', []):
-                    ui.label('Translation review required: ' + reason)
+                    ui.label('Check the translated query · ' + reason).classes('message warning')
                 if prior['status'] in ('requested_indeterminate',
                                        'not_recorded'):
                     ui.label('Do not automatically retry this UUID. '
                              'A NEW pilot requires a fresh two-step '
                              'selection and confirmation.').props(
-                                 'data-testid=pubmed-pilot-no-auto-retry')
+                                 'data-testid=pubmed-pilot-no-auto-retry').classes('message error')
                 if prior.get('error_code') is not None:
                     ui.label('Pilot failure code: ' + prior['error_code'])
                 ui.label('Pilot results never establish final '
@@ -1862,14 +1873,14 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                         qid = query['query_id']
                         ui.label('Starter ' + query['group_id'] +
                                  ': ' + query['exact_query']).props(
-                                     'data-testid=wos-pilot-saved-query')
+                                     'data-testid=wos-pilot-saved-query').classes('query-text')
                         ui.button('Preview Starter one-record pilot for ' +
-                                  query['group_id'],
+                                  group_names[query['group_id']],
                                   on_click=lambda qid=qid: act(
                                       'wos_pilot_offer', qid)).props(
                                           'data-testid=wos-pilot-offer')
                         ui.button('Preview explicit quota revalidation for ' +
-                                  query['group_id'],
+                                  group_names[query['group_id']],
                                   on_click=lambda qid=qid: act(
                                       'wos_pilot_revalidation_offer', qid)).props(
                                           'data-testid=wos-pilot-revalidation-offer')
@@ -1877,15 +1888,15 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
             if prior is not None:
                 if prior.get("error_code"):
                     from research_y.desktop.settings import source_error_help
-                    ui.label(source_error_help(prior["error_code"]))
+                    ui.label(source_error_help(prior["error_code"])).classes("message error")
                 ui.label('Last audited Starter pilot: ' +
                          prior['status']).props(
-                             'data-testid=wos-pilot-status')
+                             'data-testid=wos-pilot-status').classes('setting-summary')
                 count = prior['reported_matches']
                 ui.label('Provisional provider-reported matches: ' +
                          ('UNKNOWN' if count is None else str(count)) +
                          '; zero records retained; not verified retrieval.').props(
-                             'data-testid=wos-pilot-count')
+                             'data-testid=wos-pilot-count').classes('message result')
                 quota = prior.get('quota')
                 if isinstance(quota, dict):
                     ui.label('Observed daily quota: allowance=' +
@@ -1905,7 +1916,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     ui.label('Never resend this UUID. An indeterminate '
                              'provider reservation may remain blocked '
                              'even after a new preview.').props(
-                                 'data-testid=wos-pilot-no-auto-retry')
+                                 'data-testid=wos-pilot-no-auto-retry').classes('message error')
                 if prior.get('error_code') is not None:
                     ui.label('Static failure code: ' +
                              prior['error_code'])
@@ -2400,6 +2411,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                               'data-testid=pubmed-metadata-confirm')
             else:
                 current=state['pubmed_metadata']
+                metadata_groups = {row[0]: row[1] for row in state['report']['strategy']['group_index']} if state['report'] else {}
                 for query in (state['report']['queries'] if
                               state['report'] is not None else ()):
                     if query['source_name'] != 'pubmed':
@@ -2417,7 +2429,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                             state['pubmed_source']['checkpoint'][
                                 'identifiers_reconciled']):
                         ui.button('Preview EFetch metadata session for ' +
-                                  query['group_id'],
+                                  metadata_groups[query['group_id']],
                                   on_click=lambda qid=qid: act(
                                       'pubmed_metadata_offer',qid)).props(
                                           'data-testid=pubmed-metadata-offer')
@@ -2553,7 +2565,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                          'failure and resume the same export; this observation '
                          'is not success.').props('data-testid=stage-recovery')
     if error:
-        ui.label('Operation error: ' + error).props('data-testid=operation-error')
+        ui.label('Operation error: ' + error).props('data-testid=operation-error').classes('message error')
         if (error == 'worker_interrupted' and
                 state['selected_export_id'] is not None):
             ui.label('RECOVERY REQUIRED — the supervised export worker was '

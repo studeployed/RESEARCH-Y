@@ -1,5 +1,11 @@
 # RESEARCH-Y handover
 
+## Windows usability
+
+Version 0.1.5 enables native text selection, keeps project navigation and the next step visible during scrolling, and distinguishes routine guidance, warnings, errors and results. Acronyms have hover help. The owner approved presenting the existing seven audited items as plain-language Search checks. Group and term entry accepts Enter, retains failed entries and restores focus after adding a term. The explicitly entered researcher name is retained in the existing project audit and reused after approval and reopening. Self-checks offer that saved name and an explicit choice of another reviewer.
+
+Regression coverage includes researcher persistence and concurrent name changes, legacy projects, keyboard entry and duplicate recovery, narrow and wide sticky navigation, and the installed Windows lifecycle. The checklist retains its existing record and source-confirmation semantics.
+
 ## Question feedback and search milestones
 
 Version 0.1.4 confirms a project question save inline and returns to a read-only summary. Edit question restores the form. Failed saves retain the entered text. Plan search tracks the current draft. Run search tracks a selected saved plan and its first recorded collection response separately from pilots. The Windows lifecycle fixture exercises validation, saving, editing and reopening. No provider requests are needed for these checks.

@@ -83,6 +83,22 @@ def _flow(tmp_path,*,ids=IDS,profile=True,identifiers_ready=True):
     return project,flow,rid,qid,query
 
 
+def test_metadata_preview_renders_after_reopening_without_preflight(tmp_path):
+    from unittest.mock import MagicMock
+    from research_y.desktop.project_panel import render_project_panel
+    project, flow, rid, qid, query = _flow(tmp_path)
+    with closing(flow):
+        state = flow.inspect_stored_pubmed_source(qid)
+        assert state['preflight_report'] is None
+        assert state['pubmed_source']['checkpoint']['identifiers_reconciled']
+        ui, act = MagicMock(), MagicMock()
+        render_project_panel(ui, flow, act, native=True, error=None, workspace=MagicMock())
+        button = next(call for call in ui.button.call_args_list
+                      if call.args == ('Preview EFetch metadata session for Extracorporeal',))
+        button.kwargs['on_click']()
+        act.assert_called_once_with('pubmed_metadata_offer', qid)
+
+
 def _db(project):
     with closing(sqlite3.connect(project.database_path)) as db:
         return dict(
