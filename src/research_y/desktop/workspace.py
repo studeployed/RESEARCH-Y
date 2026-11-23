@@ -1,5 +1,6 @@
 """Per-window navigation for the desktop research workflow."""
 from contextlib import contextmanager
+from research_y.desktop.search_path import render_search_steps
 
 
 class ProjectWorkspace:
@@ -9,12 +10,16 @@ class ProjectWorkspace:
         self.stage = 'plan'
         self.open_sections = {}
         self.question_inputs = None
+        self.entry_values = {}
+        self.focus_entry = None
 
     def render(self, ui, state):
         project_id = state['project']['project_id']
         if self.project_id != project_id:
             self.project_id = project_id
             self.question_inputs = None
+            self.entry_values.clear()
+            self.focus_entry = None
             self.stage = 'search' if state['runs'] else 'plan'
             self.open_sections.clear()
         if self.run_id != state['selected_run_id']:
@@ -27,13 +32,24 @@ class ProjectWorkspace:
         def remember(event):
             if event.value in stages:
                 self.stage = event.value
+                plan_steps.set_visibility(self.stage == 'plan')
+                run_steps.set_visibility(self.stage != 'plan' and bool(state['runs']))
 
-        with ui.tabs(value=self.stage, on_change=remember).classes('workspace-tabs').props(
-                'align=left dense no-caps') as tabs:
-            for key, label in stages.items():
-                if (key == 'search' and not state['runs']) or (key in ('results', 'export') and not self.run_id):
-                    continue
-                ui.tab(key, label=label).props(f'data-testid=stage-{key}')
+        with ui.element('header').classes('workspace-header'):
+            ui.label('RESEARCH-Y · ' + state['project']['name']).classes('project-title').props(
+                'data-testid=project-name')
+            with ui.tabs(value=self.stage, on_change=remember).classes('workspace-tabs').props(
+                    'align=left dense no-caps') as tabs:
+                for key, label in stages.items():
+                    if (key == 'search' and not state['runs']) or (key in ('results', 'export') and not self.run_id):
+                        continue
+                    ui.tab(key, label=label).props(f'data-testid=stage-{key}')
+            with ui.column() as plan_steps:
+                render_search_steps(ui, state, planning=True)
+            with ui.column() as run_steps:
+                render_search_steps(ui, state, planning=False)
+            plan_steps.set_visibility(self.stage == 'plan')
+            run_steps.set_visibility(self.stage != 'plan' and bool(state['runs']))
         with ui.tab_panels(tabs, value=self.stage, animated=False).classes('workspace-panels'):
             panels = {key: ui.tab_panel(key) for key in stages}
         # The next action stays above optional tools, regardless of render order.

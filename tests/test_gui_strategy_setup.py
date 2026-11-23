@@ -25,6 +25,32 @@ def _flow(tmp_path, title='Study'):
     return project, flow
 
 
+def test_project_researcher_survives_approval_and_reopening(tmp_path):
+    from research_y.projects import read_researcher_name, update_research_setup, ResearchSetupChangedError, ResearchSetup
+    project, flow = _flow(tmp_path)
+    with closing(flow):
+        assert read_researcher_name(project) == ''
+        heading = dict(theme='Example', objectives='Purpose', approved_by='First researcher')
+        flow.edit_setup('heading', heading)
+        assert read_researcher_name(project) == 'First researcher'
+        flow.edit_setup('add_group', dict(label='Group'))
+        group = flow.state()['strategy_draft']['groups'][0]['group_id']
+        flow.edit_setup('add_term', dict(group_id=group, text='Example term'))
+        flow.preview_setup()
+        flow.approve_setup()
+        assert flow.state()['strategy_draft']['approved_by'] == 'First researcher'
+        flow.open_native_folder(project.root)
+        assert flow.state()['strategy_draft']['approved_by'] == 'First researcher'
+        update_research_setup(project, theme='Example', objectives='Purpose',
+                              expected=ResearchSetup('Example', 'Purpose'), researcher_name='Second researcher')
+        with pytest.raises(ProjectFlowError, match='changed'):
+            flow.edit_setup('heading', dict(heading, approved_by='Third researcher'))
+        assert read_researcher_name(project) == 'Second researcher'
+        flow.open_native_folder(project.root)
+        flow.edit_setup('heading', dict(heading, approved_by='Third researcher'))
+        assert read_researcher_name(project) == 'Third researcher'
+
+
 def _seed(flow):
     flow.edit_setup('heading', {'theme': 'RV and ECMO', 'approved_by': 'Researcher'})
     flow.edit_setup('add_group', {'label': 'Right heart'})

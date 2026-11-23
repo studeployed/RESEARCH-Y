@@ -13,6 +13,37 @@
 .app-title { font-weight: 650; font-size: 1.65rem; letter-spacing: .035em; }
 .project-title { font-size: clamp(1.35rem, 2.5vw, 1.8rem); font-weight: 600; }
 .section-title { font-size: 1.1rem; font-weight: 600; }
+.nicegui-content { user-select: text; -webkit-user-select: text; }
+.workspace-header {
+  position: sticky; top: 0; z-index: 30; width: 100%;
+  background: #f6f8f7; padding: .6rem 0; border-bottom: 1px solid #ccdcd6;
+}
+.workspace-header .project-title { font-size: 1.15rem; margin-bottom: .2rem; }
+.workspace-header .nicegui-column { gap: 0; }
+.workspace-header .search-path { padding: .25rem .5rem 0; border: 0; }
+.workspace-header .search-path .section-title { font-size: .9rem; }
+.workspace-header .search-path li { font-size: .8rem; }
+.path-next { display: none; font-weight: 600; font-size: .85rem; }
+.message {
+  width: 100%; box-sizing: border-box; border-left: 3px solid #9caaa7;
+  border-radius: .25rem; padding: .65rem .85rem; background: #f2f5f4;
+  white-space: pre-wrap; line-height: 1.5;
+}
+.message.info { border-color: #94a7aa; background: #f2f6f7; color: #334e55; }
+.message.success { border-color: #39816a; background: #edf6f1; color: #235641; }
+.message.warning { border-color: #b28227; background: #fff7e3; color: #70500b; }
+.message.error { border-color: #b94d46; background: #fff0ed; color: #8a2923; }
+.message.result { border-color: #4c76a1; background: #eef4fb; color: #294e75; font-weight: 600; }
+.setting-summary { font-size: .93rem; padding: .25rem 0; color: #405851; }
+.query-text { background: #f5f6f6; border: 1px solid #dce2e0; padding: .65rem; border-radius: .25rem; width: 100%; }
+.checklist-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem 1.5rem; width: 100%; }
+.acronym { border-bottom: 1px dotted currentColor; cursor: help; }
+.q-tooltip { font-size: .85rem; line-height: 1.45; max-width: 28rem; }
+@media (max-width: 600px) {
+  .workspace-header .search-path ol, .workspace-header .search-path .section-title { display: none; }
+  .path-next { display: block; }
+  .checklist-fields { grid-template-columns: minmax(0, 1fr); }
+}
 .question-theme, .question-saved { font-weight: 600; }
 .question-saved, .search-path .done { color: #21665d; }
 .question-objectives { white-space: pre-wrap; }

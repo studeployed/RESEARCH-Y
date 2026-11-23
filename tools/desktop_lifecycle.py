@@ -175,7 +175,62 @@ def run_window(stage, workspace, folder, run_id):
             raise RuntimeError('incorrect_next_milestone')
         if await visible('[data-testid=desktop-open]'):
             await click('[data-testid=switch-project]')
+        if flow.state()['strategy_draft']['approved_by'] != 'Fixture researcher':
+            raise RuntimeError('reopened_project_lost_researcher')
+        await check_keyboard_and_navigation()
         print('Checked inline save, failure, editing, reopening and next search milestone.', flush=True)
+
+    async def check_keyboard_and_navigation():
+        group_input = '[data-testid=setup-group-input] input, input[data-testid=setup-group-input]'
+        term_input = '[data-testid^=setup-term-] input, input[data-testid^=setup-term-]'
+        async def enter(selector):
+            await js("document.querySelector(" + json.dumps(selector)
+                     + ").dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true})); true")
+        await fill(group_input, 'Example group')
+        await enter(group_input)
+        await wait_for(lambda: visible(term_input), 'keyboard_group_entry')
+        for count, term in enumerate(('right ventricular failure', 'right heart failure'), start=1):
+            await fill(term_input, term)
+            await enter(term_input)
+            async def added():
+                return (len(flow.state()['strategy_draft']['groups'][0]['terms']) == count
+                        and await js("document.activeElement === document.querySelector(" + json.dumps(term_input)
+                                     + ") && document.activeElement.value === ''"))
+            await wait_for(added, 'keyboard_term_entry_and_focus')
+        await fill(term_input, 'right heart failure')
+        await enter(term_input)
+        await wait_for(lambda: js("document.querySelector(" + json.dumps(term_input) + ").disabled === false"),
+                       'duplicate_term_retry')
+        if len(flow.state()['strategy_draft']['groups'][0]['terms']) != 2:
+            raise RuntimeError('duplicate_keyboard_term')
+        if await js("document.querySelector(" + json.dumps(term_input) + ").value") != 'right heart failure':
+            raise RuntimeError('duplicate_term_input_lost')
+        for width in (520, 1200):
+            app.native.main_window.resize(width, 850)
+            await asyncio.sleep(.3)
+            await js("window.scrollTo(0,document.body.scrollHeight); true")
+            await asyncio.sleep(.3)
+            if not await js("""(() => {
+                const header = document.querySelector('.workspace-header').getBoundingClientRect();
+                return header.top >= -1 && header.top < 2 && header.bottom < window.innerHeight / 2;
+            })()"""):
+                raise RuntimeError('sticky_navigation_out_of_view')
+            if await js("getComputedStyle(document.querySelector('.question-theme')).userSelect") == 'none':
+                raise RuntimeError('output_text_not_selectable')
+        await js("window.scrollTo(0,0); true")
+        await fill(term_input, '')
+        await click('[data-testid=setup-preview]')
+        await wait_for(lambda: visible('[data-testid=setup-approve]'), 'keyboard_plan_preview')
+        await click('[data-testid=setup-approve]')
+        await click('[data-testid=select-run]')
+        await click('[data-testid=preflight-inspect]')
+        reviewer_input = '[data-testid=preflight-reviewer] input, input[data-testid=preflight-reviewer]'
+        await wait_for(lambda: visible(reviewer_input), 'plain_search_checks')
+        if await js("document.querySelector(" + json.dumps(reviewer_input) + ").value") != 'Fixture researcher':
+            raise RuntimeError('self_check_lost_researcher')
+        if not await visible('[data-testid=press-help]'):
+            raise RuntimeError('search_check_help_missing')
+        print('Checked Enter entry, retry focus, persistent navigation, selectable output and researcher reuse.', flush=True)
 
     async def observe():
         try:
