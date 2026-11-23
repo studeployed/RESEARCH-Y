@@ -1,5 +1,11 @@
 # RESEARCH-Y handover
 
+## Focused saved-search review
+
+Version 0.1.6 opens a dedicated comparison screen from Check saved plan. The frozen question, terms, actual source coverage and limits are shown beside the seven audited Search checks. Wide windows use independent side-by-side panes; narrow windows retain both panes vertically. Radio choices reduce the clicks needed. Draft answers survive closing and reopening the screen in the same application window, and are isolated by project, run and immutable plan. The confirmation step and uncertain-save recovery retain their existing audit contract.
+
+Database syntax is explained through the compiler check and exact-plan pilot receipts, including PubMed translations and warnings. No absent, partial or failed provider response is displayed as a passed provider test; Starter's unavailable interpretation remains explicit. The coverage item asks the researcher to acknowledge the displayed scope. No search is executed by opening or confirming this review. Regression coverage includes tests/test_search_review_screen.py, tests/test_frozen_search_scope.py and the native/installed desktop lifecycle.
+
 ## Windows usability
 
 Version 0.1.5 enables native text selection, keeps project navigation and the next step visible during scrolling, and distinguishes routine guidance, warnings, errors and results. Acronyms have hover help. The owner approved presenting the existing seven audited items as plain-language Search checks. Group and term entry accepts Enter, retains failed entries and restores focus after adding a term. The explicitly entered researcher name is retained in the existing project audit and reused after approval and reopening. Self-checks offer that saved name and an explicit choice of another reviewer.

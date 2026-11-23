@@ -137,3 +137,39 @@
 .nicegui-content .nicegui-markdown {
   max-width: 72ch;
 }
+
+/* A dedicated comparison screen: both panes scroll independently on desktop. */
+.search-review {
+  --q-primary: #21665d;
+  width: 100%; height: 100%; max-width: none !important;
+  display: flex; flex-direction: column; min-height: 0;
+  background: #f6f8f7; color: #233a38; font-family: "Segoe UI", sans-serif;
+  user-select: text; -webkit-user-select: text; overflow-wrap: anywhere;
+}
+.review-header, .review-footer { padding: .65rem 1.25rem; flex: 0 0 auto; }
+.review-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #ccdcd6; }
+.review-header .section-title { font-size: 1.1rem; }
+.review-footer { order: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; border-top: 1px solid #ccdcd6; font-size: .8rem; color: #52625e; }
+.review-footer .review-hint { flex: 1 1 15rem; }
+.review-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.review-comparison { order: 1; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; background: #d7e3df; }
+.review-context, .review-answers { min-width: 0; overflow-y: auto; padding: 1rem 1.5rem; background: white; display: flex; flex-direction: column; gap: .55rem; }
+.review-context > *, .review-answers > * { flex-shrink: 0; }
+.review-theme, .review-group { font-weight: 600; }
+.review-facts { background: #f2f6f5; border-radius: .3rem; padding: .65rem; }
+.review-facts .section-title { font-size: .95rem; margin-bottom: .2rem; }
+.review-terms { border-left: 2px solid #9dbab2; padding-left: .7rem; }
+.review-terms .review-group:not(:first-child) { margin-top: .5rem; }
+.review-excluded, .review-hint { color: #52625e; font-size: .85rem; }
+.review-check { border-bottom: 1px solid #e1e8e5; padding: .2rem 0 .4rem; }
+.review-check .q-radio { margin-top: .2rem; margin-right: .65rem; font-size: .85rem; }
+.search-review .q-btn { align-self: flex-start; width: fit-content; max-width: 100%; text-transform: none; font-size: .9rem; }
+.search-review .q-field, .search-review .q-expansion-item { width: 100%; min-width: 0; }
+.search-review .q-field__label { white-space: normal; }
+.search-review .message { font-size: .88rem; padding: .5rem .65rem; }
+@media (max-width: 700px) {
+  .review-comparison { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, .9fr) minmax(0, 1.1fr); }
+  .review-context, .review-answers { padding: .65rem .9rem; }
+  .review-header, .review-footer { padding: .5rem .75rem; }
+  .review-header .section-title { font-size: .95rem; }
+}

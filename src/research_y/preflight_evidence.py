@@ -37,7 +37,11 @@ def pilot_observations(db, plan):
                     batches=(count+MAX_BATCH_IDS-1)//MAX_BATCH_IDS
             latest[qid]=dict(source=name,status=record["status"],reported_matches=count,pilot_id=row[0],
                              observed_utc=record["completed_at_utc"] or record["requested_at_utc"],
-                             estimated_result_pages=pages,estimated_metadata_batches=batches)
+                             estimated_result_pages=pages,estimated_metadata_batches=batches,
+                             accepted_translation=record.get("accepted_translation"),
+                             translation_matches_submitted=record.get("translation_matches_submitted"),
+                             warnings=record.get("warnings",[]),
+                             review_reasons=record.get("review_reasons",[]))
     return latest
 
 

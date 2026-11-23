@@ -58,6 +58,17 @@ def test_source_and_year_choices_reach_normal_desktop_and_cannot_hide_omissions(
         flow.select_run(rid)
         pre=flow.inspect_preflight()["preflight_report"]
         assert pre["sources"][0]["queries"][0]["exact_query"]==exact and "2020" in pre["limitations"]
+        # Review context comes from the frozen plan, even if a later draft changes.
+        flow.edit_setup("scope",dict(sources=["pubmed"],publication_year=2021))
+        from unittest.mock import MagicMock
+        from research_y.desktop.search_review import render_context
+        ui = MagicMock()
+        render_context(ui, pre)
+        labels = [call.args[0] for call in ui.label.call_args_list]
+        assert any('Publication year 2020' in label for label in labels)
+        assert not any('2021' in label for label in labels)
+        assert any(label.startswith('Web of Science Starter · Topic') for label in labels)
+        assert not any(label.startswith('PubMed ·') for label in labels)
         assert not read_run_execution_board(project,rid)["primary_source_enumerations_reconciled"]
 
 
@@ -89,6 +100,9 @@ def test_combined_source_pilots_and_known_item_corrections_are_bound_to_query(tm
         result=flow.inspect_preflight()["preflight_report"]
         assert result["provider_counts"] is None
         assert result["pilot_observations"][pm["query_id"]]["reported_matches"] == 201
+        assert result["pilot_observations"][pm["query_id"]]["accepted_translation"] == pm["exact_query"]
+        assert result["pilot_observations"][pm["query_id"]]["translation_matches_submitted"] is True
+        assert result["pilot_observations"][wo["query_id"]]["accepted_translation"] is None
         assert result["pilot_observations"][wo["query_id"]]["reported_matches"] == 101
         assert result["estimated_workload"][pm["query_id"]]==dict(result_pages=2,metadata_batches=11)
         assert result["estimated_workload"][wo["query_id"]]==dict(result_pages=3,metadata_batches=None)
