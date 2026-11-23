@@ -27,7 +27,10 @@ def review_values(preview, researcher, drafts):
             review_note=previous.get('review_note', ''),
             known_text='\n'.join(previous.get('known_relevant', [])),
         )
-    return drafts[key]
+    values = drafts[key]
+    if values['same_researcher']:
+        values['reviewer_name'] = researcher
+    return values
 
 
 def database_status(source, observations):
@@ -210,7 +213,7 @@ def render_search_review(ui, state, act, workspace=None, error=None):
                         if dialog:
                             action_button('Done', on_click=dialog.close)
                     else:
-                        researcher = state['strategy_draft']['approved_by']
+                        researcher = state.get('researcher_name', '')
                         values = review_values(preview, researcher, workspace.review_drafts if workspace else {})
                         ui.label('Reviewer · ' + (values['reviewer_name'] or 'Enter your name below'))
                         with ui.expansion('Reviewer details', value=not bool(values['reviewer_name'])):
@@ -245,4 +248,4 @@ def render_search_review(ui, state, act, workspace=None, error=None):
                             press_items=dict(values['press_items']), review_note=note.value or '',
                             known_relevant=tuple(line.strip() for line in (known.value or '').splitlines() if line.strip())))).props('data-testid=preflight-offer')
                     ui.label('These answers record a researcher review. Database collection requires its own confirmation.').classes('review-hint')
-    render_known_checks(ui, preview, state['strategy_draft']['approved_by'], act)
+    render_known_checks(ui, preview, state.get('researcher_name', ''), act)

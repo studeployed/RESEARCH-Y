@@ -129,11 +129,23 @@ def run():
             await wait(lambda: visible('[data-testid=setup-approve]'), 'draft preview')
             await click('[data-testid=setup-approve]')
             await wait(lambda: len(flow.state()['runs']) == 2, 'revised search saved')
+            approver = flow.state()['strategy_draft']['approved_by']
+            await click('[data-testid=stage-plan]')
+            await click('[data-testid=question-edit]')
+            await wait(lambda: visible('input[data-testid=setup-approver], [data-testid=setup-approver] input'), 'researcher field')
+            await js('(()=>{let e=document.querySelector("input[data-testid=setup-approver], [data-testid=setup-approver] input");e.value="Current reviewer";e.dispatchEvent(new Event("input",{bubbles:true}));return true;})()')
+            await click('[data-testid=setup-save-heading]')
+            await wait(lambda: flow.state()['researcher_name'] == 'Current reviewer', 'changed researcher')
+            assert flow.state()['strategy_draft']['approved_by'] == approver
+            await click('[data-testid=stage-search]')
             await select_option('Choose a saved search', 'Search 2')
             await click('[data-testid=select-run]')
             await wait(lambda: flow.state()['selected_run_id'] != fixture['run'], 'new saved search')
             await click('[data-testid=preflight-inspect]')
             await wait(lambda: visible('[data-testid=search-review]'), 'focused review')
+            assert await js('document.querySelector("input[data-testid=preflight-reviewer], [data-testid=preflight-reviewer] input")?.value') == 'Current reviewer'
+            assert await js('([...document.querySelectorAll(".q-field")].find(e=>e.querySelector(".q-field__label")?.innerText==="Researcher performing the source check")?.querySelector("input")?.value)') == 'Current reviewer'
+            checks.append('Search checks use the current researcher while preserving the original approver')
             await snapshot('04-review-wide')
             app.native.main_window.resize(520, 760)
             await asyncio.sleep(.7)
