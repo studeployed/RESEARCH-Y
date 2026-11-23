@@ -110,6 +110,8 @@ class RealProjectFlow:
         self.observation = None
         self.retained_export_report = None
         self._setup = StrategyDraft()
+        self._planning_mode, self._planning_base, self._planning_revision = 'draft', None, None
+        self._saved_output = None
         self._saved_setup = ResearchSetup('', '')
         self._saved_researcher_name = ''
         # Stable until the authoritative run inventory confirms a commit.
@@ -434,8 +436,16 @@ class RealProjectFlow:
         saved_setup = ResearchSetup(heading['theme'], heading['objectives'])
         from research_y.projects import read_researcher_name
         researcher_name = read_researcher_name(project)
+        from research_y.desktop.planning_draft import load
+        default_draft = StrategyDraft(saved_setup.theme, saved_setup.objectives)
+        default_draft.approved_by = researcher_name
+        try:
+            planning = load(project, default_draft)
+        except (ValueError, KeyError, TypeError):
+            raise ProjectFlowError('Saved plan could not be read. Keep the project and contact support.') from None
         self._clear_master()
         self.project = project
+        self._saved_output = None
         self._run_acceptance = None
         self._audit_page = None
         self._run_comparison = None
@@ -456,10 +466,8 @@ class RealProjectFlow:
         self.retained_export_report = None
         self._saved_setup = saved_setup
         self._saved_researcher_name = researcher_name
-        self._setup = StrategyDraft(saved_setup.theme, saved_setup.objectives)
-        self._setup.approved_by = researcher_name
-        self._pending_admission_id = None
-        self._pending_admission_payload = None
+        self._setup, self._planning_mode, self._planning_base, self._planning_revision, self._pending_admission_id = planning
+        self._pending_admission_payload = (self._admission_payload() if self._pending_admission_id else None)
         self._last_strategy_admission = None
         self._preflight = None
         self._review_candidate = None
@@ -746,6 +754,7 @@ class RealProjectFlow:
                 raise ProjectFlowError('invalid_worker_result')
             self._clear_master()
             self.selected_run_id = run_id
+            self._saved_output = None
             self._review_tasks = None
             self._specialist.select(self.project,run_id)
             self._clear_manifest_selection()
@@ -1042,20 +1051,30 @@ class RealProjectFlow:
             if (type(action) is not str or action not in self._SETUP_ACTIONS
                     or type(data) is not dict):
                 raise ProjectFlowError('invalid_setup_action')
+            if self._planning_mode == 'saved' and action != 'heading':
+                raise ProjectFlowError('Choose Edit a copy before changing this saved search.')
             try:
                 if action == 'heading' and 'objectives' in data:
                     updated = copy(self._setup)
                     updated.update_heading(**data)
                     heading = ResearchSetup(updated.theme, updated.objectives)
+                    from research_y.desktop.planning_draft import save
+                    revision = []
+                    def save_draft(db):
+                        if self._planning_mode == 'draft':
+                            revision.append(save(self.project, updated, self._planning_mode, self._planning_base,
+                                                 self._planning_revision, connection=db))
                     try:
                         update_research_setup(self.project, theme=heading.theme, objectives=heading.objectives,
                                               expected=self._saved_setup, researcher_name=updated.approved_by,
-                                              expected_researcher_name=self._saved_researcher_name)
+                                              expected_researcher_name=self._saved_researcher_name, _on_saved=save_draft)
                     except ResearchSetupChangedError:
                         raise ProjectFlowError('Research heading changed. Reopen the project to review it.') from None
                     self._saved_setup = heading
                     self._saved_researcher_name = updated.approved_by
-                    self._setup = updated
+                    if self._planning_mode == 'draft':
+                        self._setup = updated
+                        self._planning_revision = revision[0]
                     self._last_strategy_admission = None
                     return self._publish()
                 suggestion = self._setup.suggestions.get(data.get("suggestion_id")) if action == "review_variant" else None
@@ -1069,15 +1088,54 @@ class RealProjectFlow:
                             proposed=suggestion["text"], decision=data["decision"],
                             wording=data.get("text", suggestion["text"]) if data["decision"] == "accept" else None,
                             actor=self._setup.approved_by or None))
+                        from research_y.desktop.planning_draft import save
+                        revision = save(self.project, updated, self._planning_mode, self._planning_base,
+                                        self._planning_revision, connection=db)
                     self._setup = updated
+                    self._planning_revision = revision
                     self._last_strategy_admission = None
                     return self._publish()
-                method = getattr(self._setup, self._SETUP_ACTIONS[action])
+                updated = deepcopy(self._setup)
+                method = getattr(updated, self._SETUP_ACTIONS[action])
                 method(**data)
+                self._persist_planning(updated)
+                self._setup = updated
             except ProjectFlowError:
                 raise
             except (DraftError, ValueError, TypeError):
                 raise ProjectFlowError('invalid_setup_input') from None
+            self._last_strategy_admission = None
+            return self._publish()
+
+    def _persist_planning(self, draft=None):
+        from research_y.desktop.planning_draft import save
+        try:
+            self._planning_revision = save(self.project, draft or self._setup, self._planning_mode,
+                                          self._planning_base, self._planning_revision,
+                                          approval_id=self._pending_admission_id if self._planning_mode == 'draft' else None)
+        except DraftError as exc:
+            raise ProjectFlowError(str(exc)) from None
+
+    def begin_plan(self, blank=False):
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            if type(blank) is not bool or self._planning_mode != 'saved':
+                raise ProjectFlowError('Finish the current draft before starting another search.')
+            updated = (StrategyDraft(self._saved_setup.theme, self._saved_setup.objectives)
+                       if blank else deepcopy(self._setup))
+            updated.approved_by = self._saved_researcher_name or self._setup.approved_by
+            updated.theme = self._saved_setup.theme or updated.theme
+            updated.objectives = self._saved_setup.objectives
+            updated.revise_preview()
+            old_mode = self._planning_mode
+            self._planning_mode = 'draft'
+            try:
+                self._persist_planning(updated)
+            except Exception:
+                self._planning_mode = old_mode
+                raise
+            self._setup = updated
             self._last_strategy_admission = None
             return self._publish()
 
@@ -1104,6 +1162,8 @@ class RealProjectFlow:
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
+            if self._planning_mode == 'saved':
+                raise ProjectFlowError('Choose Edit a copy before requesting suggestions.')
             draft = self._setup
             seed = dict(draft._term(draft._group(group_id),term_id))
             if not self._cloud_enabled or not seed["enabled"] or draft.preview_data is not None:
@@ -1144,7 +1204,10 @@ class RealProjectFlow:
             if (self._closed or not self._cloud_enabled or project is not self.project or draft is not self._setup
                     or draft.preview_data is not None or not draft.seed_is_current(gid,tid,seed)):
                 raise ProjectFlowError("cloud_preview_changed")
-            draft.local_offers(gid,tid,generated,eid)
+            updated = deepcopy(draft)
+            updated.local_offers(gid,tid,generated,eid)
+            self._persist_planning(updated)
+            self._setup = updated
             return self._publish()
 
     def open_native_ris(self,path):
@@ -1190,6 +1253,7 @@ class RealProjectFlow:
         from research_y.master_exports import export_results
         with self._guard:
             self._require_open()
+            self._saved_output = None
             if not self._master or self._master.revision != revision or self._master.run != self.selected_run_id:
                 raise ProjectFlowError("Refresh the master results before export.")
             filename(name)
@@ -1198,6 +1262,69 @@ class RealProjectFlow:
                         scope=scope,include_abstracts=include_abstracts,abstract_sources=abstract_sources)
             except FileExistsError:
                 raise ProjectFlowError("A file with this name already exists.") from None
+            self._remember_output(parent / name, self._master_page['export']['sha256'])
+            return self._publish()
+
+    def _remember_output(self, path, digest=None):
+        with Directory(path.parent) as directory:
+            checksum, size = directory.verify_digest(path.name, digest=digest)
+        self._saved_output = dict(path=path, sha256=checksum, size=size)
+
+    def output_path(self, folder=False):
+        with self._guard:
+            saved = self._saved_output
+            if not saved:
+                raise ProjectFlowError('Save and verify an export first.')
+            path = saved['path']
+            with Directory(path.parent) as directory:
+                directory.verify_digest(path.name, digest=saved['sha256'])
+            return path.parent if folder else path
+
+    def save_workbook_to(self, parent, name, *, reviewed=False):
+        """A single explicit Save combines the existing recoverable operations."""
+        from research_y.export_files import filename
+        with self._guard:
+            self._require_open()
+            self._require_no_unresolved_selection()
+            filename(name)
+            if not name.lower().endswith('.xlsx'):
+                raise ProjectFlowError('Use an .xlsx filename for a workbook.')
+            self._saved_output = None
+            existing = next((r for r in self.snapshot['exports'] if r['run_id'] == self.selected_run_id and r['filename'] == name), None)
+            if existing:
+                raise ProjectFlowError('Open this filename in Previous report exports to continue the existing export.')
+            self.selected_export_id = self.retained_export_report = self.observation = None
+            self._clear_external()
+            self.offer_external_directory(parent)
+            self.confirm_external_directory()
+            if reviewed:
+                self.inspect_run_execution_board()
+            self.prepare(name, reviewed_master=reviewed)
+            self.resume()
+            self.observe()
+            if not self.observation or not self.observation.get('audited_success'):
+                raise ProjectFlowError('The workbook is not yet verified. Continue the existing export from Previous report exports.')
+            self._remember_output(parent / name, self.observation['request']['artifact_sha256'])
+            return self._publish()
+
+    def continue_workbook(self, parent=None):
+        with self._guard:
+            self._require_open()
+            row = self._selected_export()
+            self._saved_output = None
+            if row['destination_kind'] == 'external':
+                if parent is None:
+                    raise ProjectFlowError('Choose the original export folder.')
+                self.offer_external_directory(parent)
+                self.confirm_external_directory()
+            self.observe()
+            if not self.observation.get('audited_success'):
+                self.resume()
+                self.observe()
+            if not self.observation.get('audited_success'):
+                raise ProjectFlowError('The existing workbook could not be verified. See Advanced export recovery.')
+            if parent is not None:
+                self._remember_output(parent / row['filename'], self.observation['request']['artifact_sha256'])
             return self._publish()
 
     def _clear_master(self):
@@ -1222,7 +1349,9 @@ class RealProjectFlow:
                     updated["last_lookup"] = result["status"]
                     self._master_page["detail"] = updated
                 return self._publish()
-        if operation == "capture":
+        if operation == 'ensure' and self._master_page is not None:
+            return self.state()
+        if operation in ('capture', 'ensure'):
             with self._guard:
                 self._require_open()
                 project,run = self.project,self.selected_run_id
@@ -1251,6 +1380,11 @@ class RealProjectFlow:
                 offset += current["page_size"] * data["direction"]
                 if data["direction"] not in (-1,1) or not 0<=offset<current["matching"]:
                     raise ProjectFlowError("Invalid result page.")
+            elif operation == 'select_page':
+                visible = [r['publication_id'] for r in current['rows']]
+                if data.get('visible') != visible:
+                    raise ProjectFlowError('The results page changed. Select rows on the current page.')
+                self._master.select_page(visible, data.get('ids', []))
             elif operation == "select":
                 ids = data.get("ids",[])
                 if not set(ids) <= {r["publication_id"] for r in current["rows"]}:
@@ -1597,10 +1731,24 @@ class RealProjectFlow:
                                                  for row in self._study_queue["rows"]):
                 self._queue_study_id = self._study_view = self._study_proposal = None
 
+    def decide_study_form(self, choices, actor, rationale, revision):
+        with self._guard:
+            pub_id = self._visible_study()
+            if not self._study_view or (self._study_view['publication_id'], self._study_view['revision']) != (pub_id, revision):
+                raise ProjectFlowError('publication_view_stale')
+            proposals = ({key: self._study_proposal['event_id'] for key in self._study_proposal['proposals']}
+                         if self._study_proposal else {})
+            self._study_view = study_classification.review_classifications(self.project, pub_id, choices=choices,
+                actor=actor, rationale=rationale, expected_revision=revision, confirmed=True, proposals=proposals)
+            self._refresh_study_queue()
+            return self._publish()
+
     def propose_local_terms(self, group_id, term_id):
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
+            if self._planning_mode == 'saved':
+                raise ProjectFlowError('Choose Edit a copy before requesting suggestions.')
             if not self._local_enabled or self._local_assistant is None:
                 raise ProjectFlowError("local_assistant_unavailable")
             draft = self._setup
@@ -1621,18 +1769,28 @@ class RealProjectFlow:
                 db.execute("BEGIN IMMEDIATE")
                 event_id = append_audit(db, "local_term_proposal_v1", dict(version=1, at_utc=_utc_now(),
                         group_id=group_id, term_id=term_id, actor=draft.approved_by or None, **generated))
-            draft.local_offers(group_id, term_id, generated, event_id)
+            updated = deepcopy(draft)
+            updated.local_offers(group_id, term_id, generated, event_id)
+            self._persist_planning(updated)
+            self._setup = updated
             return self._publish()
 
     def preview_setup(self):
         with self._guard:
             self._require_open()
             self._require_no_unresolved_selection()
+            if self._planning_mode == 'saved':
+                raise ProjectFlowError('Choose Edit a copy to create a revised search.')
             try:
                 self._setup.preview()
             except (DraftError, QueryCompilationError, ValueError, TypeError):
                 raise ProjectFlowError('strategy_preview_invalid') from None
             return self._publish()
+
+    def _admission_payload(self):
+        return dict(admission_theme=self._setup.theme, admission_objectives=self._setup.objectives,
+                    admission_approved_by=self._setup.approved_by, admission_groups=self._setup.approved_groups(),
+                    admission_scope=deepcopy(self._setup.scope), approval_confirmed=True)
 
     def approve_setup(self):
         """Only the explicit user-facing approval click invokes this method.
@@ -1663,14 +1821,12 @@ class RealProjectFlow:
                 if self._setup.preview_data is None:
                     raise ProjectFlowError('strategy_preview_required')
                 self._pending_admission_id = str(uuid4())
-                self._pending_admission_payload = dict(
-                    admission_theme=self._setup.theme,
-                    admission_objectives=self._setup.objectives,
-                    admission_approved_by=self._setup.approved_by,
-                    admission_groups=self._setup.approved_groups(),
-                    admission_scope=deepcopy(self._setup.scope),
-                    approval_confirmed=True,
-                )
+                self._pending_admission_payload = self._admission_payload()
+                try:
+                    self._persist_planning()
+                except Exception:
+                    self._pending_admission_id = self._pending_admission_payload = None
+                    raise
             request_id = self._pending_admission_id
             payload = self._pending_admission_payload
             self._publish()
@@ -1703,11 +1859,12 @@ class RealProjectFlow:
                     'query_count': result['query_count'],
                     'source_retrieval_verified': False,
                 }
+                self._planning_mode = 'saved'
+                self._planning_base = result['version_number']
+                self._setup.revise_preview()
+                self._persist_planning()
                 self._pending_admission_id = None
                 self._pending_admission_payload = None
-                researcher_name = self._setup.approved_by
-                self._setup = StrategyDraft(self._saved_setup.theme, self._saved_setup.objectives)
-                self._setup.approved_by = researcher_name
                 # No implicit run selection or source execution.
                 return self._publish()
             except ProjectFlowError:
@@ -5023,6 +5180,11 @@ class RealProjectFlow:
                 'recent_projects': list(self._recent_items),
                 'recent_history_error': self._recent_error,
                 'strategy_draft': self._setup.state(),
+                'planning_mode': self._planning_mode,
+                'planning_base_version': self._planning_base,
+                'researcher_name': self._saved_researcher_name or self._setup.approved_by,
+                'saved_output': (dict(filename=self._saved_output['path'].name, location=str(self._saved_output['path']))
+                                 if self._saved_output else None),
                 'saved_question': (dict(theme=self._saved_setup.theme, objectives=self._saved_setup.objectives)
                                    if self.project and self._saved_setup.theme else None),
                 'local_assistant_installed': bool(self._local_assistant and self._local_assistant.installed),

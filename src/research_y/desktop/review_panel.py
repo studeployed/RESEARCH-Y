@@ -22,7 +22,7 @@ def render_review_tasks(ui,state,act,memory):
         for row in page["rows"]:
             if kind == "conference":
                 ui.label(f'{row["title"]} · {row["locator"]} · {row["reason"]} · document {row["document_sha256"]}')
-                actor=ui.input("Reviewer")
+                actor=ui.input("Reviewer", value=state.get('researcher_name', ''))
                 note=ui.input("What did you verify in the source?")
                 choice=ui.select(["reviewed_in_source","not_an_individual_abstract"],label="Outcome")
                 ui.button("Record extraction review",on_click=lambda r=row,a=actor,n=note,c=choice:
@@ -39,7 +39,7 @@ def render_review_tasks(ui,state,act,memory):
             return
         selected=dict(id=case["id"],revision=case["revision"])
         ui.label(str(case["title"]))
-        actor=ui.input("Researcher reviewing evidence")
+        actor=ui.input("Researcher reviewing evidence", value=state.get('researcher_name', ''))
         note=ui.input("Evidence and reason for this decision")
         for source in case["sources"]:
             ui.label(source["source"]+" "+source["record_id"]+" · "+

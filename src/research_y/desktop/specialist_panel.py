@@ -20,7 +20,7 @@ def society_panel(ui,state,act,*,native):
                   send("directory",terms=_lines(terms.value))).props("data-testid=society-search")
         if "directory" not in specialist:
             return
-        actor = ui.input("Researcher").props("data-testid=society-actor")
+        actor = ui.input("Researcher", value=state.get('researcher_name', '')).props("data-testid=society-actor")
         directory = {r["society_id"]:r["name"] for r in specialist["directory"]}
         for candidate in specialist["suggestions"]:
             with ui.row():
@@ -114,7 +114,7 @@ def publication_panel(ui,state,detail,act,native):
             if target["request_url"] and not specialist.get("lookup_result"):
                 ui.label("Crossref will receive this DOI and your contact email: "+target["doi"])
                 contact=ui.input("Contact email for Crossref")
-                lookup_actor=ui.input("Researcher requesting lookup")
+                lookup_actor=ui.input("Researcher requesting lookup", value=state.get('researcher_name', ''))
                 refresh=ui.checkbox("Request fresh metadata even if a response is cached")
                 ui.button("Confirm DOI lookup",on_click=lambda:send("enrichment_lookup",contact=contact.value,
                           actor=lookup_actor.value,revision=target["revision"],refresh=refresh.value))
@@ -147,7 +147,7 @@ def publication_panel(ui,state,detail,act,native):
                         decision = task["decision"]
                         ui.label(decision["disposition"]+" · "+decision["actor"]+" · "+decision["note"])
                     elif task["original_current"]:
-                        reviewer=ui.input("Researcher completing review")
+                        reviewer=ui.input("Researcher completing review", value=state.get('researcher_name', ''))
                         outcome=ui.select(["not_an_individual_abstract","reviewed_in_source"],label="Outcome")
                         note=ui.input("Source observation")
                         ui.button("Record block review",on_click=lambda tid=task["task_id"], who=reviewer,
@@ -177,7 +177,7 @@ def publication_panel(ui,state,detail,act,native):
         preview=specialist.get("conference")
         if preview and preview["original_retrieval_id"] in eligible:
             ui.label(f'Extracted blocks: {preview["total"]}. Unresolved blocks: {preview["unresolved_total"]}.')
-            actor=ui.input("Researcher reviewing extraction")
+            actor=ui.input("Researcher reviewing extraction", value=state.get('researcher_name', ''))
             for unresolved in preview["unresolved"]:
                 ui.label(unresolved["locator"]+" · "+unresolved["reason"])
                 ui.button("Save block for follow-up",on_click=lambda loc=unresolved["locator"]:
@@ -251,7 +251,7 @@ def pdf_review_panel(ui, specialist, source, eligible, act, send):
             ui.label("Printed page " + printed_span)
             if block["pdf_page_url"]:
                 ui.label(block["pdf_page_url"])
-            reviewer = ui.input("Researcher confirming PDF passage")
+            reviewer = ui.input("Researcher confirming PDF passage", value=state.get('researcher_name', ''))
             rights = ui.checkbox("I verified this individual abstract and may retain its text locally")
             ui.button("Retain verified PDF abstract",on_click=lambda:send("pdf_admit",retrieval_id=rid,
                       revision=block["revision"],actor=reviewer.value,retention_authorized=rights.value))

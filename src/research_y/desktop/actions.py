@@ -3,6 +3,10 @@ from research_y.desktop.flow import ProjectFlowError
 
 
 def perform_action(flow, name, value=None):
+    if name == 'study_confirm_form':
+        return flow.decide_study_form(**value)
+    if name == 'begin_plan':
+        return flow.begin_plan(blank=value is True)
     if name == "review_tasks":
         return flow.review_task_action(value["operation"], value["data"])
     if name=="record_known_check":

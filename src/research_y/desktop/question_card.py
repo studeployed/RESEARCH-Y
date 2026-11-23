@@ -5,9 +5,10 @@ def render_question(ui, workspace, state, act):
     draft = state['strategy_draft']
     saved = state['saved_question']
     project_id = workspace.project_id
+    heading = {**draft, **(saved or {}), 'approved_by': state.get('researcher_name') or draft['approved_by']}
 
     def edit():
-        workspace.question_inputs = {key: draft[key] for key in ('theme', 'objectives', 'approved_by')}
+        workspace.question_inputs = {key: heading[key] for key in ('theme', 'objectives', 'approved_by')}
         card.refresh()
 
     def cancel():
@@ -25,14 +26,14 @@ def render_question(ui, workspace, state, act):
                 ui.button('Edit question', on_click=edit).props('outline data-testid=question-edit')
                 ui.label('✓ Saved').classes('question-saved').props(
                     'role=status aria-live=polite data-testid=question-saved')
-            if not draft['approved_by']:
+            if not heading['approved_by']:
                 ui.label('Use Edit question to save your name for this project.').classes('message info')
             else:
-                ui.label('Researcher · ' + draft['approved_by']).classes('setting-summary')
+                ui.label('Researcher · ' + heading['approved_by']).classes('setting-summary')
             return
 
         if workspace.question_inputs is None:
-            workspace.question_inputs = {key: draft[key] for key in ('theme', 'objectives', 'approved_by')}
+            workspace.question_inputs = {key: heading[key] for key in ('theme', 'objectives', 'approved_by')}
         values = workspace.question_inputs
         theme = ui.input('Research theme').bind_value(values, 'theme').props('data-testid=setup-theme')
         objectives = ui.textarea('Research objectives (optional)').bind_value(values, 'objectives').props(

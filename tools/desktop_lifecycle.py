@@ -86,6 +86,9 @@ def run_window(stage, workspace, folder, run_id):
 
     async def click(selector):
         await wait_for(lambda: visible(selector), selector)
+        async def available():
+            return await js("!document.querySelector('[inert]')")
+        await wait_for(available, 'action_finished')
         await js(f"document.querySelector({json.dumps(selector)}).click(); true")
 
     async def fill(selector, value):
@@ -243,10 +246,11 @@ def run_window(stage, workspace, folder, run_id):
                 const limits = rect('[data-testid=review-limits]');
                 const next = rect('[data-testid=preflight-offer]');
                 return context.left >= 0 && answers.right <= innerWidth &&
-                    context.bottom <= innerHeight && answers.bottom <= innerHeight &&
                     limits.top >= context.top && limits.bottom <= context.bottom &&
                     next.top >= 0 && next.bottom <= innerHeight && next.right <= innerWidth &&
-                    (innerWidth > 700 ? context.right <= answers.left + 1 : context.bottom <= answers.top + 1);
+                    (innerWidth > 700 ? context.right <= answers.left + 1 && context.bottom <= innerHeight && answers.bottom <= innerHeight
+                     : context.bottom <= answers.top + 1 && getComputedStyle(document.querySelector('.review-comparison')).overflowY === 'auto'
+                       && getComputedStyle(document.querySelector('.review-answers')).overflowY === 'visible');
             })()"""):
                 raise RuntimeError('review_comparison_or_limits_out_of_view')
         app.native.main_window.resize(1200,850)
@@ -297,7 +301,7 @@ def run_window(stage, workspace, folder, run_id):
                 await click('[data-testid=desktop-open]')
                 await wait_for(lambda: visible('[data-testid=operation-error]'), 'redirected_project_rejection')
                 message = await js("document.querySelector('[data-testid=operation-error]').textContent")
-                if 'invalid_project' not in message or flow.state()['project']['project_id'] != active:
+                if 'Choose the project folder containing project.ryproj.' not in message or flow.state()['project']['project_id'] != active:
                     raise RuntimeError('redirected_project_selection')
             if stage == 'reopen':
                 if await js("sessionStorage.getItem('research-y-startup-retries')") != "1":
@@ -337,12 +341,12 @@ def run_window(stage, workspace, folder, run_id):
             directory = flow.state()['specialist']['directory']
             if [entry['name'] for entry in directory] != ['Fixture Society']:
                 raise RuntimeError('project_society_directory_mismatch')
-            await click('[data-testid=master-panel] .q-item')
             await click('[data-testid=master-refresh]')
             await wait_for(lambda: visible('[data-testid=master-table]'), 'accessible_master_table')
             if flow.state()['master_results']['total'] != 0:
                 raise RuntimeError('unexpected_fixture_publications')
             await click('[data-testid=stage-export]')
+            await click('[data-testid=manifest-advanced-panel] .q-item')
             await click('[data-testid=manifest-panel] .q-item')
             if flow.state()['selected_run_id'] != run_id:
                 raise RuntimeError('wrong_selected_run')

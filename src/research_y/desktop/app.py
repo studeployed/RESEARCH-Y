@@ -11,6 +11,8 @@ import secrets
 import socket
 import sys
 import webbrowser
+from contextlib import asynccontextmanager
+from research_y.desktop.feedback import explain, SUCCESS
 
 from research_y.desktop.actions import perform_action
 from research_y.desktop.flow import ProjectFlowError, RealProjectFlow
@@ -75,6 +77,28 @@ def build_page(app, ui, flow, settings_warnings=()):
         error = None
         study_edits = {}
         workspace = ProjectWorkspace()
+        busy_count = 0
+
+        @asynccontextmanager
+        async def feedback(action):
+            nonlocal busy_count
+            busy_count += 1
+            action_surface.props('inert aria-busy=true')
+            launcher.props('inert aria-busy=true')
+            action_status.set_text('Working…')
+            action_status.classes(remove='error success', add='info')
+            yield_ok = False
+            outcome = {}
+            try:
+                yield outcome
+                yield_ok = error is None
+            finally:
+                busy_count -= 1
+                if not busy_count:
+                    action_surface.props(remove='inert aria-busy')
+                    launcher.props(remove='inert aria-busy')
+                action_status.set_text(outcome.get('message') or (SUCCESS.get(action, 'Action finished.') if yield_ok else explain(error or 'operation_unavailable')))
+                action_status.classes(remove='info error success', add='success' if yield_ok else 'error')
         # Run in the authenticated document. Native window RPC shares a response
         # queue with folder selection, so a background probe must never use it.
         if flow.project is None:
@@ -84,6 +108,8 @@ def build_page(app, ui, flow, settings_warnings=()):
         def panel():
             if flow.project is not None and workspace.project_id != str(flow.project.identifier):
                 launcher.set_visibility(False)
+                branding.set_visibility(False)
+                picker_status.set_visibility(False)
                 switch_project.set_text('Switch project')
                 switch_project.set_visibility(True)
             render_project_panel(ui, flow, act, native=True, error=error, study_edits=study_edits,
@@ -102,21 +128,26 @@ def build_page(app, ui, flow, settings_warnings=()):
                     (action == "specialist" and value.get("action") == "enrichment_lookup")
                     or (action == "master_results" and value.get("operation") == "lookup")):
                 action_lock = crossref
-            if lock.locked() or action_lock.locked():
+            queue_selection = action == 'master_results' and value.get('operation') == 'select_page'
+            if (lock.locked() or action_lock.locked()) and not queue_selection:
+                action_status.set_text('Another action is in progress. Finish any open picker, or wait for the current action.')
                 if action == 'save_question' or repeat_entry:
                     return 'Another action is in progress. Try Save question again in a moment.'
                 if project_picker:
                     ui.notify('Another action is in progress. If a Windows picker is open, finish or cancel it first.')
                 return
-            async with action_lock:
+            async with action_lock, feedback(action) as outcome:
+                error = None
                 try:
                     if action == 'save_question':
                         project_id, values = value
                         if flow.project is None or project_id != str(flow.project.identifier):
+                            error = 'The open project has changed. Open the intended project before saving.'
                             return 'The open project has changed. Open the intended project before saving.'
                         try:
                             await asyncio.to_thread(flow.edit_setup, 'heading', values)
                         except ProjectFlowError as exc:
+                            error = str(exc)
                             if str(exc) == 'invalid_setup_input':
                                 return 'Check your theme and name for length or unusual characters, then save again.'
                             return 'Could not confirm the save. ' + str(exc)
@@ -137,11 +168,13 @@ def build_page(app, ui, flow, settings_warnings=()):
                     elif action == "native_ris":
                         chosen = await select_ris_document(app.native.main_window)
                         if chosen is None:
+                            outcome['message'] = 'Selection cancelled.'
                             return
                         await asyncio.to_thread(flow.open_native_ris,chosen)
                     elif action == "native_attach_pdf":
                         chosen = await select_conference_document(app.native.main_window,pdf=True)
                         if chosen is None:
+                            outcome['message'] = 'Selection cancelled.'
                             return
                         await asyncio.to_thread(flow.attach_master_pdf,chosen,**value)
                     elif action == "native_diagnostics":
@@ -153,8 +186,26 @@ def build_page(app, ui, flow, settings_warnings=()):
                     elif action == "native_master_export":
                         folder = await select_from_native_window(app.native.main_window)
                         if folder is None:
+                            outcome['message'] = 'Selection cancelled.'
                             return
                         await asyncio.to_thread(flow.export_master_to,folder,**value)
+                    elif action == 'native_workbook_save':
+                        folder = await select_from_native_window(app.native.main_window)
+                        if folder is None:
+                            outcome['message'] = 'Selection cancelled.'
+                            return
+                        await asyncio.to_thread(flow.save_workbook_to, folder, value['name'], reviewed=value['reviewed'])
+                    elif action == 'native_workbook_continue':
+                        current = next((r for r in flow.state()['exports'] if r['export_id'] == flow.state()['selected_export_id']), None)
+                        folder = None
+                        if current and current['destination_kind'] == 'external':
+                            folder = await select_from_native_window(app.native.main_window)
+                            if folder is None:
+                                return
+                        await asyncio.to_thread(flow.continue_workbook, folder)
+                    elif action == 'native_open_output':
+                        target = await asyncio.to_thread(flow.output_path, value is True)
+                        await asyncio.to_thread(os.startfile, target)
                     elif action == "native_import_archive":
                         path = await select_project_archive(app.native.main_window)
                         if path is None:
@@ -175,11 +226,13 @@ def build_page(app, ui, flow, settings_warnings=()):
                     elif action == "native_pdf":
                         chosen = await select_conference_document(app.native.main_window,pdf=True)
                         if chosen is None:
+                            outcome['message'] = 'Selection cancelled.'
                             return
                         await asyncio.to_thread(flow.open_native_pdf,chosen,**value)
                     elif action == "native_conference":
                         chosen = await select_conference_document(app.native.main_window)
                         if chosen is None:
+                            outcome['message'] = 'Selection cancelled.'
                             return
                         await asyncio.to_thread(flow.preview_native_conference, chosen, **value)
                     elif project_picker:
@@ -214,9 +267,18 @@ def build_page(app, ui, flow, settings_warnings=()):
                             await asyncio.to_thread(flow.offer_external_directory, folder)
                     else:
                         if action == 'setup_preview' and workspace.question_inputs is not None:
-                            ui.notify('Save your question before previewing the search.')
+                            outcome['message'] = 'Save your question before previewing the search.'
+                            ui.notify(outcome['message'])
                             return
                         await asyncio.to_thread(perform_action, flow, action, value)
+                        if action in ('select_run', 'preflight_record'):
+                            await asyncio.to_thread(flow.inspect_run_execution_board)
+                        if action == 'run_board_step':
+                            from research_y.desktop.collection_panel import TITLES
+                            board = flow.state().get('run_execution_board') or {}
+                            step = next((r['next_step'] for r in board.get('queries', []) if r['query_id'] == value['query_id']), None)
+                            workspace.collection_section = TITLES.get(step)
+                            workspace.stage = 'search'
                         if action == 'preflight_inspect':
                             workspace.review_open = True
                             workspace.review_saved = bool(flow.state()['preflight_report']['last_review'])
@@ -232,6 +294,9 @@ def build_page(app, ui, flow, settings_warnings=()):
                             workspace.stage = 'search'
                         if action == 'cloud_offer':
                             workspace.open_sections[('plan', 'Optional search assistant')] = True
+                        if action in ('candidate_queue_review', 'study_inspect', 'study_suggest'):
+                            workspace.stage = 'results'
+                            workspace.open_sections[('results', 'Provisional publications and comparisons')] = True
                     error = None
                 except (ProjectFlowError, NativeFolderError, ArchiveError) as exc:
                     error = str(exc)
@@ -248,8 +313,15 @@ def build_page(app, ui, flow, settings_warnings=()):
                         'project_creation_failed': 'Could not create the project. Check that the parent folder is writable and the new folder name is available.',
                         'native_selection_unsafe': 'Choose a local folder that the application can open directly.',
                     }.get(error, error))
-                panel.refresh()
-                return True
+                if not error or action not in ('save_question', 'setup_edit'):
+                    panel.refresh()
+                    if action == 'candidate_queue_review':
+                        ui.timer(.1, lambda: ui.run_javascript("document.querySelector('[data-testid=candidate-heading]')?.scrollIntoView({block:'center'})"), once=True)
+                    if action == 'run_board_step':
+                        ui.timer(.1, lambda: ui.run_javascript("document.querySelector('[data-testid=collection-current]')?.scrollIntoView({block:'start'})"), once=True)
+                if error:
+                    ui.notify(explain(error), type='negative')
+                return not bool(error)
 
         async def refresh_workers():
             state = flow.state()
@@ -265,8 +337,9 @@ def build_page(app, ui, flow, settings_warnings=()):
                     break
 
         ui.add_css(field_styles)
-        ui.label('RESEARCH-Y').classes('app-title').props('data-testid=desktop-title')
-        with ui.element('div').classes('app-tools'):
+        branding = ui.label('RESEARCH-Y').classes('app-title').props('data-testid=desktop-title')
+        branding.set_visibility(flow.project is None)
+        with ui.element('div').classes('app-tools') as app_tools:
             with ui.expansion('How to use RESEARCH-Y', icon='help_outline').props('dense data-testid=quick-start'):
                 ui.markdown(quick_start)
             from research_y.desktop.settings import render_settings
@@ -277,7 +350,8 @@ def build_page(app, ui, flow, settings_warnings=()):
             launcher.set_visibility(not launcher.visible)
             switch_project.set_text('Close project chooser' if launcher.visible else 'Switch project')
 
-        switch_project = ui.button('Switch project', on_click=toggle_launcher).props('flat data-testid=switch-project')
+        with app_tools:
+            switch_project = ui.button('Switch project', on_click=toggle_launcher).props('flat data-testid=switch-project')
         switch_project.set_visibility(flow.project is not None)
         with ui.column().classes('project-launcher').props('data-testid=project-launcher') as launcher:
             with ui.element('div').classes('project-choices'):
@@ -298,6 +372,7 @@ def build_page(app, ui, flow, settings_warnings=()):
                           act("native_import_archive",restored_name.value)).props("data-testid=import-archive")
         launcher.set_visibility(flow.project is None)
         picker_status = ui.label('Connecting to the desktop…').props('role=status aria-live=polite data-testid=project-picker-status')
+        action_status = ui.label('').classes('message action-status').props('role=status aria-live=polite data-testid=action-status')
         project_buttons = (open_folder, open_index, create)
         for button in project_buttons:
             button.disable()
@@ -309,7 +384,8 @@ def build_page(app, ui, flow, settings_warnings=()):
                 picker_status.set_text('')
 
         ui.context.client.on_connect(ready)
-        panel()
+        with ui.column().props('data-testid=action-surface') as action_surface:
+            panel()
         ui.timer(2, refresh_workers)
 
 

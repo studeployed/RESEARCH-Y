@@ -175,6 +175,15 @@ def read_classification(project, publication_id):
 
 def review_classification(project, publication_id, *, dimension, labels, actor, rationale, expected_revision,
                           confirmed, proposal_event_id=None, earlier_decision=None):
+    with _validated_project_connection(project) as db:
+        db.execute("BEGIN IMMEDIATE")
+        return _review_classification(db, publication_id, dimension=dimension, labels=labels, actor=actor,
+            rationale=rationale, expected_revision=expected_revision, confirmed=confirmed,
+            proposal_event_id=proposal_event_id, earlier_decision=earlier_decision)
+
+
+def _review_classification(db, publication_id, *, dimension, labels, actor, rationale, expected_revision,
+                           confirmed, proposal_event_id=None, earlier_decision=None):
     if (confirmed is not True or dimension not in LABELS or not isinstance(labels, list) or not labels
             or any(not isinstance(v, str) or v not in LABELS[dimension] for v in labels)
             or len(labels) != len(set(labels)) or len(labels) > 1 and (dimension != "design" or "unclear" in labels)):
@@ -182,41 +191,66 @@ def review_classification(project, publication_id, *, dimension, labels, actor, 
     labels = _ordered(labels)
     identity._text(actor, 200)
     identity._text(rationale, 2000)
+    view = _view(db, publication_id)
+    prior = view["decisions"].get(dimension)
+    fields = [publication_id, dimension, labels, actor, rationale, expected_revision]
+    if proposal_event_id is not None:
+        proposal = identity._event(db, proposal_event_id, "local_study_proposal_v1")
+        if (proposal["publication_id"] != publication_id or proposal["evidence_revision"] != view["evidence_revision"]
+                or dimension not in proposal["generated"]["proposals"]):
+            raise identity.StalePublicationError("Model proposal no longer matches the source")
+        fields.append(proposal_event_id)
+    if earlier_decision is not None:
+        from research_y.run_comparison import validate_carried_decision
+        validate_carried_decision(db,publication_id,dimension,labels,earlier_decision)
+        fields.append(earlier_decision)
+    request = identity._hash(fields)
+    if prior and prior["request_sha256"] == request:
+        return view
+    if view["revision"] != expected_revision:
+        raise identity.StalePublicationError("Review the changed classification evidence")
+    stamp, cid = _utc_now(), str(uuid4())
+    status = "user-confirmed" if labels == view["proposed"][dimension] else "user-corrected"
+    event = dict(version=1, at_utc=stamp, publication_id=publication_id, classification_id=cid,
+                 dimension=dimension, labels=labels, actor=actor, rationale=rationale, rule=RULE,
+                 status=status, request_sha256=request, evidence_revision=view["evidence_revision"],
+                 prior_event_id=prior["event_id"] if prior else None)
+    if proposal_event_id is not None:
+        event["proposal_event_id"] = proposal_event_id
+    if earlier_decision is not None:
+        event["earlier_decision"] = earlier_decision
+    receipt = identity._audit(db, EVENT, event)
+    db.execute("INSERT INTO classifications VALUES(?,?,?,?,?,?,?)",
+               (cid, publication_id, dimension, identity._json(labels), status,
+                identity._json({"event_id": receipt}), stamp))
+    return _view(db, publication_id)
+
+
+def review_classifications(project, publication_id, *, choices, actor, rationale, expected_revision,
+                           confirmed, proposals=None):
+    """Save the complete displayed review atomically, with per-dimension receipts."""
+    if not isinstance(choices, dict) or set(choices) != set(LABELS) or confirmed is not True:
+        raise ValueError('Confirm all displayed classification choices.')
+    proposals = proposals or {}
+    if not isinstance(proposals, dict) or not set(proposals) <= set(LABELS):
+        raise ValueError('Invalid classification proposals.')
+    request = identity._hash([publication_id, choices, actor, rationale, expected_revision, proposals])
     with _validated_project_connection(project) as db:
-        db.execute("BEGIN IMMEDIATE")
+        db.execute('BEGIN IMMEDIATE')
         view = _view(db, publication_id)
-        prior = view["decisions"].get(dimension)
-        fields = [publication_id, dimension, labels, actor, rationale, expected_revision]
-        if proposal_event_id is not None:
-            proposal = identity._event(db, proposal_event_id, "local_study_proposal_v1")
-            if (proposal["publication_id"] != publication_id or proposal["evidence_revision"] != view["evidence_revision"]
-                    or dimension not in proposal["generated"]["proposals"]):
-                raise identity.StalePublicationError("Model proposal no longer matches the source")
-            fields.append(proposal_event_id)
-        if earlier_decision is not None:
-            from research_y.run_comparison import validate_carried_decision
-            validate_carried_decision(db,publication_id,dimension,labels,earlier_decision)
-            fields.append(earlier_decision)
-        request = identity._hash(fields)
-        if prior and prior["request_sha256"] == request:
+        prior = db.execute("SELECT 1 FROM audit_events WHERE event_type='classification_form_v1' "
+                           "AND json_extract(details_json, '$.request_sha256')=?", (request,)).fetchone()
+        if prior:
             return view
-        if view["revision"] != expected_revision:
-            raise identity.StalePublicationError("Review the changed classification evidence")
-        stamp, cid = _utc_now(), str(uuid4())
-        status = "user-confirmed" if labels == view["proposed"][dimension] else "user-corrected"
-        event = dict(version=1, at_utc=stamp, publication_id=publication_id, classification_id=cid,
-                     dimension=dimension, labels=labels, actor=actor, rationale=rationale, rule=RULE,
-                     status=status, request_sha256=request, evidence_revision=view["evidence_revision"],
-                     prior_event_id=prior["event_id"] if prior else None)
-        if proposal_event_id is not None:
-            event["proposal_event_id"] = proposal_event_id
-        if earlier_decision is not None:
-            event["earlier_decision"] = earlier_decision
-        receipt = identity._audit(db, EVENT, event)
-        db.execute("INSERT INTO classifications VALUES(?,?,?,?,?,?,?)",
-                   (cid, publication_id, dimension, identity._json(labels), status,
-                    identity._json({"event_id": receipt}), stamp))
-        return _view(db, publication_id)
+        if view['revision'] != expected_revision:
+            raise identity.StalePublicationError('Review the changed classification evidence')
+        for dimension, labels in choices.items():
+            view = _review_classification(db, publication_id, dimension=dimension, labels=labels,
+                actor=actor, rationale=rationale, expected_revision=view['revision'], confirmed=True,
+                proposal_event_id=proposals.get(dimension))
+        identity._audit(db, 'classification_form_v1', dict(at_utc=_utc_now(), request_sha256=request,
+                        publication_id=publication_id, dimensions=list(choices), actor=actor))
+        return view
 
 
 def visible_in_filtered_view(view, *, hide_non_english=False, hide_non_human_only=False):

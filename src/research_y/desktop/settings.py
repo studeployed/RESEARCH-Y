@@ -62,17 +62,24 @@ def render_settings(ui,flow):
     from research_y.desktop.flow import ProjectFlowError
     state=flow.state()
     with ui.expansion("Application and source settings").props("data-testid=desktop-settings"):
-        ui.label("Store these entries as Windows Generic Credentials, then restart RESEARCH-Y after making changes.")
+        ui.label('Connect your databases').classes('section-title')
+        ui.label('1. Open Credential Manager. Choose Windows Credentials, then Add a generic credential.')
         async def credentials():
             try:
                 await asyncio.to_thread(open_credential_manager)
             except OSError:
                 ui.notify("Open Credential Manager from the Windows Start menu.")
         ui.button("Open Windows Credential Manager",on_click=credentials)
-        ui.label("RESEARCH-Y/PubMed · Use your NCBI contact email as username and optional API key as password.")
-        ui.label("RESEARCH-Y/WoS-Starter · Use your institutional Starter API key as password.")
-        ui.label("PubMed · "+("configured" if state["pubmed_profile_configured"] else "credentials unavailable"))
-        ui.label("Web of Science · "+("configured" if state["wos_profile_configured"] else "credentials unavailable"))
+        ui.label('2. Add an entry for each database. Copy the exact address shown below.')
+        with ui.expansion('PubMed credential fields'):
+            ui.label('Internet or network address: ' + PUBMED_TARGET).classes('query-text')
+            ui.label('User name: your NCBI contact email. Password: your NCBI API key, if you have one; otherwise leave it blank.')
+        with ui.expansion('Web of Science credential fields'):
+            ui.label('Internet or network address: ' + STARTER_TARGET).classes('query-text')
+            ui.label('User name: a label such as Web of Science. Password: your institutional Starter API key.')
+        ui.label('3. Save the entries, close RESEARCH-Y and reopen it. Your projects remain saved.')
+        ui.label("PubMed · "+("settings found" if state["pubmed_profile_configured"] else "needs setup")).classes('message info')
+        ui.label("Web of Science · "+("settings found" if state["wos_profile_configured"] else "needs setup")).classes('message info')
         ui.label("The PubMed test sends one count-only request for 1[uid] with your NCBI tool, contact and configured key.")
         result=ui.label("")
         async def check():

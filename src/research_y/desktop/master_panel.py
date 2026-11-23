@@ -1,5 +1,6 @@
 """Keyboard-operable run results, evidence inspection and persistent view controls."""
 import json
+from research_y.desktop.feedback import readable_time
 
 from research_y.master_results import COLUMNS
 
@@ -14,35 +15,29 @@ def _label(value):
 
 def render_master(ui,state,act,*,native):
     view = state.get("master_results")
-    with ui.expansion("Master results",value=view is not None).props("data-testid=master-panel"):
+    with ui.column().props("data-testid=master-panel"):
         def send(operation,**data):
             if view:
                 data["revision"] = view["revision"]
             return act("master_results",dict(operation=operation,data=data))
-        ui.button("Refresh results from project",on_click=lambda:send("capture")).props("data-testid=master-refresh")
         if not view:
+            ui.button("Refresh results from project",on_click=lambda:send("capture")).props("data-testid=master-refresh")
             return
         spec = view["spec"]
-        ui.label(f'{view["matching"]} of {view["total"]} publication identities match · {view["selected"]} selected')
-        ui.label("Snapshot captured "+view["captured_at"])
-        if native:
-            with ui.expansion("Export master results",value="export" in view):
-                file = ui.input("Output filename (.xlsx or .ris)",value="Master Results.xlsx")
-                scope = ui.select({"entire":"Entire captured dataset","filtered":"All filtered matches",
-                                   "selected":"All selected publications"},value="entire",label="Records to export")
-                rights = ui.checkbox("Include abstract text that I am permitted to export")
-                allowed = ui.select(view["options"].get("source",[]),multiple=True,value=[],
-                                    label="Sources whose abstract text I may export")
-                ui.button("Choose folder and write results",on_click=lambda:act("native_master_export",dict(
-                          name=file.value,revision=view["revision"],scope=scope.value,include_abstracts=rights.value,
-                          abstract_sources=allowed.value or [])))
-                if "export" in view:
-                    done = view["export"]
-                    ui.label(f'Saved {done["rows"]} publication rows to {done["filename"]}')
-                    if done.get("scope_filename"):
-                        ui.label("Run status and export scope · "+done["scope_filename"])
-        with ui.expansion("Search, filters and columns"):
-            query = ui.input("Search titles, abstracts, citations or identifiers",value=spec["text"])
+        with ui.row().classes('results-toolbar'):
+            ui.label(f'{view["matching"]} of {view["total"]} articles · {view["selected"]} selected').classes('section-title')
+            ui.button("Refresh results from project",on_click=lambda:send("capture")).props("flat data-testid=master-refresh")
+        ui.label('Tick articles to select them. Open an article for its details.').classes('review-hint')
+        ui.label('Snapshot · ' + readable_time(view['captured_at']) + '. Refresh after collecting more records.').classes('review-hint')
+        search_row = ui.row().classes('results-toolbar')
+        with search_row:
+            query = ui.input('Search articles', value=spec['text']).props('dense clearable data-testid=master-query')
+        def search_text():
+            return send('apply', spec={**spec, 'text': query.value or ''})
+        query.on('keydown.enter', search_text)
+        with search_row:
+            ui.button('Search results', on_click=search_text).props('outline')
+        with ui.expansion("Filters, columns and saved views"):
             languages = ui.checkbox("Hide explicitly non-English records",value=spec.get("hide_non_english",False))
             population = ui.checkbox("Hide reviewed non-human-only records",value=spec.get("hide_non_human_only",False))
             filters = {key:ui.select(values,value=spec["facets"].get(key,[]),label=key.replace("_"," ").title(),
@@ -61,23 +56,22 @@ def render_master(ui,state,act,*,native):
                 ui.button("Load saved view",on_click=lambda:send("load",name=saved.value))
         keys = spec["columns"]
         table_rows = [{k:_label(r[k]) for k in keys} | {"publication_id":r["publication_id"]} for r in view["rows"]]
-        table = ui.table(columns=[dict(name=k,label=k.replace("_"," ").title(),field=k,align="left") for k in keys],
+        table = ui.table(columns=[dict(name=k,label=k.replace("_"," ").title(),field=k,align="left") for k in keys] +
+                         [dict(name='open', label='', field='publication_id', align='left')],
                          rows=table_rows,row_key="publication_id",selection="multiple",
-                         pagination={"rowsPerPage":0}).props('hide-bottom data-testid=master-table aria-label="Master publication results"')
+                         pagination={"rowsPerPage":0}).classes('w-full results-table').props('hide-bottom wrap-cells data-testid=master-table aria-label="Master publication results"')
         table.selected = [r for r,raw in zip(table_rows,view["rows"]) if raw["selected"]]
-        def selection(remove=False):
-            return send("select",ids=[r["publication_id"] for r in table.selected],remove=remove)
+        table.on_select(lambda e: send('select_page', ids=[r['publication_id'] for r in e.selection],
+                                      visible=[r['publication_id'] for r in view['rows']]))
+        table.add_slot('body-cell-open', '''<q-td :props="props"><q-btn flat dense no-caps label="Open"
+                       @click="$parent.$emit('open-record', props.row.publication_id)" /></q-td>''')
+        table.on('open-record', lambda e: send('detail', id=e.args))
         with ui.row():
-            ui.button("Add checked rows to selection",on_click=lambda:selection())
-            ui.button("Remove checked rows",on_click=lambda:selection(True))
             ui.button("Select all matching",on_click=lambda:send("select",all_matching=True))
-            ui.button("Clear matching selection",on_click=lambda:send("select",all_matching=True,remove=True))
+            ui.button("Deselect all matching",on_click=lambda:send("select",all_matching=True,remove=True)).props('flat')
         if view["rows"]:
             start = view["offset"]+1
             ui.label(f'Showing {start}–{start+len(view["rows"])-1} of {view["matching"]}')
-            rows = {r["publication_id"]:str(r.get("title") or r["publication_id"]) for r in view["rows"]}
-            record = ui.select(rows,label="Record to inspect")
-            ui.button("Open source evidence",on_click=lambda:send("detail",id=record.value))
         with ui.row():
             if view["offset"]:
                 ui.button("Previous results",on_click=lambda:send("page",direction=-1))
@@ -104,7 +98,7 @@ def render_master(ui,state,act,*,native):
                     if target["doi"]:
                         ui.label("DOI to send to Crossref · "+target["doi"])
                         contact = ui.input("Contact email sent to Crossref with this DOI")
-                        lookup_actor = ui.input("Researcher requesting metadata")
+                        lookup_actor = ui.input("Researcher requesting metadata", value=state.get('researcher_name', ''))
                         refresh = ui.checkbox("Refresh previously retrieved Crossref metadata")
                         ui.button("Confirm DOI lookup",on_click=lambda:send("lookup",**selected,
                             contact=contact.value,actor=lookup_actor.value,refresh=refresh.value,confirmed=True))
@@ -121,7 +115,7 @@ def render_master(ui,state,act,*,native):
                         ui.label(f"Chosen {field} · {choice['value']}")
                     if choices:
                         chosen = ui.select(choices,label="Source value")
-                        editor = ui.input("Researcher selecting the value")
+                        editor = ui.input("Researcher selecting the value", value=state.get('researcher_name', ''))
                         reason = ui.input("Reason for this selection")
                         def choose_value():
                             if chosen.value in choices:
@@ -148,7 +142,7 @@ def render_master(ui,state,act,*,native):
                         ui.label(attachment.get("original_filename") or attachment.get("relative_path") or "Linked document")
                         ui.label(attachment.get("relative_path") or attachment.get("source_url"))
                     if native:
-                        who=ui.input("Researcher attaching PDF")
+                        who=ui.input("Researcher attaching PDF", value=state.get('researcher_name', ''))
                         origin=ui.input("Document source URL (optional)")
                         permission=ui.checkbox("I may retain this PDF in the project")
                         ui.button("Choose and attach local PDF",on_click=lambda:act("native_attach_pdf",

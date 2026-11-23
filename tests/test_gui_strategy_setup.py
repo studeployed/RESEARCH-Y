@@ -52,6 +52,8 @@ def test_project_researcher_survives_approval_and_reopening(tmp_path):
 
 
 def _seed(flow):
+    if flow.state().get('planning_mode') == 'saved':
+        flow.begin_plan(blank=True)
     flow.edit_setup('heading', {'theme': 'RV and ECMO', 'approved_by': 'Researcher'})
     flow.edit_setup('add_group', {'label': 'Right heart'})
     group_a = flow.state()['strategy_draft']['groups'][0]['group_id']
@@ -67,7 +69,9 @@ def _seed(flow):
 
 def _counts(project):
     with closing(sqlite3.connect(project.database_path)) as db:
-        return tuple(db.execute('SELECT COUNT(*) FROM ' + name).fetchone()[0]
+        # Draft autosaves are distinct from approved research and its audit.
+        return tuple(db.execute('SELECT COUNT(*) FROM ' + name +
+                               (" WHERE event_type != 'planning_draft_v1'" if name == 'audit_events' else '')).fetchone()[0]
                      for name in ('strategy_versions','search_runs',
                                   'source_queries','audit_events'))
 
@@ -97,6 +101,8 @@ def test_saved_objectives_reopen_freeze_and_survive_later_edits(tmp_path):
         flow.open_native_folder(project.root)
         flow.edit_setup("heading", dict(heading, objectives=""))
         flow.open_native_folder(project.root)
+        assert flow.state()['saved_question']['objectives'] == ''
+        flow.begin_plan()
         assert flow.state()["strategy_draft"]["objectives"] == ""
         assert get_strategy_snapshot(project, admitted["strategy_version_id"]) == saved
         from openpyxl import load_workbook

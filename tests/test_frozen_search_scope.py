@@ -59,6 +59,7 @@ def test_source_and_year_choices_reach_normal_desktop_and_cannot_hide_omissions(
         pre=flow.inspect_preflight()["preflight_report"]
         assert pre["sources"][0]["queries"][0]["exact_query"]==exact and "2020" in pre["limitations"]
         # Review context comes from the frozen plan, even if a later draft changes.
+        flow.begin_plan()
         flow.edit_setup("scope",dict(sources=["pubmed"],publication_year=2021))
         from unittest.mock import MagicMock
         from research_y.desktop.search_review import render_context

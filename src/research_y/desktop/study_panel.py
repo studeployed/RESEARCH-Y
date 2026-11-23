@@ -33,6 +33,7 @@ def render_study_panel(ui, state, detail, act, memory=None):
                      on_change=lambda e: memory.update(actor=e.value))
     reason = ui.input("Evidence for this decision", value=memory.get("reason",""),
                       on_change=lambda e: memory.update(reason=e.value))
+    choices = {}
     for dimension, allowed in LABELS.items():
         current = view["current"][dimension]
         if dimension == "original_research":
@@ -53,15 +54,16 @@ def render_study_panel(ui, state, detail, act, memory=None):
                            on_change=lambda e, key=dimension, multi=many:
                                edits.update({key:list(e.value or []) if multi else [e.value]}),
                            label="Reviewed " + dimension.replace("_", " "))
-        ui.button("Confirm " + dimension.replace("_", " "), on_click=lambda key=dimension, box=choice,
-                  multi=many, eid=proposal["event_id"] if suggested else None:
-                  act("study_confirm", dict(dimension=key, labels=box.value if multi else [box.value],
-                      revision=view["revision"], actor=actor.value, rationale=reason.value, event_id=eid)))
+        choices[dimension] = choice
+    ui.label('Saving confirms all the labels displayed above. Use unclear where the evidence is insufficient.').classes('review-hint')
+    ui.button('Save reviewed labels', on_click=lambda: act('study_confirm_form', dict(
+        choices={key: box.value if key == 'design' else [box.value] for key, box in choices.items()},
+        revision=view['revision'], actor=actor.value, rationale=reason.value))).props('data-testid=study-save-form')
 
 
 def render_study_queue(ui,state,act,memory):
     page=state.get("study_queue") or {}
-    with ui.expansion("Study review queue and filters"):
+    with ui.expansion("Study review queue and filters", value=bool(page)):
         review=ui.checkbox("Only records requiring review",value=page.get("only_review",True))
         language=ui.checkbox("Hide explicitly non-English records",value=page.get("hide_non_english",False))
         species=ui.checkbox("Hide explicitly non-human-only records",value=page.get("hide_non_human_only",False))

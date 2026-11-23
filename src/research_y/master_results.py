@@ -304,6 +304,18 @@ class MasterResults:
             else:
                 self.db.execute("INSERT OR IGNORE INTO chosen "+query,params)
 
+    def select_page(self, visible, selected):
+        """Replace just this page's checkboxes, keeping off-page selections."""
+        if not isinstance(visible, list) or not isinstance(selected, list) or len(visible) > 100:
+            raise ValueError('Select a visible page.')
+        if not set(selected) <= set(visible):
+            raise ValueError('Select visible publications.')
+        for pid in visible:
+            identity._identifier(pid)
+        with self.db:
+            self.db.executemany('DELETE FROM chosen WHERE id=?', [(p,) for p in visible])
+            self.db.executemany('INSERT OR IGNORE INTO chosen SELECT id FROM rows WHERE id=?', [(p,) for p in selected])
+
     def records(self,spec,scope):
         if scope not in ("entire","filtered","selected"):
             raise ValueError("Select an export scope")

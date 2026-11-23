@@ -33,10 +33,9 @@ def native(folder,run_id,output):
         try:
             await click("[data-testid=desktop-open]")
             await click("[data-testid=select-run]")
-            await click("[data-testid=master-panel] .q-item")
             await js("window.masterTicks=0; window.masterInterval=setInterval(()=>window.masterTicks++,100); true")
             started=perf_counter()
-            await click("[data-testid=master-refresh]")
+            await click("[data-testid=stage-results]")
             await wait_for(lambda:visible("[data-testid=master-table]"),"capture",timeout=180)
             elapsed=perf_counter()-started
             ticks=await js("clearInterval(window.masterInterval); window.masterTicks")

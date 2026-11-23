@@ -550,7 +550,7 @@ def read_researcher_name(project: Project) -> str:
 
 def update_research_setup(project: Project, *, theme: str, objectives: str = "",
                           expected: ResearchSetup | None = None, researcher_name: str | None = None,
-                          expected_researcher_name: str | None = None) -> None:
+                          expected_researcher_name: str | None = None, _on_saved=None) -> None:
     """Transactionally save theme/objectives and one corresponding audit event."""
     if not isinstance(theme, str) or not isinstance(objectives, str):
         raise TypeError("Theme and objectives must be text")
@@ -570,6 +570,8 @@ def update_research_setup(project: Project, *, theme: str, objectives: str = "",
         if expected is not None:
             unchanged = (theme, objectives) == (old_theme, old_objectives)
             if unchanged and (researcher_name is None or researcher_name == _researcher_name(connection)):
+                if _on_saved is not None:
+                    _on_saved(connection)
                 return
             if not unchanged and expected != ResearchSetup(old_theme, old_objectives):
                 raise ResearchSetupChangedError("The research heading changed. Reopen the project before editing.")
@@ -594,3 +596,5 @@ def update_research_setup(project: Project, *, theme: str, objectives: str = "",
                 ),
             ),
         )
+        if _on_saved is not None:
+            _on_saved(connection)
