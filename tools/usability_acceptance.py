@@ -27,7 +27,7 @@ def prepare():
 
 def run():
     import research_y
-    if '--installed' in sys.argv and ROOT in Path(research_y.__file__).resolve().parents:
+    if '--installed' in sys.argv and Path(sys.executable).resolve().parent not in Path(research_y.__file__).resolve().parents:
         raise RuntimeError('Installed acceptance must import the packaged application')
     from nicegui import app, Client
     from research_y.desktop import app as desktop

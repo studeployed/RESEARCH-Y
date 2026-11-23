@@ -26,12 +26,16 @@ def native(folder,run_id,output):
         return await js("Boolean(document.querySelector("+json.dumps(selector)+")?.getClientRects().length)")
     async def click(selector):
         await wait_for(lambda:visible(selector),selector,timeout=120)
+        async def available():
+            return await js("!document.querySelector('[inert]')")
+        await wait_for(available, 'action_finished', timeout=120)
         await js("document.querySelector("+json.dumps(selector)+").click(); true")
     async def body_has(value):
         return await js("document.body.innerText.includes("+json.dumps(value)+")")
     async def observe():
         try:
             await click("[data-testid=desktop-open]")
+            await click("[data-testid=stage-search]")
             await click("[data-testid=select-run]")
             await js("window.masterTicks=0; window.masterInterval=setInterval(()=>window.masterTicks++,100); true")
             started=perf_counter()
