@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 import sys
 import time
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 if '--installed' not in sys.argv:
@@ -44,6 +45,25 @@ def run():
     desktop.select_from_native_window = choose
     checks = []
     tasks = []
+
+    class OfflineWorker:
+        """Model running/failed supervision without invoking a source client."""
+        def __init__(self):
+            self.id, self.state, self.calls = str(uuid4()), 'running', 0
+
+        def submit(self, command):
+            assert command.operation == 'pubmed_identifier_run'
+            self.calls += 1
+            return self.id
+
+        def poll(self, operation_id):
+            from research_y.application_worker import OperationStatus
+            assert operation_id == self.id
+            return OperationStatus(self.id, 'pubmed_identifier_run', None, self.state,
+                                   'worker_interrupted' if self.state == 'failed' else None, None)
+
+        def close(self, **kwargs):
+            pass
 
     async def js(expression):
         clients = [c for c in Client.instances.values() if c.has_socket_connection]
@@ -91,10 +111,17 @@ def run():
         assert not state['overflow'], name + ' horizontal overflow'
 
     async def select_option(label, text):
-        await js('(()=>{let e=[...document.querySelectorAll(".q-field")].find(e=>e.getClientRects().length&&e.querySelector(".q-field__label")?.innerText===' + json.dumps(label) + ');e.querySelector(".q-field__control").click();return true;})()')
-        await asyncio.sleep(.4)
-        assert await js('(()=>{let e=[...document.querySelectorAll(".q-menu .q-item")].find(e=>e.getClientRects().length&&e.innerText.includes(' + json.dumps(text) + '));if(!e)return false;e.click();return true;})()')
-        await asyncio.sleep(.4)
+        # A preceding save may redraw the panel after the menu first opens.
+        # Wait for an actual option instead of assuming a 400ms render time.
+        async def choose():
+            return await js('(()=>{if(document.querySelector("[data-testid=action-surface]")?.inert)return false;'
+                            'let option=[...document.querySelectorAll(".q-menu .q-item")].find(e=>e.getClientRects().length&&e.innerText.includes(' + json.dumps(text) + '));'
+                            'if(option){option.click();return true;}'
+                            'if(![...document.querySelectorAll(".q-menu")].some(e=>e.getClientRects().length)){'
+                            'let field=[...document.querySelectorAll(".q-field")].find(e=>e.getClientRects().length&&e.querySelector(".q-field__label")?.innerText===' + json.dumps(label) + ');'
+                            'field?.querySelector(".q-field__control")?.click();}return false;})()')
+        await wait(choose, 'select ' + label + ': ' + text)
+        await asyncio.sleep(.25)
 
     async def observe():
         try:
@@ -198,7 +225,28 @@ def run():
                     await wait(lambda: visible('[data-testid=pubmed-source-confirm]'), 'separate PubMed confirmation')
                     assert flow.state()['pubmed_source_offer']['query_id'] == query['query_id']
                     await snapshot('collection-pubmed-' + str(index))
-                    await click('[data-testid=pubmed-source-dismiss]')
+                    if index == 0:
+                        # A real consent action with an inert supervisor: no HTTP.
+                        flow._pubmed_source_worker.close()
+                        worker = OfflineWorker()
+                        flow._pubmed_source_worker = worker
+                        await click('[data-testid=pubmed-source-confirm]')
+                        await wait(lambda: flow.state()['pubmed_source_pending'], 'offline worker started')
+                        await click('[data-testid=collection-close]')
+                        await click('[data-testid=collection-reopen]')
+                        await wait(lambda: in_viewport('[data-testid=collection-close]'), 'running progress reopened')
+                        assert await visible('[data-testid=pubmed-source-poll]')
+                        worker.state = 'failed'
+                        await click('[data-testid=pubmed-source-poll]')
+                        await wait(lambda: flow.state()['pubmed_source_worker_state'] == 'failed', 'worker failure observed')
+                        await click('[data-testid=collection-close]')
+                        await click('[data-testid=collection-reopen]')
+                        await click('[data-testid=pubmed-source-reconcile]')
+                        await wait(lambda: not flow.state()['pubmed_source_pending'], 'worker reconciled')
+                        assert worker.calls == 1
+                        checks.append('Running and failed collection screens reopen without retrying; reconciliation stays reachable')
+                    else:
+                        await click('[data-testid=pubmed-source-dismiss]')
                 else:
                     assert flow.state()['wos_acquisition_offer']['query_id'] == query['query_id']
                     await snapshot('collection-wos-' + str(index))

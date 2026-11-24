@@ -101,6 +101,11 @@ class ProjectWorkspace:
                 elif stage == 'search' and title in collection:
                     if title == self.collection_section:
                         dialog = ui.dialog(value=self.collection_open).props('maximized').bind_value(self, 'collection_open')
+                        # Navigation must remain available while a source worker
+                        # blocks all new selections and provider operations.
+                        with search_actions:
+                            ui.button('Return to collection progress', on_click=dialog.open).props(
+                                'outline data-testid=collection-reopen')
                         with dialog, ui.element('section').classes('task-screen').props('data-testid=collection-current'):
                             with ui.element('header').classes('review-header'):
                                 ui.label(title).classes('section-title')

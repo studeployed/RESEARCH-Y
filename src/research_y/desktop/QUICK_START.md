@@ -36,7 +36,7 @@ Your unfinished groups and terms are saved in the project as you add or edit the
 
 ## Reading the screen
 
-**Continue PubMed** and **Continue Web of Science** open a separate screen for the selected search group. Read the query, request allowance and any storage permission before confirming. **Back to Run search** returns to the database cards. For PubMed, database-entry dates help collect large result sets; they are not publication-date limits. The app checks that the range covers the unrestricted search.
+**Continue PubMed** and **Continue Web of Science** open a separate screen for the selected search group. Read the query, request allowance and any storage permission before confirming. **Back to Run search** returns to the database cards; **Return to collection progress** reopens the current screen, including its pause and recovery controls, without starting a request. For PubMed, database-entry dates help collect large result sets; they are not publication-date limits. The app checks that the range covers the unrestricted search.
 
 Under **Review potential duplicates**, open a pair to compare its citations side by side. Read any missing-data warnings, enter the reason for your decision and acknowledge the evidence before confirming. **Use A** or **Use B** identifies the entry that will hold the combined article; both original source records remain. **Different articles · keep separate** records a non-match. **Back to Results** closes the comparison without deciding. Unfinished notes remain in this window while the compared evidence is unchanged.
 
