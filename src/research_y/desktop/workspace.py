@@ -1,6 +1,7 @@
 """Per-window navigation for the desktop research workflow."""
 from contextlib import contextmanager
 from research_y.desktop.search_path import render_search_steps
+from research_y.desktop.search_guidance import STAGE_HINTS, render_journey
 
 
 class ProjectWorkspace:
@@ -43,6 +44,7 @@ class ProjectWorkspace:
         async def remember(event):
             if event.value in stages:
                 self.stage = event.value
+                stage_hint.set_text(STAGE_HINTS[self.stage])
                 plan_steps.set_visibility(self.stage == 'plan')
                 run_steps.set_visibility(self.stage == 'search' and bool(state['runs']))
                 if act and self.stage in ('results', 'export'):
@@ -63,6 +65,7 @@ class ProjectWorkspace:
                 render_search_steps(ui, state, planning=False)
             plan_steps.set_visibility(self.stage == 'plan')
             run_steps.set_visibility(self.stage == 'search' and bool(state['runs']))
+        stage_hint = render_journey(ui, self)
         with ui.tab_panels(tabs, value=self.stage, animated=False).classes('workspace-panels'):
             panels = {key: ui.tab_panel(key) for key in stages}
         # The next action stays above optional tools, regardless of render order.

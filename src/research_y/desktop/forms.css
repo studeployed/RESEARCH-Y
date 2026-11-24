@@ -187,6 +187,18 @@
 .workspace-header .search-path .q-item { padding: 0 .5rem; min-height: 1.8rem; font-size: .8rem; }
 .workspace-header .check-status { font-size: .78rem; }
 .results-table td { vertical-align: top; }
+.journey { width: 100%; border-bottom: 1px solid #dbe5e1; padding: .2rem 0 .6rem; }
+.journey > .q-expansion-item { width: 100%; }
+.journey .q-item { min-height: 2rem; padding: .3rem .5rem; font-size: .9rem; }
+.journey-stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem 1.2rem; list-style: none; margin: .4rem .5rem; padding: 0; }
+.journey-stages li { min-width: 0; font-size: .85rem; line-height: 1.5; }
+.journey-title { font-weight: 600; margin-bottom: .2rem; }
+.journey-note { font-size: .85rem; background: #f0f5f3; padding: .5rem .65rem; margin: .5rem; border-radius: .25rem; }
+.stage-hint { font-size: .85rem; color: #365853; padding: .3rem .5rem 0; }
+.search-path .step-purpose { font-size: .78rem; color: #52625e; font-weight: normal; }
+.nicegui-content .q-field__native > span { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 850px) { .journey-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 500px) { .journey-stages { grid-template-columns: minmax(0, 1fr); } }
 .results-table td:first-of-type { width: 2rem; }
 .results-table th { font-weight: 600; background: #f4f7f6; }
 .collection-card { gap: .4rem; padding: .8rem 1rem; }

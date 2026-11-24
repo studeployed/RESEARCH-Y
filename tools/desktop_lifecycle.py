@@ -178,8 +178,10 @@ def run_window(stage, workspace, folder, run_id):
         await wait_for(lambda: visible('[data-testid=question-saved]'), 'reopened_question')
         if await js("document.querySelector('.question-objectives').textContent") != 'Revised objective':
             raise RuntimeError('reopened_question_not_current')
-        if await js("document.querySelector('.search-path [aria-current=step]').textContent") != 'Next · Add search terms':
+        if await js("document.querySelector('.search-path [aria-current=step]').firstElementChild.textContent") != 'Next · Add search terms':
             raise RuntimeError('incorrect_next_milestone')
+        if not await js("document.querySelector('.search-path [aria-current=step] .step-purpose')?.textContent.includes('phrases')"):
+            raise RuntimeError('milestone_purpose_missing')
         if await visible('[data-testid=desktop-open]'):
             await click('[data-testid=switch-project]')
         if flow.state()['strategy_draft']['approved_by'] != 'Fixture researcher':

@@ -178,7 +178,8 @@ def render_search_review(ui, state, act, workspace=None, error=None):
     with dialog if dialog is not None else nullcontext():
         with ui.element('section').classes('search-review').props('data-testid=search-review aria-label="Review saved search"'):
             with ui.element('header').classes('review-header'):
-                ui.label(f"Review search {preview['version_number']} · {state['project']['name']}").classes('section-title')
+                from research_y.desktop.search_guidance import saved_search_names
+                ui.label('Review · ' + saved_search_names(state['runs'])[preview['run_id']]).classes('section-title')
                 if dialog:
                     ui.button('Back to Run search', on_click=dialog.close).props('flat data-testid=review-close')
             with ui.element('footer').classes('review-footer'):

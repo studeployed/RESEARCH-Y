@@ -1,5 +1,17 @@
 """Milestones for the current draft or an explicitly opened search."""
 
+STEP_PURPOSES = {
+    'Save question': 'Record the purpose of the research and who is preparing it.',
+    'Add search terms': 'Choose the phrases that should find relevant articles.',
+    'Preview search': 'See the exact wording prepared for each database; no request is sent.',
+    'Approve and save search': 'Keep a fixed version of the plan; collection has not started.',
+    'Open and check saved plan': 'Move to Run search to review this version before collection.',
+    'Open saved search': 'Choose which saved version to use.',
+    'Check saved plan': 'Compare the question, terms, limits and database coverage together.',
+    'Confirm plan checklist': 'Record what you checked and any concerns; this does not contact a database.',
+    'Start database collection': 'Use Collect your search results and confirm a database request to retrieve records.',
+}
+
 
 def search_steps(state, *, planning):
     if planning:
@@ -47,6 +59,7 @@ def render_search_steps(ui, state, *, planning):
                     if current:
                         item.props('aria-current=step')
                     ui.label(('Done · ' if done else 'Next · ' if current else '') + label)
+                    ui.label(STEP_PURPOSES[label]).classes('step-purpose')
         if not planning:
             review = (state.get('preflight_report') or {}).get('last_review')
             if review:

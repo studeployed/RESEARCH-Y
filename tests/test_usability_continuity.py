@@ -35,6 +35,9 @@ def test_unfinished_draft_reopens_and_saved_search_stays_visible(tmp_path):
         flow.preview_setup()
         admission = flow.approve_setup()['last_strategy_admission']
         frozen = get_strategy_snapshot(project, admission['strategy_version_id'])
+        from research_y.desktop.search_guidance import saved_search_names
+        saved_names = saved_search_names(flow.state()['runs'])
+        assert next(iter(saved_names.values())).startswith('RV failure · version 1 · saved ')
         assert flow.state()['planning_mode'] == 'saved'
         assert len(flow.state()['strategy_draft']['groups'][0]['terms']) == 3
         flow.open_native_folder(project.root)
@@ -49,6 +52,8 @@ def test_unfinished_draft_reopens_and_saved_search_stays_visible(tmp_path):
         flow.open_native_folder(project.root)
         assert len(flow.state()['strategy_draft']['groups'][0]['terms']) == 4
         assert len(flow.state()['runs']) == 1
+        flow.edit_setup('heading', dict(theme='Changed question', objectives='New purpose', approved_by='Researcher'))
+        assert saved_search_names(flow.state()['runs']) == saved_names
 
 
 def test_two_windows_cannot_overwrite_a_draft_or_half_save_a_question(tmp_path):
