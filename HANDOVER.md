@@ -1,5 +1,13 @@
 # RESEARCH-Y handover
 
+## Search names and journey guidance, version 0.1.8
+
+Issue #196 gives saved searches descriptive labels from the frozen strategy theme, version, repeat number where needed and local saved date/time. The same labels appear in selection, active-run headings, comparisons and focused review. Editing the current question cannot relabel older approved plans. Identifiers remain available in Project details; no schema or stored evidence changes.
+
+The collapsible How your search works overview maps Plan search, Run search, Results and Export to their purpose, while a short prompt follows the selected stage. Expanded milestones explain each intervening step. Copy distinguishes saving/checking a plan, optional small provider tests, explicitly confirmed collection and incomplete results. The bundled quick-start guide uses the same map. No scientific or dependency changes.
+
+Coverage: tests/test_search_guidance.py (versions, repeats, dates and legacy names), tests/test_usability_continuity.py (frozen names after editing), existing tests/test_desktop_search_path.py (pilot evidence cannot mark collection started), and tools/usability_acceptance.py (native/installed labels, overview and stage prompt). Final commit-specific reviews, CI and installer verification belong to the linked release pull request.
+
 ## First-search usability, version 0.1.7
 
 Issue #194 implements the twelve accepted usability findings. Planning drafts persist with concurrent-edit protection; approved terms stay visible and Edit a copy preserves the immutable prior plan. Interrupted approval can be reconciled after reopening. Results opens the article list directly, checkboxes immediately update selection, and comparison/review actions reveal their result. Export has one primary form that saves and verifies the chosen file; existing reports retain their recovery workflow. Classification choices save atomically. Search checks preserves all seven scientific items, with a single scroll area in narrow windows. Guided collection uses the existing source previews, budgets and confirmations.

@@ -6,6 +6,7 @@ from research_y.desktop.manifest_consent import render_manifest_consent
 from research_y.desktop.question_card import render_question
 from research_y.desktop.entry import render_entry
 from research_y.desktop.search_review import render_search_review
+from research_y.desktop.search_guidance import saved_search_names, strategy_title
 from research_y.desktop.master_panel import render_master
 from research_y.desktop.review_panel import render_review_tasks
 from research_y.desktop.study_panel import render_study_panel, render_study_queue
@@ -33,6 +34,7 @@ def render_identity_disposition(ui,plan):
 
 def render_project_panel(ui, flow, act, *, native, error, study_edits=None, workspace=None):
     state = flow.state()
+    names = saved_search_names(state['runs'])
     project = state['project']
     if project is not None and workspace is None:
         ui.label('Project: ' + project['name']).classes('project-title').props('data-testid=project-name')
@@ -204,7 +206,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
         elif state.get('planning_mode') == 'saved':
             if grouped:
                 render_question(ui, workspace, state, act)
-            ui.label('Saved search ' + str(state['planning_base_version'])).classes('section-title')
+            ui.label(strategy_title(draft['theme'], state['planning_base_version'])).classes('section-title')
             ui.label('These terms are saved. Editing a copy creates a new version; this search stays unchanged.').classes('message success')
             for group in draft['groups']:
                 ui.label(group['label']).classes('section-title')
@@ -215,7 +217,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
         else:
             if draft['preview'] is None:
                 if state.get('planning_base_version'):
-                    ui.label('Draft based on Search ' + str(state['planning_base_version']) + ' · changes saved as you add them').classes('message info')
+                    base = next((r for r in state['runs'] if r['version_number'] == state['planning_base_version']), {})
+                    ui.label('Draft based on ' + strategy_title(base.get('strategy_theme'), state['planning_base_version']) +
+                             ' · changes saved as you add them').classes('message info')
                 with ui.element('div').classes('plan-columns') if grouped else nullcontext():
                     with ui.column().classes('plan-card') if grouped else nullcontext():
                         if grouped:
@@ -424,7 +428,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
             run = state['report']['run']
             update = run.get('update_method') or {}
             with ui.expansion("Search update method"):
-                earlier_runs = {r["run_id"]: f'Version {r["version_number"]} · {r["run_id"]}' for r in state["runs"]
+                earlier_runs = {r["run_id"]: names[r["run_id"]] for r in state["runs"]
                                 if r["run_id"] != run["run_id"] and r["created_at_utc"] <= run["created_at_utc"]}
                 earlier_run = ui.select(earlier_runs,label="Earlier project run (if applicable)",
                                         value=update.get("earlier_run"),clearable=True)
@@ -436,7 +440,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
         if len(state['runs'])>=2:
             comparison=state.get("run_comparison")
             with ui.expansion("Compare search runs",value=bool(comparison)):
-                runs={r["run_id"]:f'Version {r["version_number"]} · {r["run_id"]}' for r in state["runs"]}
+                runs=names
                 earlier=ui.select(runs,label="Earlier run",value=comparison["earlier"]["run_id"] if comparison else None)
                 later=ui.select(runs,label="Later run",value=comparison["later"]["run_id"] if comparison else None)
                 kind=ui.select(["all","new","retained","absent","metadata_changed"],label="Source records",
@@ -488,14 +492,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     if comparison["offset"]+comparison["page_size"]<comparison["matching"]:
                         ui.button("Next comparison records",on_click=lambda:turn(comparison["page_size"]))
     with area('search'):
-        names = {}
-        counts = {}
-        for row in sorted(state['runs'], key=lambda r: (r['created_at_utc'], r['run_id'])):
-            version = row['version_number']
-            counts[version] = counts.get(version, 0) + 1
-            names[row['run_id']] = f'Search {version}' + (f' · run {counts[version]}' if counts[version] > 1 else '')
         if grouped:
             ui.label('Saved searches').classes('section-title')
+            ui.label('Names use the question saved with that version. Saved dates are local times, '
+                     'not evidence that collection has run. Editing a copy creates a new version.').classes('review-hint')
         if grouped and len(names) > 1:
             run_selector = ui.select(names, label='Choose a saved search', value=state['selected_run_id'])
             ui.button('Open search', on_click=lambda box=run_selector: act('select_run', box.value)).props(
@@ -505,7 +505,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 rid = item['run_id']
                 if grouped and rid == state['selected_run_id']:
                     continue
-                ui.button(('Open ' + names[rid].lower()) if grouped else f"Select run/version {item['version_number']} ({rid})",
+                if grouped:
+                    ui.label(names[rid])
+                ui.button('Open search' if grouped else f"Select run/version {item['version_number']} ({rid})",
                           on_click=lambda rid=rid: act('select_run', rid)).props('data-testid=select-run')
         if state['selected_run_id'] is None:
             ui.label('Choose a saved search to check its plan and collect records.')
