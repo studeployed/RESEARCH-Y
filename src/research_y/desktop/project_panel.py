@@ -8,6 +8,7 @@ from research_y.desktop.entry import render_entry
 from research_y.desktop.search_review import render_search_review
 from research_y.desktop.search_guidance import saved_search_names, strategy_title
 from research_y.desktop.master_panel import render_master
+from research_y.desktop.candidate_panel import render_candidate_review
 from research_y.desktop.review_panel import render_review_tasks
 from research_y.desktop.study_panel import render_study_panel, render_study_queue
 from research_y.desktop.specialist_panel import society_panel, publication_panel
@@ -39,7 +40,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
     if project is not None and workspace is None:
         ui.label('Project: ' + project['name']).classes('project-title').props('data-testid=project-name')
     grouped = workspace is not None and project is not None
-    area = workspace.render(ui, state, act) if grouped else lambda *args: nullcontext()
+    area = workspace.render(ui, state, act, error) if grouped else lambda *args: nullcontext()
+    render_candidate_review(ui, state, act, workspace=workspace, error=error)
     def disclosure(key, title):
         return workspace.disclosure(ui, key, title) if grouped else nullcontext()
 
@@ -341,7 +343,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                   'data-testid=setup-revise')
                 preview = draft['preview']
                 if preview is not None:
-                    ui.label('Strategy preview — NOT EXECUTED').props(
+                    ui.label('Review your search before saving').props(
                         'data-testid=setup-preview-active').classes('section-title')
                     ui.label('Concept groups: ' + str(preview['group_count']) +
                              '; enabled terms: ' + str(preview['active_term_count']))
@@ -349,9 +351,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     if preview['objectives']:
                         ui.label('Research objectives: ' + preview['objectives'])
                     for source in preview['sources']:
-                        ui.label('Source: ' + source['name'] + ' — ' +
+                        ui.label({'pubmed': 'PubMed', 'wos': 'Web of Science'}.get(source['name'], source['name']) + ' · ' +
                                  source['coverage']).props('data-testid=setup-source-coverage').classes('message info')
-                        ui.label('OR union preview: ' + source['union_query'])
                         for query in source['groups']:
                             if query['exact_query'] is not None:
                                 chunks=query.get("chunks") or [query["exact_query"]]
@@ -361,9 +362,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                             else:
                                 ui.label('Group ' + query['label'] +
                                          ' disabled/empty — not executable.')
-                        for warning in source['warnings']:
-                            ui.label('Source guidance · ' + warning).classes('message info')
-                    ui.label('Provider matches: UNKNOWN (not queried).').props(
+                        for warning in dict.fromkeys(source['warnings']):
+                            if warning != source['coverage']:
+                                ui.label(warning).classes('message warning')
+                    ui.label('No database has been contacted. Match counts are not known yet.').props(
                         'data-testid=setup-unknown-counts').classes('message info')
                     ui.button('Approve and save search',
                               on_click=lambda: act('setup_approve')).props(
@@ -1311,106 +1313,6 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              '. Open another publication source detail '
                              'on THIS page and select a second record.').props(
                                  'data-testid=candidate-first')
-                pair = state['candidate_offer']
-                if pair is not None:
-                    ui.separator()
-                    ui.label('Publication comparison — explicit HUMAN REVIEW. '
-                             'No automatic DOI/title/supplement merge. '
-                             'Every matching field is only evidence.').props(
-                                 'data-testid=candidate-heading')
-                    for source in pair['sources']:
-                        ui.label('Reviewed source: ' + source['source_name'] +
-                                 ' • ' + source['source_record_id'] +
-                                 ' • retrieval ' + source['retrieval_id']).props(
-                                     'data-testid=candidate-source')
-                    for field in pair['comparison']:
-                        ui.label(field['field'] + ': ' +
-                                 field['comparison'] +
-                                 ' • source A ' + str(field['left']['value']) +
-                                 ' (' + field['left']['status'] + ')' +
-                                 ' • source B ' + str(field['right']['value']) +
-                                 ' (' + field['right']['status'] + ')').props(
-                                     'data-testid=candidate-comparison')
-                    for rid,plan in pair.get("move_dispositions",{}).items():
-                        ui.label("If moving source "+rid)
-                        render_identity_disposition(ui,plan)
-                    for warning in pair['warnings']:
-                        descriptions = {
-                            'prior_run_metadata_unchanged': 'Both provider records match the latest reviewed pair exactly. Review its decision below before recording this run.',
-                            'prior_run_metadata_changed': 'Provider metadata has changed since the latest review. Reassess this pair before deciding.',
-                            'prior_run_decision_outdated': 'The earlier identity or review evidence has changed. Reassess this pair before deciding.',
-                        }
-                        ui.label(descriptions.get(warning, 'WARNING — ' + warning)).props(
-                            'data-testid=candidate-warning')
-                    ui.label('Pair status: ' + pair['status'] +
-                             '; previous decision receipts: ' +
-                             str(pair['prior_decision_count']) +
-                             '; earlier receipts not shown here: ' +
-                             str(pair['prior_decisions_omitted']) +
-                             '. The full immutable history remains in the project.')
-                    for previous in pair['recent_decisions']:
-                        ui.label('Previous audit ' + str(previous['event_id']) +
-                                 ': ' + previous['status'] + ' • ' +
-                                 previous['actor'] + ' • ' +
-                                 previous['evidence']).props(
-                                     'data-testid=candidate-audit')
-                        suggestion = previous.get('confidence_suggestion')
-                        if suggestion:
-                            ui.label('Suggestion shown at review: ' + suggestion['rule']
-                                     + ' using prior audit ' + str(suggestion['prior_event_id']))
-                    if pair.get('confidence') == 'automatic_high_confidence':
-                        ui.label('High-confidence suggestion based on previously confirmed audit '
-                                 + str(pair['recent_decisions'][-1]['event_id']) + '. Both journal records '
-                                 'recur unchanged with matching DOI, PMID, title, year, authors, '
-                                 'journal and pages. Your decision is required for this pair. Rule '
-                                 + pair['confidence_rule']).props('data-testid=candidate-confidence')
-                    reviewer = ui.input('Researcher recording this decision',
-                                        value=state.get('researcher_name', ''))
-                    rationale = ui.input(
-                        'Specific bibliographic evidence or reason '
-                        'for this decision', value='')
-                    acknowledge = ui.checkbox(
-                        'I reviewed and acknowledge every displayed '
-                        'comparison warning', value=False)
-                    if not pair['pair_already_associated']:
-                        first_source, second_source = pair['retrieval_ids']
-                        if pair.get('cross_run'):
-                            for source in pair['sources']:
-                                ui.label(source['source_name'] + ' · run ' + source['run_id'])
-                        for label, source_id, position in (
-                            ('Associate first source with second publication', first_source, 'first'),
-                            ('Associate second source with first publication', second_source, 'second')):
-                            if pair.get('cross_run') and not any(
-                                    source['retrieval_id'] == source_id and source['run_id'] == pair['run_id']
-                                    for source in pair['sources']):
-                                continue
-                            ui.button('Confirm match: ' + label, on_click=
-                                      lambda rid=source_id, box=reviewer, revision=pair['revision'],
-                                      note=rationale, ack=acknowledge:
-                                      act('candidate_review_decide', {
-                                          'decision':'confirmed_match', 'offer_revision':revision,
-                                          'move_retrieval_id':rid, 'actor':box.value,
-                                          'evidence':note.value, 'acknowledged':ack.value})).props(
-                                              'data-testid=candidate-match-' + position)
-                        ui.button('CONFIRM NOT THE SAME PUBLICATION '
-                                  '(no source record moved)', on_click=
-                                  lambda box=reviewer, note=rationale,
-                                  ack=acknowledge, revision=pair['revision']:
-                                  act('candidate_review_decide', {
-                                      'decision':'rejected_match','offer_revision':revision,
-                                      'move_retrieval_id':None,
-                                      'actor':box.value,'evidence':note.value,
-                                      'acknowledged':ack.value})).props(
-                                          'data-testid=candidate-reject')
-                    else:
-                        ui.label('Both records currently share one '
-                                 'publication identity. Rejection requires '
-                                 'a separate review of the CURRENT reversible '
-                                 'association first.')
-                    ui.button('Dismiss this uncommitted comparison',
-                              on_click=lambda:
-                              act('candidate_review_dismiss')).props(
-                                  'data-testid=candidate-dismiss')
                 undo = state['reversal_offer']
                 if undo is not None:
                     ui.separator()
@@ -1573,7 +1475,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
             render_search_review(ui, state, act, workspace, error)
             from research_y.desktop.collection_panel import render_collection
             render_collection(ui, state, act)
-    group_names = {g['group_id']: g['label'] for g in (state['preflight_report'] or {}).get('groups', [])}
+    group_names = {g[0]: g[1] for g in (state.get('report') or {}).get('strategy', {}).get('group_index', [])}
     if (state['selected_run_id'] is not None and
             state['preflight_report'] is not None):
         with area('search', 'Try a PubMed search'):
@@ -1627,7 +1529,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                         continue
                     for query in source['queries']:
                         qid = query['query_id']
-                        ui.label('PubMed ' + query['group_id'] +
+                        ui.label('PubMed · ' + group_names.get(query['group_id'], 'Search group') +
                                  ': ' + query['exact_query']).props(
                                      'data-testid=pubmed-pilot-saved-query').classes('query-text')
                         ui.button('Preview pilot for group ' +
@@ -1640,8 +1542,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 if prior.get("error_code"):
                     from research_y.desktop.settings import source_error_help
                     ui.label(source_error_help(prior["error_code"])).classes("message error")
-                ui.label('Last audited pilot attempt: ' +
-                         prior['status']).props(
+                ui.label('Last PubMed test · ' +
+                         prior['status'].replace('_', ' ')).props(
                              'data-testid=pubmed-pilot-status').classes('setting-summary')
                 count = prior['reported_matches']
                 ui.label('Provider-reported PILOT matches: ' +
@@ -1734,7 +1636,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                         continue
                     for query in source['queries']:
                         qid = query['query_id']
-                        ui.label('Starter ' + query['group_id'] +
+                        ui.label('Web of Science · ' + group_names.get(query['group_id'], 'Search group') +
                                  ': ' + query['exact_query']).props(
                                      'data-testid=wos-pilot-saved-query').classes('query-text')
                         ui.button('Preview Starter one-record pilot for ' +
@@ -1752,8 +1654,8 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 if prior.get("error_code"):
                     from research_y.desktop.settings import source_error_help
                     ui.label(source_error_help(prior["error_code"])).classes("message error")
-                ui.label('Last audited Starter pilot: ' +
-                         prior['status']).props(
+                ui.label('Last Web of Science test · ' +
+                         prior['status'].replace('_', ' ')).props(
                              'data-testid=wos-pilot-status').classes('setting-summary')
                 count = prior['reported_matches']
                 ui.label('Provisional provider-reported matches: ' +
@@ -1789,26 +1691,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              'data-testid=wos-pilot-incomplete')
     if state['selected_run_id'] is not None:
         with area('search', 'Collect Web of Science records'):
-            ui.separator()
-            ui.label('Web of Science Starter — checkpointed source '
-                     'acquisition (EXPERIMENTAL).').props(
-                         'data-testid=wos-acquisition-heading')
-            ui.label('Unlike a pilot, this workflow can store licensed '
-                     'source metadata in the local project. Explicit '
-                     'retention consent and a separate provider-session '
-                     'confirmation are both required. Verify your '
-                     'institutional licence before using it.')
-            ui.label('One confirmed session uses at most THREE Starter '
-                     'requests (a count/identity recheck where required '
-                     'and up to two further 50-record pages). '
-                     'Provider quota, cooldowns and interruption '
-                     'recovery are enforced by the existing checkpoint '
-                     'engine. No automatic unattended sessions.')
-            ui.label('A reconciled Starter enumeration is NOT a '
-                     'verified whole-run search, full abstracts, '
-                     'publication deduplication or an atomic provider '
-                     'snapshot. Progress is based on durable source '
-                     'checkpoint evidence only.')
+            ui.label('Collect Web of Science articles').classes('section-title').props('data-testid=wos-acquisition-heading')
+            ui.label('First confirm that your institutional terms allow these records to be stored in this project. Then preview and confirm a database session.')
+            ui.label('Each session uses up to 3 requests and may save up to 3 pages of 50 records. Keep the app open; continue from saved progress when a session finishes.').classes('message info')
+            ui.label('Collection and coverage checks remain separate. Saved pages alone do not establish a complete or deduplicated search.').classes('review-hint')
             if state['wos_acquisition_prepare_pending']:
                 ui.label('Local retention plan outcome uncertain. '
                          'Inspect the original checkpoint — never '
@@ -1830,18 +1716,18 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                                   'data-testid=wos-acquisition-tick-reconcile')
             elif state['wos_acquisition_offer'] is not None:
                 candidate = state['wos_acquisition_offer']
-                ui.label('Locked exact Starter Topic query: ' +
-                         candidate['exact_query']).props(
+                ui.label('Web of Science Topic query: ' +
+                         candidate['exact_query']).classes('query-text').props(
                              'data-testid=wos-acquisition-exact-query')
                 ui.label('You are authorising local retention of all '
                          'provider-returned metadata permitted by your '
                          'institutional licence. This preparation '
                          'itself makes NO network request and does '
                          'not authorise future sessions automatically.')
-                ui.button('Cancel retention consent without preparing',
+                ui.button('Back without saving permission',
                           on_click=lambda: act('wos_acquisition_dismiss')).props(
-                              'data-testid=wos-acquisition-cancel')
-                ui.button('Confirm local metadata retention and prepare checkpoint',
+                              'outline data-testid=wos-acquisition-cancel')
+                ui.button('Confirm storage permission',
                           on_click=lambda: act('wos_acquisition_prepare')).props(
                               'data-testid=wos-acquisition-prepare')
             else:
@@ -1849,19 +1735,21 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                     for row in state['report']['queries']:
                         if row['source_name'] != 'wos':
                             continue
+                        if workspace and not workspace.includes_collection_query(row['query_id'], 'Collect Web of Science records'):
+                            continue
                         qid = row['query_id']
-                        ui.label('Saved Starter group ' + row['group_id'] +
+                        ui.label('Saved query · ' + group_names.get(row['group_id'], 'Search group') +
                                  ': ' + row['exact_query']).props(
                                      'data-testid=wos-acquisition-saved-query')
-                        ui.button('Inspect checkpoint for group ' +
-                                  row['group_id'],
+                        ui.button('Read saved progress · ' +
+                                  group_names.get(row['group_id'], 'Search group'),
                                   on_click=lambda qid=qid: act(
                                       'wos_acquisition_read',qid)).props(
                                           'data-testid=wos-acquisition-read')
                         if (state['wos_profile_configured'] and
                                 row['status'] == 'pending'):
-                            ui.button('Preview full-source retention for ' +
-                                      row['group_id'],
+                            ui.button('Review storage permission · ' +
+                                      group_names.get(row['group_id'], 'Search group'),
                                       on_click=lambda qid=qid: act(
                                           'wos_acquisition_offer',qid)).props(
                                               'data-testid=wos-acquisition-offer')
@@ -1925,7 +1813,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              'from this interface.')
                 elif state['wos_acquisition_tick_offer'] is None:
                     if state['wos_profile_configured']:
-                        ui.button('Preview next bounded session (up to THREE requests)',
+                        ui.button('Preview next collection session (up to 3 requests)',
                                   on_click=lambda: act(
                                       'wos_acquisition_tick_offer')).props(
                                           'data-testid=wos-acquisition-tick-offer')
@@ -2052,24 +1940,9 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                              'data-testid=wos-verification-outcome')
     if state['selected_run_id'] is not None:
         with area('search', 'Collect PubMed identifiers'):
-            ui.separator()
-            ui.label('PubMed ESearch — supervised identifier retrieval '
-                     '(EXPERIMENTAL; metadata is a separate stage).').props(
-                         'data-testid=pubmed-source-heading')
-            ui.label('Every approved group remains independent and '
-                     'the conceptual search is OR-only. No language, '
-                     'species or study-type exclusion is applied. '
-                     'Identifiers are stored in the project with a '
-                     'source checkpoint, NOT treated as a finished '
-                     'bibliographic search.').props(
-                         'data-testid=pubmed-source-method')
-            ui.label('A standard session is limited to '
-                     '512 source requests, including count probes; '
-                     'individual identifier pages are capped at 200. '
-                     'A broader query may need Create Date partitioning, '
-                     'but its initial unfiltered count must equal the '
-                     'count over the researcher-confirmed date coverage. '
-                     'Otherwise results remain INCOMPLETE.')
+            ui.label('Find the PubMed articles').classes('section-title').props('data-testid=pubmed-source-heading')
+            ui.label('First collect the matching article identifiers. Next, Continue PubMed will retrieve their citations and available abstracts.').props('data-testid=pubmed-source-method')
+            ui.label('Identifiers are collected in pages of up to 200. The search stays incomplete until the saved counts and records agree.').classes('review-hint')
             if state['pubmed_source_pending']:
                 ui.label('Supervised identifier worker: ' +
                          state['pubmed_source_worker_state'] +
@@ -2114,34 +1987,32 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                 ui.label(f"This session allows up to {choice['max_session_requests']:,} PubMed requests, "
                          f"including up to {choice['max_partition_count_probes']:,} date-partition count probes.").props(
                              'data-testid=pubmed-source-limits')
-                ui.label('Frozen PubMed All Fields exact query: ' +
-                         choice['exact_query']).props(
+                ui.label('PubMed All Fields query: ' +
+                         choice['exact_query']).classes('query-text').props(
                              'data-testid=pubmed-source-exact-query')
-                ui.label('Explicit administrative Create Date coverage: ' +
+                ui.label('Database-entry date coverage: ' +
                          choice['coverage_start'] + ' to ' +
                          choice['coverage_end'] +
                          '. The range is used only if a large search '
                          'must be partitioned; unfiltered counts must '
                          'reconcile with this coverage.').props(
                              'data-testid=pubmed-source-coverage')
-                ui.label('This PREVIEW has made NO provider requests. '
-                         'Confirming starts one bounded, supervised '
-                         'ESearch session and uses trusted host-only '
-                         'NCBI contact settings. The application must '
-                         'remain open for source work to continue.')
-                ui.button('Cancel unsent PubMed session',
+                ui.label('No request has been sent. Start PubMed article search will contact PubMed using your saved NCBI settings. Keep RESEARCH-Y open while it collects the identifiers.').classes('message info')
+                ui.button('Back without searching',
                           on_click=lambda: act('pubmed_identifier_dismiss')).props(
-                              'data-testid=pubmed-source-dismiss')
-                ui.button('CONFIRM bounded PubMed identifier retrieval',
+                              'outline data-testid=pubmed-source-dismiss')
+                ui.button('Start PubMed article search',
                           on_click=lambda: act('pubmed_identifier_confirm')).props(
                               'data-testid=pubmed-source-confirm')
             else:
+                ui.label('Date coverage for large searches').classes('section-title')
+                ui.label('For large result sets, PubMed is queried in smaller database-entry date ranges. This is not a publication-date filter. Confirm that the range covers the whole search; the app checks its count against the unrestricted query.').classes('review-hint')
                 pubmed_start = ui.input(
-                    'Administrative Create Date coverage start (YYYY-MM-DD)',
+                    'Earliest database entry date (YYYY-MM-DD)',
                     value='1800-01-01').props(
                         'data-testid=pubmed-source-start')
                 pubmed_end = ui.input(
-                    'Administrative Create Date coverage end (YYYY-MM-DD)',
+                    'Latest database entry date (YYYY-MM-DD)',
                     value=date.today().isoformat()).props(
                         'data-testid=pubmed-source-end')
                 extended = ui.checkbox('Use a larger request allowance for a broad PubMed search',
@@ -2150,16 +2021,18 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                             is not None else ()):
                     if row['source_name'] != 'pubmed':
                         continue
+                    if workspace and not workspace.includes_collection_query(row['query_id'], 'Collect PubMed identifiers'):
+                        continue
                     qid=row['query_id']
                     ui.label('Saved PubMed query: ' + row['exact_query']).props(
                         'data-testid=pubmed-source-saved-query')
-                    ui.button('Read existing checkpoint for ' + row['group_id'],
+                    ui.button('Read saved progress · ' + group_names.get(row['group_id'], 'Search group'),
                               on_click=lambda qid=qid: act(
                                   'pubmed_identifier_read',qid)).props(
                                       'data-testid=pubmed-source-read')
                     if state['pubmed_profile_configured']:
-                        ui.button('Preview identifier session for ' +
-                                  row['group_id'],
+                        ui.button('Preview article search · ' +
+                                  group_names.get(row['group_id'], 'Search group'),
                                   on_click=lambda qid=qid: act(
                                       'pubmed_identifier_offer',dict(
                                           query_id=qid,
@@ -2207,8 +2080,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
     if state['selected_run_id'] is not None:
         with area('search', 'Collect PubMed article details'):
             ui.separator()
-            ui.label('PubMed — full EFetch bibliographic metadata and abstracts '
-                     '(experimental)').props('data-testid=pubmed-metadata-heading')
+            ui.label('Collect PubMed citations and abstracts').props('data-testid=pubmed-metadata-heading')
             ui.label('This stage begins ONLY after the selected PubMed ESearch '
                      'identifier checkpoint reconciles. The source records and '
                      'abstract text are stored privately in the local project; '
@@ -2266,10 +2138,10 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                          'POST may consume quota without returning a '
                          'verified result; it will NOT be automatically '
                          'reissued. Keep the app open until the worker stops.')
-                ui.button('Cancel unsent EFetch metadata session',
+                ui.button('Back without collecting',
                           on_click=lambda: act('pubmed_metadata_dismiss')).props(
                               'data-testid=pubmed-metadata-dismiss')
-                ui.button('CONFIRM bounded EFetch metadata and abstract retrieval',
+                ui.button('Start collecting citations and abstracts',
                           on_click=lambda: act('pubmed_metadata_confirm')).props(
                               'data-testid=pubmed-metadata-confirm')
             else:
@@ -2279,9 +2151,11 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                               state['report'] is not None else ()):
                     if query['source_name'] != 'pubmed':
                         continue
+                    if workspace and not workspace.includes_collection_query(query['query_id'], 'Collect PubMed article details'):
+                        continue
                     qid=query['query_id']
-                    ui.button('Inspect saved EFetch metadata for ' +
-                              query['group_id'],
+                    ui.button('Read saved article details · ' +
+                              metadata_groups.get(query['group_id'], 'Search group'),
                               on_click=lambda qid=qid: act(
                                   'pubmed_metadata_read',qid)).props(
                                       'data-testid=pubmed-metadata-read')
@@ -2291,7 +2165,7 @@ def render_project_panel(ui, flow, act, *, native, error, study_edits=None, work
                             state['pubmed_source']['checkpoint'] is not None and
                             state['pubmed_source']['checkpoint'][
                                 'identifiers_reconciled']):
-                        ui.button('Preview EFetch metadata session for ' +
+                        ui.button('Preview article details · ' +
                                   metadata_groups[query['group_id']],
                                   on_click=lambda qid=qid: act(
                                       'pubmed_metadata_offer',qid)).props(

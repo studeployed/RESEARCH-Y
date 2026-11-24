@@ -273,11 +273,11 @@ def build_page(app, ui, flow, settings_warnings=()):
                         await asyncio.to_thread(perform_action, flow, action, value)
                         if action in ('select_run', 'preflight_record'):
                             await asyncio.to_thread(flow.inspect_run_execution_board)
-                        if action == 'run_board_step':
-                            from research_y.desktop.collection_panel import TITLES
-                            board = flow.state().get('run_execution_board') or {}
-                            step = next((r['next_step'] for r in board.get('queries', []) if r['query_id'] == value['query_id']), None)
-                            workspace.collection_section = TITLES.get(step)
+                        if action == 'run_board_select':
+                            from research_y.desktop.collection_panel import selected_section
+                            workspace.collection_section = selected_section(flow.state(), value['query_id'])
+                            workspace.collection_query = value['query_id']
+                            workspace.collection_open = True
                             workspace.stage = 'search'
                         if action == 'preflight_inspect':
                             workspace.review_open = True
@@ -315,10 +315,6 @@ def build_page(app, ui, flow, settings_warnings=()):
                     }.get(error, error))
                 if not error or action not in ('save_question', 'setup_edit'):
                     panel.refresh()
-                    if action == 'candidate_queue_review':
-                        ui.timer(.1, lambda: ui.run_javascript("document.querySelector('[data-testid=candidate-heading]')?.scrollIntoView({block:'center'})"), once=True)
-                    if action == 'run_board_step':
-                        ui.timer(.1, lambda: ui.run_javascript("document.querySelector('[data-testid=collection-current]')?.scrollIntoView({block:'start'})"), once=True)
                 if error:
                     ui.notify(explain(error), type='negative')
                 return not bool(error)

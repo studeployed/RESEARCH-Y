@@ -94,7 +94,7 @@ def test_metadata_preview_renders_after_reopening_without_preflight(tmp_path):
         ui, act = MagicMock(), MagicMock()
         render_project_panel(ui, flow, act, native=True, error=None, workspace=MagicMock())
         button = next(call for call in ui.button.call_args_list
-                      if call.args == ('Preview EFetch metadata session for Extracorporeal',))
+                      if call.args == ('Preview article details · Extracorporeal',))
         button.kwargs['on_click']()
         act.assert_called_once_with('pubmed_metadata_offer', qid)
 

@@ -1,5 +1,11 @@
 # RESEARCH-Y handover
 
+## Installed-app follow-up, version 0.1.9
+
+Issue #198 repairs the unsupported Continue action found in the installed 0.1.8 audit. Guided collection now opens the selected group in a focused screen; duplicate review opens an A/B comparison at the top of its own screen. Comparison notes survive validation errors, scoped to the evidence revision. The journey overview starts collapsed and remembers the user's choice across search changes. Preview removes duplicated queries/guidance, everyday source actions use group names, and article evidence/abstracts precede enrichment tools.
+
+See docs/USABILITY_019.md for all five findings, requirement/test mapping and the correction to earlier acceptance claims. tests/test_usability_followup.py exercises actual rendered Continue callbacks, offline immutability, selected-group focus and comparison-draft isolation. tools/usability_acceptance.py now clicks every provider/group Continue, checks separate consent without provider requests, measures comparison visibility against the viewport and checks validation/narrow layout. It uses synthetic profiles and disposable projects. Final exact-commit reviews, CI and installed-package evidence belong to the release PR. No dependency, scientific specification, credential or real-project change.
+
 ## Search names and journey guidance, version 0.1.8
 
 Issue #196 gives saved searches descriptive labels from the frozen strategy theme, version, repeat number where needed and local saved date/time. The same labels appear in selection, active-run headings, comparisons and focused review. Editing the current question cannot relabel older approved plans. Identifiers remain available in Project details; no schema or stored evidence changes.

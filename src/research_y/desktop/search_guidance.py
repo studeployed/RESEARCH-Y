@@ -47,7 +47,7 @@ STAGE_HINTS['details'] = 'Project details · Supporting history, search comparis
 def render_journey(ui, workspace):
     """A non-sticky overview; its collapsed state survives ordinary redraws."""
     with ui.element('section').classes('journey').props('aria-label="How your search works"'):
-        with workspace.disclosure(ui, 'journey', 'How your search works', initial=True):
+        with workspace.disclosure(ui, 'journey', 'How your search works', initial=False):
             with ui.element('ol').classes('journey-stages'):
                 for number, (_, title, purpose, _) in enumerate(STAGES, 1):
                     with ui.element('li'):

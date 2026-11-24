@@ -3,8 +3,9 @@ from inspect import getsource
 
 from research_y.desktop.actions import perform_action
 from research_y.desktop.project_panel import render_project_panel
+from research_y.desktop.candidate_panel import render_candidate_review
 from tools.gui_feasibility.real_project_app import run
 
 
 def project_ui_source():
-    return '\n'.join(map(getsource, (perform_action, render_project_panel, run)))
+    return '\n'.join(map(getsource, (perform_action, render_project_panel, render_candidate_review, run)))

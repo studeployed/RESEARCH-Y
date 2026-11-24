@@ -1,5 +1,7 @@
 # Version 0.1.7 usability changes
 
+The later installed 0.1.8 audit found that Continue callbacks and offscreen comparisons were not adequately covered by the original acceptance checks. See [the 0.1.9 follow-up](USABILITY_019.md) for the fixes and strengthened viewport/real-button verification; the original U02/U03 verification claims below are not sufficient on their own.
+
 Issue #194 follows the owner's approval of the twelve findings from the full Windows usability evaluation. The release simplifies everyday work while preserving the authoritative scientific specification, immutable saved strategies, source consent, quotas and export permissions.
 
 | Finding | Delivered behaviour | Verification |

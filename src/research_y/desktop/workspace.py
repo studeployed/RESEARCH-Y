@@ -16,9 +16,16 @@ class ProjectWorkspace:
         self.review_open = False
         self.review_saved = False
         self.review_drafts = {}
+        self.candidate_drafts = {}
         self.collection_section = None
+        self.collection_query = None
+        self.collection_open = False
+        self.journey_open = False
 
-    def render(self, ui, state, act=None):
+    def includes_collection_query(self, query_id, section):
+        return self.collection_section != section or self.collection_query in (None, query_id)
+
+    def render(self, ui, state, act=None, error=None):
         project_id = state['project']['project_id']
         if self.project_id != project_id:
             self.project_id = project_id
@@ -26,17 +33,22 @@ class ProjectWorkspace:
             self.entry_values.clear()
             self.focus_entry = None
             self.review_drafts.clear()
+            self.candidate_drafts.clear()
             self.review_open = False
             self.review_saved = False
             self.stage = 'search' if state['runs'] else 'plan'
             self.open_sections.clear()
             self.collection_section = None
+            self.collection_query = None
+            self.collection_open = False
         if self.run_id != state['selected_run_id']:
             self.run_id = state['selected_run_id']
             self.review_open = False
             self.review_saved = False
             self.open_sections.clear()
             self.collection_section = None
+            self.collection_query = None
+            self.collection_open = False
             if self.run_id:
                 self.stage = 'search'
         stages = {'plan': 'Plan search', 'search': 'Run search', 'results': 'Results',
@@ -88,9 +100,21 @@ class ProjectWorkspace:
                     yield
                 elif stage == 'search' and title in collection:
                     if title == self.collection_section:
-                        with ui.column().props('data-testid=collection-current'):
-                            ui.label(title).classes('section-title')
-                            yield
+                        dialog = ui.dialog(value=self.collection_open).props('maximized').bind_value(self, 'collection_open')
+                        # Navigation must remain available while a source worker
+                        # blocks all new selections and provider operations.
+                        with search_actions:
+                            ui.button('Return to collection progress', on_click=dialog.open).props(
+                                'outline data-testid=collection-reopen')
+                        with dialog, ui.element('section').classes('task-screen').props('data-testid=collection-current'):
+                            with ui.element('header').classes('review-header'):
+                                ui.label(title).classes('section-title')
+                                ui.button('Back to Run search', on_click=dialog.close).props('flat data-testid=collection-close')
+                            with ui.column().classes('task-body'):
+                                if error:
+                                    from research_y.desktop.feedback import explain
+                                    ui.label(explain(error)).classes('message error').props('role=alert data-testid=collection-error')
+                                yield
                         return
                     if collection_panel is None:
                         collection_panel = self.disclosure(ui, 'collection', 'Advanced collection and recovery',
@@ -103,6 +127,9 @@ class ProjectWorkspace:
         return area
 
     def disclosure(self, ui, key, title, *, initial=False):
+        if key == 'journey':
+            return ui.expansion(title, value=self.journey_open,
+                                on_value_change=lambda e: setattr(self, 'journey_open', e.value))
         result = ui.expansion(title, value=self.open_sections.get(key, initial),
                             on_value_change=lambda e: self.open_sections.update({key: e.value}))
         test_id = {'Advanced manifests and retention permissions': 'manifest-advanced-panel',

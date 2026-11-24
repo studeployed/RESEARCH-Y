@@ -1,6 +1,7 @@
 """Keyboard-operable run results, evidence inspection and persistent view controls."""
 import json
 from research_y.desktop.feedback import readable_time
+from research_y.desktop.candidate_panel import display_value
 
 from research_y.master_results import COLUMNS
 
@@ -80,7 +81,26 @@ def render_master(ui,state,act,*,native):
         detail = view.get("detail")
         if detail:
             with ui.expansion(detail["title"] or detail["publication_id"],value=True):
+                for field in ("authors", "year", "journal", "doi"):
+                    value = detail.get(field)
+                    if value:
+                        ui.label(field.capitalize()+" · "+display_value(value))
                 selected = dict(id=detail["publication_id"],publication_revision=detail["publication_revision"])
+                for item in detail["source_evidence"]:
+                    ui.label({"pubmed":"PubMed", "wos":"Web of Science"}.get(item["source"],item["source"])+" · "+item["source_record_id"])
+                    ui.label(item["abstract"] or "Abstract unavailable · "+item["abstract_status"].replace("_"," ")).classes("article-abstract")
+                    for link_label,url in item["links"].items():
+                        if native:
+                            ui.button("Open "+link_label,on_click=lambda n=link_label,r=item["retrieval_id"]:act("native_master_link",
+                                dict(**selected,revision=view["revision"],retrieval_id=r,link=n)))
+                        else:
+                            ui.link(link_label,url,new_tab=True)
+                    ui.label("Reuse permission · "+item["rights"].replace("_"," ")).classes("review-hint")
+                    ui.label("Groups · "+(", ".join(item["groups"].values()) or "No query membership"))
+                    with ui.expansion("Original citation and provenance"):
+                        ui.label(json.dumps({k:v for k,v in item.items() if k!="abstract"},
+                                            ensure_ascii=False,indent=2)).style("white-space: pre-wrap")
+
                 lookup = detail["enrichment"]
                 with ui.expansion("Crossref abstract and metadata"):
                     receipt = lookup["current"]
@@ -148,17 +168,3 @@ def render_master(ui,state,act,*,native):
                         ui.button("Choose and attach local PDF",on_click=lambda:act("native_attach_pdf",
                                   dict(publication_id=detail["publication_id"],actor=who.value,
                                        source_url=origin.value or None,permission_confirmed=permission.value)))
-                for item in detail["source_evidence"]:
-                    ui.label(item["source"]+" · "+item["source_record_id"])
-                    ui.label(item["abstract"] or "Abstract · "+item["abstract_status"])
-                    for link_label,url in item["links"].items():
-                        if native:
-                            ui.button("Open "+link_label,on_click=lambda n=link_label,r=item["retrieval_id"]:act("native_master_link",
-                                dict(**selected,revision=view["revision"],retrieval_id=r,link=n)))
-                        else:
-                            ui.link(link_label,url,new_tab=True)
-                    ui.label("Reuse status · "+item["rights"])
-                    ui.label("Groups · "+(", ".join(item["groups"].values()) or "No query membership"))
-                    with ui.expansion("Original citation and provenance"):
-                        ui.label(json.dumps({k:v for k,v in item.items() if k!="abstract"},
-                                            ensure_ascii=False,indent=2)).style("white-space: pre-wrap")
