@@ -10,6 +10,8 @@ def readable_time(value):
 
 
 ERRORS = {
+    'publication_review_confirmation_required': 'Enter your name and reason, then tick the confirmation that you have reviewed the evidence and warnings before recording a decision.',
+    'publication_review_reinspect_required': 'The compared evidence has changed. Open this pair again and review the updated citations before deciding.',
     'wos_provider_cooldown_may_apply': 'Web of Science may require a pause before the next request. Continue to check the saved retry time.',
     'wos_attempt_outcome_unknown_no_automatic_retry': 'The last Web of Science request has an unknown outcome. Continue to inspect it before retrying.',
     'wos_worker_or_interrupted_ownership_not_proven_stopped': 'A Web of Science session may still be running. Continue to check its status before starting another.',
@@ -37,7 +39,8 @@ def explain(code):
 SUCCESS = {
     'setup_edit': 'Saved.', 'save_question': 'Question saved.', 'begin_plan': 'Draft ready to edit.',
     'setup_preview': 'Preview ready.', 'setup_approve': 'Search saved. Open it in Run search.',
-    'preflight_record': 'Search checks saved.', 'candidate_queue_review': 'Comparison opened below.',
+    'preflight_record': 'Search checks saved.', 'candidate_queue_review': 'Comparison opened.',
+    'candidate_queue_cross_review': 'Comparison opened.', 'run_board_select': 'Next collection step opened.',
     'study_queue': 'Review list updated.', 'master_results': 'Results updated.',
     'native_master_export': 'Results saved.',
 }

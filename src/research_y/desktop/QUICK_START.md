@@ -7,7 +7,7 @@ The app follows four stages, using the same names as its tabs:
 3. **Results** — read and organise collected articles, checking possible duplicates, missing details and flagged items. Some articles may be visible while collection is still incomplete.
 4. **Export** — choose the scope of your articles or search report, save an Excel or reference-manager file, and wait for verification.
 
-**How your search works** shows this overview in the project. Collapse it when you are familiar with the process. The short prompt below it follows your selected tab; the **Next** milestones explain the smaller steps. **Project details** holds supporting history and settings, rather than another compulsory stage.
+Open **How your search works** whenever you want this overview. It starts collapsed to leave room for your work and remembers your choice while the app is open. The short prompt follows your selected tab; the **Next** milestones explain the smaller steps. **Project details** holds supporting history and settings, rather than another compulsory stage.
 
 Saved searches are named from their frozen research theme, version and saved date, for example **RV Failure · version 3 · saved 24 Nov 2026, 09:30**. Dates are shown in your local time. A repeat of the same plan is marked **repeat 2**, and so on. The saved date is when the run was created, not proof that database collection took place. Editing the project question later does not rename an earlier saved version.
 
@@ -35,6 +35,10 @@ Your unfinished groups and terms are saved in the project as you add or edit the
 5. On **Export**, choose articles, a search strategy workbook or a reviewed master workbook. For articles, choose all, filtered or selected rows. Use `.xlsx` for Excel or `.ris` for a reference manager. Abstract text requires an explicit permission declaration. Enter a filename and click **Choose folder and save**. Wait for **Saved and verified**, then use **Open file** or **Open folder**. Existing files are never overwritten. An interrupted report can be reopened under **Previous report exports** and continued or verified. Full identifiers and specialist recovery tools are available in advanced sections and **Project details**.
 
 ## Reading the screen
+
+**Continue PubMed** and **Continue Web of Science** open a separate screen for the selected search group. Read the query, request allowance and any storage permission before confirming. **Back to Run search** returns to the database cards. For PubMed, database-entry dates help collect large result sets; they are not publication-date limits. The app checks that the range covers the unrestricted search.
+
+Under **Review potential duplicates**, open a pair to compare its citations side by side. Read any missing-data warnings, enter the reason for your decision and acknowledge the evidence before confirming. **Use A** or **Use B** identifies the entry that will hold the combined article; both original source records remain. **Different articles · keep separate** records a non-match. **Back to Results** closes the comparison without deciding. Unfinished notes remain in this window while the compared evidence is unchanged.
 
 The project heading, navigation and next step stay visible as you scroll. Select output text with your mouse and use **Ctrl+C** to copy it. Hover over an abbreviation such as PRESS, DOI or API for its meaning. Quiet grey panels contain routine guidance, amber panels flag cautions, red panels show errors or blocked actions, and blue panels identify results. The wording in each panel explains its status.
 

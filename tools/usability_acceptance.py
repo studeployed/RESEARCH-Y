@@ -32,8 +32,12 @@ def run():
     from nicegui import app, Client
     from research_y.desktop import app as desktop
     from research_y.desktop.flow import RealProjectFlow
+    from research_y.desktop.pubmed_profile import PubMedHostProfile
+    from research_y.desktop.wos_profile import WoSHostProfile
     fixture = json.loads((OUTPUT / 'fixture.json').read_text())
-    flow = RealProjectFlow(recent_parent=OUTPUT / 'recents')
+    flow = RealProjectFlow(recent_parent=OUTPUT / 'recents',
+                           pubmed_profile=PubMedHostProfile('offline@example.invalid'),
+                           wos_profile=WoSHostProfile('OFFLINE-FAKE-KEY'))
     selected = {'folder': Path(fixture['project'])}
     async def choose(window):
         return selected['folder']
@@ -49,6 +53,9 @@ def run():
 
     async def visible(selector):
         return await js('Boolean(document.querySelector(' + json.dumps(selector) + ')?.getClientRects().length)')
+
+    async def in_viewport(selector):
+        return await js('(()=>{let e=document.querySelector(' + json.dumps(selector) + ');if(!e)return false;let r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=0&&r.left>=0&&r.bottom<=innerHeight&&r.right<=innerWidth})()')
 
     async def wait(predicate, label):
         deadline = time.monotonic() + 50
@@ -99,9 +106,12 @@ def run():
             names = saved_search_names(flow.state()['runs'])
             await wait(lambda: js('document.body.innerText.includes(' + json.dumps(names[fixture['run']]) + ')'), 'saved search label rendered')
             checks.append('Saved searches show the frozen theme, version and saved date')
+            assert await js('document.querySelector(".journey .q-expansion-item")?.className.includes("--collapsed")')
+            await section('How your search works')
             assert await js('document.querySelector(".journey")?.innerText.includes("after you confirm collection")')
             assert await js('document.querySelector(".journey")?.innerText.includes("1. Plan search")')
             checks.append('Overview maps the four stages and distinguishes tests from collection')
+            await click('.journey .q-item')
             await click('[data-testid=select-run]')
             await wait(lambda: flow.state()['run_execution_board'] is not None, 'collection board')
             await click('[data-testid=stage-results]')
@@ -109,6 +119,10 @@ def run():
             assert await js('document.querySelector("[data-testid=stage-guidance]")?.innerText.startsWith("Results ·")')
             checks.append('Guidance follows the currently selected stage')
             checks.append('Results automatically show saved articles')
+            await js('window.scrollTo(0,0);true')
+            await wait(lambda: in_viewport('[data-testid=master-table] tbody tr'), 'first article in viewport')
+            assert await js('document.querySelector(".journey .q-expansion-item")?.className.includes("--collapsed")')
+            checks.append('Collapsed overview survives opening a search and leaves an article in view')
             await snapshot('01-results')
             await click('[data-testid=master-table] tbody tr .q-checkbox')
             await wait(lambda: flow.state()['master_results']['selected'] == 1, 'direct checkbox selection')
@@ -164,6 +178,35 @@ def run():
             checks.append('Narrow review uses one scroll area')
             await click('[data-testid=review-close]')
             app.native.main_window.resize(1200, 850)
+            await click('[data-testid=review-open]')
+            await click('[data-testid=preflight-offer]')
+            await click('[data-testid=preflight-record]')
+            await wait(lambda: visible('[data-testid=review-saved]'), 'checklist saved')
+            await click('[data-testid=review-close]')
+            # Real buttons route all four groups; previews may not send requests.
+            from hashlib import sha256
+            before = sha256(flow.project.database_path.read_bytes()).hexdigest()
+            for index, query in enumerate(flow.state()['run_execution_board']['queries']):
+                await wait(lambda: js('!document.querySelector("[data-testid=action-surface]")?.inert'), 'collection controls ready')
+                await js('document.querySelectorAll("[data-testid=collection-continue]")[' + str(index) + '].click();true')
+                state_key = 'pubmed_source' if query['source_name'] == 'pubmed' else 'wos_acquisition_offer'
+                await wait(lambda: (flow.state()[state_key] or {}).get('query_id') == query['query_id'], 'selected collection group')
+                await wait(lambda: in_viewport('[data-testid=collection-close]'), 'focused collection screen')
+                if query['source_name'] == 'pubmed':
+                    assert await js('document.querySelectorAll("[data-testid=collection-current] [data-testid=pubmed-source-saved-query]").length') == 1
+                    await click('[data-testid=collection-current] [data-testid=pubmed-source-offer]')
+                    await wait(lambda: visible('[data-testid=pubmed-source-confirm]'), 'separate PubMed confirmation')
+                    assert flow.state()['pubmed_source_offer']['query_id'] == query['query_id']
+                    await snapshot('collection-pubmed-' + str(index))
+                    await click('[data-testid=pubmed-source-dismiss]')
+                else:
+                    assert flow.state()['wos_acquisition_offer']['query_id'] == query['query_id']
+                    await snapshot('collection-wos-' + str(index))
+                    await click('[data-testid=wos-acquisition-cancel]')
+                assert sha256(flow.project.database_path.read_bytes()).hexdigest() == before
+                await click('[data-testid=collection-close]')
+                await wait(lambda: js('!document.querySelector("[data-testid=collection-close]")?.getClientRects().length'), 'collection screen closed')
+            checks.append('Every Continue opens the selected group; previews retain separate consent and make no project writes')
             await select_option('Choose a saved search', 'version 1')
             await click('[data-testid=select-run]')
             await wait(lambda: flow.state()['selected_run_id'] == fixture['run'], 'original saved search')
@@ -172,9 +215,20 @@ def run():
             await click('[data-testid=candidate-queue-refresh]')
             await wait(lambda: visible('[data-testid=candidate-queue-review]'), 'candidate queue')
             await click('[data-testid=candidate-queue-review]')
-            await wait(lambda: visible('[data-testid=candidate-heading]'), 'revealed comparison')
-            checks.append('Comparison action reveals its result')
+            await wait(lambda: in_viewport('[data-testid=candidate-heading]'), 'comparison heading in viewport')
+            await wait(lambda: in_viewport('[data-testid=candidate-source]'), 'citation in viewport')
+            checks.append('Comparison opens at the top of a dedicated screen with citations in view')
             await snapshot('06-comparison')
+            assert await js('(()=>{let e=document.querySelector("textarea[data-testid=candidate-rationale], [data-testid=candidate-rationale] textarea");if(!e)return false;e.value="Offline comparison note";e.dispatchEvent(new Event("input",{bubbles:true}));return true;})()')
+            await asyncio.sleep(.3)
+            await click('[data-testid=candidate-reject]')
+            await wait(lambda: visible('[data-testid=candidate-screen] [role=alert]'), 'missing acknowledgment validation')
+            assert await js('document.querySelector("textarea[data-testid=candidate-rationale], [data-testid=candidate-rationale] textarea")?.value') == 'Offline comparison note'
+            checks.append('Comparison validation keeps the evidence text and does not record an unchecked decision')
+            app.native.main_window.resize(520, 760)
+            await snapshot('comparison-narrow')
+            await click('[data-testid=candidate-dismiss]')
+            app.native.main_window.resize(1200, 850)
             await section('Study review queue and filters')
             await text_button('Apply review filters')
             await wait(lambda: bool(flow.state()['study_queue']), 'review filter')

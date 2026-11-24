@@ -1,0 +1,19 @@
+# Installed-app usability follow-up: 0.1.9
+
+Issue #198 addresses the five findings from the installed 0.1.8 audit. The audit exercised a source-matched Windows installation using disposable projects. It found gaps in the earlier 0.1.7 acceptance: checking that a DOM element existed did not prove that a researcher could see it, and the real Continue callbacks had not been exercised.
+
+| Finding | Change | Verification |
+| --- | --- | --- |
+| A01 Continue did nothing | Both provider cards dispatch the supported action. The selected group opens in a focused collection screen, with its existing preview and separate consent. Errors appear inside that screen. | `test_usability_followup::test_every_rendered_continue_routes_to_its_real_offline_step`; native acceptance clicks all four provider/group buttons and verifies no database writes from previews. |
+| A02 Duplicate comparison appeared offscreen | A dedicated comparison opens at the top, with A/B citations, warnings, explicit identity consequences and recorded history. Draft notes survive validation errors and remain scoped to the evidence revision. | `test_usability_followup` draft/direction checks; native acceptance measures heading/citation bounds against the viewport, checks validation and a 520-pixel window. Existing candidate, cross-run and identity-disposition suites retain decision-integrity coverage. |
+| A03 Overview displaced the work | The overview starts collapsed, keeps the user's choice across search changes and leaves short stage guidance visible. | Native acceptance opens/closes the overview, changes searches and verifies that an article row fits in the viewport. |
+| A04 Repeated queries and opaque labels | Preview shows each group query once, avoids duplicate source guidance and uses group names in everyday collection/pilot controls. Full identifiers remain in supporting evidence. | Existing strategy/compilation tests; native preview screenshots and source inspection. |
+| A05 Collection and article details were difficult to follow | Collection has a dedicated next-step screen, clear identifiers-then-details explanation, database-entry-date explanation and request budgets before consent. Original article information and abstracts precede optional enrichment/editing tools. | Native first-search journey; source-flow, request-budget, recovery, result and export regression suites. |
+
+## Evidence and limitations
+
+`tools/usability_acceptance.py` exercises the native app and, with `--installed`, the packaged application. It uses dummy profiles, synthetic citations and disposable projects; it does not read private credentials or confirm provider requests. It records screenshots, viewport measurements and an acceptance JSON. Existing Windows installer verification checks clean install, reinstall, upgrade, preservation and the desktop lifecycle. Exact-commit code/security reviews, CI and final installer hashes are recorded on the release pull request.
+
+The scientific search, source permissions, quotas, uncertain-request recovery, original metadata and audit rules are unchanged. Search-check and comparison drafts remain local to this window until confirmed. A comparison with changed evidence starts a new draft. Advanced recovery still contains technical details; no automatic database retry, merge of articles or completion claim is introduced.
+
+The 0.1.8 audit supersedes the earlier blanket claim that comparison and collection visibility were verified. The strengthened acceptance explicitly covers those failures; it does not establish live-provider completeness or mobile-app readiness.
